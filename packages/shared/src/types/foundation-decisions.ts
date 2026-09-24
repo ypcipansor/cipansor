@@ -457,6 +457,17 @@ export interface FoundationDecisionDetailDTO extends FoundationDecisionSummaryDT
    * satunya jalan keluar dari rapat yang gagal kuorum.
    */
   canCancel: boolean;
+  /**
+   * Apakah penyegelan e-seal keputusan ini TERTUNDA?
+   *
+   * Hanya `true` pada sirkuler yang mufakatnya sudah penuh tetapi penyiapan
+   * artefak (render PDF / buka e-seal) gagal pada suara penentu — suaranya
+   * tersimpan, tetapi status tetap `VOTING` dan tidak ada jalan memperoleh
+   * suara baru. Pada keadaan itu `finalize` adalah satu-satunya jalan
+   * memulihkan keputusan (dan `canFinalize` karena itu `true`), sehingga UI
+   * harus menampilkan tombolnya, bukan menyembunyikannya.
+   */
+  sealPending: boolean;
   myVote: FoundationVoteChoice | null;
   /**
    * Jumlah baris suara yang GAGAL verifikasi tanda tangan (tidak autentik).

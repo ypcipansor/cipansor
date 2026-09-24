@@ -147,18 +147,21 @@ export function signingKeyToMaterial(key: {
 }
 
 /**
- * Catat kunci publik yang dipakai menandatangani ke riwayat append-only, dan
- * kembalikan rekamannya.
+ * Catat kunci publik penandatangan ke riwayat append-only, kembalikan rekaman.
  *
- * `UserSigningKey` dihapus saat kunci diterbitkan ulang, sehingga riwayat inilah
- * satu-satunya tempat tepercaya untuk memverifikasi suara setelah rotasi.
- * `upsert` pada `(userId, fingerprint)` membuatnya idempoten. Pencabutan berlaku
- * untuk masa depan: rekaman lama TIDAK dicabut di sini agar suara yang sudah sah
- * tetap terverifikasi; hak menandatangani baru sudah ditegakkan `assertCanSign`.
+ * `UserSigningKey` dihapus saat kunci diterbitkan ulang, jadi riwayat inilah
+ * satu-satunya tempat verifikasi suara setelah rotasi. `upsert` pada
+ * `(userId, fingerprint)` idempoten; rekaman lama TIDAK dicabut di sini agar
+ * suara sah tetap terverifikasi.
+ *
+ * **`issuedAt` WAJIB waktu penerbitan kunci, bukan waktu baris dibuat.** Baris
+ * lahir pada suara PERTAMA kunci itu, sehingga default `now()` jatuh SETELAH
+ * `signedAt` suara dan `keyUsableAt` menolaknya: suara pertama tersimpan tetapi
+ * tidak pernah dihitung kuorum, sambil mengunci slot `(decisionId, userId)`.
  */
 export async function ensureSigningKeyHistory(
   client: DbClient,
-  key: { userId: string; algorithm: string; publicKey: string },
+  key: { userId: string; algorithm: string; publicKey: string; issuedAt?: Date },
   stamps?: { revokedAt?: Date | null; supersededAt?: Date | null }
 ): Promise<UserSigningKeyHistory> {
   const fingerprint = publicKeyFingerprint(key.publicKey);
@@ -169,6 +172,10 @@ export async function ensureSigningKeyHistory(
       algorithm: key.algorithm,
       publicKey: key.publicKey,
       fingerprint,
+      // Waktu penerbitan kunci yang SEBENARNYA, bukan waktu suara pertama.
+      // Ketika tidak diketahui (mis. pemanggil lama), baris tetap dibuat tanpa
+      // menetapkan `issuedAt` agar default basis data yang berlaku.
+      ...(key.issuedAt ? { issuedAt: key.issuedAt } : {}),
       // Status kunci SAAT BARIS DIBUAT ikut dicatat. Baris baru hanya dibuat
       // untuk kunci yang sedang sah menandatangani (`assertCanSign` di dalam
       // lock), jadi kedua cap ini normalnya kosong — tetapi mengisinya dari
@@ -250,10 +257,16 @@ async function assertSigningKeyStillCurrent(
     if (!keyUsableAt(record, signedAt)) throw Errors.conflict(SIGNING_KEY_CONTENDED);
   } else {
     // Baris baru untuk kunci yang sedang sah (sudah lolos `assertCanSign`).
+    // `issuedAt` diambil dari `UserSigningKey.createdAt` — waktu kunci ini
+    // benar-benar terbit — BUKAN default `now()`. Tanpa ini, suara pertama
+    // sebuah kunci menandatangani pada `signedAt` yang selalu mendahului baris
+    // riwayatnya, `keyUsableAt` menolaknya, dan suara penentu tak pernah masuk
+    // kuorum sambil mengunci slot unik pemilih.
     record = await ensureSigningKeyHistory(tx, {
       userId,
       algorithm: material.algorithm,
       publicKey: material.publicKey,
+      issuedAt: current.createdAt,
     });
   }
   return record;
@@ -1552,11 +1565,15 @@ export const FoundationDecisionService = {
     // Eligibility finalisasi dihitung dengan definisi yang SAMA dengan
     // `finalize` — bukan dari role saja. UI tidak boleh menawarkan tombol yang
     // peladen pasti tolak (Pengawas membuka keputusan organ lain). Sirkuler
-    // DIKECUALIKAN karena hasilnya tidak dapat dikunci manual, jadi `finalize`
-    // selalu menolaknya — lihat `finalize`.
+    // VOTING biasa DIKECUALIKAN karena hasilnya tidak dapat dikunci manual.
+    // Pengecualiannya: sirkuler yang mufakatnya sudah penuh tetapi
+    // penyegelannya TERTUNDA (`sealPending`) — di sana `finalize` justru
+    // satu-satunya jalan memulihkan keputusan yang tergantung, jadi tombolnya
+    // HARUS ditawarkan.
+    const sealPending = this.isDeferredCircular(d);
     const canFinalize =
       d.status === FoundationDecisionStatus.VOTING &&
-      d.kind !== 'CIRCULAR' &&
+      (d.kind !== 'CIRCULAR' || sealPending) &&
       canFinalizeDecision(actor, d.members);
     // Pembatalan hanya masuk akal bila rapat masih VOTING, bukan sirkuler,
     // aktor berwenang, DAN kuorum hadir belum tercapai. Kuorum yang sudah
@@ -1590,6 +1607,7 @@ export const FoundationDecisionService = {
       canFinalize,
       publishable,
       canCancel,
+      sealPending,
       mine?.choice ?? null,
       actor.id,
       actorRoleCodes(actor)
@@ -2101,6 +2119,98 @@ export const FoundationDecisionService = {
   },
 
   /**
+   * BUG (finding deferred circular) — apakah sirkuler ini dalam keadaan
+   * "mufakat penuh, penyegelan tertunda"?
+   *
+   * Sirkuler menutup dirinya otomatis pada suara penentu. Bila penyiapan
+   * artefak (render PDF / buka e-seal) GAGAL pada suara itu, `castVote`
+   * menyimpan suaranya tetapi menunda penyegelan: status tetap VOTING dan
+   * TIDAK ada jalan baru untuk memperoleh suara (`castVote` menolak suara
+   * ganda). Tanpa status yang dapat dikenali, keputusan itu tergantung VOTING
+   * selamanya. Keadaan ini didefinisikan persis sebagai: sirkuler VOTING yang
+   * kuorum mufakatnya SUDAH terpenuhi tetapi keputusan belum APPROVED — yang
+   * hanya dapat terjadi bila penyegelannya ditunda, sebab jalur normal
+   * langsung menandainya APPROVED di dalam transaksi yang sama.
+   */
+  isDeferredCircular(d: RichDecision): boolean {
+    if (d.kind !== 'CIRCULAR' || d.status !== FoundationDecisionStatus.VOTING) return false;
+    const evaluation = evaluateQuorum(
+      d.quorumSnapshot as unknown as QuorumSnapshot,
+      this.votesOf(d)
+    );
+    return evaluation.outcome === 'APPROVED';
+  },
+
+  /**
+   * Lanjutkan penyegelan sirkuler yang mufakatnya sudah penuh tetapi tertunda.
+   *
+   * Memakai ulang evaluasi kuorum terkunci dan penyiapan artefak yang SAMA
+   * dengan jalur suara/finalisasi: baca baris di luar kunci, siapkan artefak,
+   * lalu `applyLocked` di dalam `SELECT — FOR UPDATE`. Bila penyebab kegagalan
+   * (mis. font Unicode) sudah pulih, keputusan berpindah ke APPROVED; bila
+   * belum, galatnya merambat keluar dan status tetap VOTING sehingga dapat
+   * dicoba lagi — tidak pernah sebagian tersegel.
+   */
+  async finalizeDeferredCircular(actor: Actor, d: RichDecision) {
+    const run = async (bound: RichDecision) => {
+      if (!this.isDeferredCircular(bound)) {
+        throw Errors.badRequest('Keputusan sirkuler ini sudah tertutup.');
+      }
+      let artifact: ApprovalArtifact | null = null;
+      artifact = await this.prepareApprovalArtifact(actor, bound);
+      return prisma.$transaction(async (tx) => {
+        await lockDecision(tx, bound.id);
+        const lockedRow = await tx.foundationDecision.findUnique({
+          where: { id: bound.id },
+          include: decisionInclude,
+        });
+        const locked = lockedRow as unknown as RichDecision | null;
+        if (!locked) throw Errors.notFound('Keputusan tidak ditemukan.');
+        if (!this.isDeferredCircular(locked)) {
+          throw Errors.badRequest('Keputusan sirkuler ini sudah tertutup.');
+        }
+        // Tindakan tata kelola: peran & status hidup aktor dibuktikan ULANG di
+        // dalam transaksi, dengan definisi otorisasi yang sama dengan gerbang
+        // rute (`canFinalizeDecision`).
+        await assertActorAuthorizedInTx(
+          tx,
+          actor.id,
+          (roles) =>
+            canFinalizeDecision({ id: actor.id, roleCode: '', roleCodes: roles }, locked.members),
+          'Anda tidak berhak memfinalisasi keputusan organ ini.'
+        );
+        const evaluation = evaluateQuorum(
+          locked.quorumSnapshot as unknown as QuorumSnapshot,
+          this.votesOf(locked)
+        );
+        const prepared =
+          artifact && artifact.fingerprint === approvalFingerprint(locked) ? artifact : null;
+        const outcome = await this.applyLocked(
+          actor,
+          locked,
+          evaluation,
+          tx,
+          prepared ?? undefined
+        );
+        await tx.auditLog.create({
+          data: {
+            userId: actor.id,
+            action: 'APPROVE',
+            entity: 'FoundationDecision',
+            entityId: locked.id,
+            newValues: {
+              reason: 'penyegelan-sirkuler-tertunda-dilanjutkan',
+              evaluation: { ...evaluation },
+            },
+          },
+        });
+        return outcome;
+      });
+    };
+    return run(d);
+  },
+
+  /**
    * Finalisasi manual oleh pimpinan/kepala rapat.
    *
    * Finalisasi **menutup** rapat: hasil dihitung SEKALI dengan `closed: true`.
@@ -2130,13 +2240,19 @@ export const FoundationDecisionService = {
       throw Errors.forbidden('Anda tidak berhak menutup keputusan organ ini.');
     }
     // Otorisasi diperiksa lebih dulu supaya aktor terlarang tetap menerima 403
-    // (bukan petunjuk bentuk keputusan). Setelah lolos, sirkuler ditolak
-    // eksplisit: hasilnya tidak dapat dikunci manual, jadi aksi ini tidak punya
-    // kondisi sukses yang sah.
-    if (d.kind === 'CIRCULAR') {
+    // (bukan petunjuk bentuk keputusan). Setelah lolos, sirkuler hanya boleh
+    // melewati `finalize` bila penyegelannya TERTUNDA: hasilnya memang ditutup
+    // otomatis oleh `castVote`, jadi aksi manual atas sirkuler VOTING biasa
+    // tidak punya kondisi sukses yang sah. Sirkuler yang mufakatnya terpenuhi
+    // tetapi e-seal gagal TIDAK boleh tergantung selamanya - lihat
+    // `finalizeDeferredCircular`.
+    if (d.kind === 'CIRCULAR' && !this.isDeferredCircular(d)) {
       throw Errors.badRequest(
         'Keputusan sirkuler tidak difinalisasi manual: hasilnya ditutup otomatis saat pemungutan suara (APPROVED bila mufakat tercapai, REJECTED bila mufakat mustahil).'
       );
+    }
+    if (d.kind === 'CIRCULAR') {
+      return this.finalizeDeferredCircular(actor, d);
     }
     const runFinalize = async (bound: RichDecision) => {
       // Jalur ini MEETING-only (CIRCULAR sudah ditolak di atas), jadi menutup
@@ -2934,6 +3050,7 @@ export const FoundationDecisionService = {
     canFinalize: boolean,
     publishable: boolean,
     canCancel: boolean,
+    sealPending: boolean,
     myVote: 'APPROVE' | 'REJECT' | 'ABSTAIN' | null,
     myId: string,
     myRoleCodes: readonly string[]
@@ -2974,6 +3091,7 @@ export const FoundationDecisionService = {
       canFinalize,
       publishable,
       canCancel,
+      sealPending,
       myVote,
       // Diagnostik manipulasi hanya untuk aktor berwenang; peran lain tidak
       // perlu tahu ada baris mentah yang tidak sah.

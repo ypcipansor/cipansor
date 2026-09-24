@@ -1099,9 +1099,17 @@ describe('FoundationDecisionService.finalize', () => {
 
   /**
    * Sirkuler yang seluruh anggotanya sudah setuju tetap APPROVED lewat
-   * `castVote`; `finalize` TIDAK dipakai untuk itu.
+   * `castVote` — kecuali bila penyegelannya TERTUNDA.
+   *
+   * Bila penyiapan artefak gagal pada suara terakhir, `castVote` menyimpan
+   * suaranya tetapi menunda e-seal dan meninggalkan status VOTING. Tidak ada
+   * suara baru yang mungkin (semua sudah memilih), sehingga `finalize` adalah
+   * SATU-SATUNYA jalan menyelesaikannya; menolaknya membuat keputusan
+   * tergantung selamanya. Di sini penyebabnya sudah pulih, jadi penyegelan
+   * dilanjutkan dan keputusan menjadi APPROVED.
    */
-  it('CIRCULAR: finalize tetap ditolak walau mufakat penuh tercapai', async () => {
+  it('CIRCULAR: penyegelan tertunda diselesaikan lewat finalize (menjadi APPROVED)', async () => {
+    const sealMaterialRow = createSealMaterial(config.foundation.esealPassphrase);
     const d = decisionRow({
       kind: 'CIRCULAR',
       status: 'VOTING',
@@ -1119,6 +1127,58 @@ describe('FoundationDecisionService.finalize', () => {
       signedVoteRow(d, 'user-0', 'APPROVE'),
       signedVoteRow(d, 'user-1', 'APPROVE'),
       signedVoteRow(d, 'user-2', 'APPROVE'),
+    ];
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationEseal.findMany.mockResolvedValue([
+      {
+        id: 'seal-1',
+        ...sealMaterialRow,
+        revokedAt: null,
+        activatedAt: new Date(),
+        createdAt: new Date(),
+      },
+    ]);
+    dm.foundationDecisionDocument.create.mockResolvedValue({ id: 'doc-1' });
+    dm.foundationDecision.update.mockResolvedValue({ id: 'dec-1', status: 'APPROVED' });
+    dm.auditLog.create.mockResolvedValue({ id: 'log-1' });
+
+    const result = await FoundationDecisionService.finalize(
+      { id: 'user-0', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1'
+    );
+
+    expect(result.outcome).toBe('APPROVED');
+    const statusWrites = dm.foundationDecision.update.mock.calls
+      .map((c: any[]) => c[0]?.data?.status)
+      .filter(Boolean);
+    expect(statusWrites).toContain('APPROVED');
+  });
+
+  /**
+   * Sirkuler dengan mufakat penuh tetapi riwayat kunci SUDAH DICABUT tetap
+   * ditolak eksplisit: kuorum penuh yang tidak lagi autentik bukan "tertunda",
+   * melainkan tidak sah — penyegelannya memang tidak boleh dilanjutkan.
+   */
+  it('CIRCULAR: suara yang tak lagi autentik TIDAK dianggap penyegelan tertunda', async () => {
+    const d = decisionRow({
+      kind: 'CIRCULAR',
+      status: 'VOTING',
+      quorumSnapshot: {
+        organType: 'PEMBINA',
+        kind: 'CIRCULAR',
+        activeCount: 3,
+        presentMode: 'MUTLAK',
+        presentValue: 1,
+        decisionMode: 'MUTLAK',
+        decisionValue: 1,
+      },
+    });
+    // Tiga baris mentah menyetujui, tetapi tanda tangannya tidak terikat ke
+    // riwayat kunci mana pun, jadi suara AUTENTIK = 0.
+    d.votes = [
+      { ...signedVoteRow(d, 'user-0', 'APPROVE'), signingKeyId: null, signingKey: null },
+      { ...signedVoteRow(d, 'user-1', 'APPROVE'), signingKeyId: null, signingKey: null },
+      { ...signedVoteRow(d, 'user-2', 'APPROVE'), signingKeyId: null, signingKey: null },
     ];
     dm.foundationDecision.findUnique.mockResolvedValue(d);
 
@@ -3059,6 +3119,89 @@ describe('FoundationDecisionService.detail — akses baca anggota snapshot', () 
     await expect(
       FoundationDecisionService.detail({ id: 'outsider', roleCode: 'GURU' }, 'dec-1')
     ).rejects.toThrow(/tidak berhak/);
+  });
+});
+
+/**
+ * Finding 7 (INVESTIGATION) — seluruh angka resmi memakai suara AUTENTIK.
+ *
+ * `votedCount`, `votes[]`, `hasVoted`/`canVote`, dan rekap pada DTO pernah
+ * dihitung dari baris MENTAH, sehingga baris `foundation_decision_votes` yang
+ * disisipkan atau diubah langsung di basis data membuat "3 dari 3" pada layar
+ * bertentangan dengan angka yang benar-benar mengesahkan keputusan (kuorum,
+ * PDF, verifikasi publik). Uji ini mengunci bahwa baris tidak sah tidak
+ * muncul di angka resmi, dan hanya SUPER_ADMIN yang melihat diagnostiknya.
+ */
+describe('FoundationDecisionService.toDetailDTO — hanya suara autentik dihitung', () => {
+  const snapshot = {
+    organType: 'PEMBINA',
+    kind: 'CIRCULAR',
+    activeCount: 3,
+    presentMode: 'MUTLAK',
+    presentValue: 1,
+    decisionMode: 'MUTLAK',
+    decisionValue: 1,
+  } as never;
+
+  function dtoFor(d: any, myId: string, myRoleCodes: readonly string[]) {
+    const authentic = FoundationDecisionService.authenticatedVotesOf(d);
+    return FoundationDecisionService.toDetailDTO(
+      d,
+      snapshot,
+      d.voteSummary,
+      true,
+      false,
+      false,
+      false,
+      false,
+      authentic.find((v) => v.userId === myId)?.choice ?? null,
+      myId,
+      myRoleCodes
+    );
+  }
+
+  it('votedCount & votes[] hanya memuat suara bertanda tangan sah', () => {
+    const d = decisionRow();
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      { ...signedVoteRow(d, 'user-1', 'REJECT'), choice: 'APPROVE' },
+      {
+        ...signedVoteRow(d, 'user-2', 'APPROVE'),
+        signature: Buffer.from('palsu').toString('base64'),
+      },
+    ];
+    const dto = dtoFor(d, 'outsider', ['YAYASAN_PEMBINA']);
+    expect(dto.votedCount).toBe(1);
+    expect(dto.votes.map((v) => v.userId)).toEqual(['user-0']);
+  });
+
+  it('hasVoted/canVote tidak menganggap suara tidak sah sebagai suara pemilih', () => {
+    const d = decisionRow();
+    // Baris mentah atas nama user-1, tanpa ikatan kunci → TIDAK autentik.
+    d.votes = [
+      {
+        ...signedVoteRow(d, 'user-1', 'APPROVE'),
+        signingKeyId: null,
+        signingKey: null,
+      },
+    ];
+    const dto = dtoFor(d, 'user-1', ['YAYASAN_PEMBINA']);
+    expect(dto.votedCount).toBe(0);
+    expect(dto.myVote).toBeNull();
+  });
+
+  it('invalidVoteCount hanya diisi untuk SUPER_ADMIN', () => {
+    const d = decisionRow();
+    d.votes = [
+      signedVoteRow(d, 'user-0', 'APPROVE'),
+      { ...signedVoteRow(d, 'user-1', 'REJECT'), choice: 'APPROVE' },
+    ];
+    const asMember = dtoFor(d, 'user-1', ['YAYASAN_PEMBINA']);
+    expect(asMember.invalidVoteCount).toBeUndefined();
+    const asSuper = dtoFor(d, 'super', ['SUPER_ADMIN']);
+    expect(asSuper.invalidVoteCount).toBe(1);
+    // Angka resmi TIDAK berubah karena diagnostik: tetap hanya suara autentik.
+    expect(asSuper.votedCount).toBe(1);
   });
 });
 

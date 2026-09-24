@@ -283,3 +283,110 @@ describe('foundation-decisions.routes — authorizeAnyRole (finding #2)', () => 
     expect(res.status, `${method.toUpperCase()} ${path}`).toBe(403);
   });
 });
+
+/**
+ * Finding TASK-1 (revoked roles regain global read access) — jalur BACA.
+ *
+ * Rute baca (`GET /decisions`, `/decisions/:id`, `/decisions/:id/document`)
+ * sengaja TIDAK memakai `authorize(...READ)` karena hak baca juga dinilai lewat
+ * jalur SNAPSHOT anggota. Cacatnya: peran READ GLOBAL dinilai dari
+ * `req.user.roleCode`, yang bila tidak disegarkan berasal dari token stateless
+ * yang masih memuat peran lama. Mantan Pembina — peran dicabut tetapi token
+ * 15 menit masih hidup — tetap melihat SELURUH daftar keputusan.
+ *
+ * `refreshActorRoles` menutupnya: setiap rute baca menyegarkan peran dari basis
+ * data SEBELUM service menilai, sehingga peran global yang dicabut langsung
+ * hilang. Uji ini menjalankan router Express SUNGGUHAN dengan token yang
+ * membekukan peran lama dan basis data yang mengembalikan peran terkini.
+ */
+describe('foundation-decisions.routes — peran READ yang dicabut (TASK-1)', () => {
+  function buildApp() {
+    const app = express();
+    app.use(express.json());
+    app.use(router);
+    app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+      const e = err as { statusCode?: number; status?: number; message?: string };
+      res.status(e.statusCode ?? e.status ?? 500).json({ error: e.message });
+    });
+    return app;
+  }
+
+  /** Token yang MEMBEKUKAN peran yayasan lama (sebelum dicabut). */
+  function staleToken(roleCode: string) {
+    return generateAccessToken({
+      id: 'u-revoked',
+      sub: 'u-revoked',
+      email: 'mantan@cipansor.or.id',
+      roleId: 'r-old',
+      roleCode,
+      unitId: null,
+      permissions: [],
+      role: 'UNIT_ADMIN',
+    });
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const READ_ROUTES: Array<['get', string]> = [
+    ['get', '/decisions'],
+    ['get', '/decisions/dec-1'],
+    ['get', '/decisions/dec-1/document'],
+  ];
+
+  it.each(READ_ROUTES)(
+    '%s %s: peran READ global yang DICABUT tidak diteruskan ke service',
+    async (_method, path) => {
+      // Token mengaku YAYASAN_PEMBINA; basis data berkata orangnya kini GURU.
+      vi.spyOn(FoundationDecisionService, 'currentActiveRoleCodes').mockResolvedValue({
+        primary: 'GURU',
+        all: ['GURU'],
+      });
+
+      const seen: Array<{ roleCode?: string; roleCodes?: readonly string[] }> = [];
+      vi.spyOn(FoundationDecisionService, 'list').mockImplementation(async (actor: any) => {
+        seen.push(actor);
+        return { items: [], total: 0, page: 1, limit: 10 } as never;
+      });
+      vi.spyOn(FoundationDecisionService, 'detail').mockImplementation(async (actor: any) => {
+        seen.push(actor);
+        return { id: 'dec-1' } as never;
+      });
+      vi.spyOn(FoundationDecisionService, 'getFinalDocument').mockImplementation(
+        async (actor: any) => {
+          seen.push(actor);
+          return { bytes: Buffer.from('%PDF-1.7') } as never;
+        }
+      );
+
+      const app = buildApp();
+      const res = await request(app)
+        .get(path)
+        .set('authorization', `Bearer ${staleToken('YAYASAN_PEMBINA')}`);
+
+      expect(res.status, path).not.toBe(403);
+      expect(seen, path).toHaveLength(1);
+      // Peran BASI tidak boleh sampai ke service — jalur READ global dinilai
+      // dari keadaan sekarang, bukan dari klaim token.
+      expect(seen[0].roleCode, path).toBe('GURU');
+      expect(seen[0].roleCodes, path).toEqual(['GURU']);
+      expect(
+        (seen[0].roleCodes ?? []).some((c) => c.startsWith('YAYASAN_')),
+        path
+      ).toBe(false);
+    }
+  );
+
+  it('mantan Super Admin yang dicabut tidak dapat membuka create-options', async () => {
+    vi.spyOn(FoundationDecisionService, 'currentActiveRoleCodes').mockResolvedValue({
+      primary: 'GURU',
+      all: ['GURU'],
+    });
+    const app = buildApp();
+    const res = await request(app)
+      .get('/decisions/create-options')
+      .set('authorization', `Bearer ${staleToken('SUPER_ADMIN')}`);
+    expect(res.status).toBe(403);
+  });
+});

@@ -270,3 +270,65 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
     expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
   });
 });
+
+/**
+ * Finding 3 (BUG) — tombol Finalisasi harus muncul pada sirkuler yang
+ * penyegelannya TERTUNDA, dan konfirmasinya harus menjelaskan bahwa tindakan
+ * itu MELANJUTKAN penyegelan (hasil sudah terkunci), bukan menutup pemungutan.
+ *
+ * Sebelum perbaikan, sirkuler selalu `canFinalize=false` sehingga keputusan
+ * yang e-sealnya gagal disegel tergantung VOTING tanpa jalan keluar; dan pada
+ * rapat, teks konfirmasi "Tutup rapat" menyesatkan bila dipakai untuk sirkuler.
+ */
+function sealPendingDecision() {
+  return {
+    ...votingDecision(),
+    kind: "CIRCULAR",
+    status: "VOTING",
+    canFinalize: true,
+    canCancel: false,
+    sealPending: true,
+  };
+}
+
+describe("halaman detail keputusan — tombol finalisasi sirkuler tertunda", () => {
+  beforeEach(() => {
+    get.mockReset();
+    post.mockReset();
+  });
+
+  it("sirkuler sealPending → tombol Finalisasi tampil dan konfirmasi menyebut lanjutkan penyegelan", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    get.mockResolvedValue({ data: { data: sealPendingDecision() } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Finalisasi/ }));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/Lanjutkan penyegelan e-seal/),
+    );
+    // Dibatalkan: tidak ada POST finalize.
+    expect(post).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("rapat biasa → konfirmasi menyebut menutup rapat, bukan penyegelan", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    get.mockResolvedValue({ data: { data: votingDecision() } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Finalisasi/ }));
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/Tutup rapat\/pemungutan/),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("sirkuler sealPending dengan konfirmasi diterima → POST finalize terkirim", async () => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    post.mockResolvedValue({ data: { data: { outcome: "APPROVED" } } });
+    get.mockResolvedValue({ data: { data: sealPendingDecision() } });
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: /Finalisasi/ }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/foundation/decisions/dec-1/finalize"),
+    );
+  });
+});

@@ -3151,6 +3151,153 @@ describe.skipIf(!RUN)('foundation-decisions integrasi PostgreSQL', () => {
       await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
     }
   });
+
+  /**
+   * BUG (real PostgreSQL) — suara PERTAMA sebuah kunci harus AUTENTIK dan
+   * masuk hitungan kuorum.
+   *
+   * Baris `user_signing_key_history` lahir pada suara pertama kunci itu bila
+   * migrasi backfill belum membuatnya. Sebelum perbaikan, `issuedAt`-nya
+   * dibiarkan jatuh ke default `now()` basis data — TERTUNDA beberapa
+   * milidetik setelah `signedAt` suara — dan `keyUsableAt` menolak tanda
+   * tangan yang mendahului penerbitan. Suara TERSIMPAN (slot unik
+   * `(decisionId, userId)` terisi), tetapi selamanya dikecualikan dari rekap
+   * kuorum, dan pemilih tidak dapat mengulang. Sebuah keputusan dengan suara
+   * penentu seperti ini menggantung VOTING tanpa akhir.
+   *
+   * Sesudah perbaikan, `issuedAt` diambil dari `UserSigningKey.createdAt`,
+   * sehingga `issuedAt <= signedAt` dan suara itu autentik sejak baris pertama.
+   */
+  it('suara pertama tanpa riwayat kunci tetap autentik dan dihitung kuorum', async () => {
+    const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const creator = await prisma.user.create({
+      data: {
+        id: `itest-firstvote-creator-${suffix}`,
+        email: `itest-firstvote-creator-${suffix}@example.test`,
+        name: 'Pembuat Suara Pertama',
+        passwordHash: 'x',
+      },
+    });
+    const voter = await prisma.user.create({
+      data: {
+        id: `itest-firstvote-voter-${suffix}`,
+        email: `itest-firstvote-voter-${suffix}@example.test`,
+        name: 'Pemilih Suara Pertama',
+        passwordHash: 'x',
+      },
+    });
+    const pembina = await prisma.role.upsert({
+      where: { code: 'YAYASAN_PEMBINA' },
+      create: { code: 'YAYASAN_PEMBINA', name: 'Pembina', realm: 'YAYASAN' },
+      update: {},
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: creator.id, roleId: pembina.id, isActive: true, isPrimary: true },
+    });
+    await prisma.userRoleAssignment.create({
+      data: { userId: voter.id, roleId: pembina.id, isActive: true },
+    });
+    // Kunci NYATA, sudah disetujui, dan `createdAt` yang jelas di masa lalu —
+    // kunci yang sudah terbit beberapa saat sebelum orangnya memberi suara.
+    const voterKey = createKeyMaterial('first-vote-pass');
+    await prisma.userSigningKey.create({
+      data: {
+        id: `itest-firstvote-key-${suffix}`,
+        userId: voter.id,
+        algorithm: voterKey.algorithm,
+        publicKey: voterKey.publicKey,
+        encryptedPrivateKey: voterKey.encryptedPrivateKey,
+        kdfSalt: voterKey.kdfSalt,
+        kdfParams: voterKey.kdfParams as never,
+        iv: voterKey.iv,
+        authTag: voterKey.authTag,
+        approvedAt: new Date(),
+        expiresAt: new Date(Date.now() + 365 * 24 * 3600 * 1000),
+        createdAt: new Date(Date.now() - 60_000),
+      },
+    });
+    // PENTING: TIDAK ada riwayat kunci — inilah suara pertama kunci itu.
+    expect(await prisma.userSigningKeyHistory.count({ where: { userId: voter.id } })).toBe(0);
+
+    let decisionId: string | null = null;
+    try {
+      decisionId = await FoundationDecisionService.create(
+        { id: creator.id, roleCode: 'YAYASAN_PEMBINA' },
+        {
+          organType: 'PEMBINA',
+          // MEETING: keputusan tidak menutup diri, sehingga rekap dapat
+          // diperiksa pada baris yang tetap VOTING.
+          kind: 'MEETING',
+          subject: 'Uji suara pertama',
+          body: 'Naskah uji suara pertama sebuah kunci tanpa riwayat.',
+          decisionType: 'pengesahan-rencana-kerja',
+        }
+      );
+
+      const result = await FoundationDecisionService.castVote(
+        { id: voter.id, roleCode: 'YAYASAN_PEMBINA' },
+        decisionId,
+        { choice: 'APPROVE', passphrase: 'first-vote-pass' }
+      );
+      expect(result).toBeTruthy();
+
+      const saved = await prisma.foundationDecisionVote.findFirst({
+        where: { decisionId, userId: voter.id },
+        include: { signingKey: true },
+      });
+      expect(saved).not.toBeNull();
+      // Inti temuan: riwayat kunci menunjuk PENERBITAN kunci, bukan waktu
+      // suara. Waktu riwayat tidak boleh lebih lambat dari tanda tangannya.
+      expect(saved!.signingKey).not.toBeNull();
+      expect(saved!.signingKey!.issuedAt.getTime()).toBeLessThanOrEqual(saved!.signedAt.getTime());
+
+      // Bukti kedua: predikat keaslian yang SAMA dengan yang dipakai kuorum
+      // meloloskan baris ini. Sebelum perbaikan ia `false`, dan suara penentu
+      // karena itu tak pernah dihitung.
+      const row = await prisma.foundationDecision.findUniqueOrThrow({
+        where: { id: decisionId },
+      });
+      const members = await prisma.foundationDecisionMember.findMany({ where: { decisionId } });
+      const votes = await prisma.foundationDecisionVote.findMany({
+        where: { decisionId },
+        include: { signingKey: true },
+      });
+      const authentic = votes.filter((v) =>
+        isVoteAuthentic(
+          {
+            id: row.id,
+            organType: row.organType,
+            kind: row.kind,
+            decisionType: row.decisionType,
+            subject: row.subject,
+            body: row.body,
+            createdAt: row.createdAt,
+            quorumSnapshot: row.quorumSnapshot,
+            members,
+          } as never,
+          v as never
+        )
+      );
+      expect(authentic.map((v) => v.userId)).toContain(voter.id);
+
+      // Dan rekap kuorum benar-benar memuat suara itu.
+      const summary = row.voteSummary as { approve?: number } | null;
+      expect(summary?.approve).toBeGreaterThanOrEqual(1);
+    } finally {
+      if (decisionId) {
+        await prisma.foundationDecisionVote.deleteMany({ where: { decisionId } });
+        await prisma.foundationDecisionMember.deleteMany({ where: { decisionId } });
+        await prisma.auditLog.deleteMany({ where: { entityId: decisionId } });
+        await prisma.foundationDecision.delete({ where: { id: decisionId } });
+      }
+      await prisma.userSigningKeyHistory.deleteMany({ where: { userId: voter.id } });
+      await prisma.userSigningKey.deleteMany({ where: { userId: voter.id } });
+      await prisma.userRoleAssignment.deleteMany({
+        where: { userId: { in: [creator.id, voter.id] } },
+      });
+      await prisma.user.deleteMany({ where: { id: { in: [creator.id, voter.id] } } });
+    }
+  });
 });
 
 /** Ambil blok `DO $$ ... $$;` pertama dari SQL migrasi. */

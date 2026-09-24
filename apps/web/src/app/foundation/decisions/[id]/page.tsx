@@ -325,13 +325,16 @@ export default function FoundationDecisionDetailPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    // Hanya rapat yang dapat difinalisasi manual: sirkuler
-                    // ditutup otomatis saat pemungutan suara, sehingga server
-                    // mengirim `canFinalize=false` untuknya dan tombol ini
-                    // tidak pernah tampil padanya.
+                    // Rapat difinalisasi manual untuk MENUTUP pemungutan.
+                    // Sirkuler hanya masuk sini ketika penyegelannya TERTUNDA
+                    // (`sealPending`): hasilnya sudah terkunci otomatis, dan
+                    // tombol ini adalah satu-satunya jalan menyelesaikan
+                    // penyegelan — bukan mengubah hasil.
                     if (
                       window.confirm(
-                        "Tutup rapat/pemungutan sekarang? Hasil dihitung dari suara yang sudah masuk dan tidak dapat diubah lagi.",
+                        d.sealPending
+                          ? "Lanjutkan penyegelan e-seal keputusan ini? Hasil sudah terkunci dari suara yang masuk."
+                          : "Tutup rapat/pemungutan sekarang? Hasil dihitung dari suara yang sudah masuk dan tidak dapat diubah lagi.",
                       )
                     )
                       finalize.mutate();
