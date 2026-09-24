@@ -113,9 +113,13 @@ if shutil.which("node") and os.path.exists(local):
     fix = f"pnpm exec prettier --write {' '.join(shlex.quote(f) for f in files)}"
     cwd_run = top
 elif shutil.which("docker"):
-    run = ["docker", "run", "--rm", "-v", f"{top}:/w", "-w", "/w", "-v", "claude-prettier-npm:/root/.npm",
+    # The check mounts the repo read-only. The fix command runs as the calling
+    # user: as root it left root-owned files that `git worktree remove` could
+    # not delete (2026-09-24).
+    run = ["docker", "run", "--rm", "-v", f"{top}:/w:ro", "-w", "/w", "-v", "claude-prettier-npm:/root/.npm",
            "node:22-alpine", "npx", "-y", f"prettier@{version}", "--check", *files]
-    fix = (f"docker run --rm -v \"$PWD\":/w -w /w -v claude-prettier-npm:/root/.npm node:22-alpine "
+    fix = (f"docker run --rm --user \"$(id -u):$(id -g)\" -e npm_config_cache=/tmp/.npm "
+           f"-v \"$PWD\":/w -w /w node:22-alpine "
            f"npx -y prettier@{version} --write {' '.join(shlex.quote(f) for f in files)}")
     cwd_run = top
 else:
