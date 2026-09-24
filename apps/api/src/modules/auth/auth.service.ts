@@ -7,6 +7,7 @@ import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middl
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import { BoardSuspensionStatus, RoleCode, UnitType } from '@prisma/client';
+import { lockUserAssignmentRows } from '@/utils/role-assignment-lock';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
 import crypto from 'crypto';
@@ -161,6 +162,11 @@ export class AuthService {
     // Determine active role (primary or first role). Every account must have
     // a UserRoleAssignment (the seeds create them); accounts without one
     // cannot log in — assign a role via /users/:id/roles first.
+    //
+    // This snapshot decides whether 2FA is demanded and feeds the temporary
+    // token. It is *indicative* only: the authoritative claims for the session
+    // itself are re-derived under the row lock at issuance below, because a
+    // revocation or role change can land between the two.
     const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
     if (!primaryAssignment) {
       throw Errors.forbidden('No active role assignment found for this user');
@@ -218,9 +224,6 @@ export class AuthService {
       };
     }
 
-    // Generate tokens
-    const tokens = generateTokenPair(basePayload);
-
     // Issue the refresh token inside a transaction that re-asserts the account
     // state under a row lock, then writes the token in the same commit.
     //
@@ -233,6 +236,13 @@ export class AuthService {
     // visible to the locked re-read. The lock order (user row first) matches
     // `refreshToken`, the 2FA completion, and `BoardSuspensionService`, so the
     // paths are compatible rather than a new cycle.
+    //
+    // The session's claims are re-derived here, not from the pre-lock snapshot:
+    // the assignment rows are locked too, and the effective assignment is read
+    // through `tx`. A revocation or role change that lands between the password
+    // check and this commit must not produce a token carrying the old role — the
+    // very escalation the reviewer flagged. An account left with no qualifying
+    // assignment is refused (403) rather than issued a legacy-role token.
     const activeAcademicYearId = await prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "users"
@@ -243,6 +253,8 @@ export class AuthService {
         throw Errors.unauthorized('Account is deactivated');
       }
 
+      await lockUserAssignmentRows(tx, [user.id]);
+
       const blockingSuspension = await tx.boardMemberSuspension.findFirst({
         where: { userId: user.id, status: BoardSuspensionStatus.ACTIVE },
         select: { id: true },
@@ -250,6 +262,44 @@ export class AuthService {
       if (blockingSuspension) {
         throw Errors.unauthorized('Account is deactivated');
       }
+
+      // Re-read the effective assignment under the lock. Primary wins; else the
+      // first active, non-expired assignment on an active role.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId: user.id,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const effective = assignments.find((r) => r.isPrimary) || assignments[0];
+
+      if (!effective) {
+        // No qualifying assignment. The legacy `user.role` fallback is only for
+        // an account that never had an assignment at all; a revoked assignment
+        // must not fall back to the coarse legacy role, which is exactly the
+        // stale-privilege hole this guard closes.
+        if (user.userRoles.length > 0) {
+          throw Errors.forbidden('No active role assignment found');
+        }
+        throw Errors.forbidden('No active role assignment found for this user');
+      }
+
+      const freshRoleCode = effective.role.code;
+      const freshPermissions = (effective.role.permissions as string[]) || [];
+
+      const tokens = generateTokenPair({
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        roleId: effective.roleId || '',
+        roleCode: freshRoleCode,
+        unitId: tokenUnitId(effective.unitId, freshRoleCode, user.unitId),
+        permissions: freshPermissions,
+        role: deriveLegacyRole(freshRoleCode),
+      });
 
       await tx.refreshToken.create({
         data: {
@@ -263,7 +313,11 @@ export class AuthService {
         data: { lastLoginAt: new Date() },
       });
 
-      return this.getActiveAcademicYearId();
+      return {
+        tokens,
+        permissions: freshPermissions,
+        academicYearId: await this.getActiveAcademicYearId(),
+      };
     });
 
     // Return user without sensitive fields
@@ -272,10 +326,10 @@ export class AuthService {
     return {
       user: {
         ...userWithoutPassword,
-        academicYearId: activeAcademicYearId,
-        permissions,
+        academicYearId: activeAcademicYearId.academicYearId,
+        permissions: activeAcademicYearId.permissions,
       },
-      ...tokens,
+      ...activeAcademicYearId.tokens,
     };
   }
 
@@ -465,24 +519,21 @@ export class AuthService {
       throw Errors.unauthorized('Invalid token type');
     }
 
-    // Check if token exists in database
+    // Locate the token row cheaply, without its role graph.
+    //
+    // The role snapshot that becomes the new token's claims must be read under
+    // the same lock the writers take (see `utils/role-assignment-lock.ts`), not
+    // here: a revocation that commits between this read and token issuance would
+    // otherwise leave the replacement token stamped with a role the user no
+    // longer holds. This read only proves the presented token exists so a
+    // missing/expired token stays a 401 before the transaction opens.
     const storedToken = await prisma.refreshToken.findFirst({
       where: {
         token: refreshToken,
         userId: payload.sub,
         expiresAt: { gt: new Date() },
       },
-      include: {
-        user: {
-          include: {
-            userRoles: {
-              where: activeRoleWhere(),
-              include: { role: true },
-              orderBy: { isPrimary: 'desc' },
-            },
-          },
-        },
-      },
+      include: { user: { select: { id: true, email: true, role: true, unitId: true } } },
     });
 
     if (!storedToken) {
@@ -492,34 +543,11 @@ export class AuthService {
     // Re-validate the persistent state, not just `isActive`. A suspension
     // deletes the refresh tokens it can see, but a token issued after that
     // delete — or one whose row survived a partial failure — must still be
-    // refused here, which is the last gate before new tokens are written. A
-    // soft delete is checked for the same reason `authenticate` checks it:
-    // `deletedAt` leaves `isActive` untouched.
+    // refused here. A soft delete is checked for the same reason `authenticate`
+    // checks it: `deletedAt` leaves `isActive` untouched. (Re-checked under the
+    // lock below; this is the fast fail.)
     if (await this.isAccountUnusable(payload.sub)) {
       throw Errors.unauthorized('Account is deactivated');
-    }
-
-    // Get primary role — with legacy fallback for unmigrated users
-    const primaryAssignment =
-      storedToken.user.userRoles.find((r) => r.isPrimary) || storedToken.user.userRoles[0];
-
-    let refreshRoleCode: string;
-    let permissions: string[];
-    let refreshRoleId: string | undefined;
-    let refreshUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      refreshRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      refreshRoleId = primaryAssignment.roleId;
-      refreshUnitId = primaryAssignment.unitId;
-    } else if (storedToken.user.role) {
-      refreshRoleCode = storedToken.user.role;
-      permissions = [];
-      refreshRoleId = undefined;
-      refreshUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
     }
 
     // Rotate the token inside a transaction that re-asserts the account state
@@ -532,6 +560,11 @@ export class AuthService {
     // row for the check and the insert serialises the two: a suspension cannot
     // commit between them, and a suspension that already committed is visible
     // to the locked re-read. The loser gets a plain 401 rather than a token.
+    //
+    // The assignment rows are locked too, and the effective assignment is
+    // re-read through `tx` — so a revocation or a role change that lands between
+    // the fast-fail above and this commit cannot be baked into the new token.
+    // Lock order matches every other writer: user row, then assignments.
     return prisma.$transaction(async (tx) => {
       const claimed = await tx.$queryRaw<Array<{ id: string }>>`
         SELECT id FROM "users"
@@ -542,12 +575,48 @@ export class AuthService {
         throw Errors.unauthorized('Account is deactivated');
       }
 
+      await lockUserAssignmentRows(tx, [payload.sub]);
+
       const blockingSuspension = await tx.boardMemberSuspension.findFirst({
         where: { userId: payload.sub, status: BoardSuspensionStatus.ACTIVE },
         select: { id: true },
       });
       if (blockingSuspension) {
         throw Errors.unauthorized('Account is deactivated');
+      }
+
+      // Re-read the effective assignment under the lock. Only active, non-expired
+      // assignments on an active role count; the primary wins, else the first.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId: payload.sub,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
+
+      let refreshRoleCode: string;
+      let permissions: string[];
+      let refreshRoleId: string | undefined;
+      let refreshUnitId: string | null | undefined;
+
+      if (primaryAssignment) {
+        refreshRoleCode = primaryAssignment.role.code;
+        permissions = (primaryAssignment.role.permissions as string[]) || [];
+        refreshRoleId = primaryAssignment.roleId;
+        refreshUnitId = primaryAssignment.unitId;
+      } else if (storedToken.user.role) {
+        // Legacy fallback — only when the user holds no qualifying assignment
+        // at all, never as a substitute for one that was just revoked.
+        refreshRoleCode = storedToken.user.role;
+        permissions = [];
+        refreshRoleId = undefined;
+        refreshUnitId = undefined;
+      } else {
+        throw Errors.forbidden('No active role assignment found');
       }
 
       // Consume the presented token with a conditional delete, not `delete`.
@@ -987,6 +1056,8 @@ export class AuthService {
         throw Errors.unauthorized('Account is deactivated or not found');
       }
 
+      await lockUserAssignmentRows(tx, [userId]);
+
       const blockingSuspension = await tx.boardMemberSuspension.findFirst({
         where: {
           userId,
@@ -998,6 +1069,45 @@ export class AuthService {
         throw Errors.unauthorized('Account is deactivated or not found');
       }
 
+      // Resolve the effective assignment *before* consuming a recovery code.
+      //
+      // The code is a one-shot credential: consuming it for a login that is
+      // then refused locks the operator out permanently. So the assignment the
+      // session will carry is resolved first — under the lock, from `tx` — and
+      // a user left with no qualifying assignment is refused (403) with the
+      // code untouched. Only then is a recovery code compared-and-removed.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
+
+      let twoFaRoleCode: string;
+      let permissions: string[];
+      let twoFaRoleId: string | undefined;
+      let twoFaUnitId: string | null | undefined;
+
+      if (primaryAssignment) {
+        twoFaRoleCode = primaryAssignment.role.code;
+        permissions = (primaryAssignment.role.permissions as string[]) || [];
+        twoFaRoleId = primaryAssignment.roleId;
+        twoFaUnitId = primaryAssignment.unitId;
+      } else if (user.userRoles.length === 0 && user.role) {
+        // Legacy fallback only for an account that never held an assignment.
+        // A revoked assignment must not fall back to the coarse legacy role.
+        twoFaRoleCode = user.role;
+        permissions = [];
+        twoFaRoleId = undefined;
+        twoFaUnitId = undefined;
+      } else {
+        throw Errors.forbidden('No active role assignment found');
+      }
+
       // Recovery-code path. The row is locked above, so the matching UPDATE and
       // the rowcount together are an atomic compare-and-remove: the first
       // parallel request to reach this point removes the code and sees one row
@@ -1005,10 +1115,10 @@ export class AuthService {
       // re-evaluates `ANY` against the now-removed code and sees none. Only a
       // positive rowcount may authorise the login — an unknown code never does.
       //
-      // This runs *after* the account-state checks on purpose: a code is
-      // consumed only once the login is otherwise permitted, so a suspension or
-      // deactivation that lands before token issuance cannot destroy a code for
-      // a login that was refused.
+      // This runs *after* the account-state and assignment checks on purpose: a
+      // code is consumed only once the login is otherwise permitted, so a
+      // suspension, deactivation or revoked role cannot destroy a code for a
+      // login that was refused.
       let isValid = isTotpValid;
       if (!isValid) {
         const consumed = await tx.$executeRaw`
@@ -1024,28 +1134,6 @@ export class AuthService {
 
       if (!isValid) {
         throw Errors.unauthorized('Invalid OTP code');
-      }
-
-      // Generate tokens — with legacy fallback for unmigrated users
-      const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
-
-      let twoFaRoleCode: string;
-      let permissions: string[];
-      let twoFaRoleId: string | undefined;
-      let twoFaUnitId: string | null | undefined;
-
-      if (primaryAssignment) {
-        twoFaRoleCode = primaryAssignment.role.code;
-        permissions = (primaryAssignment.role.permissions as string[]) || [];
-        twoFaRoleId = primaryAssignment.roleId;
-        twoFaUnitId = primaryAssignment.unitId;
-      } else if (user.role) {
-        twoFaRoleCode = user.role;
-        permissions = [];
-        twoFaRoleId = undefined;
-        twoFaUnitId = undefined;
-      } else {
-        throw Errors.forbidden('No active role assignment found');
       }
 
       const tokens = generateTokenPair({

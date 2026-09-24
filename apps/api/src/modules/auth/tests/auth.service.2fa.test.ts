@@ -14,6 +14,7 @@ const { prismaMock, verifyOtp } = vi.hoisted(() => {
     user: { findUnique: vi.fn(), findFirst: vi.fn(), update: vi.fn() },
     boardMemberSuspension: { findFirst: vi.fn() },
     refreshToken: { create: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), findFirst: vi.fn() },
+    userRoleAssignment: { findMany: vi.fn() },
     academicYear: { findFirst: vi.fn() },
     $queryRaw: vi.fn(),
     $executeRaw: vi.fn(),
@@ -65,6 +66,16 @@ describe('AuthService.verifyTwoFactorLogin — suspension race', () => {
     prismaMock.user.findUnique.mockResolvedValue({ isActive: true, deletedAt: null });
     prismaMock.boardMemberSuspension.findFirst.mockResolvedValue(null);
     prismaMock.$queryRaw.mockResolvedValue([{ id: 'user-1' }]);
+    // The effective assignment is re-read under the lock; the happy path sees
+    // the primary Ketua assignment.
+    prismaMock.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        isPrimary: true,
+        roleId: 'role-1',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: [] },
+      },
+    ]);
     prismaMock.refreshToken.create.mockResolvedValue({});
     // The rotation consumes the presented token with a conditional delete
     // (`deleteMany`), whose rowcount identifies the race loser; the mock must
@@ -129,6 +140,14 @@ describe('AuthService.verifyTwoFactorLogin — recovery codes are consumed atomi
     prismaMock.boardMemberSuspension.findFirst.mockResolvedValue(null);
     prismaMock.$queryRaw.mockResolvedValue([{ id: 'user-1' }]);
     prismaMock.$executeRaw.mockResolvedValue(0);
+    prismaMock.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        isPrimary: true,
+        roleId: 'role-1',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: [] },
+      },
+    ]);
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.user.update.mockResolvedValue({});
     verifyOtp.mockResolvedValue({ valid: false });
@@ -230,6 +249,14 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
     prismaMock.boardMemberSuspension.findFirst.mockResolvedValue(null);
     prismaMock.$queryRaw.mockResolvedValue([{ id: 'user-1' }]);
     prismaMock.refreshToken.findFirst.mockResolvedValue(storedToken);
+    prismaMock.userRoleAssignment.findMany.mockResolvedValue([
+      {
+        isPrimary: true,
+        roleId: 'role-1',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: [] },
+      },
+    ]);
     prismaMock.refreshToken.create.mockResolvedValue({});
     prismaMock.refreshToken.delete.mockResolvedValue({});
     prismaMock.academicYear.findFirst.mockResolvedValue(null);

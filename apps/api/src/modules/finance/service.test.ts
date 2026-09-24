@@ -28,14 +28,11 @@ vi.mock('../../lib/prisma', () => {
     },
     student: {
       findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
     },
     scholarshipRecipient: {
       // No active scholarships by default — invoice amount stays as-is.
       findMany: vi.fn(async () => []),
-    },
-    student: {
-      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
-      findMany: vi.fn(),
     },
     $transaction: vi.fn(),
   };

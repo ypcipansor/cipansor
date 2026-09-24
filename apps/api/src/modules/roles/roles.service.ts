@@ -443,6 +443,11 @@ export class RolesService {
           userId,
           isActive: true,
           OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          // The role definition itself must still be active, matching the
+          // login / 2FA / refresh reads (`AuthService`). An inactive role is
+          // not a grantable one, and minting a session for it here would make
+          // switch the odd writer out.
+          role: { isActive: true },
         },
         include: { role: true, unit: true, user: true },
       });

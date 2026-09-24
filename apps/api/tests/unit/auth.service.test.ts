@@ -47,6 +47,10 @@ const {
       },
       userRoleAssignment: {
         create: vi.fn(),
+        // The session-issuing paths re-read the effective assignment under the
+        // assignment-row lock, so every issuance test needs this query.
+        findMany: vi.fn(),
+        findFirst: vi.fn(),
       },
       boardMemberSuspension: {
         findFirst: vi.fn(),
@@ -168,6 +172,17 @@ describe('AuthService', () => {
       deletedAt: null,
     });
     (mockPrisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    // Session issuance re-reads the effective assignment under the lock. A
+    // generic active assignment satisfies the happy paths; tests that exercise
+    // a revoked role override it with `[]`.
+    (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValue([
+      {
+        isPrimary: true,
+        roleId: 'role-id-1',
+        unitId: 'unit-1',
+        role: { code: 'STUDENT', permissions: [] },
+      },
+    ]);
   });
 
   describe('login', () => {
@@ -469,11 +484,78 @@ describe('AuthService', () => {
         },
       });
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      // The decommission purge removed the assignment as well; nothing qualifies.
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
         'No active role assignment found'
       );
       // The token is consumed, but no new one is minted.
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Reviewer finding 1 (CWE-863): a session must be minted from the assignment
+   * that exists at the commit point, not from the snapshot read before the
+   * transaction opened. A revocation landing between the two used to leave the
+   * new access + refresh pair stamped with a role the user no longer held.
+   */
+  describe('session issuance re-derives the role under the lock', () => {
+    const validLoginInput = { email: 'test@example.com', password: 'password123' };
+    const mockUser = {
+      id: 'user-1',
+      email: 'test@example.com',
+      name: 'Test User',
+      passwordHash: 'hashed-password',
+      role: UserRole.TEACHER,
+      unitId: 'unit-1',
+      isActive: true,
+      isTwoFactorEnabled: false,
+      unit: { id: 'unit-1', name: 'Test Unit' },
+      userRoles: [
+        {
+          id: 'role-1',
+          roleId: 'role-id-1',
+          isPrimary: true,
+          isActive: true,
+          role: { id: 'role-id-1', name: 'Guru', code: 'SDIT_GURU' },
+          unit: { id: 'unit-1', name: 'Test Unit' },
+        },
+      ],
+    };
+
+    it('login refuses and mints nothing when the assignment is gone by commit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      // The pre-lock snapshot saw the SUPER_ADMIN assignment; by the time the
+      // locked re-read runs it has been revoked. No token may carry it.
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('refresh refuses and mints nothing when the assignment is gone by commit', async () => {
+      mockVerifyToken.mockReturnValue({ sub: 'user-1', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-1',
+        token: 'valid-refresh-token',
+        userId: 'user-1',
+        expiresAt: new Date(Date.now() + 86400000),
+        // Legacy role null so the fallback cannot mask the missing assignment.
+        user: { id: 'user-1', email: 'test@example.com', role: null, unitId: 'unit-1' },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+
+      await expect(authService.refreshToken('valid-refresh-token')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
     });
   });
