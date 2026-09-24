@@ -36,7 +36,10 @@ monorepo**:
    Prisma) → `schema.ts` (Zod). Routes never touch Prisma directly; controllers
    never embed business logic.
 5. **Prove it locally before pushing.** Run the gate below; do not rely on CI to
-   discover failures. CI is a backstop only.
+   discover failures. CI is a backstop only. The E2E suite skips (and reports
+   success) on a **draft** PR and on a PR touching only `*.md`, `docs/` or
+   `.claude/`; marking a draft ready runs it. Staging deploys only after CI
+   **and** E2E pass on `main`.
 6. **Develop on the feature branch, commit with clear messages, never push to
    `main`.**
 7. **Ship tests with the code — no behavior change merges untested.** Every
