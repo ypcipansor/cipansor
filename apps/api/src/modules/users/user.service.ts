@@ -3,6 +3,8 @@ import { hashPassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
+import { invalidateUserSuspensionCache, markUserSuspended } from '@/utils/user-suspension';
+import { activationState, deactivationState, softDeleteState } from '@/utils/account-state';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
 
 export class UserService {
@@ -273,7 +275,22 @@ export class UserService {
       }
     }
 
-    // Update user
+    // The suspension check caches its answer for a TTL, so flipping `isActive`
+    // off here without touching the cache left the old access token
+    // authenticating for up to a minute. Prime the cache on deactivation and
+    // drop it on any other change (a reactivation must not keep a cached `1`).
+    //
+    // The write also takes ownership of the account state (see
+    // `utils/account-state.ts`): a board suspension that lifts later must be
+    // able to tell this admin deactivation apart from its own, and must leave
+    // it in force.
+    const stateChange =
+      input.isActive === false
+        ? { ...deactivationState() }
+        : input.isActive === true
+          ? { ...activationState() }
+          : {};
+
     const updated = await prisma.user.update({
       where: { id },
       data: {
@@ -281,10 +298,16 @@ export class UserService {
         email: input.email,
         role: input.role as UserRole | undefined,
         unitId: input.unitId,
-        isActive: input.isActive,
+        ...stateChange,
       },
       include: { unit: true },
     });
+
+    if (input.isActive === false) {
+      await markUserSuspended(id, updated.accountStateVersion);
+    } else if (input.isActive === true) {
+      await invalidateUserSuspensionCache(id, updated.accountStateVersion);
+    }
 
     const { passwordHash, ...userWithoutPassword } = updated;
     return userWithoutPassword;
@@ -302,16 +325,24 @@ export class UserService {
       throw Errors.notFound('User');
     }
 
-    // Soft delete
-    await prisma.user.update({
+    // Soft delete. The state writer is stamped too, so a board suspension that
+    // later lifts cannot mistake this for its own deactivation (the `deletedAt`
+    // check already blocks reactivation; the token keeps the ledger complete).
+    const softDeleted = await prisma.user.update({
       where: { id },
-      data: { deletedAt: new Date() },
+      data: softDeleteState(),
     });
 
     // Also delete refresh tokens
     await prisma.refreshToken.deleteMany({
       where: { userId: id },
     });
+
+    // A soft-deleted account is suspended for authentication purposes, and that
+    // fact is cached — without this the deleted user's token kept working until
+    // the cached "not suspended" expired. The version comes from the write above,
+    // so a delayed prime can never outrank a later restore.
+    await markUserSuspended(id, softDeleted.accountStateVersion);
 
     return { message: 'User deleted successfully' };
   }

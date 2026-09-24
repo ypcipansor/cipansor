@@ -32,6 +32,7 @@ vi.mock('../../lib/prisma', () => {
     },
     student: {
       findMany: vi.fn(async () => []),
+      findUnique: vi.fn(async () => ({ unitId: 'unit-1' })),
     },
     scholarshipRecipient: {
       // No active scholarships by default — invoice amount stays as-is.
@@ -128,6 +129,12 @@ describe('Finance Service Unit Tests', () => {
       };
 
       vi.mocked(prisma.invoice.findFirst).mockResolvedValue(null);
+      // The invoice's unit of record comes from the payment type that raised
+      // it; there is no fallback to the pupil's current unit.
+      vi.mocked(prisma.paymentType.findUnique).mockResolvedValue({
+        id: 'pt-1',
+        unitId: 'unit-1',
+      } as any);
       vi.mocked(prisma.invoice.create).mockResolvedValue(mockInvoice as any);
       vi.mocked(notificationService.createNotification).mockResolvedValue({} as any);
 
@@ -135,6 +142,13 @@ describe('Finance Service Unit Tests', () => {
 
       expect(prisma.invoice.findFirst).toHaveBeenCalled();
       expect(prisma.invoice.create).toHaveBeenCalled();
+      // The issuing unit is frozen onto the invoice so a later transfer cannot
+      // relocate its arrears to the pupil's new unit.
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ unitId: 'unit-1' }),
+        })
+      );
       expect(notificationService.createNotification).toHaveBeenCalled();
       expect(result).toEqual(mockInvoice);
     });
@@ -169,6 +183,10 @@ describe('Finance Service Unit Tests', () => {
           },
         },
       ] as any);
+      vi.mocked(prisma.paymentType.findUnique).mockResolvedValue({
+        id: 'pt-1',
+        unitId: 'unit-1',
+      } as any);
       vi.mocked(prisma.invoice.create).mockResolvedValue({
         id: 'inv-2',
         student: { user: { id: 'u1' }, unit: { id: 'unit-1' } },
@@ -179,6 +197,40 @@ describe('Finance Service Unit Tests', () => {
 
       const createArgs = vi.mocked(prisma.invoice.create).mock.calls[0][0];
       expect(Number(createArgs.data.amount)).toBe(250000);
+    });
+  });
+
+  describe('generateBulkSppInvoices — unit of record', () => {
+    it("freezes the invoice unit on the payment type's unit, not the student's", async () => {
+      // The bulk SPP generator already loads the payment type; the invoice must
+      // carry its unit so a pupil who later transfers does not drag the arrears
+      // from SD IT's books into SMP IT's.
+      vi.mocked(prisma.paymentType.findUnique).mockResolvedValue({
+        id: 'pt-spp-sd',
+        name: 'SPP SD IT',
+        amount: new Prisma.Decimal(350000),
+        unitId: 'unit-sd',
+      } as any);
+      vi.mocked(prisma.student.findMany).mockResolvedValue([
+        { id: 'student-1', unitId: 'unit-smp' } as any,
+      ]);
+      vi.mocked(prisma.invoice.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.invoice.create).mockResolvedValue({ id: 'inv-1' } as any);
+
+      await financeService.generateBulkSppInvoices({
+        paymentTypeId: 'pt-spp-sd',
+        year: 2026,
+        month: 0,
+      });
+
+      expect(prisma.invoice.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            studentId: 'student-1',
+            unitId: 'unit-sd',
+          }),
+        })
+      );
     });
   });
 });

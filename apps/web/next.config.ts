@@ -142,6 +142,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        // Defence in depth for the public whistleblowing surface. The tracking
+        // token is no longer placed in the URL, but these pages can still carry
+        // a non-secret ticket code in a query string, and `strict-origin-when-
+        // cross-origin` would forward the full URL on same-origin navigations.
+        // `no-referrer` stops the address from ever leaving the page.
+        source: "/public/wbs/:path*",
+        headers: [
+          {
+            key: "Referrer-Policy",
+            value: "no-referrer",
+          },
+        ],
+      },
     ];
   },
 

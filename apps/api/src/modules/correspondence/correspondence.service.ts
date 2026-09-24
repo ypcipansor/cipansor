@@ -206,14 +206,21 @@ export const CorrespondenceService = {
 
   /**
    * Validate that all supplied user IDs exist, are active, have active internal roles, and fall within permitted unit scope.
+   *
+   * `db` lets a caller run the very same rules on a transaction handle so a
+   * decision read is made against the state that will hold at commit, not a
+   * snapshot an earlier round trip can invalidate. It defaults to the live
+   * client for the existing pre-flight callers, which are still correct as a
+   * fast fail before work begins (see `createGeneratedDraftLetter` for why a
+   * pre-flight read alone is not enough).
    */
-  async validateParticipantEligibility(userIds: string[], actor?: LetterActor) {
+  async validateParticipantEligibility(userIds: string[], actor?: LetterActor, db: Db = prisma) {
     if (!userIds || userIds.length === 0) return;
 
     const uniqueIds = Array.from(new Set(userIds));
     const now = new Date();
 
-    const users = await prisma.user.findMany({
+    const users = await db.user.findMany({
       where: {
         id: { in: uniqueIds },
         isActive: true,
@@ -561,6 +568,189 @@ export const CorrespondenceService = {
     }
 
     return result.letter;
+  },
+
+  /**
+   * Create a DRAFT outgoing letter on behalf of a module that generates
+   * correspondence but does not run E-Office.
+   *
+   * Why this exists: the Pengawas oversight report is the Pengawas's own output,
+   * filed on the foundation unit for the Pembina to verify and sign. It must
+   * enter E-Office as a normal draft, but `createLetter` intentionally refuses
+   * the oversight-only roles (`YAYASAN_PENGAWAS`, `YAYASAN_PEMBINA`) because they
+   * do not hold correspondence authority — widening that allowlist would hand
+   * those roles the whole letter-creation surface, which is not what the boundary
+   * is for. So the minimal, sanctioned write is extracted here, where the letter
+   * invariants live, and the caller supplies only content plus a recipient.
+   *
+   * It reads and writes only what a DRAFT needs, so it cannot skip a lifecycle
+   * step the draft does not yet have: the nature is checked against the type
+   * (`assertNatureAllowed`), recipients are validated for existence, activity and
+   * an effective internal role (a draft addressed to a role the letter-access
+   * rules exclude would be unreadable to its own recipient), no letter number is
+   * allocated (numbers are reserved for letters that leave DRAFT), and the
+   * `CREATED` flow event is written in the same transaction as the letter so the
+   * history begins where the letter does. Reviewers, notices and dispatch are
+   * deliberately absent — the Pembina drives those through the ordinary flow.
+   */
+  async createGeneratedDraftLetter(
+    input: {
+      unitId: string;
+      subject: string;
+      content: string;
+      recipientUserIds: string[];
+      type?: DbLetterType;
+      nature?: DbLetterNature;
+      urgency?: 'NORMAL' | 'IMMEDIATE' | 'URGENT';
+      classificationId?: string | null;
+      note?: string | null;
+      /**
+       * Effective roles every recipient must still hold for the draft to be
+       * filed. Omit to accept any internal role (the default for a module that
+       * simply names participants); supply it when the *purpose* of the letter
+       * requires a specific office — e.g. a periodic oversight report must reach
+       * the Pembina (or a Super Admin), not merely any account that was once
+       * something. Re-checked under the recipient row locks below, so a
+       * revocation that commits mid-flight cannot leave the draft addressed to
+       * someone who no longer holds the office it targets.
+       */
+      requiredRecipientRoleCodes?: string[];
+    },
+    userId: string
+  ) {
+    const type = input.type ?? DbLetterType.SURAT_DINAS;
+    const nature = input.nature ?? DbLetterNature.PUBLIC;
+    const urgency = input.urgency ?? 'NORMAL';
+
+    if (!input.unitId) {
+      throw Errors.badRequest('Unit ID wajib diisi');
+    }
+    if (!input.recipientUserIds || input.recipientUserIds.length === 0) {
+      throw Errors.badRequest('Surat harus memiliki minimal satu penerima');
+    }
+
+    // The jenis/sifat rule is a domain invariant, not a form rule — enforce it
+    // before the row exists, exactly as `createLetter` does.
+    assertNatureAllowed(type as never, nature as never);
+
+    // A generated letter is authored by the module, which is foundation-wide;
+    // eligibility is therefore checked without a unit-narrowing actor, but the
+    // existence / active / effective-internal-role rules still apply.
+    //
+    // This pre-flight read is only a fast fail. The decision that matters is
+    // re-made inside the transaction below, on the recipient rows locked
+    // `FOR UPDATE` — otherwise an account deactivation or role revocation that
+    // commits between this read and the insert produces a draft addressed to a
+    // recipient who is no longer eligible, and the Pembina who is supposed to
+    // review it may be the very person who was revoked.
+    await this.validateParticipantEligibility(input.recipientUserIds);
+
+    const uniqueRecipients = Array.from(new Set(input.recipientUserIds));
+
+    return prisma.$transaction(async (tx) => {
+      // Lock order: users (uuid order), then their role assignments, then the
+      // letters row is created. Every account/role writer that must serialise
+      // with this one — the Plh delegation in `BoardSuspensionService`, a
+      // revocation in `wbsService.forwardReport`, an admin deactivation in
+      // `userService.update` — takes the user row first and the assignment rows
+      // next, so this order is compatible rather than a new cycle. The
+      // assignment rows must be locked explicitly: a revocation updates those
+      // rows, which are different rows from `users`, so locking `users` alone
+      // does not make the eligibility read below wait for it. The `ORDER BY id`
+      // keeps the rows' lock order deterministic so two generated drafts with
+      // overlapping recipients cannot deadlock.
+      await tx.$queryRaw`
+        SELECT id FROM "users"
+        WHERE id IN (${Prisma.join(uniqueRecipients)})
+        ORDER BY id
+        FOR UPDATE
+      `;
+      await tx.$queryRaw`
+        SELECT id FROM "user_role_assignments"
+        WHERE user_id IN (${Prisma.join(uniqueRecipients)})
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      // Same predicate as every other caller, now evaluated against the locked
+      // rows: a recipient who is inactive, soft-deleted, or no longer holds an
+      // effective (active, unexpired, non-excluded) role fails the whole
+      // transaction and no letter is written.
+      await this.validateParticipantEligibility(uniqueRecipients, undefined, tx);
+
+      // An office-specific draft re-asserts the office on the locked rows.
+      //
+      // `validateParticipantEligibility` only proves a recipient holds *some*
+      // internal role. A letter whose whole purpose is to reach a particular
+      // office — the Pembina who must verify it — needs that office to still be
+      // held at the commit point, or it is filed addressed to an account that
+      // stopped being the Pembina a moment ago. Checked here, not at the
+      // pre-flight read, so a revocation that lands between the read and the
+      // insert is seen.
+      if (input.requiredRecipientRoleCodes && input.requiredRecipientRoleCodes.length > 0) {
+        const qualified = await tx.userRoleAssignment.findMany({
+          where: {
+            userId: { in: uniqueRecipients },
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: {
+              isActive: true,
+              code: { in: input.requiredRecipientRoleCodes as unknown as RoleCode[] },
+            },
+          },
+          select: { userId: true },
+        });
+        const qualifiedIds = new Set(qualified.map((q) => q.userId));
+        const unqualified = uniqueRecipients.filter((id) => !qualifiedIds.has(id));
+        if (unqualified.length > 0) {
+          throw Errors.badRequest(
+            `Penerima surat tidak lagi menjabat peran yang disyaratkan (${input.requiredRecipientRoleCodes.join(
+              ', '
+            )}). Periksa kembali penugasan penerima sebelum membuat surat.`
+          );
+        }
+      }
+
+      const letter = await tx.letter.create({
+        data: {
+          unitId: input.unitId,
+          direction: 'OUTGOING',
+          type,
+          nature,
+          urgency,
+          subject: input.subject,
+          content: input.content,
+          date: new Date(),
+          // A generated report starts where every letter starts. No number is
+          // allocated while it is a draft, no dispatch is recorded.
+          status: DbLetterStatus.DRAFT,
+          authoringTrack: 'GENERATED',
+          createdById: userId,
+          classificationId: input.classificationId ?? null,
+          recipients: {
+            create: uniqueRecipients.map((recipientId) => ({
+              userId: recipientId,
+              unitId: input.unitId,
+              isCC: false,
+            })),
+          },
+        },
+        include: {
+          createdBy: { select: { id: true, name: true, role: true } },
+          recipients: { select: { id: true, userId: true } },
+        },
+      });
+
+      await recordFlow(tx, {
+        letterId: letter.id,
+        actorId: userId,
+        action: LetterFlowAction.CREATED,
+        toStatus: DbLetterStatus.DRAFT,
+        note: input.note ?? letter.subject,
+      });
+
+      return letter;
+    });
   },
 
   /**

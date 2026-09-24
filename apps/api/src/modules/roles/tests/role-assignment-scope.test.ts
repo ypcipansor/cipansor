@@ -8,9 +8,10 @@ import type { Request, Response, NextFunction } from 'express';
 
 vi.mock('@/lib/jwt', () => ({ verifyToken: vi.fn() }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    user: { findUnique: vi.fn() },
+vi.mock('@/lib/realtime', () => ({ disconnectUserSockets: vi.fn() }));
+vi.mock('@/lib/prisma', () => {
+  const prisma: any = {
+    user: { findUnique: vi.fn(), update: vi.fn() },
     role: { findUnique: vi.fn() },
     userRoleAssignment: {
       findFirst: vi.fn(),
@@ -18,12 +19,20 @@ vi.mock('@/lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    boardSuspensionPlhAssignment: { findFirst: vi.fn() },
     studentParent: { findFirst: vi.fn() },
-  },
-}));
+    // The writers wrap their read-then-write in the shared lock protocol; the
+    // transaction runner invokes the callback with the same mock as `tx`.
+    $transaction: vi.fn(async (cb: (tx: any) => unknown) => cb(prisma)),
+    $queryRaw: vi.fn().mockResolvedValue([]),
+  };
+  return { prisma };
+});
 
 import { prisma } from '@/lib/prisma';
 import { RolesService, type RoleActor } from '../roles.service';
@@ -52,6 +61,7 @@ const m = prisma as unknown as {
   user: Record<string, ReturnType<typeof vi.fn>>;
   role: Record<string, ReturnType<typeof vi.fn>>;
   userRoleAssignment: Record<string, ReturnType<typeof vi.fn>>;
+  boardSuspensionPlhAssignment: Record<string, ReturnType<typeof vi.fn>>;
 };
 
 beforeEach(() => {
@@ -66,8 +76,11 @@ beforeEach(() => {
   m.userRoleAssignment.findMany.mockResolvedValue([]);
   m.userRoleAssignment.create.mockImplementation(async ({ data }: any) => data);
   m.userRoleAssignment.delete.mockResolvedValue({});
+  m.userRoleAssignment.deleteMany.mockResolvedValue({ count: 1 });
+  m.userRoleAssignment.count.mockResolvedValue(1);
   m.userRoleAssignment.update.mockResolvedValue({});
   m.userRoleAssignment.updateMany.mockResolvedValue({ count: 0 });
+  m.boardSuspensionPlhAssignment.findFirst.mockResolvedValue(null);
 });
 
 const service = new RolesService();
@@ -150,13 +163,22 @@ describe('removing an assignment', () => {
     await expect(service.removeRoleAssignment(smpAdmin, 'a-1')).rejects.toMatchObject({
       statusCode: 403,
     });
-    expect(m.userRoleAssignment.delete).not.toHaveBeenCalled();
+    expect(m.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
   });
 
   it('removes their own school’s role in their unit', async () => {
     m.userRoleAssignment.findUnique.mockResolvedValue(assignment('SMPIT_GURU', 'unit-smp'));
     await service.removeRoleAssignment(smpAdmin, 'a-1');
-    expect(m.userRoleAssignment.delete).toHaveBeenCalledWith({ where: { id: 'a-1' } });
+    expect(m.userRoleAssignment.deleteMany).toHaveBeenCalledWith({ where: { id: 'a-1' } });
+  });
+
+  it('refuses to revoke a Plh assignment an active suspension depends on', async () => {
+    m.userRoleAssignment.findUnique.mockResolvedValue(assignment('SMPIT_GURU', 'unit-smp'));
+    m.boardSuspensionPlhAssignment.findFirst.mockResolvedValue({ id: 'dep-1' });
+    await expect(service.removeRoleAssignment(smpAdmin, 'a-1')).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    expect(m.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
   });
 });
 

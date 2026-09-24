@@ -8,11 +8,15 @@ import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
   getDashboardForRole,
-  getPrimaryRoleCode,
-  getEffectiveRole,
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
+import {
+  ROUTING_COOKIE,
+  resolveRoutingCookieSecret,
+  verifyRoutingCookie,
+  type RoutingCookiePayload,
+} from "@cipansor/shared";
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
@@ -66,48 +70,81 @@ const publicPrefixes = [
    */
   "/verifikasi",
   /**
-   * Where a printed student ID card's QR points. Kept in step with
-   * `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the two lists must describe
-   * the same set; a sync test enforces it). It is a `/public/*` page so the
-   * matcher below exempts it from middleware anyway, but listing it here makes
-   * the read-without-a-session intent explicit and keeps the two canonical
-   * lists in agreement (Flag 11).
+   * Every anonymous page served under the `/public/` URL segment.
+   *
+   * These were previously public only by accident: the matcher below excluded
+   * the `public` segment, so middleware never ran for them and they bypassed
+   * both the session wall and the host split. That broke the canonical host for
+   * `/public/wbs` (served on both hosts) and left the rest unclassified by
+   * `hostSplitActionFor`, which reads `PUBLIC_PATH_PREFIXES` in
+   * lib/host-split.ts — a page not on that list is answered 404 on the apex.
+   * The matcher now sends page URLs here, so the classification is explicit:
+   * `/public/spmb`, `/public/spmb/track`, `/public/verify-card`,
+   * `/public/verify-letter`, `/public/verify-sanad`, `/public/wbs` and
+   * `/public/wbs/track` are all read-without-a-session and all belong to the
+   * public host. Kept in step with `PUBLIC_PATH_PREFIXES` (sync test enforced).
    */
-  "/public/verify-card",
+  "/public",
 ];
 
-// Helper function to get auth state from cookie
-function getAuthState(request: NextRequest): {
+/**
+ * The routing-cookie signing key, resolved once per middleware instance.
+ *
+ * Next inlines `process.env.X` references for the Edge/runtime boundary, so the
+ * three names are read literally. Falling back to `JWT_SECRET` keeps the key in
+ * one place; if neither is configured the resolver throws, and `getAuthState`
+ * catches that and fails closed rather than routing on an unsigned cookie.
+ */
+function routingCookieSecret(): string {
+  return resolveRoutingCookieSecret({
+    ROUTING_COOKIE_SECRET: process.env.ROUTING_COOKIE_SECRET,
+    JWT_SECRET: process.env.JWT_SECRET,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+}
+
+/**
+ * Resolve auth state from cookies.
+ *
+ * The session is server-issued: the API sets `HttpOnly` cookies and the
+ * `cipansor_routing` hint the middleware routes on. **`HttpOnly` does not make
+ * the routing hint trustworthy** — the browser sends back whatever value a
+ * same-site request could set, so the hint is only accepted when its MAC
+ * verifies (`verifyRoutingCookie`). A missing, forged, malformed or expired
+ * cookie yields no route authority, and the legacy token cookies attest only
+ * that *a* session exists, never a role: protected routes then fail closed.
+ */
+async function getAuthState(request: NextRequest): Promise<{
   isAuthenticated: boolean;
   role?: LegacyRole;
   roleCode?: string;
-} {
-  // Check for auth storage in cookies (set by zustand persist)
-  const authStorage = request.cookies.get("auth-storage")?.value;
-
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // The primary assignment's RoleCode decides, as on the API; the legacy
-        // `user.role` column is only the fallback (see getEffectiveRole).
-        const role = getEffectiveRole(parsed.state.user);
-        if (role) {
-          return {
-            isAuthenticated: true,
-            role,
-            roleCode: getPrimaryRoleCode(parsed.state.user),
-          };
-        }
-      }
-    } catch {
-      // Parse error - not authenticated
-    }
+}> {
+  // Preferred and authoritative for routing: the server-signed routing cookie.
+  // A value that does not carry a valid MAC is treated exactly like no cookie.
+  let routing: RoutingCookiePayload | null = null;
+  try {
+    routing = await verifyRoutingCookie(
+      request.cookies.get(ROUTING_COOKIE)?.value,
+      routingCookieSecret(),
+    );
+  } catch {
+    routing = null;
+  }
+  if (routing) {
+    return {
+      isAuthenticated: true,
+      role: routing.role as LegacyRole,
+      roleCode: routing.roleCode,
+    };
   }
 
-  // Fallback: check for accessToken
+  // Transitional: a session opened before the migration, holding the old
+  // client-readable access cookie, or a native Bearer header. Presence attests
+  // a session but supplies no role, so protected routes fail closed until the
+  // next login sets the routing cookie.
   const token =
     request.cookies.get("accessToken")?.value ||
+    request.cookies.get("access_token")?.value ||
     request.headers.get("authorization")?.replace("Bearer ", "");
 
   if (token) {
@@ -117,7 +154,7 @@ function getAuthState(request: NextRequest): {
   return { isAuthenticated: false };
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Host split, before anything else.
@@ -161,7 +198,7 @@ export function middleware(request: NextRequest) {
     );
 
   // Get authentication state
-  const { isAuthenticated, role, roleCode } = getAuthState(request);
+  const { isAuthenticated, role, roleCode } = await getAuthState(request);
 
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {
@@ -170,8 +207,11 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Redirect authenticated users from login to their role-specific dashboard
-  if (pathname === "/login" && isAuthenticated) {
+  // Redirect authenticated users from login to their role-specific dashboard.
+  // Only when the role is actually known: sending an authenticated-but-roleless
+  // visitor to a dashboard would just bounce them to /unauthorized, and the
+  // login page is the one place they can re-establish a resolvable session.
+  if (pathname === "/login" && isAuthenticated && role) {
     const dashboard = getDashboardForRole(role, roleCode);
     return NextResponse.redirect(new URL(dashboard, request.url));
   }
@@ -179,6 +219,11 @@ export function middleware(request: NextRequest) {
   // Redirect from root to appropriate page
   if (pathname === "/") {
     if (isAuthenticated) {
+      if (!role) {
+        // Same fail-closed rule as below: with no resolvable role we cannot
+        // pick a landing page, so send them to the login form rather than guess.
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
       const dashboard = getDashboardForRole(role, roleCode);
       return NextResponse.redirect(new URL(dashboard, request.url));
     }
@@ -195,7 +240,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Role-based access control for authenticated users
+  // Role-based access control for authenticated users.
+  //
+  // An authenticated session whose role cannot be resolved is NOT allowed
+  // through. The old `role &&` guard skipped the check entirely in that case,
+  // so any holder of an `accessToken` (whose `auth-storage` cookie was missing
+  // or trimmed) could open every protected route. "Authenticated but role
+  // unknown" is exactly the state we can say least about, so it fails closed:
+  // we cannot pick a dashboard to land them on, and guessing is how the hole
+  // opened the first time. Public routes still pass.
+  if (isAuthenticated && !role && !isPublicRoute) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (isAuthenticated && role && !isPublicRoute) {
     if (!canAccessRoute(role, pathname)) {
       // Redirect to their proper dashboard if trying to access unauthorized route
@@ -215,8 +272,23 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * - public files (images, etc.)
+     * - any path with a file extension (static assets in `public/`, etc.)
+     *
+     * The page URL segment `/public/...` is deliberately NOT excluded. It used
+     * to be — the old matcher ended in `|public)` — which meant middleware never
+     * ran for `/public/wbs`, and `hostSplitActionFor` could not redirect it from
+     * the portal to the canonical public host. The whistleblowing page answered
+     * on both hosts: the portal served an anonymous page the split says belongs
+     * to the apex, and the login wall the split exists to enforce was bypassed
+     * on that one prefix.
+     *
+     * "public" the URL segment and `public/` the static-asset directory are
+     * different things that happen to share a name. The `.*\\..*` clause already
+     * excludes every real static file (they all carry an extension), so nothing
+     * under the static directory is matched; only the extensionless page route
+     * `/public/wbs` (and its subroutes) now reaches middleware, where the host
+     * split and the session wall (as a public route) both apply.
      */
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*|public).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };

@@ -87,6 +87,15 @@ router.post('/login', requireTurnstile('login'), validate(loginSchema), controll
 router.post('/refresh', validate(refreshTokenSchema), controller.refreshToken);
 
 /**
+ * Clear the session cookies from the browser, unconditionally.
+ *
+ * Unauthenticated by design — see `controller.clearSession`. A session whose
+ * credentials are already invalid is exactly when this is needed, so requiring
+ * a valid token would defeat it.
+ */
+router.post('/session/clear', controller.clearSession);
+
+/**
  * Redeeming a reset link is unauthenticated by necessity — someone who cannot
  * sign in is exactly who arrives holding one.
  *

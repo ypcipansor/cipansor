@@ -11,7 +11,17 @@ import { prisma } from '@/lib/prisma';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import Redis from 'ioredis';
 import type { DashboardMetrics, DashboardAlert } from '@cipansor/shared';
-import { STUDENT_STATUS } from '@cipansor/shared';
+import { STUDENT_STATUS, parseCookieHeader, ACCESS_TOKEN_COOKIE } from '@cipansor/shared';
+import {
+  SocketIdentity,
+  allowedUnitIds,
+  canJoinUnitRoom,
+  canJoinRoleRoom,
+  canSubscribeGlobalDashboard,
+  effectiveRoleCode,
+  isFoundationWideRole,
+  resolveDashboardUnit,
+} from '@/lib/realtime-scope';
 
 // Event types
 export interface LiveEvent {
@@ -24,6 +34,7 @@ export interface AttendanceEvent {
   studentId: string;
   studentName: string;
   status: 'present' | 'absent' | 'late' | 'excused';
+  unitId?: string;
   unitName: string;
   className: string;
   time: string;
@@ -34,6 +45,7 @@ export interface PaymentEvent {
   studentName: string;
   amount: number;
   type: string;
+  unitId?: string;
   unitName: string;
   time: string;
 }
@@ -43,6 +55,7 @@ export interface TahfidzEvent {
   studentName: string;
   surah: string;
   ayahCount: number;
+  unitId?: string;
   unitName: string;
   time: string;
 }
@@ -50,6 +63,17 @@ export interface TahfidzEvent {
 let io: SocketIOServer | null = null;
 let redisPublisher: Redis | null = null;
 let redisSubscriber: Redis | null = null;
+
+/**
+ * Redis channel carrying "disconnect this user's sockets" to every replica.
+ *
+ * A Socket.IO Redis *adapter* (`@socket.io/redis-adapter`) would fan out
+ * broadcasts and room joins across replicas, but it is a new runtime
+ * dependency and a heavier change than the one defect needs. A plain pub/sub
+ * message on a dedicated connection is enough to propagate a targeted
+ * disconnect, and it degrades to the local-only behaviour when Redis is down.
+ */
+export const SOCKET_DISCONNECT_CHANNEL = 'realtime:disconnect-user';
 
 export type { DashboardMetrics, DashboardAlert };
 
@@ -91,6 +115,17 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     }
   });
 
+  // Subscribe to the cross-replica socket-disconnect channel. A suspension is
+  // handled by exactly one replica; every other replica must still tear down
+  // the suspended user's sockets, which a local `disconnectSockets` cannot do.
+  redisSubscriber.subscribe(SOCKET_DISCONNECT_CHANNEL, (err) => {
+    if (err) {
+      logger.error('Failed to subscribe to socket disconnect channel:', err);
+    } else {
+      logger.info('Subscribed to cross-replica socket disconnect channel');
+    }
+  });
+
   // Handle Redis messages
   redisSubscriber.on('message', (channel, message) => {
     try {
@@ -102,6 +137,16 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
         const alert = JSON.parse(message) as DashboardAlert;
         io?.to('dashboard').emit('alert:new', alert);
         logger.info(`Broadcasted alert: ${alert.title}`);
+      } else if (channel === SOCKET_DISCONNECT_CHANNEL) {
+        // A suspension committed on some replica. Tear down the target's
+        // sockets *on this replica*; the publishing replica already did its
+        // own. The payload is a bare user id, not JSON.
+        if (io && message) {
+          io.in(`user:${message}`).disconnectSockets(true);
+          logger.info('Disconnected sockets after cross-replica suspension signal', {
+            userId: message,
+          });
+        }
       }
     } catch (error) {
       logger.error(`Error handling Redis message from ${channel}:`, error);
@@ -131,7 +176,13 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
    * Verifies JWT token and returns user payload
    */
   async function authenticateSocket(socket: Socket): Promise<JwtPayload | null> {
-    const token = socket.handshake.auth.token;
+    // The browser sends no token in the handshake any more — the session cookie
+    // is `HttpOnly`, so script cannot read it to copy into `auth.token`. Read it
+    // from the handshake's cookie header instead; the explicit token remains
+    // supported for the native client.
+    const cookieHeader = socket.handshake.headers?.cookie ?? '';
+    const cookieToken = parseCookieHeader(cookieHeader)[ACCESS_TOKEN_COOKIE];
+    const token = socket.handshake.auth?.token || cookieToken;
 
     if (!token) {
       logger.warn('Socket connection without auth token', { socketId: socket.id });
@@ -141,10 +192,44 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     try {
       const payload = verifyToken(token);
 
-      if (payload.type !== 'access') {
+      // Reject anything that is not a fully-established access token. A
+      // temporary 2FA token is also minted with `type: 'access'` (so the 2FA
+      // controller can read `req.user`), which means the type check alone
+      // admitted it — a half-authenticated challenge token could open a
+      // realtime session, join the user's rooms and receive the initial data
+      // payload, past the second factor. The REST `authenticate` gate refuses
+      // `isTemp`; the socket handshake must use the same contract.
+      if (payload.type !== 'access' || payload.isTemp) {
         logger.warn('Invalid token type for WebSocket', {
           socketId: socket.id,
           tokenType: payload.type,
+          isTemp: payload.isTemp ?? false,
+        });
+        return null;
+      }
+
+      // A JWT is a point-in-time snapshot. It stays valid for its whole TTL
+      // even after the account is suspended, deactivated or deleted, so a
+      // signature check alone is not authentication — it only proves the token
+      // *was* issued. This is the same persistent-state gate the REST
+      // `authenticate` applies, applied at the socket handshake: a suspended
+      // officer's still-unexpired access token must not open a realtime
+      // session. Fails closed on a missing user.
+      const [account, activeSuspension] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: payload.sub },
+          select: { isActive: true, deletedAt: true },
+        }),
+        prisma.boardMemberSuspension.findFirst({
+          where: { userId: payload.sub, status: 'ACTIVE' },
+          select: { id: true },
+        }),
+      ]);
+
+      if (!account || !account.isActive || account.deletedAt || activeSuspension) {
+        logger.warn('Socket authentication refused for unusable account', {
+          socketId: socket.id,
+          userId: payload.sub,
         });
         return null;
       }
@@ -165,6 +250,62 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     }
   }
 
+  /**
+   * Every unit the account is effectively assigned to.
+   *
+   * The token carries only the *active* role's unit, but a user can hold roles
+   * in several units at once. A room grant that honoured only the token unit
+   * would silently under-serve them; one that honoured the token unit *and* the
+   * client's word would over-serve everyone. So the set is read from the live
+   * assignments, under the same active/unexpired predicate the rest of the
+   * auth code uses.
+   */
+  async function effectiveAccessOf(
+    userId: string
+  ): Promise<{ unitIds: string[]; roleCodes: string[] }> {
+    const assignments = await prisma.userRoleAssignment.findMany({
+      where: {
+        userId,
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        // A revoked role's assignment must grant nothing. Disabling the role
+        // (`Role.isActive = false`) is the administration's way to withdraw a
+        // capability from everyone holding it; an assignment row that survived
+        // the change would otherwise keep handing out the unit room, the role
+        // room and the scoped initial data.
+        role: { isActive: true },
+      },
+      select: { unitId: true, role: { select: { code: true } } },
+    });
+    const unitIds = [...new Set(assignments.map((a) => a.unitId).filter(Boolean) as string[])];
+    const roleCodes = [...new Set(assignments.map((a) => a.role.code))];
+    return { unitIds, roleCodes };
+  }
+
+  /**
+   * Re-check an account's persistent state for an already-open socket.
+   *
+   * A socket outlives the request that opened it. A suspension that commits
+   * after the handshake does not expire the JWT already in the socket's
+   * handshake data, so without this the suspended user keeps receiving every
+   * broadcast their rooms carry. Called before any room join or subscription,
+   * so a room grant is always made against current state rather than the state
+   * at connect time.
+   */
+  async function isSocketAccountUsable(userId: string): Promise<boolean> {
+    const [account, activeSuspension] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { isActive: true, deletedAt: true },
+      }),
+      prisma.boardMemberSuspension.findFirst({
+        where: { userId, status: 'ACTIVE' },
+        select: { id: true },
+      }),
+    ]);
+    return !!account && account.isActive && !account.deletedAt && !activeSuspension;
+  }
+
   io.on('connection', async (socket: Socket) => {
     logger.info(`Client connected: ${socket.id}`);
 
@@ -181,13 +322,29 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       return;
     }
 
+    // The identity every room grant below is decided against. The effective
+    // units and roles are read from live assignments, not from the token alone,
+    // so a user holding roles in several units can reach all of them while a
+    // role the administration has since disabled grants nothing.
+    const effectiveAccess = await effectiveAccessOf(user.sub);
+    let identity: SocketIdentity = {
+      userId: user.sub,
+      roleCode: user.roleCode,
+      unitId: user.unitId,
+      effectiveUnitIds: effectiveAccess.unitIds,
+      activeRoleCodes: effectiveAccess.roleCodes,
+      assignmentsLoaded: true,
+    };
+
     // Attach user context to socket
     socket.data.user = {
       id: user.sub,
       email: user.email,
       role: user.role,
+      roleCode: user.roleCode,
       unitId: user.unitId,
       roleId: user.roleId,
+      identity,
     };
 
     logger.info(`Authenticated client connected`, {
@@ -197,50 +354,238 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       unitId: user.unitId,
     });
 
-    // Auto-join user-specific room
+    /**
+     * Refuse a socket action whose account is no longer usable, closing the
+     * socket. Returns true when the caller should stop.
+     *
+     * The check is live, not the handshake-time snapshot, so a suspension that
+     * commits after the connection is still caught before it can widen the
+     * socket's reach. Closing the socket (rather than only declining the event)
+     * also stops the already-joined rooms from delivering anything further.
+     */
+    const refuseIfUnusable = async (): Promise<boolean> => {
+      if (await isSocketAccountUsable(user.sub)) return false;
+      logger.warn('Disconnecting socket whose account is no longer usable', {
+        socketId: socket.id,
+        userId: user.sub,
+      });
+      socket.emit('error', {
+        code: 'UNAUTHORIZED',
+        message: 'Akun Anda sudah tidak aktif. Sesi realtime dihentikan.',
+      });
+      socket.disconnect(true);
+      return true;
+    };
+
+    /**
+     * Re-read the account's current scope and reconcile the socket's rooms.
+     *
+     * The room membership a socket holds is a data grant, and it is fixed at
+     * handshake time — but the assignments behind it can change while the socket
+     * is open. A role revoked (or expired) after connect leaves the socket in
+     * `role:<code>` and `unit:<id>` receiving every broadcast those rooms carry,
+     * because nothing else re-reads the assignment set. This re-derives the
+     * allowed rooms from the live assignments and:
+     *
+     * - **leaves** any room the current scope no longer covers (a revoked unit
+     *   or role), so already-joined broadcasts stop; and
+     * - **joins** any auto-room the current scope now covers (a newly-granted
+     *   unit), so a grant takes effect without a reconnect.
+     *
+     * Called before every room join and dashboard subscription, so a widening is
+     * always decided against current state. Returns the refreshed identity so a
+     * caller that has just changed scope can use it to decide the *current*
+     * request, not the handshake snapshot.
+     */
+    const refreshScope = async (): Promise<SocketIdentity> => {
+      const access = await effectiveAccessOf(user.sub);
+      const next: SocketIdentity = {
+        ...identity,
+        effectiveUnitIds: access.unitIds,
+        activeRoleCodes: access.roleCodes,
+        assignmentsLoaded: true,
+      };
+
+      const allowedUnits = allowedUnitIds(next);
+      // Drop unit rooms no longer covered.
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('unit:')) continue;
+        const unitId = room.slice('unit:'.length);
+        if (!allowedUnits.has(unitId)) {
+          socket.leave(room);
+          logger.info('Socket left unit room after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      // Drop a role room the current role no longer matches.
+      const activeRole = effectiveRoleCode(next);
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('role:')) continue;
+        if (room !== `role:${activeRole}`) {
+          socket.leave(room);
+          logger.info('Socket left role room after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      // A socket that just lost its foundation-wide role must not keep the
+      // global dashboard room; drop it so it stops receiving every unit's feed.
+      if (!canSubscribeGlobalDashboard(next) && socket.rooms.has('dashboard')) {
+        socket.leave('dashboard');
+        logger.info('Socket left global dashboard after scope change', {
+          socketId: socket.id,
+          userId: user.sub,
+        });
+      }
+      // Explicitly-named unit dashboard rooms are dropped the same way.
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('dashboard:unit:')) continue;
+        const unitId = room.slice('dashboard:unit:'.length);
+        if (!canJoinUnitRoom(next, unitId)) {
+          socket.leave(room);
+          logger.info('Socket left unit dashboard after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      return next;
+    };
+
+    // Auto-join user-specific room. This is the user's own room — a private
+    // channel addressed by their own id — so no cross-user grant is possible.
     socket.join(`user:${user.sub}`);
 
-    // Auto-join unit-specific room if user has a unit
-    if (user.unitId) {
-      socket.join(`unit:${user.unitId}`);
-      logger.debug(`Socket auto-joined unit room`, {
+    // Auto-join the unit rooms the account is actually assigned to.
+    for (const unitId of allowedUnitIds(identity)) {
+      socket.join(`unit:${unitId}`);
+      logger.debug(`Socket auto-joined unit room`, { socketId: socket.id, unitId });
+    }
+
+    // Auto-join the active role's room only, and only while that role is still
+    // active in the database. The token's `roleCode` alone is a point-in-time
+    // snapshot; a role the administration has since disabled grants nothing.
+    const activeRole = effectiveRoleCode(identity);
+    if (activeRole) {
+      socket.join(`role:${activeRole}`);
+      logger.debug(`Socket auto-joined role room`, {
         socketId: socket.id,
-        unitId: user.unitId,
+        role: activeRole,
       });
     }
 
-    // Auto-join role-specific room
-    socket.join(`role:${user.role}`);
-    logger.debug(`Socket auto-joined role room`, {
-      socketId: socket.id,
-      role: user.role,
-    });
-
-    // Join unit-specific rooms (additional units)
-    socket.on('join-unit', (unitId: string) => {
-      // Verify user has permission to access this unit
-      // For now, allow all authenticated users
+    // Join an additional unit room — only one the caller may actually reach.
+    //
+    // The old handler joined whatever string the client sent, so any
+    // authenticated user could read any unit's traffic by naming its room. The
+    // room *is* the authorization boundary here, so the join is decided from
+    // the verified identity, never the client's argument.
+    socket.on('join-unit', async (unitId: string) => {
+      if (await refuseIfUnusable()) return;
+      // Re-derive the live scope first; a grant revoked since handshake is
+      // dropped from `identity`, so the check below is against current state.
+      const current = await refreshScope();
+      if (!canJoinUnitRoom(current, unitId)) {
+        logger.warn('Refused cross-unit socket room join', {
+          socketId: socket.id,
+          userId: user.sub,
+          requestedUnitId: unitId,
+        });
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke unit tersebut',
+        });
+        return;
+      }
       socket.join(`unit:${unitId}`);
       logger.info(`Socket ${socket.id} joined unit:${unitId}`);
     });
 
-    // Join role-specific rooms (additional roles)
-    socket.on('join-role', (role: string) => {
+    // Join an additional role room — only the caller's own active role.
+    socket.on('join-role', async (role: string) => {
+      if (await refuseIfUnusable()) return;
+      const current = await refreshScope();
+      if (!canJoinRoleRoom(current, role)) {
+        logger.warn('Refused cross-role socket room join', {
+          socketId: socket.id,
+          userId: user.sub,
+          requestedRole: role,
+        });
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: 'Anda tidak dapat bergabung ke peran lain',
+        });
+        return;
+      }
       socket.join(`role:${role}`);
       logger.info(`Socket ${socket.id} joined role:${role}`);
     });
 
-    // Subscribe to dashboard updates
+    // Subscribe to dashboard updates.
+    //
+    // The `dashboard` room is the *global* feed, and its metrics aggregate every
+    // unit. A unit-scoped caller must not receive them, so the room is joined
+    // only for foundation-wide roles — and when a unit is named, only one the
+    // caller is entitled to, resolved from the verified identity rather than
+    // from the caller's argument. The client-supplied `unitId` used to be
+    // passed straight to the metrics query, so any signed-in user could read
+    // any unit's figures.
     socket.on('subscribe:dashboard', async (options?: { unitId?: string }) => {
-      socket.join('dashboard');
-      logger.info(`Socket ${socket.id} subscribed to dashboard updates`, {
-        unitId: options?.unitId || 'all',
-      });
+      if (await refuseIfUnusable()) return;
+      // Live scope: a foundation role revoked since handshake must not be able
+      // to subscribe now, and a stale unit must not be honoured.
+      const current = await refreshScope();
 
-      // Send current metrics immediately (filtered by unit if provided)
+      const requestedUnit =
+        options?.unitId && options.unitId !== 'all' ? options.unitId : undefined;
+
+      if (!requestedUnit) {
+        if (!canSubscribeGlobalDashboard(current)) {
+          logger.warn('Refused global dashboard subscription for unit-scoped socket', {
+            socketId: socket.id,
+            userId: user.sub,
+            roleCode: current.roleCode,
+          });
+          socket.emit('error', {
+            code: 'FORBIDDEN',
+            message: 'Dashboard global hanya untuk peran tingkat yayasan',
+          });
+          return;
+        }
+        socket.join('dashboard');
+        logger.info(`Socket ${socket.id} subscribed to global dashboard`);
+        try {
+          socket.emit('metrics:update', await getCurrentDashboardMetrics());
+        } catch (error) {
+          logger.error('Error sending initial metrics:', error);
+        }
+        return;
+      }
+
+      const scoped = resolveDashboardUnit(current, requestedUnit);
+      if (!scoped) {
+        logger.warn('Refused cross-unit dashboard subscription', {
+          socketId: socket.id,
+          userId: user.sub,
+          requestedUnitId: requestedUnit,
+        });
+        socket.emit('error', {
+          code: 'FORBIDDEN',
+          message: 'Anda tidak memiliki akses ke unit tersebut',
+        });
+        return;
+      }
+
+      socket.join(`dashboard:unit:${scoped}`);
+      logger.info(`Socket ${socket.id} subscribed to dashboard updates`, { unitId: scoped });
       try {
-        const metrics = await getCurrentDashboardMetrics(options?.unitId);
-        socket.emit('metrics:update', metrics);
+        socket.emit('metrics:update', await getCurrentDashboardMetrics(scoped));
       } catch (error) {
         logger.error('Error sending initial metrics:', error);
       }
@@ -248,6 +593,9 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
 
     // Subscribe to unit-specific dashboard updates
     socket.on('subscribe:unit-dashboard', async (unitId: string) => {
+      if (await refuseIfUnusable()) return;
+      const current = await refreshScope();
+
       if (!unitId) {
         socket.emit('error', {
           code: 'INVALID_UNIT_ID',
@@ -256,18 +604,24 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
         return;
       }
 
-      // Verify user has access to this unit
-      // For now, allow if user is in the same unit or has admin role
-      const hasAccess =
-        socket.data.user?.unitId === unitId || socket.data.user?.role === 'SUPER_ADMIN';
+      // A unit-scoped caller is pinned to a unit it belongs to; only a
+      // foundation-wide role may name any unit. A unitless non-foundation
+      // actor is refused rather than defaulted to the whole foundation.
+      const scoped = resolveDashboardUnit(current, unitId);
 
-      if (!hasAccess) {
+      if (!scoped) {
+        logger.warn('Refused cross-unit dashboard subscription', {
+          socketId: socket.id,
+          userId: user.sub,
+          requestedUnitId: unitId,
+        });
         socket.emit('error', {
           code: 'FORBIDDEN',
           message: 'You do not have access to this unit',
         });
         return;
       }
+      unitId = scoped;
 
       socket.join(`dashboard:unit:${unitId}`);
       logger.info(`Socket ${socket.id} subscribed to unit dashboard`, { unitId });
@@ -286,8 +640,8 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       logger.info(`Client disconnected: ${socket.id}`);
     });
 
-    // Send initial data on connect
-    sendRecentEvents(socket);
+    // Send initial data on connect, scoped to what this socket may see.
+    sendRecentEvents(socket, identity);
   });
 
   logger.info('Socket.IO initialized');
@@ -302,9 +656,74 @@ export function getIO(): SocketIOServer | null {
 }
 
 /**
+ * Disconnect every open socket belonging to a user, across every replica.
+ *
+ * Called after a suspension commits. Authentication happens at the handshake,
+ * so a socket opened before the suspension keeps its JWT and its room
+ * memberships: the account-state gate on `join-*`/`subscribe:*` stops it
+ * *widening* its reach, but the rooms it already holds would keep delivering
+ * broadcasts. Disconnecting closes that window.
+ *
+ * `io.in(room).disconnectSockets()` only reaches sockets on *this* process.
+ * The API can run more than one instance behind a load balancer, and a socket
+ * is pinned to the instance that accepted its handshake — so a suspension
+ * handled by replica A cannot close a socket held by replica B with a local
+ * call alone, and the suspended officer would keep receiving that replica's
+ * broadcasts. The disconnect is therefore published on a Redis channel every
+ * replica subscribes to; each replica disconnects locally on receipt.
+ *
+ * Ordering: published *after* the suspension transaction commits (the caller
+ * invokes this after its `$transaction` resolves), so no replica can act on a
+ * suspension that later rolls back, and every replica's own account-state
+ * re-check reads the committed state.
+ *
+ * Best-effort by contract: if Redis is unavailable the local disconnect still
+ * runs, and the per-event `refuseIfUnusable` account re-check remains the
+ * backstop — a missed cross-replica disconnect can only delay the cut-off, it
+ * cannot let the socket widen its reach.
+ */
+export function disconnectUserSockets(userId: string): void {
+  // Local sockets first — this is the synchronous, always-available half.
+  if (io) {
+    io.in(`user:${userId}`).disconnectSockets(true);
+    logger.info('Disconnected local sockets for user', { userId });
+  }
+
+  // Then tell the other replicas. `redisPublisher` is separate from the
+  // subscriber connection, so publishing here cannot re-enter this replica's
+  // own subscriber callback (Redis does not deliver to the publishing
+  // connection) and the local pass above is not duplicated.
+  if (redisPublisher) {
+    redisPublisher.publish(SOCKET_DISCONNECT_CHANNEL, userId).catch((error) =>
+      logger.error('Failed to publish socket disconnect to replicas', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    );
+  }
+}
+
+/**
+ * Emit an event to its unit room and to the foundation-wide dashboard.
+ *
+ * These broadcasts carry student names and payment amounts, so a global
+ * `io.emit` delivered one unit's records to every signed-in user in every
+ * other unit. The room is the authorization boundary: the event's own unit
+ * room reaches the staff who may see it, and the `dashboard` room reaches the
+ * foundation-wide roles that already see every unit on the executive
+ * dashboard. `unitName` is what the events carry, so the unit id is resolved
+ * from the room-name form used elsewhere (`unit:<id>`) — callers pass the id.
+ */
+function emitUnitScoped(eventName: string, event: { unitId?: string }, payload: unknown): void {
+  if (!io) return;
+  if (event.unitId) io.to(`unit:${event.unitId}`).emit(eventName, payload);
+  io.to('dashboard').emit(eventName, payload);
+}
+
+/**
  * Broadcast attendance event
  */
-export function broadcastAttendance(event: AttendanceEvent): void {
+export function broadcastAttendance(event: AttendanceEvent & { unitId?: string }): void {
   if (!io) return;
 
   const liveEvent: LiveEvent = {
@@ -313,17 +732,14 @@ export function broadcastAttendance(event: AttendanceEvent): void {
     timestamp: new Date().toISOString(),
   };
 
-  // Broadcast to all clients
-  io.emit('live-event', liveEvent);
-
-  // Also emit specific attendance event
-  io.emit('attendance-update', event);
+  emitUnitScoped('live-event', event, liveEvent);
+  emitUnitScoped('attendance-update', event, event);
 }
 
 /**
  * Broadcast payment event
  */
-export function broadcastPayment(event: PaymentEvent): void {
+export function broadcastPayment(event: PaymentEvent & { unitId?: string }): void {
   if (!io) return;
 
   const liveEvent: LiveEvent = {
@@ -332,14 +748,14 @@ export function broadcastPayment(event: PaymentEvent): void {
     timestamp: new Date().toISOString(),
   };
 
-  io.emit('live-event', liveEvent);
-  io.emit('payment-update', event);
+  emitUnitScoped('live-event', event, liveEvent);
+  emitUnitScoped('payment-update', event, event);
 }
 
 /**
  * Broadcast tahfidz event
  */
-export function broadcastTahfidz(event: TahfidzEvent): void {
+export function broadcastTahfidz(event: TahfidzEvent & { unitId?: string }): void {
   if (!io) return;
 
   const liveEvent: LiveEvent = {
@@ -348,19 +764,42 @@ export function broadcastTahfidz(event: TahfidzEvent): void {
     timestamp: new Date().toISOString(),
   };
 
-  io.emit('live-event', liveEvent);
-  io.emit('tahfidz-update', event);
+  emitUnitScoped('live-event', event, liveEvent);
+  emitUnitScoped('tahfidz-update', event, event);
 }
 
 /**
- * Send recent events to newly connected socket
+ * Send recent events to newly connected socket, scoped to its units.
+ *
+ * This used to read the ten most recent attendance and payment rows across the
+ * whole foundation and hand them to every socket — a unit-scoped teacher
+ * received other units' students by name and other units' payment amounts the
+ * moment they connected. The scope is now the socket's verified units; a
+ * foundation-wide role (whose REST view is already every unit) sees them all.
  */
-async function sendRecentEvents(socket: Socket): Promise<void> {
+async function sendRecentEvents(socket: Socket, identity: SocketIdentity): Promise<void> {
   try {
+    const units = allowedUnitIds(identity);
+    // The *effective* role, not the token snapshot: a foundation-wide role
+    // whose `Role` was disabled must not keep receiving every unit's students
+    // and payment amounts on connect. `identity.roleCode` alone would still
+    // name the withdrawn role and scope the query to the whole foundation.
+    const foundationWide = isFoundationWideRole(effectiveRoleCode(identity));
+
+    // Fail closed for a non-foundation actor with no verified unit. The empty
+    // scope below (`{}`) means "every unit" — the whole-foundation query — so a
+    // unitless teacher/admin would otherwise be handed other units' students and
+    // payment amounts the moment they connect. A foundation-wide role is the
+    // only identity whose REST view is already every unit.
+    if (!foundationWide && units.size === 0) return;
+
+    const unitScope = foundationWide ? {} : { unitId: { in: [...units] } };
+
     // Get recent attendance (last 10)
     const recentAttendance = await prisma.attendance.findMany({
       take: 10,
       orderBy: { date: 'desc' },
+      where: { student: unitScope },
       include: {
         student: {
           include: {
@@ -382,10 +821,11 @@ async function sendRecentEvents(socket: Socket): Promise<void> {
 
     socket.emit('initial-attendance', attendanceEvents);
 
-    // Get recent payments (last 10)
+    // Get recent payments (last 10), same unit scope.
     const recentPayments = await prisma.payment.findMany({
       take: 10,
       orderBy: { paidAt: 'desc' },
+      where: { invoice: { student: unitScope } },
       include: {
         invoice: {
           include: {

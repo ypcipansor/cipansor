@@ -352,6 +352,32 @@ model User {
   role                   UserRole? // DEPRECATED: Legacy role field. Use UserRoleAssignment instead.
   unitId                 String?   @map("unit_id")
   isActive               Boolean   @default(true) @map("is_active")
+  /// Who turned this account off, as a monotonic claim — see `AccountStateWriter`.
+  ///
+  /// `isActive` alone cannot answer "is this account *still* off because of my
+  /// suspension?". A suspension that switches an account off and later lifts it
+  /// must not resurrect an account an admin deactivated afterwards, and it must
+  /// not be blocked by an unrelated profile edit (which moves `updatedAt`).
+  /// Every write that changes `isActive` stamps this column with its own
+  /// identity in the same statement, so a lift can prove ownership by comparing
+  /// what it recorded at suspension time with what is stored now. Null means
+  /// the state predates the marker (or was never touched through a guarded
+  /// path), which is treated as "not ours" — the safe direction.
+  accountStateWriter     String?   @map("account_state_writer")
+  /// Monotonic version of the account-state ledger — see `AccountStateWriter`.
+  ///
+  /// `account_state_writer` is opaque, not ordered, so it can prove *who* owns the
+  /// current state but not *which of two writes is newer*. The suspension cache
+  /// needs that ordering: the marker primed by a suspension must not be allowed
+  /// to land after a lift has already cleared it, or a restored account stays
+  /// refused until the TTL. Every guarded account-state write bumps this counter
+  /// in the same statement, and the cache write only accepts a version greater
+  /// than or equal to the one already stored — so a delayed prime from an older
+  /// event is rejected rather than resurrecting a stale positive marker.
+  ///
+  /// Integer, not BigInt: one increment per account-state change, so 2^31 is
+  /// decades of headroom and avoids bigint/JSON serialisation friction.
+  accountStateVersion    Int       @default(0) @map("account_state_version")
   isTwoFactorEnabled     Boolean   @default(false) @map("is_two_factor_enabled")
   twoFactorSecret        String?   @map("two_factor_secret")
   twoFactorSecretPending String?   @map("two_factor_secret_pending")
@@ -559,6 +585,16 @@ model User {
   // Business Unit Management
   managedBusinessUnits BusinessUnit[]        @relation("BusinessUnitManager")
 
+  // Whistleblowing System (WBS) & Board Member Suspension
+  assignedWbsReports       WbsReport[]             @relation("WbsAssignedUser")
+  wbsComments              WbsComment[]
+  forwardedWbsLogs         WbsForwardLog[]         @relation("WbsForwarder")
+  receivedWbsForwardLogs   WbsForwardLog[]         @relation("WbsForwardTarget")
+  boardSuspensions         BoardMemberSuspension[] @relation("SuspendedBoardUser")
+  issuedBoardSuspensions   BoardMemberSuspension[] @relation("SuspensionIssuer")
+  plhBoardSuspensions      BoardMemberSuspension[] @relation("SuspensionPlhUser")
+  liftedBoardSuspensions   BoardMemberSuspension[] @relation("SuspensionLifter")
+
   @@index([email])
   @@index([role])
   @@index([unitId])
@@ -567,11 +603,18 @@ model User {
 
 /// RefreshToken - JWT refresh tokens
 model RefreshToken {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String   @map("user_id")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String    @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  /// When this row was consumed by a rotation. A consumed row is normally
+  /// deleted outright; keeping the timestamp lets `refreshToken` tell a benign
+  /// concurrent rotation (two tabs sharing one cookie) from a genuine replay,
+  /// so the loser of the race gets `REFRESH_RACE` instead of a session-ending
+  /// 401. Rows are pruned once the window lapses — see `AuthService.refreshToken`.
+  rotatedAt DateTime? @map("rotated_at")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -609,6 +652,7 @@ model Unit {
   classes                Class[]
   dormitories            Dormitory[]
   paymentTypes           PaymentType[]
+  invoices               Invoice[]
   accountCodes           AccountCode[]
   admissionPeriods       AdmissionPeriod[]
   bookCategories         BookCategory[]
@@ -738,6 +782,9 @@ model Unit {
   // Non-formal Education & Social Services
   courses             Course[]
   socialServiceOrders SocialServiceOrder[]
+
+  // Whistleblowing System
+  wbsReports WbsReport[]
 
   @@index([type])
   @@index([foundationId])
@@ -1613,6 +1660,19 @@ model Invoice {
   id            String        @id @default(uuid())
   studentId     String        @map("student_id")
   paymentTypeId String        @map("payment_type_id")
+  /// Unit of record at issuance — NOT the student's current unit.
+  ///
+  /// Arrears used to be filtered and grouped by `student.unitId`, so when a
+  /// pupil transferred the old unit's overdue invoices vanished from its books
+  /// and reappeared on the new unit's, which had never issued them. The invoice
+  /// remembers the unit that raised it.
+  ///
+  /// NOT NULL and RESTRICT-delete since
+  /// `20260922100000_invoice_unit_backfill`: every invoice resolves its issuing
+  /// unit from its payment type (whose `unitId` is itself NOT NULL), so there is
+  /// no such thing as an invoice with no unit of record. Units are soft-deleted,
+  /// so RESTRICT never blocks a real operation.
+  unitId        String        @map("unit_id")
   invoiceNumber String        @unique @map("invoice_number") // e.g., "INV-2024-0001"
   amount        Decimal       @db.Decimal(15, 2)
   dueDate       DateTime      @map("due_date")
@@ -1626,11 +1686,13 @@ model Invoice {
   // Relations
   student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
   paymentType PaymentType @relation(fields: [paymentTypeId], references: [id])
+  unit        Unit        @relation(fields: [unitId], references: [id], onDelete: Restrict)
   payments    Payment[]
 
   @@index([studentId])
   @@index([status])
   @@index([dueDate])
+  @@index([unitId])
   @@map("invoices")
 }
 
@@ -2120,8 +2182,15 @@ model UserRoleAssignment {
   user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   role Role  @relation(fields: [roleId], references: [id])
   unit Unit? @relation(fields: [unitId], references: [id])
+  boardSuspensionPlhAssignments BoardSuspensionPlhAssignment[]
 
   @@unique([userId, roleId, unitId])
+  /// Partial unique on the unitless delegation — see migration
+  /// `20260921130000_plh_assignment_effective_unique`. The three-column unique
+  /// above cannot constrain `unit_id IS NULL` rows (Postgres treats NULLs as
+  /// distinct), so the Plh/Plt grant — always unitless — was unconstrained and
+  /// two parallel suspensions could mint duplicate delegations for one
+  /// delegate+role. Prisma cannot express `WHERE`, so this lives in the migration.
   @@index([userId])
   @@index([roleId])
   @@index([unitId])
@@ -10221,4 +10290,226 @@ model StudentCardState {
   @@index([studentId])
   @@index([status])
   @@map("student_card_state")
+}
+
+// ===============================================================
+// Whistleblowing System (WBS) & Board Member Suspension Models
+// ===============================================================
+
+enum WbsCategory {
+  KEUANGAN_ASET
+  SOP_TATA_KELOLA
+  ETIKA_PERILAKU
+  PELAYANAN_AKADEMIK_PENGASUHAN
+  LAINNYA
+}
+
+enum WbsTargetLevel {
+  PENGURUS_YAYASAN
+  PENGAWAS_YAYASAN
+  KEPALA_UNIT
+  STAF_PEGAWAI
+  SISWA_SANTRI
+}
+
+enum WbsStatus {
+  DIAJUKAN
+  DALAM_PENYELIDIKAN
+  DITINDAKLANJUTI
+  SELESAI
+  TIDAK_DAPAT_DITINDAKLANJUTI
+}
+
+enum WbsSenderType {
+  REPORTER
+  HANDLER
+}
+
+enum BoardSuspensionStatus {
+  ACTIVE
+  LIFTED
+  PERMANENT_DISMISSAL
+}
+
+model WbsReport {
+  id                 String         @id @default(uuid())
+  ticketCode         String         @unique @map("ticket_code")
+  trackingToken      String         @map("tracking_token")
+  unitId             String?        @map("unit_id")
+  category           WbsCategory
+  targetLevel        WbsTargetLevel @map("target_level")
+  targetName         String?        @map("target_name")
+  subject            String
+  description        String         @db.Text
+  location           String?
+  incidentDate       DateTime?      @map("incident_date")
+  isAnonymous        Boolean        @default(true) @map("is_anonymous")
+  reporterName       String?        @map("reporter_name")
+  reporterContact    String?        @map("reporter_contact")
+  attachments        Json?
+  status             WbsStatus      @default(DIAJUKAN)
+  primaryHandlerRole String         @map("primary_handler_role")
+  assignedUserId     String?        @map("assigned_user_id")
+  resolution         String?        @db.Text
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  unit         Unit?            @relation(fields: [unitId], references: [id])
+  assignedUser User?            @relation("WbsAssignedUser", fields: [assignedUserId], references: [id])
+  comments     WbsComment[]
+  forwardLogs  WbsForwardLog[]
+
+  @@index([ticketCode])
+  @@index([status])
+  @@index([primaryHandlerRole])
+  @@map("wbs_reports")
+}
+
+model WbsComment {
+  id          String        @id @default(uuid())
+  reportId    String        @map("report_id")
+  senderType  WbsSenderType @map("sender_type")
+  senderId    String?       @map("sender_id")
+  senderName  String?       @map("sender_name")
+  message     String        @db.Text
+  attachments Json?
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  report WbsReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  sender User?      @relation(fields: [senderId], references: [id])
+
+  @@index([reportId])
+  @@map("wbs_comments")
+}
+
+model WbsForwardLog {
+  id            String   @id @default(uuid())
+  reportId      String   @map("report_id")
+  forwardedById String   @map("forwarded_by_id")
+  fromRole      String   @map("from_role")
+  toRole        String   @map("to_role")
+  toUserId      String?  @map("to_user_id")
+  reason        String   @db.Text
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  report      WbsReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  forwardedBy User      @relation("WbsForwarder", fields: [forwardedById], references: [id])
+  toUser      User?     @relation("WbsForwardTarget", fields: [toUserId], references: [id])
+
+  @@index([reportId])
+  @@map("wbs_forward_logs")
+}
+
+/// BoardMemberSuspension — SK Pembekuan Pengurus.
+///
+/// At most ONE row per user may be ACTIVE at a time. Prisma cannot express a
+/// partial unique index, so the invariant is enforced by raw migration SQL
+/// (`board_member_suspensions_one_active_per_user`, `WHERE status = 'ACTIVE'`)
+/// — the same pattern as `student_card_state_one_active_per_student`. Two
+/// parallel suspension requests without it can each insert an ACTIVE row, and
+/// lifting either one reactivates the account while the other still stands.
+model BoardMemberSuspension {
+  id               String                @id @default(uuid())
+  userId           String                @map("user_id")
+  skNumber         String                @map("sk_number")
+  auditReason      String                @map("audit_reason") @db.Text
+  documentUrl      String?               @map("document_url")
+  startDate        DateTime              @default(now()) @map("start_date")
+  projectedEndDate DateTime?             @map("projected_end_date")
+  status           BoardSuspensionStatus @default(ACTIVE)
+  suspendedById    String                @map("suspended_by_id")
+  plhUserId        String?               @map("plh_user_id")
+  plhRoleCode      String?               @map("plh_role_code")
+  /// Whether THIS suspension actually created the Plh/Plt assignment.
+  ///
+  /// A Plh who already held the role legitimately is left alone at suspension
+  /// time, so lifting must not delete that pre-existing assignment. Without
+  /// this flag, `liftBoardSuspension` ran `deleteMany` unconditionally and
+  /// silently revoked a role the suspension never granted.
+  plhAssignmentCreated Boolean           @default(false) @map("plh_assignment_created")
+  /// The UserRoleAssignment row this suspension created, so the lift deletes
+  /// exactly that row rather than everything matching user+role.
+  plhAssignmentId  String?               @map("plh_assignment_id")
+  /// Prior state of an assignment this suspension merely reactivated.
+  ///
+  /// An inactive or expired delegation cannot stay as it is (the Plh would hold
+  /// nothing) and cannot simply be deleted on lift (that erases a legitimate
+  /// audit row). `{ isActive, expiresAt }` lets the lift put it back.
+  plhAssignmentRestore Json?             @map("plh_assignment_restore")
+  /// Snapshot of each E-Sign key's `lockedUntil` before suspension locked it.
+  ///
+  /// Suspension soft-locks signing by writing a far-future sentinel; a lift that
+  /// blindly nulls the column erases a legitimate passphrase lockout that
+  /// predated the suspension. The map (keyId → ISO date | null) lets the lift
+  /// restore the exact prior value, and leaves keys created after suspension
+  /// untouched.
+  signingKeyLocks  Json?                 @map("signing_key_locks")
+  /// The account's `isActive` at the instant it was suspended.
+  ///
+  /// Suspension sets `is_active = false`. A lift used to write `is_active =
+  /// true` unconditionally, so an independent deactivation by an admin during
+  /// the suspension (e.g. a second, unrelated incident) was silently undone.
+  /// Recording the prior value lets a lift restore *what it changed*: it
+  /// reactivates only when `isActiveBefore` is `true` (the suspension is what
+  /// switched the account off) and leaves an already-off account off.
+  /// `{ isActiveBefore: boolean }`.
+  accountStateSnapshot Json?             @map("account_state_snapshot")
+  /// The `User.accountStateWriter` value this suspension wrote when it
+  /// switched the account off. A lift reactivates only when that value is
+  /// still what is stored — i.e. the suspension still owns the current off
+  /// state. An admin deactivation afterwards overwrites the writer and the
+  /// lift leaves the account off; a profile edit changes neither.
+  accountStateWriter String?             @map("account_state_writer")
+  liftedAt         DateTime?             @map("lifted_at")
+  liftedById       String?               @map("lifted_by_id")
+  liftReason       String?               @map("lift_reason") @db.Text
+  createdAt        DateTime              @default(now()) @map("created_at")
+  updatedAt        DateTime              @updatedAt @map("updated_at")
+
+  user        User  @relation("SuspendedBoardUser", fields: [userId], references: [id])
+  suspendedBy User  @relation("SuspensionIssuer", fields: [suspendedById], references: [id])
+  plhUser     User? @relation("SuspensionPlhUser", fields: [plhUserId], references: [id])
+  liftedBy    User? @relation("SuspensionLifter", fields: [liftedById], references: [id])
+  plhAssignments BoardSuspensionPlhAssignment[]
+
+  @@index([userId])
+  @@index([status])
+  @@map("board_member_suspensions")
+}
+
+/// Join row: one suspension's dependency on a Plh/Plt `UserRoleAssignment`.
+///
+/// Two suspensions can share the same delegate and role. The second reuses the
+/// assignment the first created, so when the first is lifted the assignment
+/// must survive — a `deleteMany` keyed on the assignment id alone revoked a
+/// role another active suspension still depended on. This row models the
+/// dependency explicitly (one per suspension), so a lift removes the
+/// assignment only when no *other* ACTIVE suspension still references it.
+///
+/// A dedicated table rather than a `Json` ref-count on the suspension row
+/// because the count must be derived from live rows inside the same
+/// transaction that deletes them; a denormalised counter can be lost to a
+/// concurrent writer and there is no way to audit who still needed the role.
+model BoardSuspensionPlhAssignment {
+  id           String   @id @default(uuid())
+  suspensionId String   @map("suspension_id")
+  assignmentId String   @map("assignment_id")
+  /// The role code the delegation carries, so a lift can report what it
+  /// released without re-reading the role table.
+  roleCode     String   @map("role_code")
+  /// Whether the suspension that recorded this dependency CREATED the
+  /// assignment (rather than reusing an already-effective one). When the last
+  /// dependent lifts, a `true` here means the assignment is deleted.
+  created      Boolean  @default(false)
+  /// Prior state of an assignment the recording suspension merely reactivated,
+  /// so the last lifter can restore it. `{ isActive, expiresAt }`.
+  restore      Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  suspension BoardMemberSuspension @relation(fields: [suspensionId], references: [id], onDelete: Cascade)
+  assignment UserRoleAssignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@unique([suspensionId, assignmentId])
+  @@index([assignmentId])
+  @@map("board_suspension_plh_assignments")
 }

@@ -7,6 +7,9 @@ import {
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
+import { isUserSuspended } from '@/utils/user-suspension';
+import { readCookie } from '@/utils/auth-cookies';
+import { ACCESS_TOKEN_COOKIE, TWO_FACTOR_TOKEN_COOKIE } from '@cipansor/shared';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -169,21 +172,38 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
 }
 
 /**
+ * Extract the bearer token from an `Authorization` header, if present.
+ *
+ * The header remains the first choice so the documented native Bearer client
+ * (`docs/MOBILE_API.md`) and service-to-service calls keep working; the cookie
+ * is the fallback the browser uses.
+ */
+function bearerFromHeader(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return null;
+  const [type, token] = authHeader.split(' ');
+  if (type !== 'Bearer' || !token) return null;
+  return token;
+}
+
+/**
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
+ *
+ * The suspension check is deliberately here, on every request, rather than at
+ * the login and refresh doors only. A suspension must take effect against the
+ * access tokens already in circulation, and those were minted before it. The
+ * check reads persistent state (see `utils/user-suspension.ts`) so it holds on
+ * every replica, not just the process that handled the suspension.
  */
-export function authenticate(req: Request, res: Response, next: NextFunction) {
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    // Bearer header first (native clients), then the `HttpOnly` access cookie
+    // the browser carries. `||` is safe here: an empty string is not a token.
+    const token = bearerFromHeader(req) || readCookie(req, ACCESS_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
@@ -196,6 +216,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
       throw Errors.unauthorized('2FA Verification Required');
     }
 
+    if (await isUserSuspended(payload.sub)) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
+    }
+
     req.user = buildReqUser(payload);
     next();
   } catch (error) {
@@ -206,25 +230,37 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
 /**
  * Authentication middleware for 2FA routes
  * Accepts both regular and temporary 2FA tokens
+ *
+ * The suspension check is here too, not only on `authenticate`.
+ *
+ * A temporary token is issued at the *start* of a 2FA login, before the second
+ * factor is presented. It can outlive a suspension that lands in between: the
+ * account is switched off, but this door only ever checked the signature, so
+ * the holder could still call `/2fa/login`, complete the OTP and be handed a
+ * fresh access + refresh pair for a suspended account. `authenticate` refuses
+ * those tokens on every later request, so the account was not reachable — but
+ * a token that should never be minted was, and the door that mints it is this
+ * one.
+ *
+ * Async because the check reads persistent state (never a per-process cache),
+ * which is the only writer-ordered answer available on every replica.
  */
-export function authenticate2FA(req: Request, res: Response, next: NextFunction) {
+export async function authenticate2FA(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = bearerFromHeader(req) || readCookie(req, TWO_FACTOR_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
 
     if (payload.type !== 'access') {
       throw Errors.unauthorized('Invalid token type');
+    }
+
+    if (await isUserSuspended(payload.sub)) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 
     req.user = buildReqUser(payload);
@@ -235,23 +271,34 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
 }
 
 /**
- * Optional authentication - doesn't fail if no token
+ * Optional authentication - doesn't fail if no token.
+ *
+ * "Optional" is about the *absence* of a credential, not about its validity. A
+ * present-but-unusable token must not be attached as a principal: a suspended,
+ * deactivated, deleted or missing user is not "somewhat signed in", and any
+ * handler that branches on `req.user` would treat them as the person the token
+ * names. The account-state gate is the same one `authenticate` applies, so the
+ * two doors agree on who is a user.
+ *
+ * An unusable credential is treated as anonymous rather than 401, because that
+ * is what the endpoint contract says: these routes serve both signed-in and
+ * anonymous callers, and an expired cookie on a public page should not turn the
+ * page into an error. Handlers that need a principal still use `authenticate`.
  */
-export function optionalAuth(req: Request, res: Response, next: NextFunction) {
+export async function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = bearerFromHeader(req) || readCookie(req, ACCESS_TOKEN_COOKIE);
 
-    if (!authHeader) {
+    if (!token) {
       return next();
     }
 
-    const [type, token] = authHeader.split(' ');
-
-    if (type === 'Bearer' && token) {
-      const payload = verifyToken(token);
-      if (payload.type === 'access' && !payload.isTemp) {
-        req.user = buildReqUser(payload);
+    const payload = verifyToken(token);
+    if (payload.type === 'access' && !payload.isTemp) {
+      if (await isUserSuspended(payload.sub)) {
+        return next();
       }
+      req.user = buildReqUser(payload);
     }
 
     next();

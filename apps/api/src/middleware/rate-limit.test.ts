@@ -6,6 +6,11 @@ import request from 'supertest';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
+// `uploadsAuth` re-asserts the persistent account state; the real validator
+// reads Postgres. Stub it so these cases measure slot accounting only.
+vi.mock('@/utils/user-suspension', () => ({
+  isUserSuspended: vi.fn().mockResolvedValue(false),
+}));
 
 import {
   rateLimitEnabled,

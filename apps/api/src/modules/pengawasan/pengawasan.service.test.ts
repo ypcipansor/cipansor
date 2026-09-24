@@ -34,6 +34,10 @@ vi.mock('../../lib/prisma', () => ({
     journalEntry: {
       groupBy: vi.fn(),
     },
+    invoice: {
+      findMany: vi.fn(),
+    },
+    $queryRaw: vi.fn(),
     $transaction: vi.fn((callback) => callback(prisma)),
   },
 }));
@@ -252,6 +256,127 @@ describe('Pengawasan Service', () => {
         priority: 'HIGH',
       });
       expect(suggestions[0].metadata.utilization).toBe(95);
+    });
+  });
+
+  describe('Financial arrears — database aggregation', () => {
+    /**
+     * `getFinancialArrears` issues three aggregates — summary, per-unit, and
+     * top-15 — through `Promise.all`, in that order. Each mockResolvedValueOnce
+     * below answers one of them, so the tests double as an assertion that the
+     * method no longer loads the whole unpaid book into Node.
+     */
+    const mockAggregates = (summary: any[], units: any[], students: any[]) => {
+      (prisma.$queryRaw as any)
+        .mockResolvedValueOnce(summary)
+        .mockResolvedValueOnce(units)
+        .mockResolvedValueOnce(students);
+    };
+
+    const emptyAggregates = () => mockAggregates([], [], []);
+
+    it('maps the aggregate rows into the response contract', async () => {
+      mockAggregates(
+        [{ total: 200000, unpaidCount: 2, overdueCount: 1 }],
+        [
+          {
+            unitId: 'unit-lama',
+            unitName: 'SD IT',
+            totalUnpaid: 200000,
+            count: 2,
+            overdueCount: 1,
+          },
+        ],
+        [
+          {
+            studentId: 'student-1',
+            unitId: 'unit-lama',
+            unitName: 'SD IT',
+            totalUnpaid: 200000,
+            invoiceCount: 2,
+            nis: '123',
+            studentName: 'Santri Pindah',
+            currentUnitId: 'unit-baru',
+            currentUnitName: 'SMP IT',
+          },
+        ]
+      );
+
+      const result = await pengawasanService.getFinancialArrears();
+
+      expect(result.summary).toEqual({
+        totalUnpaidAmount: 200000,
+        totalUnpaidInvoicesCount: 2,
+        overdueInvoicesCount: 1,
+      });
+      expect(result.unitBreakdown).toEqual([
+        { unitId: 'unit-lama', unitName: 'SD IT', totalUnpaid: 200000, count: 2, overdueCount: 1 },
+      ]);
+      // The row is attributed to the issuing unit, while the pupil's current
+      // unit travels beside it so the two are never conflated.
+      expect(result.topArrearsStudents[0]).toMatchObject({
+        studentId: 'student-1',
+        unitId: 'unit-lama',
+        unitName: 'SD IT',
+        currentUnitId: 'unit-baru',
+        currentUnitName: 'SMP IT',
+        nis: '123',
+        studentName: 'Santri Pindah',
+        totalUnpaid: 200000,
+        invoiceCount: 2,
+      });
+
+      // Three aggregates, not a findMany of every unpaid invoice.
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(3);
+      expect(prisma.invoice.findMany).not.toHaveBeenCalled();
+    });
+
+    it('bounds every aggregate by a positive outstanding balance', async () => {
+      emptyAggregates();
+
+      await pengawasanService.getFinancialArrears();
+
+      // Each of the three queries must carry the same balance predicate, so a
+      // fully-paid PENDING or an overpaid invoice can never inflate a figure.
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).toContain('i.amount - i.paid_amount > 0');
+        expect(call[0].sql).toContain("i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')");
+      }
+    });
+
+    it('scopes every aggregate to the requested invoice unit, not the current unit', async () => {
+      emptyAggregates();
+
+      await pengawasanService.getFinancialArrears('unit-lama');
+
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).toContain('AND i.unit_id =');
+        expect(call[0].values).toContain('unit-lama');
+      }
+    });
+
+    it('leaves the unit filter out for a foundation-wide read', async () => {
+      emptyAggregates();
+
+      await pengawasanService.getFinancialArrears();
+
+      for (const call of (prisma.$queryRaw as any).mock.calls) {
+        expect(call[0].sql).not.toContain('AND i.unit_id =');
+      }
+    });
+
+    it('returns zeroed summary when there are no outstanding invoices', async () => {
+      emptyAggregates();
+
+      const result = await pengawasanService.getFinancialArrears();
+
+      expect(result.summary).toEqual({
+        totalUnpaidAmount: 0,
+        totalUnpaidInvoicesCount: 0,
+        overdueInvoicesCount: 0,
+      });
+      expect(result.unitBreakdown).toEqual([]);
+      expect(result.topArrearsStudents).toEqual([]);
     });
   });
 });

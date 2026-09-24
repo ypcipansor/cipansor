@@ -82,6 +82,14 @@ API_INTERNAL_URL="http://api:3001"
 # CORS
 # Both public hosts plus the portal. Same-origin requests do not need these, but
 # the apex's public pages call the API on whichever origin the bundle names.
+#
+# SAME-SITE ONLY: the session cookies are `SameSite=Lax`, so every origin here
+# must share one registrable site. In production the API refuses to boot when
+# the allowlist spans two sites (see `apps/api/src/config/same-site.ts`), because
+# a browser would drop the cookie and every request after login would be
+# anonymous. Leave NEXT_PUBLIC_API_URL empty so the bundle calls the API
+# same-origin; do not point the web app at an API on a different domain unless
+# SameSite=None + CSRF protection is implemented first.
 CORS_ORIGIN="https://cipansor.or.id,https://www.cipansor.or.id,https://portal.cipansor.or.id"
 
 # Logging

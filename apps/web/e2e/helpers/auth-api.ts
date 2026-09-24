@@ -2,7 +2,11 @@ import * as fs from "fs";
 import * as path from "path";
 import type { Page } from "@playwright/test";
 import { generate as generateTotp } from "otplib";
-import { middlewareAuthCookieValue } from "../../src/lib/auth-cookie";
+import {
+  ACCESS_TOKEN_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+  ROUTING_COOKIE,
+} from "@cipansor/shared";
 
 /**
  * API-based authentication for e2e tests.
@@ -60,13 +64,26 @@ export interface AuthSession {
   user: Record<string, unknown> & { role?: string };
   accessToken: string;
   refreshToken: string;
+  /**
+   * The **server-signed** `cipansor_routing` cookie value, exactly as the API
+   * set it. `middleware.ts` only accepts a routing cookie whose MAC verifies, so
+   * the helper must forward this value verbatim; a hand-encoded JSON blob would
+   * be treated as forged and the session would fail closed.
+   */
+  routing?: string;
 }
 
-async function postJson(path: string, body: unknown, bearer?: string) {
+async function postJson(
+  path: string,
+  body: unknown,
+  bearer?: string,
+  headers: Record<string, string> = {},
+) {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
+      ...headers,
       ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
     },
     body: JSON.stringify(body),
@@ -141,10 +158,20 @@ export async function apiLogin(user: SeedUser): Promise<AuthSession> {
 }
 
 async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
-  const login = await postJson("/auth/login", {
-    email: user.email,
-    password: user.password,
-  });
+  // The helper acts as the native Bearer client: it needs the raw pair to seed
+  // Playwright's cookie jar and to drive `apiRequest`, which a browser session
+  // no longer exposes in the response body. `X-Client-Type: native` is the
+  // documented opt-in for exactly that (`docs/MOBILE_API.md`).
+  const nativeHeaders = { "X-Client-Type": "native" };
+  const login = await postJson(
+    "/auth/login",
+    {
+      email: user.email,
+      password: user.password,
+    },
+    undefined,
+    nativeHeaders,
+  );
   const data = login?.data;
   if (!data)
     throw new Error(`Login failed for ${user.email}: ${JSON.stringify(login)}`);
@@ -156,6 +183,7 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
       "/auth/2fa/login",
       { token },
       data.tempToken,
+      nativeHeaders,
     );
     if (!verified?.data?.accessToken) {
       throw new Error(
@@ -180,41 +208,61 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
 }
 
 /**
- * Inject a session into the page's origin, mirroring the zustand persist store
- * (`auth-storage`) and the raw `accessToken`/`refreshToken` items + cookies the
- * middleware checks. Call before navigating to a protected route.
+ * The persisted `auth-storage` JSON for a session — the form the store writes
+ * to localStorage.
  */
-export async function injectSession(page: Page, session: AuthSession) {
-  const authStorage = JSON.stringify({
+function persistedAuthStorage(session: AuthSession): string {
+  return JSON.stringify({
     state: { user: session.user, isAuthenticated: true },
     version: 0,
   });
+}
 
-  // Cookies for the Next middleware (it JSON.parses the encoded auth-storage and
-  // falls back to accessToken). Mirror the app: the slim value, encoded — the
-  // full user overflows 4 KB for some accounts and Playwright rejects it.
-  await page.context().addCookies([
-    {
-      name: "accessToken",
-      value: session.accessToken,
-      url: BASE_URL,
-    },
-    {
-      name: "auth-storage",
-      value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
-      url: BASE_URL,
-    },
-  ]);
+/** The cookies the middleware and API read for a session. */
+function authCookies(session: AuthSession) {
+  const cookies = [
+    { name: ACCESS_TOKEN_COOKIE, value: session.accessToken },
+    { name: REFRESH_TOKEN_COOKIE, value: session.refreshToken },
+  ];
+  if (session.routing) {
+    cookies.push({
+      name: ROUTING_COOKIE,
+      value: session.routing,
+    });
+  }
+  return cookies;
+}
 
-  // localStorage so the store rehydrates authenticated and the axios interceptor
-  // finds the bearer token. addInitScript runs before app JS on every load.
+/**
+ * Inject a session into the page's origin.
+ *
+ * The session is entirely server-issued cookies now: the API's
+ * `access_token` / `refresh_token` / `cipansor_routing`. `addCookies` names them
+ * with `url: BASE_URL`; Playwright stores cookies by host, so a `localhost`
+ * cookie is presented to the API on `localhost:3001` too. The zustand store's
+ * `auth-storage` (the non-credential user blob) is still seeded from the API
+ * session so the shell renders before `/auth/me` answers.
+ */
+export async function injectSession(page: Page, session: AuthSession) {
+  const authStorage = persistedAuthStorage(session);
+
+  await page.context().addCookies(
+    authCookies(session).map((c) => ({
+      ...c,
+      url: BASE_URL,
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax" as const,
+    })),
+  );
+
+  // localStorage carries only the non-credential user blob. addInitScript runs
+  // before app JS on every load.
   await page.addInitScript(
-    ([token, refresh, storage]) => {
-      localStorage.setItem("accessToken", token);
-      localStorage.setItem("refreshToken", refresh);
+    ([storage]) => {
       localStorage.setItem("auth-storage", storage);
     },
-    [session.accessToken, session.refreshToken, authStorage] as const,
+    [authStorage] as const,
   );
 }
 
@@ -268,34 +316,21 @@ export async function loginAs(
  */
 export function buildStorageState(session: AuthSession) {
   const origin = new URL(BASE_URL).origin;
-  const authStorage = JSON.stringify({
-    state: { user: session.user, isAuthenticated: true },
-    version: 0,
-  });
+  const authStorage = persistedAuthStorage(session);
   return {
-    cookies: [
-      { name: "accessToken", value: session.accessToken },
-      {
-        name: "auth-storage",
-        value: encodeURIComponent(middlewareAuthCookieValue(authStorage) ?? ""),
-      },
-    ].map((c) => ({
+    cookies: authCookies(session).map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
       path: "/",
       expires: Math.floor(Date.now() / 1000) + 86400,
-      httpOnly: false,
+      httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
     })),
     origins: [
       {
         origin,
-        localStorage: [
-          { name: "accessToken", value: session.accessToken },
-          { name: "refreshToken", value: session.refreshToken },
-          { name: "auth-storage", value: authStorage },
-        ],
+        localStorage: [{ name: "auth-storage", value: authStorage }],
       },
     ],
   };

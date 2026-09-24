@@ -64,8 +64,18 @@ describe('change-scope.sh', () => {
     const self = relative(REPO_ROOT, __filename);
     const tests = repoFiles.filter((f) => /\.(test|spec)\.tsx?$/.test(f) && f !== self);
     const read = new Set<string>();
+    /**
+     * Strip comments before scanning. A citation of a document in a doc-comment
+     * (`docs/ARCHITECTURE.md:49-51` in a JSDoc paragraph) is not a read, and
+     * treating it as one would demand that every doc a test merely mentions be
+     * classified as code — which contradicts the first case here, where
+     * `AGENTS.md` is deliberately non-code. Only a string literal in code is
+     * evidence that the test reads the file.
+     */
+    const withoutComments = (source: string): string =>
+      source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
     for (const test of tests) {
-      const source = readFileSync(join(REPO_ROOT, test), 'utf8');
+      const source = withoutComments(readFileSync(join(REPO_ROOT, test), 'utf8'));
       for (const [, name] of source.matchAll(/['"`]([\w./-]+\.md)['"`]/g)) {
         for (const file of repoFiles) if (basename(file) === basename(name)) read.add(file);
       }

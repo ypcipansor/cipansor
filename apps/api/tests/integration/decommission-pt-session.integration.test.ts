@@ -926,14 +926,18 @@ describeDb('decommission migration — legacy PT sessions end', () => {
       const { rows } = await db.query<{ id: string; unit_id: string | null }>(
         `SELECT id, unit_id FROM users WHERE id LIKE 'user-pt%' ORDER BY id`
       );
-      expect(rows.map((r) => r.id)).toEqual([
-        'user-pthome-foundation',
-        'user-pthome-nullscoped',
-        'user-pthome-unitvalid',
-        'user-pt-noassign',
-        'user-pt-only',
-        'user-pt-only2',
-      ]);
+      // Compares as a set: the child database has its own collation, so the
+      // order of `ORDER BY id` is not part of the invariant under test.
+      expect(rows.map((r) => r.id).sort()).toEqual(
+        [
+          'user-pthome-foundation',
+          'user-pthome-nullscoped',
+          'user-pthome-unitvalid',
+          'user-pt-noassign',
+          'user-pt-only',
+          'user-pt-only2',
+        ].sort()
+      );
       for (const row of rows) {
         expect(row.unit_id).toBeNull();
       }

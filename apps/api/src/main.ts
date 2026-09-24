@@ -13,6 +13,7 @@ Sentry.init({
 import { app } from './app';
 import { config } from '@/config';
 import { assertProductionSecrets } from '@/config/assert-secrets';
+import { assertSameSiteDeployment } from '@/config/same-site';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
@@ -27,6 +28,16 @@ async function bootstrap() {
     // Before anything else, and before the port opens. Serving traffic signed
     // by a key published in .env.example is worse than not serving at all.
     assertProductionSecrets();
+
+    // SameSite=Lax cookies only travel to a same-site API. A cross-site
+    // CORS_ORIGIN is a topology this deployment does not support, so fail the
+    // boot with that sentence rather than serve a login nobody can keep. The
+    // API's own site is taken from the public/portal hosts it answers on —
+    // production is same-origin behind the reverse proxy.
+    assertSameSiteDeployment({
+      origins: config.cors.origins,
+      apiOrigins: [config.publicSiteUrl, config.portalUrl],
+    });
 
     // Test database connection
     logger.info('Connecting to database...');

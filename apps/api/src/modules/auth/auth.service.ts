@@ -6,10 +6,23 @@ import { Errors } from '@/middleware/error';
 import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
-import { RoleCode, UnitType } from '@prisma/client';
+import { BoardSuspensionStatus, RoleCode, UnitType } from '@prisma/client';
+import { lockUserAssignmentRows } from '@/utils/role-assignment-lock';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
 import crypto from 'crypto';
+
+/**
+ * Lifetime of the 2FA temporary token, in one place.
+ *
+ * The cookie that carries the token is set for exactly this long. They used to
+ * be independent literals — a 5-minute cookie default against a 10-minute token
+ * for the mandatory-setup flow — so an admin part-way through enrolling an
+ * authenticator had the cookie vanish under a token the server still accepted.
+ * The token TTL is the source of truth; the cookie is derived from it.
+ */
+const TWO_FACTOR_TEMP_TTL = '5m';
+const TWO_FACTOR_SETUP_TTL = '10m';
 
 /**
  * Resolve a legacy UserRole value (e.g. 'TEACHER', 'STAFF') into the correct
@@ -100,6 +113,26 @@ function activeRoleWhere() {
   };
 }
 
+/**
+ * How long a consumed refresh token is remembered as "just rotated".
+ *
+ * Two tabs sharing one `HttpOnly` refresh cookie both present it. The winner
+ * consumes it and sets a fresh pair; the loser must be told to retry with the
+ * now-current cookie — not to log out. The loser may reach its lookup *after*
+ * the winner has committed, so the outcome cannot depend on interleaving: the
+ * consumed row is kept (stamped with `rotatedAt`) instead of deleted, and any
+ * presentation of it within this window is `REFRESH_RACE`. Beyond the window it
+ * is an ordinary spent token and fails closed as a 401, which preserves replay
+ * protection for a token redeemed long after its rotation.
+ */
+const REFRESH_RACE_WINDOW_MS = 30_000;
+
+/** Whether a consumed token was rotated recently enough to be a benign race. */
+function isWithinRefreshRaceWindow(rotatedAt: Date | null | undefined): boolean {
+  if (!rotatedAt) return false;
+  return Date.now() - rotatedAt.getTime() <= REFRESH_RACE_WINDOW_MS;
+}
+
 export class AuthService {
   /**
    * Login user
@@ -149,6 +182,11 @@ export class AuthService {
     // Determine active role (primary or first role). Every account must have
     // a UserRoleAssignment (the seeds create them); accounts without one
     // cannot log in — assign a role via /users/:id/roles first.
+    //
+    // This snapshot decides whether 2FA is demanded and feeds the temporary
+    // token. It is *indicative* only: the authoritative claims for the session
+    // itself are re-derived under the row lock at issuance below, because a
+    // revocation or role change can land between the two.
     const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
     if (!primaryAssignment) {
       throw Errors.forbidden('No active role assignment found for this user');
@@ -181,53 +219,186 @@ export class AuthService {
 
     // Check for 2FA
     if (user.isTwoFactorEnabled) {
-      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '5m');
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_TEMP_TTL);
 
       return {
         requiresTwoFactor: true,
         tempToken,
+        // The cookie that carries this token must not outlive it, nor expire
+        // before it. Both are derived from the one constant, so the two cannot
+        // disagree: the mandatory-setup token used to be minted for 10 minutes
+        // while its cookie was capped at 5, and the user hit a "session
+        // expired" wall with a token still valid in the browser.
+        tempTokenExpiresIn: TWO_FACTOR_TEMP_TTL,
       };
     }
 
     // Force 2FA setup for Admin/Super Admin
     if (isUserAdmin && !user.isTwoFactorEnabled) {
-      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
+      const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, TWO_FACTOR_SETUP_TTL);
 
       return {
         requiresTwoFactorSetup: true,
         tempToken,
+        tempTokenExpiresIn: TWO_FACTOR_SETUP_TTL,
       };
     }
 
-    // Generate tokens
-    const tokens = generateTokenPair(basePayload);
+    // Issue the refresh token inside a transaction that re-asserts the account
+    // state under a row lock, then writes the token in the same commit.
+    //
+    // The password check above and the insert below are separated by a round
+    // trip; a suspension that commits in between switches the account off and
+    // deletes the refresh tokens it can see — but a token created *after* that
+    // delete survives it and would authenticate away the suspension. Locking
+    // the user row for the re-check and the insert serialises the two: a
+    // suspension cannot commit between them, and one that already committed is
+    // visible to the locked re-read. The lock order (user row first) matches
+    // `refreshToken`, the 2FA completion, and `BoardSuspensionService`, so the
+    // paths are compatible rather than a new cycle.
+    //
+    // The session's claims are re-derived here, not from the pre-lock snapshot:
+    // the assignment rows are locked too, and the effective assignment is read
+    // through `tx`. A revocation or role change that lands between the password
+    // check and this commit must not produce a token carrying the old role — the
+    // very escalation the reviewer flagged. An account left with no qualifying
+    // assignment is refused (403) rather than issued a legacy-role token.
+    const activeAcademicYearId = await prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${user.id} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
 
-    // Store refresh token & update last login in parallel
-    const [, , activeAcademicYearId] = await Promise.all([
-      prisma.refreshToken.create({
+      await lockUserAssignmentRows(tx, [user.id]);
+
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: { userId: user.id, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      // Re-read the effective assignment under the lock. Primary wins; else the
+      // first active, non-expired assignment on an active role.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId: user.id,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const effective = assignments.find((r) => r.isPrimary) || assignments[0];
+
+      if (!effective) {
+        // No qualifying assignment. The legacy `user.role` fallback is only for
+        // an account that never had an assignment at all; a revoked assignment
+        // must not fall back to the coarse legacy role, which is exactly the
+        // stale-privilege hole this guard closes.
+        if (user.userRoles.length > 0) {
+          throw Errors.forbidden('No active role assignment found');
+        }
+        throw Errors.forbidden('No active role assignment found for this user');
+      }
+
+      const freshRoleCode = effective.role.code;
+      const freshPermissions = (effective.role.permissions as string[]) || [];
+
+      // Re-check the second factor against the *locked* account row, and refuse
+      // a session whose role is not the one the password step authenticated.
+      //
+      // The 2FA decision above is taken from the pre-lock snapshot: whether the
+      // account must present a second factor is derived from
+      // `user.isTwoFactorEnabled`, and the account is only challenged when the
+      // snapshot role is an admin without 2FA. Both facts can move between the
+      // password check and this commit — an admin assignment can become primary,
+      // or 2FA can be switched off. Without this re-read, an account whose
+      // snapshot role was an ordinary one reaches this branch, sees a freshly
+      // *admin* `effective`, and is handed an admin session with no second
+      // factor at all (CWE-287). Reading the flag through `tx` under the user
+      // lock makes it the value that holds at commit.
+      //
+      // A role that differs from the snapshot is refused as well, for every
+      // role and not only admin ones: the password step was answered against
+      // the snapshot's role, so a change in between means this request's
+      // authentication no longer describes the session it is about to mint. The
+      // user is asked to authenticate again against the current role — safer
+      // than minting a token for a role that was never password-verified.
+      const freshAccount = await tx.user.findUnique({
+        where: { id: user.id },
+        select: { isTwoFactorEnabled: true },
+      });
+      if (!freshAccount) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      if (effective.roleId !== roleId) {
+        throw Errors.conflict(
+          'Peran akun berubah saat login. Silakan login ulang untuk memakai peran terbaru.'
+        );
+      }
+
+      if (isAdminRoleCode(freshRoleCode) && !freshAccount.isTwoFactorEnabled) {
+        throw Errors.conflict(
+          'Peran admin memerlukan verifikasi dua faktor. Silakan login ulang untuk menyiapkan 2FA.'
+        );
+      }
+
+      const tokens = generateTokenPair({
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        roleId: effective.roleId || '',
+        roleCode: freshRoleCode,
+        unitId: tokenUnitId(effective.unitId, freshRoleCode, user.unitId),
+        permissions: freshPermissions,
+        role: deriveLegacyRole(freshRoleCode),
+      });
+
+      await tx.refreshToken.create({
         data: {
           token: tokens.refreshToken,
           userId: user.id,
           expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
         },
-      }),
-      prisma.user.update({
+      });
+      await tx.user.update({
         where: { id: user.id },
         data: { lastLoginAt: new Date() },
-      }),
-      this.getActiveAcademicYearId(),
-    ]);
+      });
 
-    // Return user without sensitive fields
-    const userWithoutPassword = this.stripSensitiveFields(user);
+      return {
+        tokens,
+        permissions: freshPermissions,
+        academicYearId: await this.getActiveAcademicYearId(),
+        // The live assignment rows, so the response's `userRoles` describes the
+        // same role the token just minted rather than the pre-lock snapshot.
+        userRoles: assignments,
+      };
+    });
+
+    // Return user without sensitive fields. `userRoles` is overridden with the
+    // assignments read under the lock: the snapshot was taken before the
+    // password check, so a role change in between left the response advertising
+    // a role the token no longer carried — and the web derives its primary role
+    // from exactly this field (`getPrimaryRoleCode`), so it would render the
+    // wrong controls. `stripSensitiveFields` still runs over the whole user.
+    const { userRoles: _staleUserRoles, ...userWithoutPassword } = this.stripSensitiveFields(user);
 
     return {
       user: {
         ...userWithoutPassword,
-        academicYearId: activeAcademicYearId,
-        permissions,
+        userRoles: activeAcademicYearId.userRoles,
+        academicYearId: activeAcademicYearId.academicYearId,
+        permissions: activeAcademicYearId.permissions,
       },
-      ...tokens,
+      ...activeAcademicYearId.tokens,
     };
   }
 
@@ -417,84 +588,196 @@ export class AuthService {
       throw Errors.unauthorized('Invalid token type');
     }
 
-    // Check if token exists in database
+    // Locate the token row cheaply, without its role graph.
+    //
+    // The role snapshot that becomes the new token's claims must be read under
+    // the same lock the writers take (see `utils/role-assignment-lock.ts`), not
+    // here: a revocation that commits between this read and token issuance would
+    // otherwise leave the replacement token stamped with a role the user no
+    // longer holds. This read only proves the presented token exists so a
+    // missing/expired token stays a 401 before the transaction opens.
+    //
+    // `rotatedAt` is read too. A consumed row is kept for a short window rather
+    // than deleted, so a tab that presents the token *after* its sibling has
+    // already rotated it — and thus reaches this lookup post-commit — can be
+    // told `REFRESH_RACE` instead of being mistaken for an invalid credential
+    // and logged out. This is the case the finding is about: the loser is not a
+    // replay, it is the same browser's other tab.
     const storedToken = await prisma.refreshToken.findFirst({
       where: {
         token: refreshToken,
         userId: payload.sub,
         expiresAt: { gt: new Date() },
       },
-      include: {
-        user: {
-          include: {
-            userRoles: {
-              where: activeRoleWhere(),
-              include: { role: true },
-              orderBy: { isPrimary: 'desc' },
-            },
-          },
-        },
-      },
+      include: { user: { select: { id: true, email: true, role: true, unitId: true } } },
     });
 
     if (!storedToken) {
       throw Errors.unauthorized('Refresh token not found or expired');
     }
 
-    if (!storedToken.user.isActive) {
+    // A row that was already consumed is spent — but *how long ago* decides
+    // which signal the caller gets. Within the short window it is the benign
+    // race (the same browser's other tab, which reached this lookup only after
+    // the winner committed): return `REFRESH_RACE`, whose 409 the web retries
+    // and, crucially, whose response carries no `clearedSessionCookies()` that
+    // could destroy the fresh session the winner just set. Past the window it is
+    // an ordinary replay and fails closed as a 401 — replay protection is
+    // unchanged for a token redeemed long after its rotation.
+    if (storedToken.rotatedAt) {
+      if (isWithinRefreshRaceWindow(storedToken.rotatedAt)) {
+        throw Errors.refreshRace();
+      }
+      throw Errors.unauthorized('Refresh token not found or expired');
+    }
+
+    // Re-validate the persistent state, not just `isActive`. A suspension
+    // deletes the refresh tokens it can see, but a token issued after that
+    // delete — or one whose row survived a partial failure — must still be
+    // refused here. A soft delete is checked for the same reason `authenticate`
+    // checks it: `deletedAt` leaves `isActive` untouched. (Re-checked under the
+    // lock below; this is the fast fail.)
+    if (await this.isAccountUnusable(payload.sub)) {
       throw Errors.unauthorized('Account is deactivated');
     }
 
-    // Delete old refresh token
-    await prisma.refreshToken.delete({
-      where: { id: storedToken.id },
+    // Rotate the token inside a transaction that re-asserts the account state
+    // under a row lock, then mints the replacement in the same commit.
+    //
+    // The check above and the rotation below are separated by a round trip; a
+    // suspension that commits in between deletes the refresh tokens it can see
+    // and switches the account off — but a token *created* after that delete
+    // survives it and would authenticate away the suspension. Locking the user
+    // row for the check and the insert serialises the two: a suspension cannot
+    // commit between them, and a suspension that already committed is visible
+    // to the locked re-read. The loser gets a plain 401 rather than a token.
+    //
+    // The assignment rows are locked too, and the effective assignment is
+    // re-read through `tx` — so a revocation or a role change that lands between
+    // the fast-fail above and this commit cannot be baked into the new token.
+    // Lock order matches every other writer: user row, then assignments.
+    return prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${payload.sub} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      await lockUserAssignmentRows(tx, [payload.sub]);
+
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: { userId: payload.sub, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      // Re-read the effective assignment under the lock. Only active, non-expired
+      // assignments on an active role count; the primary wins, else the first.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId: payload.sub,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
+
+      // The legacy fallback below is for an account that *never* held an
+      // assignment — an unmigrated user, or one whose module was decommissioned
+      // and whose `users.role` was nulled. An account whose assignments all
+      // expired, went inactive, or were revoked is *not* that: counting every
+      // row (not just the active ones) is what separates the two, so a revoked
+      // or expired assignment can never reinstate `users.role`'s coarse
+      // privilege — the exact escalation this guard closes.
+      const totalAssignments = await tx.userRoleAssignment.count({
+        where: { userId: payload.sub },
+      });
+
+      let refreshRoleCode: string;
+      let permissions: string[];
+      let refreshRoleId: string | undefined;
+      let refreshUnitId: string | null | undefined;
+
+      if (primaryAssignment) {
+        refreshRoleCode = primaryAssignment.role.code;
+        permissions = (primaryAssignment.role.permissions as string[]) || [];
+        refreshRoleId = primaryAssignment.roleId;
+        refreshUnitId = primaryAssignment.unitId;
+      } else if (storedToken.user.role && totalAssignments === 0) {
+        // Legacy fallback — only when the user holds no assignment row at all,
+        // never as a substitute for one that was just revoked or has expired.
+        refreshRoleCode = storedToken.user.role;
+        permissions = [];
+        refreshRoleId = undefined;
+        refreshUnitId = undefined;
+      } else {
+        throw Errors.forbidden('No active role assignment found');
+      }
+
+      // Consume the presented token with a conditional *claim*, not a `delete`
+      // and not an unconditional update.
+      //
+      // `delete({ where: { id } })` threw Prisma `P2025` when the row was gone,
+      // which the error handler mapped to 500. Two parallel refreshes with the
+      // same token both pass the read above; the first claims the row and mints
+      // a replacement, and the second then hit P2025 — so a perfectly ordinary
+      // concurrent refresh surfaced as an internal error instead of the 409 that
+      // means "another request already rotated this".
+      //
+      // The row is *stamped*, not deleted, so the loser can be identified even
+      // when it reaches the lookup only after the winner has committed: a row
+      // that already carries `rotatedAt` cannot be claimed again (`rotatedAt:
+      // null`), and its rowcount of zero is the race. Replay protection is
+      // unchanged — exactly one caller ever claims the row, and a later
+      // presentation is refused as a race (inside the window) or a spent 401.
+      const consumed = await tx.refreshToken.updateMany({
+        where: { id: storedToken.id, token: refreshToken, rotatedAt: null },
+        data: { rotatedAt: new Date() },
+      });
+      if (consumed.count !== 1) {
+        throw Errors.refreshRace();
+      }
+
+      // Prune tombstones whose race window has lapsed. They exist only to label
+      // a racing sibling; once the window is over they are ordinary spent rows
+      // and holding them would make the table grow one row per rotation forever.
+      // Scoped to this user and bounded by the window, so the work is a single
+      // indexed delete on the same transaction that already wrote the row.
+      await tx.refreshToken.deleteMany({
+        where: {
+          userId: storedToken.user.id,
+          rotatedAt: { not: null, lt: new Date(Date.now() - REFRESH_RACE_WINDOW_MS) },
+        },
+      });
+
+      const tokens = generateTokenPair({
+        id: storedToken.user.id,
+        sub: storedToken.user.id,
+        email: storedToken.user.email,
+        roleId: refreshRoleId || '',
+        roleCode: refreshRoleCode,
+        unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
+        permissions,
+        role: deriveLegacyRole(refreshRoleCode),
+      });
+
+      await tx.refreshToken.create({
+        data: {
+          token: tokens.refreshToken,
+          userId: storedToken.user.id,
+          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+        },
+      });
+
+      return tokens;
     });
-
-    // Get primary role — with legacy fallback for unmigrated users
-    const primaryAssignment =
-      storedToken.user.userRoles.find((r) => r.isPrimary) || storedToken.user.userRoles[0];
-
-    let refreshRoleCode: string;
-    let permissions: string[];
-    let refreshRoleId: string | undefined;
-    let refreshUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      refreshRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      refreshRoleId = primaryAssignment.roleId;
-      refreshUnitId = primaryAssignment.unitId;
-    } else if (storedToken.user.role) {
-      refreshRoleCode = storedToken.user.role;
-      permissions = [];
-      refreshRoleId = undefined;
-      refreshUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
-    }
-
-    // Generate new tokens
-    const tokens = generateTokenPair({
-      id: storedToken.user.id,
-      sub: storedToken.user.id,
-      email: storedToken.user.email,
-      roleId: refreshRoleId || '',
-      roleCode: refreshRoleCode,
-      unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
-      permissions,
-      role: deriveLegacyRole(refreshRoleCode),
-    });
-
-    // Store new refresh token
-    await prisma.refreshToken.create({
-      data: {
-        token: tokens.refreshToken,
-        userId: storedToken.user.id,
-        expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
-      },
-    });
-
-    return tokens;
   }
 
   /**
@@ -569,6 +852,31 @@ export class AuthService {
       select: { id: true },
     });
     return activeAcademicYear?.id;
+  }
+
+  /**
+   * True when the account may not hold a session at all: soft-deleted,
+   * inactive, or under an ACTIVE board suspension.
+   *
+   * Reads the same three persistent facts `utils/user-suspension.ts` does, but
+   * directly rather than through the Redis-cached helper: a token-issuing path
+   * must not be answered from a cache that can lag the database. The cache is
+   * there to answer "is this *existing* token still usable" quickly; the
+   * question here is "may a *new* one exist", and a stale permissive answer to
+   * that is exactly the failure this guards.
+   */
+  private async isAccountUnusable(userId: string): Promise<boolean> {
+    const [user, activeSuspension] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: { isActive: true, deletedAt: true },
+      }),
+      prisma.boardMemberSuspension.findFirst({
+        where: { userId, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      }),
+    ]);
+    return !user || !user.isActive || !!user.deletedAt || !!activeSuspension;
   }
 
   /**
@@ -795,6 +1103,10 @@ export class AuthService {
       throw Errors.unauthorized('Invalid authentication flow');
     }
 
+    if (await this.isAccountUnusable(userId)) {
+      throw Errors.unauthorized('Account is deactivated or not found');
+    }
+
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       include: {
@@ -818,84 +1130,174 @@ export class AuthService {
       throw Errors.unauthorized('2FA is not enabled for this user');
     }
 
-    let isValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
+    // A recovery code is not a 6-digit TOTP, and otplib v13 *throws*
+    // (`TokenLengthError`) rather than answering `{ valid: false }` for one.
+    // Letting that bubble meant a recovery code surfaced as a 500 and never
+    // reached the fallback below — the codes were unreachable through the very
+    // endpoint meant to redeem them. A malformed OTP is simply not a valid
+    // TOTP, so it falls through to the recovery-code path.
+    let isTotpValid = false;
+    try {
+      isTotpValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
+    } catch {
+      isTotpValid = false;
+    }
 
-    // Check recovery codes if OTP failed (with atomic update to prevent race conditions)
-    if (!isValid) {
-      const result = await prisma.$executeRaw`
-        UPDATE "users"
-        SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${token})
-        WHERE "id" = ${userId}
-        AND ${token} = ANY("two_factor_recovery_codes")
+    // Re-validate the persistent account state immediately before the tokens
+    // exist, and create them in the same transaction that asserts it.
+    //
+    // The check at the top of this method and the token issuance below are
+    // separated by an OTP verification — plenty of time for a suspension to
+    // commit. Without this second read, the exact race the caller asked about
+    // survives: a temporary token minted before the suspension, a suspension
+    // that commits while the operator types the code, and a brand-new
+    // access+refresh pair for an account that was switched off a moment
+    // earlier. The suspension deletes the refresh tokens it can see; this one
+    // would be created after that delete and outlive it.
+    //
+    // A recovery code is both *validated* and *consumed* here, not before it,
+    // and in the same transaction that takes the row lock. The previous version
+    // removed the code with a raw `UPDATE` ahead of this transaction, so a
+    // suspension or deactivation that landed in the gap refused the login but
+    // destroyed the code — the operator was permanently locked out of the
+    // account by a login that never succeeded. Consuming it only after the
+    // account-state checks pass, under the same `FOR UPDATE` lock that
+    // serialises two parallel redemptions, means a failed login leaves the code
+    // intact and the same code cannot be redeemed twice.
+    return prisma.$transaction(async (tx) => {
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${userId} AND is_active = true AND deleted_at IS NULL
+        FOR UPDATE
       `;
-
-      if (Number(result) > 0) {
-        isValid = true;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated or not found');
       }
-    }
 
-    if (!isValid) {
-      throw Errors.unauthorized('Invalid OTP code');
-    }
+      await lockUserAssignmentRows(tx, [userId]);
 
-    // Generate tokens — with legacy fallback for unmigrated users
-    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
-
-    let twoFaRoleCode: string;
-    let permissions: string[];
-    let twoFaRoleId: string | undefined;
-    let twoFaUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      twoFaRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      twoFaRoleId = primaryAssignment.roleId;
-      twoFaUnitId = primaryAssignment.unitId;
-    } else if (user.role) {
-      twoFaRoleCode = user.role;
-      permissions = [];
-      twoFaRoleId = undefined;
-      twoFaUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
-    }
-
-    const tokens = generateTokenPair({
-      id: user.id,
-      sub: user.id,
-      email: user.email,
-      roleId: twoFaRoleId || '',
-      roleCode: twoFaRoleCode,
-      unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
-      permissions,
-      role: deriveLegacyRole(twoFaRoleCode),
-    });
-
-    const [, , activeAcademicYearId] = await Promise.all([
-      prisma.refreshToken.create({
-        data: {
-          token: tokens.refreshToken,
-          userId: user.id,
-          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: {
+          userId,
+          status: BoardSuspensionStatus.ACTIVE,
         },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      }),
-      this.getActiveAcademicYearId(),
-    ]);
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated or not found');
+      }
 
-    const userWithoutPassword = this.stripSensitiveFields(user);
+      // Resolve the effective assignment *before* consuming a recovery code.
+      //
+      // The code is a one-shot credential: consuming it for a login that is
+      // then refused locks the operator out permanently. So the assignment the
+      // session will carry is resolved first — under the lock, from `tx` — and
+      // a user left with no qualifying assignment is refused (403) with the
+      // code untouched. Only then is a recovery code compared-and-removed.
+      const assignments = await tx.userRoleAssignment.findMany({
+        where: {
+          userId,
+          ...activeRoleWhere(),
+          role: { isActive: true },
+        },
+        include: { role: true },
+        orderBy: { isPrimary: 'desc' },
+      });
+      const primaryAssignment = assignments.find((r) => r.isPrimary) || assignments[0];
 
-    return {
-      user: {
-        ...userWithoutPassword,
-        academicYearId: activeAcademicYearId,
+      // Distinguish "never held an assignment" (unmigrated legacy account) from
+      // "every assignment expired, went inactive, or was revoked". The legacy
+      // column must only rescue the former; counting all rows, not just the
+      // active ones, is what makes the check meaningful.
+      const totalAssignments = await tx.userRoleAssignment.count({ where: { userId } });
+
+      let twoFaRoleCode: string;
+      let permissions: string[];
+      let twoFaRoleId: string | undefined;
+      let twoFaUnitId: string | null | undefined;
+
+      if (primaryAssignment) {
+        twoFaRoleCode = primaryAssignment.role.code;
+        permissions = (primaryAssignment.role.permissions as string[]) || [];
+        twoFaRoleId = primaryAssignment.roleId;
+        twoFaUnitId = primaryAssignment.unitId;
+      } else if (totalAssignments === 0 && user.role) {
+        // Legacy fallback only for an account that never held an assignment.
+        // A revoked or expired assignment must not fall back to the coarse
+        // legacy role.
+        twoFaRoleCode = user.role;
+        permissions = [];
+        twoFaRoleId = undefined;
+        twoFaUnitId = undefined;
+      } else {
+        throw Errors.forbidden('No active role assignment found');
+      }
+
+      // Recovery-code path. The row is locked above, so the matching UPDATE and
+      // the rowcount together are an atomic compare-and-remove: the first
+      // parallel request to reach this point removes the code and sees one row
+      // affected; a second request with the same code blocks on the lock, then
+      // re-evaluates `ANY` against the now-removed code and sees none. Only a
+      // positive rowcount may authorise the login — an unknown code never does.
+      //
+      // This runs *after* the account-state and assignment checks on purpose: a
+      // code is consumed only once the login is otherwise permitted, so a
+      // suspension, deactivation or revoked role cannot destroy a code for a
+      // login that was refused.
+      let isValid = isTotpValid;
+      if (!isValid) {
+        const consumed = await tx.$executeRaw`
+          UPDATE "users"
+          SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${token})
+          WHERE "id" = ${userId}
+          AND ${token} = ANY("two_factor_recovery_codes")
+        `;
+        if (Number(consumed) > 0) {
+          isValid = true;
+        }
+      }
+
+      if (!isValid) {
+        throw Errors.unauthorized('Invalid OTP code');
+      }
+
+      const tokens = generateTokenPair({
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        roleId: twoFaRoleId || '',
+        roleCode: twoFaRoleCode,
+        unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
         permissions,
-      },
-      ...tokens,
-    };
+        role: deriveLegacyRole(twoFaRoleCode),
+      });
+
+      const [, , activeAcademicYearId] = await Promise.all([
+        tx.refreshToken.create({
+          data: {
+            token: tokens.refreshToken,
+            userId: user.id,
+            expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+          },
+        }),
+        tx.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() },
+        }),
+        this.getActiveAcademicYearId(),
+      ]);
+
+      const userWithoutPassword = this.stripSensitiveFields(user);
+
+      return {
+        user: {
+          ...userWithoutPassword,
+          academicYearId: activeAcademicYearId,
+          permissions,
+        },
+        ...tokens,
+      };
+    });
   }
 
   /**
@@ -1017,9 +1419,17 @@ export class AuthService {
   }
 
   /**
-   * Strip every sensitive field from a user record before returning it to a
-   * client. Covers the password hash, the 2FA secrets/recovery codes, and the
-   * password-reset token hash + expiry (these must never leave the server).
+   * Strip every field that must not reach a client from a user record.
+   *
+   * Secrets: the password hash, the 2FA secrets/recovery codes, and the
+   * password-reset token hash + expiry.
+   *
+   * Internal bookkeeping: `accountStateWriter` is the write-ownership marker
+   * the suspension lift compares to prove it, and not a later admin, owns the
+   * current `isActive`. No client reads it and it is not part of the shared
+   * `User` DTO — and since the web mirrors the whole `/auth/me` payload into
+   * the `auth-storage` cookie, shipping it spent bytes that cookie does not
+   * have (see `apps/web/src/lib/auth-cookie.ts`).
    */
   private stripSensitiveFields<
     T extends {
@@ -1029,6 +1439,7 @@ export class AuthService {
       twoFactorRecoveryCodes?: unknown;
       resetTokenHash?: unknown;
       resetTokenExpiresAt?: unknown;
+      accountStateWriter?: unknown;
     },
   >(user: T) {
     const {
@@ -1038,6 +1449,7 @@ export class AuthService {
       twoFactorRecoveryCodes: _trc,
       resetTokenHash: _rth,
       resetTokenExpiresAt: _rte,
+      accountStateWriter: _asw,
       ...safe
     } = user;
     return safe;

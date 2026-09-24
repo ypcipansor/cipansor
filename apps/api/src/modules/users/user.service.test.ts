@@ -11,12 +11,18 @@ vi.mock('@/lib/prisma', () => ({
     },
     unit: { findFirst: vi.fn() },
     role: { findUnique: vi.fn() },
+    refreshToken: { deleteMany: vi.fn() },
   },
 }));
 vi.mock('@/lib/password', () => ({ hashPassword: vi.fn(async () => 'hashed') }));
+vi.mock('@/utils/user-suspension', () => ({
+  markUserSuspended: vi.fn(async () => undefined),
+  invalidateUserSuspensionCache: vi.fn(async () => undefined),
+}));
 
 import { prisma } from '@/lib/prisma';
 import { userService } from './user.service';
+import { markUserSuspended, invalidateUserSuspensionCache } from '@/utils/user-suspension';
 import { ApiError } from '@/middleware/error';
 import type { CreateUserInput, UpdateUserInput } from './user.schema';
 
@@ -135,3 +141,71 @@ describe('user.service unit scoping (one admin per unit)', () => {
 
 // keep the linter satisfied about the imported ApiError type usage
 void ApiError;
+
+describe('user.service suspension-cache invalidation', () => {
+  const superUser = { roleCode: 'SUPER_ADMIN', unitId: null, sub: 'me' };
+
+  it('primes the suspension cache when an admin deactivates an account', async () => {
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: true,
+    });
+    mock.user.update.mockResolvedValue({
+      id: 'u1',
+      passwordHash: 'hashed',
+      accountStateVersion: 5,
+    });
+
+    await userService.update('u1', { isActive: false } as UpdateUserInput, superUser);
+
+    // Without this the old access token kept authenticating for a whole TTL.
+    // The version is carried so a delayed prime cannot outrank a later restore.
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 5);
+    expect(invalidateUserSuspensionCache).not.toHaveBeenCalled();
+  });
+
+  it('drops the cached answer when an account is reactivated', async () => {
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: false,
+    });
+    mock.user.update.mockResolvedValue({
+      id: 'u1',
+      passwordHash: 'hashed',
+      accountStateVersion: 6,
+    });
+
+    await userService.update('u1', { isActive: true } as UpdateUserInput, superUser);
+
+    expect(invalidateUserSuspensionCache).toHaveBeenCalledWith('u1', 6);
+    expect(markUserSuspended).not.toHaveBeenCalled();
+  });
+
+  it('leaves the cache alone when the update touches neither state', async () => {
+    mock.user.findFirst.mockResolvedValue({
+      id: 'u1',
+      unitId: null,
+      email: 'x@y.z',
+      isActive: true,
+    });
+    mock.user.update.mockResolvedValue({ id: 'u1', passwordHash: 'hashed' });
+
+    await userService.update('u1', { name: 'New Name' } as UpdateUserInput, superUser);
+
+    expect(markUserSuspended).not.toHaveBeenCalled();
+    expect(invalidateUserSuspensionCache).not.toHaveBeenCalled();
+  });
+
+  it('marks a soft-deleted account suspended so its token stops working', async () => {
+    mock.user.findFirst.mockResolvedValue({ id: 'u1', unitId: null, email: 'x@y.z' });
+    mock.user.update.mockResolvedValue({ id: 'u1', accountStateVersion: 7 });
+
+    await userService.delete('u1');
+
+    expect(markUserSuspended).toHaveBeenCalledWith('u1', 7);
+  });
+});

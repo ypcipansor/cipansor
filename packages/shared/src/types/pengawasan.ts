@@ -1,0 +1,501 @@
+/**
+ * Whistleblowing System (WBS) & Board Suspension contracts.
+ *
+ * Single source for the values both apps must agree on. They were previously
+ * spelled out three times — the API's Zod schema, the public submission page's
+ * `<SelectItem value=…>` list, and the handler UI — so a category could be
+ * added on the API and silently never become selectable, or the reverse.
+ *
+ * The database enums (`WbsCategory`, `WbsTargetLevel`, `WbsStatus` in
+ * `schema.prisma`) remain the source of truth for storage; the literal lists
+ * here must stay in step with them, and `pengawasan.validation.ts` asserts that
+ * by building its Zod schemas from these same arrays.
+ */
+
+import {
+  ADMIN_ROLE_CODES,
+  ALUMNI_ROLE_CODES,
+  KOMITE_ROLE_CODES,
+  PARENT_ROLE_CODES,
+  PESANTREN_LEADER_ROLE_CODES,
+  PRINCIPAL_ROLE_CODES,
+  STUDENT_ROLE_CODES,
+} from "../roles";
+
+export const WBS_CATEGORIES = [
+  "KEUANGAN_ASET",
+  "SOP_TATA_KELOLA",
+  "ETIKA_PERILAKU",
+  "PELAYANAN_AKADEMIK_PENGASUHAN",
+  "LAINNYA",
+] as const;
+
+export type WbsCategoryCode = (typeof WBS_CATEGORIES)[number];
+
+export const WBS_CATEGORY_LABELS: Record<WbsCategoryCode, string> = {
+  KEUANGAN_ASET:
+    "Keuangan & Aset (Penyalahgunaan Anggaran, Pungli, Penggelapan)",
+  SOP_TATA_KELOLA:
+    "SOP & Tata Kelola (Pelanggaran Prosedur, Penyalahgunaan Wewenang)",
+  ETIKA_PERILAKU:
+    "Etika, Kesusilaan & Perilaku (Pelecehan, Perundungan/Bullying)",
+  PELAYANAN_AKADEMIK_PENGASUHAN:
+    "Pelayanan Akademik & Pengasuhan (Keluhan Layanan, Keasramaan)",
+  LAINNYA: "Lain-lain",
+};
+
+export const WBS_TARGET_LEVELS = [
+  "PENGURUS_YAYASAN",
+  "PENGAWAS_YAYASAN",
+  "KEPALA_UNIT",
+  "STAF_PEGAWAI",
+  "SISWA_SANTRI",
+] as const;
+
+export type WbsTargetLevelCode = (typeof WBS_TARGET_LEVELS)[number];
+
+export const WBS_TARGET_LEVEL_LABELS: Record<WbsTargetLevelCode, string> = {
+  PENGURUS_YAYASAN: "Pengurus Yayasan (Ditangani Pengawas, CC Pembina)",
+  PENGAWAS_YAYASAN: "Pengawas Yayasan (Ditangani Pembina)",
+  KEPALA_UNIT:
+    "Kepala Unit Organisasi / Kepsek / Pengasuh (Ditangani Pengurus, CC Pengawas)",
+  STAF_PEGAWAI:
+    "Staf / Guru / Pegawai Unit (Ditangani Kepsek/Kepala Unit, CC Pengurus & Pengawas)",
+  SISWA_SANTRI:
+    "Siswa / Santri / Murid (Ditangani Kepala Unit/BK, CC Pengurus & Pengawas)",
+};
+
+export const WBS_STATUSES = [
+  "DIAJUKAN",
+  "DALAM_PENYELIDIKAN",
+  "DITINDAKLANJUTI",
+  "SELESAI",
+  "TIDAK_DAPAT_DITINDAKLANJUTI",
+] as const;
+
+export type WbsStatusCode = (typeof WBS_STATUSES)[number];
+
+/**
+ * Statuses after which a WBS case is closed.
+ *
+ * A closed case is immutable on both sides of the thread: no public reply and
+ * no handler comment. The API refuses both under the row lock, and the web
+ * hides the reply control for these statuses. Kept in shared so the two cannot
+ * drift - the earlier revision refused the public reply while the UI still
+ * offered a handler reply the API then rejected.
+ */
+export const CLOSED_WBS_STATUSES: readonly WbsStatusCode[] = [
+  "SELESAI",
+  "TIDAK_DAPAT_DITINDAKLANJUTI",
+];
+
+export function isClosedWbsStatus(status: string): boolean {
+  return (CLOSED_WBS_STATUSES as readonly string[]).includes(status);
+}
+
+/**
+ * The only roles a *Pelaksana Harian / Pelaksana Tugas* (Plh/Plt) delegation
+ * may carry.
+ *
+ * `suspendBoardMember` used to accept whatever `plhRoleCode` the caller sent
+ * and mint a `UserRoleAssignment` for it, so a Pengawas — whose whole job is
+ * to audit the Pengurus — could issue `plhRoleCode: "SUPER_ADMIN"` and promote
+ * an accomplice past the very oversight that suspended the incumbent. A Plh
+ * stands in for a Pengurus organ, nothing else: not the Pembina that appoints
+ * it, not the Pengawas that audits it, and certainly not the system
+ * administrator. Kept in shared so the API's Zod schema, the service guard and
+ * the web form cannot disagree about which codes are legal.
+ */
+export const PLH_ROLE_CODES = [
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_BENDAHARA",
+  "YAYASAN_ANGGOTA",
+] as const;
+
+export type PlhRoleCode = (typeof PLH_ROLE_CODES)[number];
+
+/**
+ * Roles that may NEVER stand in as Plh/Plt, because granting a Pengurus role to
+ * their holder would break the yayasan's organ separation.
+ *
+ * The three organs of a yayasan are mutually exclusive (UU 16/2001 jo. UU
+ * 28/2004 Pasal 29; enforced in `apps/api/src/utils/role-eligibility.ts` and by
+ * the `trg_yayasan_organ_exclusive` database trigger). A Plh grant *is* a
+ * Pengurus role, so the delegate must not already hold Pembina or Pengawas —
+ * the insert/update would raise `check_violation` (23514) and the suspension
+ * would fail as an internal error, after the account had already been switched
+ * off in the same transaction.
+ *
+ * The list is the union of the two non-Pengurus organs (Pembina, Pengawas), the
+ * system administrator (whose authority is never delegated through an oversight
+ * SK) and the external roles (students, parents, committee, alumni) that cannot
+ * hold a foundation office at all. This is the source of truth for all three
+ * consumers — the candidate query, the service preflight/transactional check and
+ * the web picker — so the picker cannot offer someone the service would reject.
+ */
+export const PLH_INELIGIBLE_ROLE_CODES: readonly string[] = [
+  // Pembina and Pengawas: the organ-exclusivity rule made explicit.
+  "YAYASAN_PEMBINA",
+  "YAYASAN_PENGAWAS",
+  // The system administrator, never a Pengurus stand-in.
+  "SUPER_ADMIN",
+  // External roles with no foundation office.
+  ...STUDENT_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+  ...KOMITE_ROLE_CODES,
+  ...ALUMNI_ROLE_CODES,
+];
+
+/**
+ * True when an account holding exactly `roleCodes` may serve as Plh/Plt.
+ *
+ * The delegate must hold no ineligible role *and* must not be blocked by the
+ * organ-exclusivity rule. Holding an existing Pengurus role is fine — that is
+ * the same organ the grant belongs to.
+ */
+export function isPlhEligible(roleCodes: readonly string[]): boolean {
+  return !roleCodes.some((code) => PLH_INELIGIBLE_ROLE_CODES.includes(code));
+}
+
+/**
+ * The roles a WBS report may be forwarded to.
+ *
+ * `forwardReport` used to accept any string for `toRole` and write it straight
+ * into `WbsReport.primaryHandlerRole`. A one-letter typo — or a legacy name like
+ * `primaryHandlerRole` sent in its place — then moved the report into a queue
+ * that no role's scope query ever matches, and the report simply disappeared
+ * from every handler's list. Each value here is a role (or the `UNIT_ADMIN`
+ * bucket the unit-level branch resolves) whose scope query can actually match
+ * the report it is handed. Kept in shared so the API validates and the web form
+ * offers the same closed set.
+ */
+export const WBS_FORWARD_ROLE_CODES = [
+  "YAYASAN_PEMBINA",
+  "YAYASAN_PENGAWAS",
+  "YAYASAN_KETUA",
+  "UNIT_ADMIN",
+] as const;
+
+export type WbsForwardRoleCode = (typeof WBS_FORWARD_ROLE_CODES)[number];
+
+/**
+ * The effective role codes a forward target must hold, per destination bucket.
+ *
+ * `forwardReport` accepted a `toUserId` without checking it against `toRole`,
+ * and `buildScopeWhere` then grants the `assignedUserId` read access
+ * unconditionally — so naming any user as the assignee handed them the report
+ * regardless of their role or unit. Each bucket now resolves to the concrete
+ * role codes that legitimately sit in it: a foundation destination requires the
+ * matching governance role, and `UNIT_ADMIN` is the unit-level bucket of school
+ * administrators and heads (unit leadership, never foundation governance and
+ * never the system administrator).
+ */
+export const WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES: Record<
+  WbsForwardRoleCode,
+  readonly string[]
+> = {
+  YAYASAN_PEMBINA: ["YAYASAN_PEMBINA"],
+  YAYASAN_PENGAWAS: ["YAYASAN_PENGAWAS"],
+  YAYASAN_KETUA: ["YAYASAN_KETUA"],
+  UNIT_ADMIN: [
+    ...ADMIN_ROLE_CODES.filter((code) => code !== "SUPER_ADMIN"),
+    ...PRINCIPAL_ROLE_CODES,
+    ...PESANTREN_LEADER_ROLE_CODES,
+  ],
+};
+
+/** True when `roleCode` may receive a report forwarded to `bucket`. */
+export function isWbsForwardRecipientRole(
+  bucket: WbsForwardRoleCode,
+  roleCode: string,
+): boolean {
+  return (
+    WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]
+  ).includes(roleCode);
+}
+
+/**
+ * The forward buckets a role may be *assigned into* — the inverse of
+ * {@link WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES}.
+ *
+ * `WbsReport.assignedUserId` used to be an unconditional read/write grant: any
+ * actor whose id matched could see and mutate the report, whatever their active
+ * role. A multi-role account could receive a confidential report while acting
+ * as Pengawas, then switch its active token to a unit handler role and still
+ * open the case — the role that legitimately held the assignment was never
+ * checked against the role the request carried. Reading the assignment through
+ * this inverse map lets the scope query bind the grant to the *destination* the
+ * report was routed to (`primaryHandlerRole`), so switching roles loses the
+ * access exactly the way the role-based scope already did.
+ */
+export function wbsAssignmentBucketsForRole(
+  roleCode: string | null | undefined,
+): WbsForwardRoleCode[] {
+  if (!roleCode) return [];
+  return (
+    Object.keys(WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES) as WbsForwardRoleCode[]
+  ).filter((bucket) =>
+    (WBS_FORWARD_ROLE_ALLOWED_ROLE_CODES[bucket] as readonly string[]).includes(
+      roleCode,
+    ),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Response contracts
+//
+// The web hooks used to read these payloads through `any`, so a field renamed
+// on the API broke a page silently at runtime instead of at build time. These
+// mirror what the controllers actually return; keep them in step when a
+// response shape changes.
+// ---------------------------------------------------------------------------
+
+export interface WbsCommentDto {
+  id: string;
+  senderType: string;
+  senderName: string | null;
+  message: string;
+  attachments?: string[] | null;
+  createdAt: string;
+}
+
+export interface WbsForwardLogDto {
+  id: string;
+  fromRole: string;
+  toRole: string;
+  reason: string | null;
+  createdAt: string;
+}
+
+export interface WbsReportDto {
+  id: string;
+  ticketCode: string;
+  category: string;
+  targetLevel: string;
+  targetName?: string | null;
+  unitId?: string | null;
+  unit?: { id: string; name: string } | null;
+  subject: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  primaryHandlerRole: string;
+  assignedUserId?: string | null;
+  assignedUser?: { id: string; name: string; email: string } | null;
+  isAnonymous?: boolean;
+  reporterName?: string | null;
+  reporterContact?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  comments?: WbsCommentDto[];
+  forwardLogs?: WbsForwardLogDto[];
+}
+
+/**
+ * A finding as the audit list/detail returns it.
+ *
+ * The list projection selects only `id`, `severity`, `title`; the detail
+ * include carries the responsible user and follow-ups. Optional fields model
+ * the narrower projection so one type serves both without lying about what is
+ * always present.
+ */
+export interface AuditFindingDto {
+  id: string;
+  findingNumber?: string;
+  title: string;
+  description?: string;
+  severity: string;
+  category?: string;
+  recommendation?: string | null;
+  dueDate?: string | null;
+  responsible?: { id: string; name: string } | null;
+  followUps?: AuditFollowUpDto[];
+  createdAt?: string;
+}
+
+/** A follow-up on an audit finding. */
+export interface AuditFollowUpDto {
+  id: string;
+  action?: string;
+  status: string;
+  dueDate?: string | null;
+  verifiedBy?: { id: string; name: string } | null;
+  createdAt?: string;
+}
+
+/**
+ * An internal audit as returned by `getAudits` / `getAuditById`.
+ *
+ * The page previously read every audit through `any`, so a renamed API field
+ * only surfaced as a blank cell at runtime. `findings` is present on both
+ * projections but with different widths, hence the optional finding fields.
+ */
+export interface InternalAuditDto {
+  id: string;
+  unitId: string;
+  title: string;
+  description?: string | null;
+  auditType: string;
+  status: string;
+  plannedDate: string;
+  executedDate?: string | null;
+  completedDate?: string | null;
+  leadAuditorId?: string;
+  scope?: string | null;
+  methodology?: string | null;
+  conclusion?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  unit?: { id: string; name: string } | null;
+  leadAuditor?: { id: string; name: string } | null;
+  strategicPlan?: { id: string; title: string } | null;
+  risk?: {
+    id: string;
+    code: string;
+    category: string;
+    riskLevel?: string;
+  } | null;
+  findings?: AuditFindingDto[];
+}
+
+/** Public tracking payload — handler identities are anonymized before it is returned. */
+export interface WbsTrackingDto {
+  ticketCode: string;
+  category: string;
+  targetLevel: string;
+  targetName?: string | null;
+  unitName: string;
+  subject: string;
+  description: string;
+  status: string;
+  resolution?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  comments: WbsCommentDto[];
+}
+
+export interface WbsPublicSubmissionResultDto {
+  ticketCode: string;
+  trackingToken: string;
+  category: string;
+  targetLevel: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface BoardSuspensionDto {
+  id: string;
+  userId: string;
+  skNumber: string;
+  auditReason: string;
+  documentUrl?: string | null;
+  /**
+   * When the SK takes effect. A suspension is enforced on issuance — the
+   * account is switched off, sessions are revoked and the Plh is granted in the
+   * same transaction — so this may be today or earlier but never the future.
+   */
+  startDate: string;
+  /**
+   * Estimated end date. Informational only: it does not expire the suspension.
+   * Only an explicit `Pemulihan Status` (lift) by the Pembina ends it.
+   */
+  projectedEndDate?: string | null;
+  status: string;
+  suspendedById: string;
+  plhUserId?: string | null;
+  plhRoleCode?: string | null;
+  liftedAt?: string | null;
+  liftedById?: string | null;
+  liftReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    role?: string | null;
+  } | null;
+  suspendedBy?: { id: string; name: string } | null;
+  plhUser?: { id: string; name: string; email: string } | null;
+  liftedBy?: { id: string; name: string } | null;
+}
+
+export interface FinancialArrearsUnitDto {
+  unitId: string;
+  unitName: string;
+  totalUnpaid: number;
+  count: number;
+  overdueCount: number;
+}
+
+export interface FinancialArrearsStudentDto {
+  studentId: string;
+  studentName: string;
+  /**
+   * The pupil's **current** NIS, from `Student.nis`. A NIS can be reissued when
+   * a pupil moves unit, so this is labelled "NIS saat ini" wherever it is shown
+   * against a historical invoice — it identifies the person now, not the
+   * invoice's unit of record.
+   */
+  nis: string;
+  /** The invoice unit this row aggregates. A pupil with unpaid invoices from
+   *  several units has one row per unit, never a single conflated row. */
+  unitId: string;
+  unitName: string;
+  /** The pupil's current unit, which may differ from `unitId` for a transfer.
+   *  Kept beside the invoice unit so the two are never conflated. */
+  currentUnitId: string | null;
+  currentUnitName: string | null;
+  totalUnpaid: number;
+  invoiceCount: number;
+}
+
+export interface FinancialArrearsDto {
+  summary: {
+    totalUnpaidAmount: number;
+    totalUnpaidInvoicesCount: number;
+    overdueInvoicesCount: number;
+  };
+  unitBreakdown: FinancialArrearsUnitDto[];
+  topArrearsStudents: FinancialArrearsStudentDto[];
+}
+
+/**
+ * A selectable account in the suspension / Plh pickers.
+ *
+ * The form used to ask the operator to paste a raw UUID for both the Pengurus
+ * being suspended and the Plh replacing them — a workflow that could not be
+ * completed without a database query, and that made a mistyped ID look like a
+ * valid submission until the API rejected it. The pickers are fed by scoped
+ * endpoints instead: only accounts that can legally hold the role are listed,
+ * and the chosen `id` is what the form submits. The server still validates.
+ */
+export interface PengawasanCandidateDto {
+  id: string;
+  name: string;
+  email: string;
+  roleCodes: string[];
+  unit: { id: string; name: string } | null;
+  /**
+   * Whether this account may serve as Plh/Plt, resolved by the server from
+   * {@link isPlhEligible}. The suspension picker filters on this rather than
+   * re-deriving the rule from `roleCodes`, so the list it shows and the check
+   * the service enforces cannot drift apart. Always `true` for entries from the
+   * *suspendable* picker, where eligibility is a different question.
+   */
+  plhEligible: boolean;
+}
+
+/**
+ * Result of filing a periodic oversight report. `status` is always `DRAFT` and
+ * `letterNumber` is null: the action creates the letter in the E-Office draft
+ * workflow, and the number is issued when it is actually sent.
+ */
+export interface PeriodicReportDraftResultDto {
+  letterId: string;
+  letterNumber: string | null;
+  title: string;
+  status: string;
+  contentPreview: string;
+}

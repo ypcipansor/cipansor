@@ -4,7 +4,9 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { parseCookieHeader, ACCESS_TOKEN_COOKIE } from '@cipansor/shared';
 import { Errors } from './error';
+import { isUserSuspended } from '@/utils/user-suspension';
 
 // Ensure upload directory exists
 const uploadDir = path.join(process.cwd(), 'public/uploads');
@@ -258,14 +260,24 @@ export const handleSingleUpload = (fieldName: string) => {
  * full request URI. Short access-token TTLs limit the damage. The proper fix is
  * a short-lived URL signed for one file rather than the session token itself.
  */
-export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
+export async function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
   try {
     let token: string | undefined;
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ')) {
       token = authHeader.slice('Bearer '.length);
-    } else if (typeof req.query.token === 'string') {
-      token = req.query.token;
+    } else {
+      // The `HttpOnly` access cookie, which the browser attaches to a
+      // same-origin `<img src>` / `<a href>` — the fetch shapes that cannot set
+      // an Authorization header. `?token=` is still accepted as a documented
+      // native-client path (and transitional for a bookmarked URL), with the
+      // access-log exposure that carries.
+      const cookieToken = parseCookieHeader(req.headers.cookie ?? null)[ACCESS_TOKEN_COOKIE];
+      if (cookieToken) {
+        token = cookieToken;
+      } else if (typeof req.query.token === 'string') {
+        token = req.query.token;
+      }
     }
 
     if (!token) {
@@ -275,6 +287,16 @@ export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
     const payload = verifyToken(token);
     if (payload.type !== 'access' || payload.isTemp) {
       throw Errors.unauthorized('Invalid token');
+    }
+
+    // Signature validity is not authorization. A suspended or deactivated
+    // account's access token stays cryptographically valid for its whole TTL,
+    // and this door previously stopped at the signature — so a suspended
+    // officer could keep pulling every file in /uploads with the token they
+    // already held. Same persistent-state gate as `authenticate`, so the two
+    // agree on who may read.
+    if (await isUserSuspended(payload.sub)) {
+      throw Errors.unauthorized('Akun Anda non-aktif atau telah dibekukan.');
     }
 
     next();

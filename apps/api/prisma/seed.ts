@@ -287,6 +287,24 @@ async function main() {
   console.log('✅ Board members created');
 
   // Create Units
+  // The foundation-level unit (UnitType.OTHER) is the explicit "pusat" home.
+  // Oversight output that belongs to the yayasan as a whole — the Pengawas's
+  // periodic report, for instance — has no single school to file under, and
+  // without an explicit central unit the report generator had to either
+  // refuse or attribute the letter to a random school. `OTHER` is the
+  // foundation-level unit type the rest of the app already recognises
+  // (`student-login-policy`, `dormitories.service`).
+  const yayasanPusat = await prisma.unit.create({
+    data: {
+      foundationId: foundation.id,
+      name: 'Yayasan Pesantren Cipansor (Kantor Pusat)',
+      type: UnitType.OTHER,
+      address: 'Jl. Cipansor No. 1, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      phone: '0266100001',
+      email: 'yayasan@cipansor.or.id',
+    },
+  });
+
   const smpIt = await prisma.unit.create({
     data: {
       foundationId: foundation.id,
@@ -2251,6 +2269,8 @@ async function main() {
                 ? new Prisma.Decimal(totalAmount / 2)
                 : new Prisma.Decimal(0),
           status,
+          // Unit of record: the payment type that raised the bill (SMP IT).
+          unitId: sppPaymentType.unitId,
           period: `${months[monthIdx]} 2024`,
           notes: `Tagihan SPP untuk bulan ${months[monthIdx]}`,
         },

@@ -96,21 +96,16 @@ export const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  // The session lives in server-issued `HttpOnly` cookies, which the browser
+  // attaches automatically only when the request is same-origin *and* this is
+  // set. Production is same-origin (`NEXT_PUBLIC_API_URL` empty → "/api"); in
+  // `pnpm dev` the API is a different origin (localhost:3001), where the API's
+  // CORS config must echo the origin and allow credentials.
+  withCredentials: true,
 });
 
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+// No request interceptor sets an Authorization header from storage: there is no
+// JavaScript-readable token to attach. The cookie travels with the request.
 
 /**
  * Single-flight refresh.
@@ -124,8 +119,9 @@ api.interceptors.request.use(
  * and then, via middleware, to the role dashboard, losing the requested page.
  *
  * Now the first 401 performs the refresh and everyone else awaits its result.
+ * The refresh token is presented by the `HttpOnly` cookie; a body is not sent.
  */
-let refreshInFlight: Promise<string> | null = null;
+let refreshInFlight: Promise<void> | null = null;
 
 /**
  * There is no session to refresh.
@@ -144,24 +140,61 @@ class NoSessionError extends Error {
   }
 }
 
-function refreshAccessToken(): Promise<string> {
+/**
+ * Whether a failed refresh was the *loser* of a concurrent rotation rather than
+ * a rejected credential.
+ *
+ * Two tabs sharing one `HttpOnly` refresh cookie both present it; the API lets
+ * exactly one rotate and answers the other `409 REFRESH_RACE` (it deliberately
+ * does not clear cookies, because the winner just set a fresh pair). The client
+ * must treat this like `NoSessionError`-but-retryable: retry the original
+ * request with whatever cookie is now current, and never run the logout path —
+ * logging out over a benign two-tab race destroyed a valid session.
+ */
+export function isRefreshRaceError(error: unknown): boolean {
+  const data = (error as AxiosError)?.response?.data as
+    { error?: { code?: string } } | undefined;
+  return data?.error?.code === "REFRESH_RACE";
+}
+
+export function hasSessionHint(): boolean {
+  if (typeof window === "undefined") return false;
+  // The `auth-storage` key holds the (non-credential) user blob the store
+  // persists while a session is expected to exist. Its presence is only a hint
+  // used to decide whether a 401 should bounce to /login; the credential is the
+  // HttpOnly cookie.
+  //
+  // The key existing is NOT the hint. The store re-persists an empty state
+  // (`user: null, isAuthenticated: false`) after a 401 on `/auth/me`, so an
+  // anonymous visitor who has ever loaded a page has the key — and treating
+  // that as a session made every later visit fire a *speculative* refresh. Once
+  // a failed refresh also clears the session cookies server-side, that stray
+  // request destroys whatever session the next request legitimately presents
+  // (a sign-in racing the stale refresh), which is the login bounce this was
+  // meant to prevent. Only a blob naming a user is a session.
+  const raw = localStorage.getItem("auth-storage");
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: { user?: unknown; isAuthenticated?: boolean };
+    };
+    const state = parsed?.state;
+    return Boolean(state?.user) || state?.isAuthenticated === true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshSession(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
-    const refreshToken =
-      typeof window !== "undefined"
-        ? localStorage.getItem("refreshToken")
-        : null;
-    if (!refreshToken) throw new NoSessionError();
-
-    const response = await axios.post(`${API_URL}/auth/refresh`, {
-      refreshToken,
-    });
-    const { accessToken, refreshToken: newRefreshToken } = response.data.data;
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", newRefreshToken);
-    document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
-    return accessToken as string;
+    if (typeof window === "undefined" || !hasSessionHint()) {
+      throw new NoSessionError();
+    }
+    // No body: the API reads the refresh token from its `HttpOnly` cookie and
+    // sets the replacement access/refresh cookies on the response.
+    await axios.post(`${API_URL}/auth/refresh`, {}, { withCredentials: true });
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -180,7 +213,12 @@ api.interceptors.response.use(
 
     // Auth endpoints that should NEVER trigger token refresh —
     // their 401 means "wrong credentials", not "expired token".
-    const authPaths = ["/auth/login", "/auth/register", "/auth/refresh"];
+    const authPaths = [
+      "/auth/login",
+      "/auth/register",
+      "/auth/refresh",
+      "/auth/session/clear",
+    ];
     const requestUrl = originalRequest?.url ?? "";
     const isAuthEndpoint = authPaths.some((p) => requestUrl.includes(p));
 
@@ -193,19 +231,24 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const accessToken = await refreshAccessToken();
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        }
+        await refreshSession();
         return api(originalRequest);
       } catch (refreshError) {
+        // A `REFRESH_RACE` is not a dead session: a parallel request in another
+        // tab rotated the same refresh token first and already set fresh
+        // cookies. Retry the original request once with whatever cookie is
+        // current — never treat this as a logout, or the loser of a benign
+        // two-tab refresh would clear the winner's brand-new session.
+        // `_retry` is already true, so a second failure cannot recurse here.
+        if (isRefreshRaceError(refreshError)) {
+          return api(originalRequest);
+        }
+
         // An anonymous visitor never had a session to lose. Public pages call
         // protected endpoints (the SPMB page reads /units), and bouncing a
         // prospective parent to the staff login screen over that 401 is far
         // worse than letting the caller render its own empty state.
-        const hadSession =
-          typeof window !== "undefined" &&
-          !!localStorage.getItem("accessToken");
+        const hadSession = hasSessionHint();
         if (!hadSession) {
           return Promise.reject(error);
         }
@@ -225,10 +268,35 @@ api.interceptors.response.use(
           return Promise.reject(error);
         }
 
+        // End the session server-side. Clearing the `HttpOnly`
+        // access/refresh/routing cookies is a server-only act, and it is what
+        // stops the stale `cipansor_routing` hint from trapping the user in a
+        // login loop. `/auth/refresh`'s own 401 handler already deletes them,
+        // but a client that reached the failure through a path whose response
+        // did not (or whose clearing response was lost) still needs a
+        // guaranteed door; `session/clear` is unauthenticated precisely so it
+        // works when the credentials are already invalid, and it is listed in
+        // `authPaths` above so it can never recurse into this refresh logic.
+        //
+        // Best-effort: if the network is down the client state is still cleared.
+        try {
+          await axios.post(
+            `${API_URL}/auth/session/clear`,
+            {},
+            { withCredentials: true },
+          );
+        } catch {
+          // Ignored — see above.
+        }
+
+        // Clear the non-credential user blob; the server cleared the HttpOnly
+        // cookies above. There is deliberately no client-side token to purge:
+        // the raw pair never reached JS, and the legacy keys are removed only to
+        // sweep up any value left by the pre-cookie build.
+        localStorage.removeItem("auth-storage");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
+
         if (
           typeof window !== "undefined" &&
           !window.location.pathname.includes("/login")

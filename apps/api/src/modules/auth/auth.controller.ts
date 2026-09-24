@@ -11,6 +11,42 @@ import {
 } from './auth.schema';
 import { eventBus } from '@/lib/event-bus';
 import { logger } from '@/lib/logger';
+import { Errors } from '@/middleware/error';
+import {
+  accessTokenTtlSeconds,
+  clearedSessionCookies,
+  readCookie,
+  sessionCookies,
+  setCookies,
+  signedRoutingCookieValue,
+  twoFactorCookie,
+  wantsRawTokens,
+} from '@/utils/auth-cookies';
+import { verifyToken } from '@/lib/jwt';
+import { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from '@cipansor/shared';
+
+/**
+ * The JSON body for a freshly minted session.
+ *
+ * For a browser the session is delivered as `HttpOnly` cookies; the raw
+ * `accessToken`/`refreshToken` are stripped from the body so page JavaScript —
+ * and any XSS on the origin — can never read them. A native Bearer client opts
+ * in with `X-Client-Type: native` and keeps receiving the pair in the body.
+ * The `routing` hint stays for the web's Playwright `storageState` path.
+ */
+function sessionBody(
+  req: Request,
+  data: Record<string, unknown>,
+  routing: string
+): Record<string, unknown> {
+  if (wantsRawTokens(req)) {
+    return { ...data, routing };
+  }
+  const rest = { ...data };
+  delete rest.accessToken;
+  delete rest.refreshToken;
+  return { ...rest, routing };
+}
 
 /**
  * Login
@@ -19,6 +55,42 @@ import { logger } from '@/lib/logger';
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const input: LoginInput = req.body;
   const result = await authService.login(input);
+
+  // Issue the session as server-set `HttpOnly` cookies. On the 2FA-challenge
+  // response only the temporary token is minted, and it is short-lived.
+  if ('accessToken' in result && 'refreshToken' in result) {
+    const tokens = result as { accessToken: string; refreshToken: string };
+    setCookies(res, await sessionCookies(tokens));
+    // The routing hint is included for the web's own scenarios (Playwright
+    // storageState, which cannot originate a Set-Cookie). It is the same signed
+    // value the cookie carries — a browser ignores the field and uses the cookie.
+    res.json({
+      success: true,
+      data: sessionBody(req, result, await signedRoutingCookieValue(tokens)),
+    });
+    return;
+  }
+
+  if ('tempToken' in result && result.tempToken) {
+    // Derive the cookie's Max-Age from the token's own TTL, not from the
+    // function default. The two used to be independent: the mandatory-setup
+    // flow minted a 10-minute token but the cookie defaulted to 5 minutes, so
+    // the browser dropped the credential while the server would still have
+    // accepted it. `tempTokenExpiresIn` is the one value the service used.
+    const ttl =
+      'tempTokenExpiresIn' in result && typeof result.tempTokenExpiresIn === 'string'
+        ? result.tempTokenExpiresIn
+        : '5m';
+    setCookies(res, [twoFactorCookie(result.tempToken, ttl)]);
+    // The browser carries the temp token in the cookie; only a native client
+    // gets it in the body. Everything else (the `requiresTwoFactor` flags) is
+    // safe to expose.
+    if (!wantsRawTokens(req)) {
+      const { tempToken: _temp, ...rest } = result as Record<string, unknown>;
+      res.json({ success: true, data: rest });
+      return;
+    }
+  }
 
   res.json({
     success: true,
@@ -47,12 +119,59 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  * POST /api/auth/refresh
  */
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: RefreshTokenInput = req.body;
-  const tokens = await authService.refreshToken(refreshToken);
+  // Cookie-first: the browser presents no body. A body token is still accepted
+  // for the native Bearer client, and Express 5 leaves `req.body` undefined for
+  // a bodyless request, so the cast is safe.
+  const body = (req.body ?? {}) as Partial<RefreshTokenInput>;
+  const refresh = body.refreshToken || readCookie(req, REFRESH_TOKEN_COOKIE);
+
+  if (!refresh) {
+    throw Errors.unauthorized('No refresh token provided');
+  }
+
+  let tokens;
+  try {
+    tokens = await authService.refreshToken(refresh);
+  } catch (error) {
+    // A refresh that cannot succeed must also end the session *server-side*.
+    //
+    // The failed refresh answers 401 but used to leave every cookie in place,
+    // including the `HttpOnly` `cipansor_routing` hint. The web client clears
+    // them through `/auth/session/clear`, but that is a second round trip and
+    // only one of the clients: a native client, or a browser that hit
+    // `/auth/refresh` directly, kept the stale routing cookie — and the
+    // middleware keeps treating its holder as authenticated, so `/login`
+    // bounces straight back to a dashboard the expired session cannot load.
+    // Clearing here makes the server the authority on a dead session: the 401
+    // response itself carries the deletions.
+    //
+    // Only for a definitive rejection. A 5xx, a rate-limit or a dropped
+    // connection says nothing about the token, and clearing on one would end a
+    // working session over a transient failure — the same distinction the web
+    // interceptor draws.
+    const status = (error as { statusCode?: number })?.statusCode;
+    const code = (error as { code?: string })?.code;
+    // A `REFRESH_RACE` is deliberately *not* a dead session: the same token was
+    // rotated by a parallel request (two tabs sharing one cookie), so a winner
+    // already set fresh cookies. Clearing them here — or letting the web client
+    // treat it as a logout — would destroy the session the winner just created.
+    // The caller retries with whatever cookie is current. Only a definitive
+    // rejection of the credential itself clears.
+    const isRace = code === 'REFRESH_RACE';
+    if (!isRace && (status === 400 || status === 401 || status === 403)) {
+      setCookies(res, clearedSessionCookies());
+    }
+    throw error;
+  }
+
+  // Rotation is server-side: the replacement pair is written straight back as
+  // new cookies, so the browser never handles the raw token. A browser response
+  // carries no token in the body at all; the native client keeps it.
+  setCookies(res, await sessionCookies(tokens));
 
   res.json({
     success: true,
-    data: tokens,
+    data: wantsRawTokens(req) ? tokens : { expiresIn: accessTokenTtlSeconds() },
   });
 });
 
@@ -75,7 +194,11 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, refreshToken);
+  await authService.logout(userId, refreshToken ?? readCookie(req, REFRESH_TOKEN_COOKIE));
+
+  // Clear every session cookie, so a browser that never held the refresh token
+  // in script-reaching storage still ends the session cleanly.
+  setCookies(res, clearedSessionCookies());
 
   res.json({
     success: true,
@@ -143,6 +266,21 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   const { token } = req.body;
   const isTemp = req.user?.isTemp;
   const result = await authService.verifyTwoFactorLogin(userId, token, isTemp);
+
+  // The challenge is satisfied: replace the short-lived temp cookie with the
+  // full session, so the browser needs no token handling at all.
+  if ('accessToken' in result && 'refreshToken' in result) {
+    const tokens = result as { accessToken: string; refreshToken: string };
+    setCookies(res, await sessionCookies(tokens));
+    // Same routing hint as `login`, for the web's Playwright storageState path.
+    // A browser body carries no raw tokens; the native client keeps them.
+    res.json({
+      success: true,
+      data: sessionBody(req, result, await signedRoutingCookieValue(tokens)),
+    });
+    return;
+  }
+
   res.json({ success: true, data: result });
 });
 
@@ -225,4 +363,47 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
   const result = await authService.resetPassword(token, newPassword);
 
   res.json({ success: true, data: result });
+});
+
+/**
+ * Terminate a session from the browser, unconditionally.
+ *
+ * POST /api/auth/session/clear — deliberately NOT behind `authenticate`.
+ *
+ * The problem this solves: a session can be *already dead* while the browser
+ * still holds a `cipansor_routing` cookie. `authenticate` refuses the access
+ * token (expired, suspended, revoked), the web interceptor tries a refresh, and
+ * if the refresh is refused too the client must end the session. But clearing
+ * the `HttpOnly` cookies is a server-only act — `document.cookie` cannot touch
+ * them. Without an unauthenticated path to do it, the stale routing cookie
+ * survives, `apps/web/middleware.ts` keeps treating the visitor as
+ * authenticated, and it redirects `/login` back to the role dashboard: a login
+ * loop the user cannot escape.
+ *
+ * So this door is open on purpose. It performs no privileged action — it only
+ * clears cookies, and clearing cookies you already hold is never an escalation.
+ * The refresh token, if presented, is revoked best-effort so a stolen one does
+ * not outlive the logout; a missing or invalid token is not an error, because
+ * the whole point is that the credential may already be invalid.
+ */
+export const clearSession = asyncHandler(async (req: Request, res: Response) => {
+  const refreshToken = readCookie(req, REFRESH_TOKEN_COOKIE);
+  if (refreshToken) {
+    try {
+      const payload = verifyToken(refreshToken);
+      if (payload.type === 'refresh' && payload.sub) {
+        await authService.logout(payload.sub, refreshToken);
+      }
+    } catch {
+      // The token is invalid/expired — nothing to revoke. The cookies are
+      // cleared below regardless, which is the only outcome that matters here.
+    }
+  }
+
+  setCookies(res, clearedSessionCookies());
+
+  res.json({
+    success: true,
+    data: { message: 'Session cleared' },
+  });
 });

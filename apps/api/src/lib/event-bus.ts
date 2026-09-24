@@ -416,6 +416,7 @@ export function initializeEventBus(): void {
       studentId: event.studentId,
       studentName: event.studentName,
       status: event.status.toLowerCase() as any,
+      unitId: event.unitId,
       unitName: event.unitName,
       className: event.className,
       time: event.date.toISOString(),
@@ -457,6 +458,7 @@ export function initializeEventBus(): void {
       studentName: event.studentName,
       surah: event.surahName,
       ayahCount: event.totalAyah,
+      unitId: event.unitId,
       unitName: event.unitName,
       time: event.recordedAt.toISOString(),
     };
@@ -545,6 +547,7 @@ export function initializeEventBus(): void {
       studentName: event.studentName,
       amount: event.amount,
       type: event.paymentMethod,
+      unitId: event.unitId,
       unitName: event.unitName,
       time: event.paidAt.toISOString(),
     };

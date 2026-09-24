@@ -1,7 +1,9 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { Prisma, RoleCode } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import type { DraftPeriodicReportInput } from '@cipansor/shared';
 import { perencanaanService } from '../perencanaan/perencanaan.service';
+import { CorrespondenceService } from '../correspondence/correspondence.service';
 import { riskService } from '../risk/risk.service';
 
 export class PengawasanService {
@@ -120,7 +122,7 @@ export class PengawasanService {
     rootCause?: string;
     recommendation?: string;
     responsibleId?: string;
-    dueDate?: string;
+    dueDate?: string | null;
     planObjectiveId?: string;
     linkToRiskId?: string;
   }) {
@@ -263,7 +265,13 @@ export class PengawasanService {
 
     if (planObjectiveId) updateData.planObjective = { connect: { id: planObjectiveId } };
     else if (planObjectiveId === null) updateData.planObjective = { disconnect: true };
-    if (rest.dueDate) updateData.dueDate = new Date(rest.dueDate);
+
+    // Nullable-date contract: `undefined` leaves the value alone, `null`
+    // clears it, a string sets it. The old truthy check conflated the first
+    // two, so "clear the due date" was a no-op.
+    if (rest.dueDate !== undefined) {
+      updateData.dueDate = rest.dueDate === null ? null : new Date(rest.dueDate);
+    }
 
     return prisma.auditFinding.update({
       where: { id },
@@ -279,12 +287,27 @@ export class PengawasanService {
     return prisma.auditFinding.delete({ where: { id } });
   }
 
+  /**
+   * The unit that owns a finding, via its parent audit.
+   *
+   * Findings and follow-ups carry no unit of their own, so "which unit may
+   * write this?" is answered by walking up to the audit. Returning `null` means
+   * the finding does not exist; the caller turns that into a 404.
+   */
+  async getFindingAuditUnitId(id: string): Promise<string | null> {
+    const finding = await prisma.auditFinding.findUnique({
+      where: { id },
+      select: { audit: { select: { unitId: true } } },
+    });
+    return finding?.audit.unitId ?? null;
+  }
+
   // ==================== FOLLOW-UPS ====================
 
   async createFollowUp(data: {
     findingId: string;
     action: string;
-    dueDate?: string;
+    dueDate?: string | null;
     evidence?: string;
   }) {
     return prisma.auditFollowUp.create({
@@ -300,7 +323,11 @@ export class PengawasanService {
   async updateFollowUp(id: string, data: any, verifiedById?: string) {
     const updateData: any = { ...data };
 
-    if (data.dueDate) updateData.dueDate = new Date(data.dueDate);
+    // Same nullable-date contract as findings: `undefined` leaves the value,
+    // `null` clears it, a string sets it.
+    if (data.dueDate !== undefined) {
+      updateData.dueDate = data.dueDate === null ? null : new Date(data.dueDate);
+    }
     if (data.status === 'VERIFIED' && verifiedById) {
       updateData.verifiedBy = { connect: { id: verifiedById } };
       updateData.verifiedAt = new Date();
@@ -373,6 +400,20 @@ export class PengawasanService {
 
   async deleteFollowUp(id: string) {
     return prisma.auditFollowUp.delete({ where: { id } });
+  }
+
+  /**
+   * The unit that owns a follow-up, via finding → audit.
+   *
+   * Same reasoning as {@link getFindingAuditUnitId}: the unit is not stored on
+   * the row, so the association is resolved rather than assumed.
+   */
+  async getFollowUpAuditUnitId(id: string): Promise<string | null> {
+    const followUp = await prisma.auditFollowUp.findUnique({
+      where: { id },
+      select: { finding: { select: { audit: { select: { unitId: true } } } } },
+    });
+    return followUp?.finding.audit.unitId ?? null;
   }
 
   // ==================== SUGGESTION ENGINE ====================
@@ -486,6 +527,350 @@ export class PengawasanService {
       const priorityMap: Record<string, number> = { URGENT: 3, HIGH: 2, MEDIUM: 1, LOW: 0 };
       return (priorityMap[b.priority] || 0) - (priorityMap[a.priority] || 0);
     });
+  }
+
+  // ==================== FINANCIAL ARREARS & OVERSIGHT ====================
+
+  async getFinancialArrears(unitId?: string) {
+    const now = new Date();
+
+    // Arrears are aggregated in the database, not by loading every unpaid
+    // invoice and its relations into Node. The old form fetched the whole
+    // outstanding book — a yayasan-wide unpaid-invoice set is large and grows
+    // without bound — joined student, user, unit and payment type for each row,
+    // then summed in a loop. Only three things are ever needed: the totals, the
+    // per-unit breakdown, and the top 15 debtor rows. Each is a `GROUP BY`, and
+    // only the 15 surviving rows get their names resolved.
+    //
+    // The measure is `amount - paid_amount > 0`: a PENDING invoice that is fully
+    // paid, or an overpaid one, has no outstanding balance and must not inflate
+    // any figure. That predicate is spelled once in `outstanding` and reused by
+    // every query, so the summary, the breakdown and the rows cannot drift.
+
+    const outstanding = Prisma.sql`i.amount - i.paid_amount > 0`;
+
+    const unitCondition = unitId ? Prisma.sql`AND i.unit_id = ${unitId}` : Prisma.empty;
+
+    const [summaryRows, unitRows, studentRows] = await Promise.all([
+      prisma.$queryRaw<
+        Array<{ total: number | null; unpaidCount: number; overdueCount: number }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(SUM(i.amount - i.paid_amount), 0) AS total,
+          COUNT(*)::int AS "unpaidCount",
+          COUNT(*) FILTER (
+            WHERE i.status = 'OVERDUE' OR i.due_date < ${now}
+          )::int AS "overdueCount"
+        FROM invoices i
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+      `),
+
+      // `i.unit_id` is NOT NULL and backfilled from the issuing payment type, so
+      // the LEFT JOIN is defensive: an invoice whose unit was soft-deleted still
+      // appears under a 'PUSAT' label rather than vanishing from the breakdown.
+      prisma.$queryRaw<
+        Array<{
+          unitId: string;
+          unitName: string;
+          totalUnpaid: number;
+          count: number;
+          overdueCount: number;
+        }>
+      >(Prisma.sql`
+        SELECT
+          COALESCE(i.unit_id, 'PUSAT') AS "unitId",
+          COALESCE(u.name, 'Yayasan Pusat') AS "unitName",
+          COALESCE(SUM(i.amount - i.paid_amount), 0) AS "totalUnpaid",
+          COUNT(*)::int AS "count",
+          COUNT(*) FILTER (
+            WHERE i.status = 'OVERDUE' OR i.due_date < ${now}
+          )::int AS "overdueCount"
+        FROM invoices i
+        LEFT JOIN units u ON u.id = i.unit_id
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+        GROUP BY COALESCE(i.unit_id, 'PUSAT'), COALESCE(u.name, 'Yayasan Pusat')
+        ORDER BY "totalUnpaid" DESC
+      `),
+
+      // Top 15 by (student, invoice unit): a pupil can owe more than one unit
+      // after a transfer, and each debt stays attributed to the unit that raised
+      // it. Only these 15 rows pay for a name/NIS lookup below.
+      prisma.$queryRaw<
+        Array<{
+          studentId: string;
+          unitId: string;
+          unitName: string;
+          totalUnpaid: number;
+          invoiceCount: number;
+          nis: string | null;
+          studentName: string | null;
+          currentUnitId: string | null;
+          currentUnitName: string | null;
+        }>
+      >(Prisma.sql`
+        SELECT
+          i.student_id AS "studentId",
+          COALESCE(i.unit_id, 'PUSAT') AS "unitId",
+          COALESCE(u.name, 'Yayasan Pusat') AS "unitName",
+          SUM(i.amount - i.paid_amount) AS "totalUnpaid",
+          COUNT(*)::int AS "invoiceCount",
+          s.nis AS "nis",
+          su.name AS "studentName",
+          s.unit_id AS "currentUnitId",
+          cu.name AS "currentUnitName"
+        FROM invoices i
+        LEFT JOIN units u ON u.id = i.unit_id
+        JOIN students s ON s.id = i.student_id
+        LEFT JOIN users su ON su.id = s.user_id
+        LEFT JOIN units cu ON cu.id = s.unit_id
+        WHERE i.status IN ('PENDING', 'PARTIAL', 'OVERDUE')
+          AND ${outstanding}
+          ${unitCondition}
+        GROUP BY i.student_id, COALESCE(i.unit_id, 'PUSAT'), COALESCE(u.name, 'Yayasan Pusat'),
+                 s.nis, su.name, s.unit_id, cu.name
+        ORDER BY "totalUnpaid" DESC
+        LIMIT 15
+      `),
+    ]);
+
+    const summary = summaryRows[0] ?? { total: 0, unpaidCount: 0, overdueCount: 0 };
+
+    return {
+      summary: {
+        totalUnpaidAmount: Number(summary.total ?? 0),
+        totalUnpaidInvoicesCount: Number(summary.unpaidCount ?? 0),
+        overdueInvoicesCount: Number(summary.overdueCount ?? 0),
+      },
+      unitBreakdown: unitRows.map((row) => ({
+        unitId: row.unitId,
+        unitName: row.unitName,
+        totalUnpaid: Number(row.totalUnpaid),
+        count: Number(row.count),
+        overdueCount: Number(row.overdueCount),
+      })),
+      topArrearsStudents: studentRows.map((row) => ({
+        studentId: row.studentId,
+        studentName: row.studentName ?? '-',
+        nis: row.nis || '-',
+        unitId: row.unitId,
+        unitName: row.unitName,
+        currentUnitId: row.currentUnitId ?? null,
+        currentUnitName: row.currentUnitName ?? null,
+        totalUnpaid: Number(row.totalUnpaid),
+        invoiceCount: Number(row.invoiceCount),
+      })),
+    };
+  }
+  // ==================== E-OFFICE PERIODIC OVERSIGHT REPORT ====================
+
+  /**
+   * The unit a foundation-wide letter is filed under.
+   *
+   * A periodic oversight report is not a school's correspondence — it is the
+   * board auditing the yayasan. The old code called `findFirst()` with no
+   * `where`, so the letter landed under whichever unit Postgres returned first
+   * (in practice SMP IT). That is not a policy, it is insertion order, and it
+   * puts the report in the wrong agenda book.
+   *
+   * `UnitType.OTHER` is the foundation-level unit type (`student-login-policy`,
+   * `dormitories.service`), so a unit of that type is the explicit "pusat"
+   * home. `PESANTREN` is the fallback. If neither exists the report cannot be
+   * filed honestly, so it is refused rather than attributed to a random school.
+   */
+  private async resolveFoundationUnitId(): Promise<string> {
+    const central = await prisma.unit.findFirst({
+      where: { type: 'OTHER', deletedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (central) return central.id;
+
+    const pesantren = await prisma.unit.findFirst({
+      where: { type: 'PESANTREN', deletedAt: null },
+      select: { id: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (pesantren) return pesantren.id;
+
+    throw Errors.badRequest(
+      'Belum ada unit tingkat yayasan (unit pusat) untuk menampung Laporan Pengawasan Periodik. ' +
+        'Buat unit bertipe OTHER terlebih dahulu melalui menu Unit.'
+    );
+  }
+
+  /**
+   * The last-resort recipient: an active Super Admin.
+   *
+   * `UserRoleAssignment` is the source of truth for who holds a role (golden
+   * rule #3); the legacy `User.role` column is a fallback that is no longer kept
+   * in step. A `findFirst({ role: 'SUPER_ADMIN' })` therefore misses the very
+   * accounts this branch exists to catch — an active account whose only
+   * Super Admin grant is an assignment — and the report fails even though a
+   * legitimate recipient is available. Resolve by effective assignment first,
+   * exactly as the Pembina query does, and consult the legacy column only as an
+   * explicit last resort for an un-migrated account.
+   */
+  private async findSuperAdminRecipient(): Promise<{ id: string; unitId: string | null } | null> {
+    const now = new Date();
+    const byAssignment = await prisma.user.findFirst({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        userRoles: {
+          some: {
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+            role: { code: RoleCode.SUPER_ADMIN, isActive: true },
+          },
+        },
+      },
+      select: { id: true, unitId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (byAssignment) return byAssignment;
+
+    // Legacy fallback — ONLY for an account that has no role-assignment row at
+    // all.
+    //
+    // The legacy `User.role` column is not kept in step with assignments, so a
+    // bare `role: 'SUPER_ADMIN'` match can select a *former* Super Admin: an
+    // account whose Super Admin assignment was revoked while it kept some other
+    // active role. `User.role` still says `SUPER_ADMIN` because nothing rewrites
+    // the column on revocation, and the report would then be filed — and its
+    // recipient grant handed out — to someone who is no longer an administrator.
+    // Restricting the fallback to accounts with zero assignments keeps its only
+    // legitimate purpose (an un-migrated account) and removes the false match.
+    return prisma.user.findFirst({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        role: 'SUPER_ADMIN',
+        userRoles: { none: {} },
+      },
+      select: { id: true, unitId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async draftPeriodicReportToEOffice(
+    data: DraftPeriodicReportInput,
+    userId: string,
+    _actor: { roleCode?: string | null; unitId?: string | null }
+  ) {
+    // Resolve the recipient with Pembina first, Super Admin only as fallback.
+    //
+    // A single `findFirst` over `OR: [SUPER_ADMIN, Pembina-role]` let Postgres
+    // decide: whichever row it returned first won, so a foundation with both a
+    // Pembina and a Super Admin could have the oversight report addressed to the
+    // administrator instead of the officer it is meant for. Query them in
+    // priority order instead, each with a deterministic `orderBy`.
+    //
+    // "Effective" is the point: a Pembina whose assignment is inactive or
+    // expired is a former officer, and the report should not be drafted for
+    // someone who no longer holds the office. The Super Admin fallback resolves
+    // by effective assignment too (see `findSuperAdminRecipient`) — the legacy
+    // `User.role` column alone would miss an assignment-only Super Admin.
+    const nowForRoles = new Date();
+    const pembinaUser =
+      (await prisma.user.findFirst({
+        where: {
+          isActive: true,
+          deletedAt: null,
+          userRoles: {
+            some: {
+              isActive: true,
+              OR: [{ expiresAt: null }, { expiresAt: { gt: nowForRoles } }],
+              role: { code: 'YAYASAN_PEMBINA' },
+            },
+          },
+        },
+        select: { id: true, unitId: true },
+        orderBy: { createdAt: 'asc' },
+      })) ?? (await this.findSuperAdminRecipient());
+
+    const unitId = await this.resolveFoundationUnitId();
+
+    // No recipient, no report. The draft's whole purpose is to reach the
+    // Pembina for verification and signature; with no effective Pembina and no
+    // active Super Admin there is nobody to address it to, and the letter would
+    // be filed as an orphan the E-Office flow can never advance. The check runs
+    // before the transaction, so nothing is written.
+    if (!pembinaUser) {
+      throw Errors.badRequest(
+        'Laporan Pengawasan Periodik tidak dapat dibuat: belum ada penerima yang sah. ' +
+          'Pastikan terdapat akun Pembina Yayasan dengan penugasan aktif (atau Super Admin aktif) ' +
+          'sebelum mengirim laporan.'
+      );
+    }
+
+    const letterContent = `
+LAPORAN PENGAWASAN PERIODIK YAYASAN PESANTREN CIPANSOR
+Periode: ${data.period}
+Judul: ${data.title}
+
+1. RINGKASAN EKSEKUTIF
+${data.executiveSummary}
+
+2. RINGKASAN TEMUAN AUDIT & PENGATASAN RISIKO
+${data.findingsSummary || 'Semua audit internal dan tindak lanjut temuan terpantau berjalan sesuai ketentuan.'}
+
+3. REKOMENDASI PENGAWAS YAYASAN
+${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus meningkatkan kepatuhan SOP dan efisiensi keuangan.'}
+    `.trim();
+
+    const defaultClassification = await prisma.filingClassification.findFirst();
+
+    /**
+     * Created as a DRAFT through the sanctioned E-Office primitive, not as a
+     * `SENT` letter and not by writing the correspondence tables directly.
+     *
+     * The old code wrote `status: 'SENT'` straight into the row. That skipped
+     * every part of the lifecycle the rest of E-Office depends on: no
+     * `LetterFlowEvent` history, no reviewer rung, no `sentAt`, no dispatch —
+     * so the Pembina received a letter the system already believed had left
+     * the building, with no record of who sent it or how. A draft is the honest
+     * starting state: the Pembina verifies and signs it, and each step is
+     * recorded where E-Office expects to find it.
+     *
+     * `createGeneratedDraftLetter` is the one door for a non-correspondence
+     * module to file a draft. It lives in `CorrespondenceService` because that
+     * is where the letter invariants are — nature/type validity, recipient
+     * eligibility, and the `CREATED` flow event in the same transaction.
+     * Writing `Letter`/`LetterFlowEvent` from here would put a second, drifting
+     * copy of those rules in the oversight module, which is exactly the
+     * duplication this boundary is meant to prevent. Widen the allowlist of
+     * `createLetter` instead and the oversight roles gain the whole
+     * correspondence-creation surface; this primitive grants only the draft.
+     */
+    const letter = await CorrespondenceService.createGeneratedDraftLetter(
+      {
+        unitId,
+        subject: `[Laporan Pengawasan] ${data.title} (${data.period})`,
+        content: letterContent,
+        recipientUserIds: [pembinaUser.id],
+        nature: 'LIMITED',
+        classificationId: defaultClassification?.id ?? null,
+        note: `Laporan Pengawasan Periodik: ${data.title} (${data.period})`,
+        // The draft exists to reach the Pembina; a Super Admin is the only
+        // acceptable substitute. Re-asserted under the recipient lock inside the
+        // primitive, so a revocation that commits between the recipient query
+        // above and the letter insert cannot file it to a former officer.
+        requiredRecipientRoleCodes: ['YAYASAN_PEMBINA', 'SUPER_ADMIN'],
+      },
+      userId
+    );
+
+    return {
+      letterId: letter.id,
+      letterNumber: letter.letterNumber,
+      title: letter.subject,
+      status: letter.status,
+      contentPreview: letterContent,
+    };
   }
 }
 

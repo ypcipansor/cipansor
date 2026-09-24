@@ -11,6 +11,14 @@ export enum ErrorCode {
   FORBIDDEN = 'FORBIDDEN',
   NOT_FOUND = 'NOT_FOUND',
   CONFLICT = 'CONFLICT',
+  /**
+   * A refresh token was presented twice in parallel and a legitimate rotation
+   * won the race. Distinct from `UNAUTHORIZED` on purpose: the credential is
+   * not invalid, it was *spent by the winner*, so the loser must not clear the
+   * session cookies the winner just set. See `AuthService.refreshToken` and the
+   * `/auth/refresh` handler.
+   */
+  REFRESH_RACE = 'REFRESH_RACE',
 
   // Server errors
   INTERNAL_ERROR = 'INTERNAL_ERROR',
@@ -25,6 +33,7 @@ const statusCodeMap: Record<ErrorCode, number> = {
   [ErrorCode.FORBIDDEN]: 403,
   [ErrorCode.NOT_FOUND]: 404,
   [ErrorCode.CONFLICT]: 409,
+  [ErrorCode.REFRESH_RACE]: 409,
   [ErrorCode.INTERNAL_ERROR]: 500,
   [ErrorCode.DATABASE_ERROR]: 500,
 };
@@ -70,6 +79,10 @@ export const Errors = {
   notFound: (resource: string) => new ApiError(ErrorCode.NOT_FOUND, `${resource} not found`),
 
   conflict: (message: string) => new ApiError(ErrorCode.CONFLICT, message),
+
+  /** A spent-but-legitimate refresh token racing its own rotation. See `ErrorCode.REFRESH_RACE`. */
+  refreshRace: (message = 'Refresh token is being rotated by another request') =>
+    new ApiError(ErrorCode.REFRESH_RACE, message),
 
   internal: (message = 'Internal server error') => new ApiError(ErrorCode.INTERNAL_ERROR, message),
 };

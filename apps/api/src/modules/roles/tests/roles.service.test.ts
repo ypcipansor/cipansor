@@ -1,55 +1,26 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    userRoleAssignment: {
-      findFirst: vi.fn(),
-      updateMany: vi.fn(),
-      update: vi.fn(),
-    },
-  },
-}));
+/**
+ * The role-switch service has exactly one public method that mutates
+ * assignments and mints a session: `switchRoleAndIssueSession`, which runs the
+ * lock protocol and the account-state re-check in one transaction.
+ *
+ * An earlier `switchRole(userId, roleAssignmentId)` — a plain read, an
+ * `updateMany`, an `update`, no lock and no account-state check — was left
+ * behind after the controller moved to the transactional method. It is
+ * unreachable, but a dead writer that predates the protocol is a trap: the
+ * lock protocol in `utils/role-assignment-lock.ts` is only sound if every
+ * writer takes the same locks in the same order, and a future caller reaching
+ * for the shorter name would silently reintroduce the suspension race this PR
+ * closes. This test fails if the unlocked method is ever re-added.
+ */
+describe('RolesService exposes one assignment-writing switch path', () => {
+  const source = readFileSync(join(__dirname, '..', 'roles.service.ts'), 'utf8');
 
-vi.mock('@/lib/redis', () => ({ redis: {} }));
-
-import { prisma } from '@/lib/prisma';
-import { RolesService } from '../roles.service';
-
-const mocked = prisma as unknown as {
-  userRoleAssignment: Record<string, ReturnType<typeof vi.fn>>;
-};
-
-describe('RolesService.switchRole', () => {
-  const service = new RolesService();
-  beforeEach(() => vi.clearAllMocks());
-
-  it('menolak assignment yang sudah kedaluwarsa', async () => {
-    mocked.userRoleAssignment.findFirst.mockResolvedValue({
-      id: 'assign-1',
-      expiresAt: new Date(Date.now() - 1000),
-    } as any);
-
-    await expect(service.switchRole('u-1', 'assign-1')).rejects.toThrow(/expired/i);
-
-    expect(mocked.userRoleAssignment.updateMany).not.toHaveBeenCalled();
-    expect(mocked.userRoleAssignment.update).not.toHaveBeenCalled();
-  });
-
-  it('mengizinkan assignment yang masih berlaku', async () => {
-    mocked.userRoleAssignment.findFirst.mockResolvedValue({
-      id: 'assign-1',
-      expiresAt: new Date(Date.now() + 60_000),
-      role: { code: 'SDIT_GURU' },
-      user: { id: 'u-1' },
-    } as any);
-    mocked.userRoleAssignment.updateMany.mockResolvedValue({ count: 1 } as any);
-    mocked.userRoleAssignment.update.mockResolvedValue({ id: 'assign-1' } as any);
-
-    await expect(service.switchRole('u-1', 'assign-1')).resolves.toMatchObject({
-      activeRole: { id: 'assign-1' },
-    });
-
-    expect(mocked.userRoleAssignment.updateMany).toHaveBeenCalled();
-    expect(mocked.userRoleAssignment.update).toHaveBeenCalled();
+  it('does not define the legacy unlocked `switchRole` method', () => {
+    // Match a method declaration, not the transactional `switchRoleAndIssueSession`.
+    expect(source).not.toMatch(/\basync\s+switchRole\s*\(/);
   });
 });

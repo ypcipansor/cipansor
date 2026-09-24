@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import { resolveRoutingCookieSecret } from '@cipansor/shared';
 import { findSecretIssues } from './assert-secrets';
 import { parseCorsOrigins } from './cors';
 
@@ -135,6 +136,22 @@ export const config = {
   },
 
   /**
+   * Dedicated signer for the `cipansor_routing` cookie the web middleware
+   * routes on. Falls back to `JWT_SECRET` when unset, so the two sides cannot
+   * disagree about which key is in force; production refuses to boot when
+   * neither is present. See `resolveRoutingCookieSecret` in `@cipansor/shared`.
+   */
+  routingCookie: {
+    get secret(): string {
+      return resolveRoutingCookieSecret({
+        ROUTING_COOKIE_SECRET: process.env.ROUTING_COOKIE_SECRET,
+        JWT_SECRET: process.env.JWT_SECRET,
+        NODE_ENV: process.env.NODE_ENV,
+      });
+    },
+  },
+
+  /**
    * The dedicated signer for student-card QR codes (see
    * `resolveStudentCardHmacSecret` above). Kept separate from JWT so that
    * rotating session credentials never invalidates already-printed physical
@@ -146,6 +163,20 @@ export const config = {
         process.env.STUDENT_CARD_HMAC_SECRET,
         process.env.NODE_ENV
       );
+    },
+  },
+
+  /**
+   * Optional dedicated key for the WBS tracking-token digest.
+   *
+   * Absent, `utils/wbs-token.ts` derives a domain-separated key from
+   * `JWT_SECRET` with HKDF, so no new mandatory production env var is required
+   * and the boot guard is unchanged. Set it only to rotate this digest
+   * independently of the session signer.
+   */
+  wbsTracking: {
+    get hmacSecret(): string | undefined {
+      return process.env.WBS_TRACKING_HMAC_SECRET || undefined;
     },
   },
 

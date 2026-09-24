@@ -1,0 +1,23 @@
+-- Durable account-state version: makes the suspension cache safe to prime
+-- asynchronously.
+--
+-- `suspendBoardMember` commits its transaction and then primes the Redis
+-- suspension marker *outside* it. That post-commit prime is asynchronous with
+-- respect to a lift: a lift can commit (deleting the cache key) before the
+-- delayed prime runs, and the prime then writes a positive marker for an account
+-- that is already restored. The account stays refused until the 60s TTL — the
+-- fail-closed direction, but still a wrong denial of a legitimate user, and the
+-- review flagged it.
+--
+-- `account_state_writer` cannot order the two events: it is an opaque token that
+-- proves *who* owns the state, not *which* write is newer. This column is the
+-- ordering: a monotonic counter bumped by every guarded account-state write
+-- (suspension, lift, admin deactivation, HR offboarding, soft delete) in the same
+-- statement. The cache write compares it with the version already recorded
+-- alongside the marker and refuses to overwrite a newer one, so a delayed prime
+-- from a superseded event cannot resurrect a stale marker.
+--
+-- Backfilled to 0 for existing rows: no ordering information exists for writes
+-- that already happened, and 0 is the safe floor — every future guarded write
+-- increments to at least 1 and therefore outranks any pre-migration state.
+ALTER TABLE "users" ADD COLUMN "account_state_version" INTEGER NOT NULL DEFAULT 0;

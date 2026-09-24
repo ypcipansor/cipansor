@@ -52,13 +52,24 @@ export const PUBLIC_PATH_PREFIXES = [
    */
   "/verifikasi",
   /**
-   * Where a printed student ID card's QR points. It is a `/public/*` page, so
-   * the middleware matcher already exempts it from the session wall — but it
-   * must ALSO be classified as a public path here so `hostSplitActionFor` keeps
-   * it on the apex (the host `config.publicSiteUrl` embeds in the printed QR),
-   * and so the two canonical lists stay in step (Flag 11).
+   * Every anonymous page under the `/public/` URL segment: `/public/spmb` and
+   * its `/track`, `/public/verify-card`, `/public/verify-letter`,
+   * `/public/verify-sanad`, and the `/public/wbs` submission and tracking pages.
+   *
+   * The whole segment is public, and the host split must say so. The middleware
+   * matcher now sends these page URLs through middleware (it no longer excludes
+   * `public`), so `hostSplitActionFor` decides their host: listing them here
+   * keeps them on the apex — the host `config.publicSiteUrl` embeds in printed
+   * QR codes and campaign links — and stops the portal from serving an anonymous
+   * page the split says belongs to the public site. A `/public/*` page missing
+   * here would be answered 404 on the apex, since `isPublic && !isPublicPath`.
+   *
+   * Static assets in the `public/` directory are unaffected: they carry a file
+   * extension, so the matcher's `.*\\..*` clause excludes them and this list is
+   * never consulted. Kept in step with `publicPrefixes` in middleware.ts (sync
+   * test enforced).
    */
-  "/public/verify-card",
+  "/public",
 ];
 
 /** True when the request arrived on the portal, ignoring case and port. */

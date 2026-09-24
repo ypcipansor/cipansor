@@ -36,6 +36,7 @@ const {
         findFirst: vi.fn(),
         delete: vi.fn(),
         deleteMany: vi.fn(),
+        updateMany: vi.fn(),
       },
       unit: {
         findUnique: vi.fn(),
@@ -47,8 +48,21 @@ const {
       },
       userRoleAssignment: {
         create: vi.fn(),
+        // The session-issuing paths re-read the effective assignment under the
+        // assignment-row lock, so every issuance test needs this query.
+        findMany: vi.fn(),
+        findFirst: vi.fn(),
+        // The legacy-role fallback only applies to an account with no
+        // assignment *rows at all*, so issuance counts them too.
+        count: vi.fn(),
       },
-      // register() runs user + role-assignment creation in a transaction.
+      boardMemberSuspension: {
+        findFirst: vi.fn(),
+      },
+      // refreshToken() re-asserts the account state under a row lock before
+      // rotating; the register()/2FA transaction runs its callback against the
+      // mock client below.
+      $queryRaw: vi.fn(),
       $transaction: vi.fn(),
     },
     mockComparePassword: vi.fn(),
@@ -151,8 +165,31 @@ describe('AuthService', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     authService = new AuthService();
-    // The register() transaction simply runs its callback against the mock client.
+    // The transactions (register, refresh rotation, 2FA issuance) simply run
+    // their callback against the mock client.
     (mockPrisma.$transaction as any).mockImplementation(async (cb: any) => cb(mockPrisma));
+    // The account-state re-assertion returns the claimed row by default.
+    (mockPrisma.$queryRaw as any).mockResolvedValue([{ id: 'user-1' }]);
+    // Token-issuing paths re-read the persistent account state before minting.
+    (mockPrisma.user.findUnique as any).mockResolvedValue({
+      isActive: true,
+      deletedAt: null,
+    });
+    (mockPrisma.boardMemberSuspension.findFirst as any).mockResolvedValue(null);
+    // Session issuance re-reads the effective assignment under the lock. A
+    // generic active assignment satisfies the happy paths; tests that exercise
+    // a revoked role override it with `[]`.
+    (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValue([
+      {
+        isPrimary: true,
+        roleId: 'role-id-1',
+        unitId: 'unit-1',
+        role: { code: 'STUDENT', permissions: [] },
+      },
+    ]);
+    // The happy-path account holds an assignment, so the legacy-role fallback
+    // never applies. Tests that exercise the fallback override this.
+    (mockPrisma.userRoleAssignment.count as any).mockResolvedValue(1);
   });
 
   describe('login', () => {
@@ -381,12 +418,21 @@ describe('AuthService', () => {
   });
 
   describe('refreshToken', () => {
+    beforeEach(() => {
+      // Rotation now *claims* the presented row with a conditional `updateMany`
+      // (`rotatedAt: null`), whose rowcount identifies the loser of a concurrent
+      // refresh, instead of a `delete` that threw P2025. The happy-path default
+      // claims one row; tests that exercise the race override it with `count: 0`.
+      mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
+    });
+
     it('should refresh tokens with valid refresh token', async () => {
       const mockStoredToken = {
         id: 'token-1',
         token: 'valid-refresh-token',
         userId: 'user-1',
         expiresAt: new Date(Date.now() + 86400000),
+        rotatedAt: null,
         user: {
           id: 'user-1',
           email: 'test@example.com',
@@ -410,7 +456,6 @@ describe('AuthService', () => {
         type: 'refresh',
       });
       mockPrisma.refreshToken.findFirst.mockResolvedValue(mockStoredToken);
-      mockPrisma.refreshToken.delete.mockResolvedValue({});
       mockPrisma.refreshToken.create.mockResolvedValue({});
 
       const result = await authService.refreshToken('valid-refresh-token');
@@ -450,13 +495,250 @@ describe('AuthService', () => {
           userRoles: [],
         },
       });
-      mockPrisma.refreshToken.delete.mockResolvedValue({});
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      // The decommission purge removed the assignment as well; nothing qualifies.
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(0);
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
         'No active role assignment found'
       );
       // The token is consumed, but no new one is minted.
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a user whose assignment rows remain but are all inactive, despite a live legacy role', async () => {
+      // CWE-863: `removeRoleAssignment` used to delete only the assignment row,
+      // leaving the deprecated `users.role` column behind. Refresh fell back to
+      // it and re-minted the very role that was revoked — a revoked SUPER_ADMIN
+      // kept renewing sessions. The fallback is now gated on the account holding
+      // no assignment rows at all; an inactive row keeps the count above zero,
+      // so the role fails closed.
+      mockVerifyToken.mockReturnValue({ sub: 'user-revoked', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-revoked',
+        token: 'revoked-refresh-token',
+        userId: 'user-revoked',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-revoked',
+          email: 'revoked@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      // A revoked-but-not-deleted row is still a row.
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(1);
+
+      await expect(authService.refreshToken('revoked-refresh-token')).rejects.toThrow(
+        'No active role assignment found'
+      );
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a user whose assignments all expired, despite a live legacy role', async () => {
+      // An assignment that expired is not "no assignment ever held": the
+      // fallback must not resurrect the coarse legacy role. The count is of
+      // *all* rows, so the expired row keeps it above zero.
+      mockVerifyToken.mockReturnValue({ sub: 'user-expired', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-expired',
+        token: 'expired-refresh-token',
+        userId: 'user-expired',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-expired',
+          email: 'expired@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(1);
+
+      await expect(authService.refreshToken('expired-refresh-token')).rejects.toThrow(
+        'No active role assignment found'
+      );
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('still refreshes a genuine legacy account that never held an assignment', async () => {
+      // The fallback has to keep working for the unmigrated case it exists for:
+      // zero assignment rows, no active assignment, but a legacy `users.role`.
+      mockVerifyToken.mockReturnValue({ sub: 'user-legacy', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-legacy',
+        token: 'legacy-refresh-token',
+        userId: 'user-legacy',
+        expiresAt: new Date(Date.now() + 86400000),
+        user: {
+          id: 'user-legacy',
+          email: 'legacy@example.com',
+          role: UserRole.SUPER_ADMIN,
+          unitId: null,
+          isActive: true,
+          userRoles: [],
+        },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.create.mockResolvedValue({});
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+      (mockPrisma.userRoleAssignment.count as any).mockResolvedValueOnce(0);
+
+      const result = await authService.refreshToken('legacy-refresh-token');
+
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(mockPrisma.refreshToken.create).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Reviewer finding 1 (CWE-863): a session must be minted from the assignment
+   * that exists at the commit point, not from the snapshot read before the
+   * transaction opened. A revocation landing between the two used to leave the
+   * new access + refresh pair stamped with a role the user no longer held.
+   */
+  describe('session issuance re-derives the role under the lock', () => {
+    const validLoginInput = { email: 'test@example.com', password: 'password123' };
+    const mockUser = {
+      id: 'user-1',
+      email: 'test@example.com',
+      name: 'Test User',
+      passwordHash: 'hashed-password',
+      role: UserRole.TEACHER,
+      unitId: 'unit-1',
+      isActive: true,
+      isTwoFactorEnabled: false,
+      unit: { id: 'unit-1', name: 'Test Unit' },
+      userRoles: [
+        {
+          id: 'role-1',
+          roleId: 'role-id-1',
+          isPrimary: true,
+          isActive: true,
+          role: { id: 'role-id-1', name: 'Guru', code: 'SDIT_GURU' },
+          unit: { id: 'unit-1', name: 'Test Unit' },
+        },
+      ],
+    };
+
+    it('login refuses and mints nothing when the assignment is gone by commit', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      // The pre-lock snapshot saw the SUPER_ADMIN assignment; by the time the
+      // locked re-read runs it has been revoked. No token may carry it.
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('refresh refuses and mints nothing when the assignment is gone by commit', async () => {
+      mockVerifyToken.mockReturnValue({ sub: 'user-1', type: 'refresh' });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({
+        id: 'token-1',
+        token: 'valid-refresh-token',
+        userId: 'user-1',
+        expiresAt: new Date(Date.now() + 86400000),
+        // Legacy role null so the fallback cannot mask the missing assignment.
+        user: { id: 'user-1', email: 'test@example.com', role: null, unitId: 'unit-1' },
+      });
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([]);
+
+      await expect(authService.refreshToken('valid-refresh-token')).rejects.toMatchObject({
+        statusCode: 403,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('login refuses when an admin assignment becomes primary under the lock without 2FA', async () => {
+      // The password step authenticated an ordinary (STUDENT) role, so the
+      // snapshot decided no second factor was required. By commit the lock sees
+      // the SUPER_ADMIN assignment primary and 2FA off. Minting now would hand
+      // out an admin session with no second factor (CWE-287), so it must be
+      // refused and leave no refresh token.
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: false });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([
+        {
+          isPrimary: true,
+          // Same row as the snapshot — the role's *code* was edited to an admin
+          // one, so the role-change guard cannot catch this and the 2FA
+          // re-check is the branch that must.
+          roleId: 'role-id-1',
+          unitId: null,
+          role: { id: 'role-id-1', code: 'SUPER_ADMIN', permissions: [] },
+        },
+      ]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('login refuses when the role differs from the password-verified snapshot', async () => {
+      // A role change between the password check and the commit means this
+      // request's authentication no longer describes the session it would mint,
+      // so it is refused for any role — not just admin ones.
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: true });
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce([
+        {
+          isPrimary: true,
+          roleId: 'role-bendahara',
+          unitId: null,
+          role: { id: 'role-bendahara', code: 'YAYASAN_BENDAHARA', permissions: [] },
+        },
+      ]);
+
+      await expect(authService.login(validLoginInput)).rejects.toMatchObject({
+        statusCode: 409,
+      });
+      expect(mockGenerateTokenPair).not.toHaveBeenCalled();
+      expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
+    });
+
+    it('returns userRoles from the locked read so the response matches the token', async () => {
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockComparePassword.mockResolvedValue(true);
+      (mockPrisma.user.findUnique as any).mockResolvedValue({ isTwoFactorEnabled: false });
+      const liveAssignments = [
+        {
+          isPrimary: true,
+          roleId: 'role-id-1',
+          unitId: 'unit-9',
+          role: { id: 'role-id-1', code: 'SDIT_GURU', permissions: ['x'] },
+        },
+      ];
+      (mockPrisma.userRoleAssignment.findMany as any).mockResolvedValueOnce(liveAssignments);
+
+      const result = (await authService.login(validLoginInput)) as any;
+
+      // The response must advertise the role the token carries, not the
+      // pre-lock snapshot — the web derives its primary role from this field.
+      expect(result.user.userRoles).toEqual(liveAssignments);
+      expect(result.user.userRoles[0].role.code).toBe('SDIT_GURU');
+      // The token and the response describe the same role.
+      expect(mockGenerateTokenPair).toHaveBeenCalledWith(
+        expect.objectContaining({ roleCode: 'SDIT_GURU', roleId: 'role-id-1' })
+      );
     });
   });
 
@@ -506,6 +788,33 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('email');
       expect(result).toHaveProperty('academicYearId', 'ay-1');
       expect(result).not.toHaveProperty('passwordHash');
+    });
+
+    it('should not leak the accountStateWriter ownership marker', async () => {
+      // `accountStateWriter` records which writer owns the current `isActive`,
+      // so the suspension lift can tell its own deactivation from a later admin
+      // one. It is server-side bookkeeping: not part of the shared `User` DTO,
+      // and shipping it spent bytes the web's `auth-storage` cookie does not
+      // have (see apps/web/src/lib/auth-cookie.ts).
+      const mockUser = {
+        id: 'user-1',
+        email: 'test@example.com',
+        name: 'Test User',
+        passwordHash: 'hashed-password',
+        role: UserRole.SUPER_ADMIN,
+        unitId: 'unit-1',
+        unit: { id: 'unit-1', name: 'Test Unit' },
+        student: null,
+        userRoles: [],
+        accountStateWriter: 'suspension:abc-123',
+      };
+      mockPrisma.user.findFirst.mockResolvedValue(mockUser);
+      mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+
+      const result = await authService.getCurrentUser('user-1');
+
+      expect(result).not.toHaveProperty('accountStateWriter');
+      expect(result).toHaveProperty('email');
     });
 
     it('should throw error for non-existent user', async () => {

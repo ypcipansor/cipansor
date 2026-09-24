@@ -44,7 +44,7 @@ Mount new modules in `src/app.ts`.
 - **Outbound URLs: `config.publicSiteUrl` / `config.portalUrl`**, and for
   certificates `utils/verification-url.ts`. Never build one from
   `process.env.SOMETHING || 'https://…'` inline. There used to be an `APP_URL`
-  doing that job; because the name says nothing about *which* of the two hosts
+  doing that job; because the name says nothing about _which_ of the two hosts
   it means, four call sites each guessed differently and all four shipped —
   `cipansor.app` (×2), `cipansor.com`, `localhost:3000`. Two of those are domains
   the yayasan does not own, and one was printed onto physical asset labels.
@@ -53,10 +53,16 @@ Mount new modules in `src/app.ts`.
 - **A new env var must be added to the `environment:` block in
   `docker-compose.yml`, not just `.env`.** Compose enumerates by name; a value
   present only in `.env` never reaches the container, and the feature stays
-  silently inert. Give it a default that degrades to *correct* rather than to
+  silently inert. Give it a default that degrades to _correct_ rather than to
   localhost. Verify with `docker exec cipansor-api sh -c 'env | grep ^NAME='`.
 - Cross-module side effects: emit via `eventBus` (typed `AppEvents`), don't reach
-  into other modules' services.
+  into other modules' services. A **synchronous command that must return a
+  value** is not a side effect — the bus has no reply channel — and goes through
+  a _narrow, typed primitive_ the owning module exports (never its tables or its
+  broad CRUD surface). Documented case:
+  `pengawasan.service.ts` → `CorrespondenceService.createGeneratedDraftLetter`,
+  pinned by `pengawasan/tests/correspondence-boundary.test.ts`; see
+  `docs/planning/pengawasan-correspondence-boundary.md`.
 - **Contracts: `@cipansor/shared`.** A user-facing endpoint's request/response
   DTO is a shared Zod type reused by the web client — reuse it, or add it to
   shared when missing (never redeclare per-app). A new endpoint that serves the
@@ -83,6 +89,49 @@ Mount new modules in `src/app.ts`.
   `await verify({ token, secret })` → `{ valid }`.
 - Privilege-escalation guards (e.g. unit admins cannot mint governance roles)
   live in `modules/auth/auth.service.ts`; keep them and cover with tests.
+
+## Suspension, token issuance and role-assignment locking
+
+A board suspension (`BoardSuspensionService`) coordinates several rows, and a
+number of independent writers can race it. The invariant that keeps them safe is
+a single **lock order**; every writer must take locks in this order or it can
+deadlock against (or slip past) a suspension.
+
+1. **`users` row** (`SELECT … FOR UPDATE`) — the serialisation point for account
+   state. A suspension, every token issuer, role switching and e-sign activation
+   all lock the user first.
+2. **`user_role_assignments` rows**, ordered by `id` — a role can be revoked
+   concurrently with a decision that depends on it (forwarding a WBS report,
+   delegating a Plh/Plt). Locking the `users` row alone does not serialise an
+   assignment `UPDATE`/`DELETE`; those rows must be locked too, in a deterministic
+   order.
+3. **`user_signing_keys` row / signer advisory lock** — E-Sign operations take the
+   key row (and `esign-suspension-lock.ts`'s advisory lock) last.
+4. **`wbs_reports` row** — WBS mutations take the report lock first, then a
+   recipient's `users`/assignment rows; the report lock is always outermost among
+   WBS's own rows.
+
+Writers that must honour this order: `modules/auth` (login, 2FA completion,
+refresh rotation), `modules/roles` (role switch), `modules/users`, `modules/hr`,
+`modules/esign` (activation, passphrase change, signing, revocation),
+`modules/pengawasan` (suspension and lift, WBS forwarding), and the Redis-backed
+suspension cache / `lib/realtime.ts` invalidation paths.
+
+Because the invariant spans modules, **run the concurrency integration suites
+whenever any of these writers changes**:
+
+```bash
+RUN_DB_TESTS=1 pnpm --filter api exec vitest run \
+  tests/integration/esign-suspension-race.integration.test.ts \
+  tests/integration/board-suspension-concurrency.integration.test.ts \
+  tests/integration/token-issuance-suspension-race.integration.test.ts \
+  tests/integration/wbs-forward-unit-assignment.integration.test.ts
+```
+
+These tests need real PostgreSQL (they exercise row locks and `FOR UPDATE`); the
+unit suite cannot see a lost update. A change to one writer that skips the order
+turns another module's race test red, which is the point — do not "fix" that by
+loosening the test.
 
 ## Testing
 

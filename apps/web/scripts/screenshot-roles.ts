@@ -111,48 +111,31 @@ function storageStateFor(session: Session) {
     state: { user: session.user, isAuthenticated: true },
     version: 0,
   });
-  // The middleware cookie only needs the fields rbac reads; the full user
-  // object can exceed the 4 KB cookie limit (CDP rejects it outright).
-  const user = session.user as {
-    id?: string;
-    role?: string;
-    unitId?: string | null;
-    userRoles?: Array<{ isPrimary?: boolean; role?: { code?: string } }>;
-  };
-  const slimUser = {
-    id: user.id,
-    role: user.role,
-    unitId: user.unitId,
-    userRoles: (user.userRoles ?? []).map((a) => ({
-      isPrimary: a.isPrimary,
-      role: { code: a.role?.code },
-    })),
-  };
-  const cookieAuthStorage = JSON.stringify({
-    state: { user: slimUser, isAuthenticated: true },
-    version: 0,
-  });
+  // The session cookies are the `HttpOnly` set the API issues. A Playwright
+  // storageState can seed them directly, which is what lets the script open
+  // protected pages without a browser Round trip through the API.
+  const cookies = [
+    { name: "access_token", value: session.accessToken },
+    { name: "refresh_token", value: session.refreshToken },
+  ];
+  const routing = (session as { routing?: string }).routing;
+  if (routing) {
+    cookies.push({ name: "cipansor_routing", value: routing });
+  }
   return {
-    cookies: [
-      { name: "accessToken", value: session.accessToken },
-      { name: "auth-storage", value: encodeURIComponent(cookieAuthStorage) },
-    ].map((c) => ({
+    cookies: cookies.map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
       path: "/",
       expires: Math.floor(Date.now() / 1000) + 86400,
-      httpOnly: false,
+      httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
     })),
     origins: [
       {
         origin,
-        localStorage: [
-          { name: "accessToken", value: session.accessToken },
-          { name: "refreshToken", value: session.refreshToken },
-          { name: "auth-storage", value: authStorage },
-        ],
+        localStorage: [{ name: "auth-storage", value: authStorage }],
       },
     ],
   };

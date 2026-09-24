@@ -35,7 +35,7 @@ interface SocketProviderProps {
 export function SocketProvider({ children }: SocketProviderProps) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
 
   useEffect(() => {
     // Only connect if authenticated
@@ -55,9 +55,10 @@ export function SocketProvider({ children }: SocketProviderProps) {
 
     const newSocket = io(socketUrl, {
       path: "/socket.io",
-      auth: {
-        token: user?.id, // fallback or remove token requirement if generic
-      },
+      // The session cookie is `HttpOnly`, so there is no token to put in
+      // `auth`. `withCredentials` makes the browser send the cookie with the
+      // handshake, which the API's `authenticateSocket` reads.
+      withCredentials: true,
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 5,
@@ -92,7 +93,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     return () => {
       newSocket.disconnect();
     };
-  }, [isAuthenticated, user?.id]);
+  }, [isAuthenticated]);
 
   return (
     <SocketContext.Provider value={{ socket, isConnected }}>

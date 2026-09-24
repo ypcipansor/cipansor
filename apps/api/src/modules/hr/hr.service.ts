@@ -19,6 +19,8 @@ import {
 } from './hr.schema';
 import bcrypt from 'bcryptjs';
 import { Errors } from '../../middleware/error';
+import { invalidateUserSuspensionCache, markUserSuspended } from '../../utils/user-suspension';
+import { activationState, deactivationState, softDeleteState } from '../../utils/account-state';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -304,8 +306,16 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 
   if (!user) throw Errors.notFound('Employee not found');
 
-  return prisma.$transaction(async (tx) => {
-    // 1. Update User
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Update User. When `isActive` is being changed, the write also takes
+    //    ownership of the account state (see `utils/account-state.ts`) so a
+    //    board suspension cannot mistake this admin/HR change for its own.
+    const stateChange =
+      data.isActive === false
+        ? deactivationState()
+        : data.isActive === true
+          ? activationState()
+          : {};
     const updatedUser = await tx.user.update({
       where: { id },
       data: {
@@ -313,7 +323,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
         email: data.email,
         unitId: data.unitId,
         phone: data.phone,
-        isActive: data.isActive,
+        ...stateChange,
       },
     });
 
@@ -353,15 +363,27 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
 
     return updatedUser;
   });
+
+  // Cache invalidation must happen *after* the transaction commits: writing the
+  // suspension marker inside the rollback-able body would leave the cache
+  // claiming a deactivation the database never kept. The version is the one the
+  // committed write produced, so a delayed prime cannot outrank a later restore.
+  if (data.isActive === false) {
+    await markUserSuspended(id, result.accountStateVersion);
+  } else if (data.isActive === true) {
+    await invalidateUserSuspensionCache(id, result.accountStateVersion);
+  }
+
+  return result;
 }
 
 export async function deleteEmployee(id: string) {
   // Soft delete user and related profile
-  return prisma.$transaction(async (tx) => {
+  const user = await prisma.$transaction(async (tx) => {
     const user = await tx.user.update({
       where: { id },
       data: {
-        deletedAt: new Date(),
+        ...softDeleteState(),
         isActive: false,
         email: `deleted_${id}_${Date.now()}@example.com`, // Free up email
       },
@@ -384,6 +406,9 @@ export async function deleteEmployee(id: string) {
 
     return user;
   });
+
+  await markUserSuspended(id, user.accountStateVersion);
+  return user;
 }
 
 // =====================================

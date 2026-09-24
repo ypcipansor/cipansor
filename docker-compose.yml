@@ -61,6 +61,18 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
       STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
+      # Optional; absent, the WBS tracking digest derives its key from
+      # JWT_SECRET. Enumerated here so an operator can set it — a var present
+      # only in .env never reaches the container.
+      WBS_TRACKING_HMAC_SECRET: ${WBS_TRACKING_HMAC_SECRET:-}
+      # Optional; absent, the routing-cookie MAC uses JWT_SECRET (the middleware
+      # resolves the same value). Enumerated so it reaches the container — a var
+      # present only in .env never does, and the failure is silent.
+      ROUTING_COOKIE_SECRET: ${ROUTING_COOKIE_SECRET:-}
+      # Forces the `Secure` flag on the session cookies. Sensible default: on in
+      # production (NODE_ENV=production → true). Set to `false` only to run the
+      # container on plain http, where a `Secure` cookie would never be stored.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old
@@ -234,6 +246,12 @@ services:
       # value present only in .env never reaches the container. Adding a
       # variable means editing both files.
       API_INTERNAL_URL: ${API_INTERNAL_URL:-http://api:3001}
+      # The routing-cookie MAC key. Must match the API's ROUTING_COOKIE_SECRET
+      # (both fall back to JWT_SECRET); the middleware verifies the cookie the
+      # API signed, so a mismatch is a session that cannot be routed. Enumerated
+      # because a var present only in .env never reaches the container.
+      ROUTING_COOKIE_SECRET: ${ROUTING_COOKIE_SECRET:-}
+      JWT_SECRET: ${JWT_SECRET}
     volumes:
       # next/image resizes on first request and caches the result here. Without
       # a volume that cache dies with every redeploy, so the next visitor — very

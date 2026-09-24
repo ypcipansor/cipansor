@@ -43,6 +43,26 @@ export const GOVERNANCE_ROLE_CODES: readonly string[] = [
 ];
 
 /**
+ * Roles whose remit is the whole foundation, so a unit is optional for them.
+ *
+ * A governance role or a Super Admin may act across every unit and may file a
+ * record addressed to the foundation as a whole; a unit admin is pinned to its
+ * own unit. This is the shared predicate the web uses to decide whether to
+ * offer a unit chooser and the API uses to decide whether a caller-supplied
+ * unit is a choice or must be overridden with the caller's own.
+ *
+ * Mirrors `FOUNDATION_WIDE_ROLES` in `apps/api/src/modules/pengawasan/…`.
+ */
+export const FOUNDATION_WIDE_ROLE_CODES: readonly string[] = [
+  "SUPER_ADMIN",
+  ...GOVERNANCE_ROLE_CODES,
+];
+
+export function isFoundationWideRoleCode(roleCode?: string | null): boolean {
+  return roleCode ? FOUNDATION_WIDE_ROLE_CODES.includes(roleCode) : false;
+}
+
+/**
  * Pengurus — the organ that RUNS the yayasan (UU 16/2001 Pasal 31 ayat 1), and
  * so the only one that drafts its plans. Pembina ratifies the work programme
  * and annual budget (Pasal 28 ayat 2 huruf d); Pengawas supervises and advises
@@ -296,4 +316,137 @@ export function isLegacyRole(value: unknown): value is LegacyRole {
 export function legacyRoleFor(roleCode: string): LegacyRole | undefined {
   if (isLegacyRole(roleCode)) return roleCode;
   return ROLE_CODE_TO_LEGACY[roleCode];
+}
+
+// ---------------------------------------------------------------------------
+// Pengawasan governance (WBS & board suspension)
+// ---------------------------------------------------------------------------
+
+/**
+ * The governance permissions a web page shows controls for, matched to the
+ * `authorize(...)` lists in `apps/api/src/modules/pengawasan/pengawasan.routes.ts`.
+ *
+ * The governance page rendered every action to every visitor who could open it,
+ * so a Pengawas saw "Pulihkan Status" and "Tetapkan SK" buttons that the API
+ * answered with a 403 — the page and the policy disagreed about what a role may
+ * do. These lists are the single definition both sides read, so a control is
+ * only shown when the request behind it will be accepted. Scope (which unit or
+ * report) is still the API's decision; this is authorization, not ownership.
+ */
+
+/**
+ * Read/list access to board suspensions and their scoped pickers.
+ *
+ * The Pembina may *see* the register — it is the organ that appoints and
+ * dismisses (UU 16/2001 Pasal 28), so oversight of who is currently frozen is
+ * theirs — but read access is deliberately NOT the same grant as issuing an SK.
+ * The three grants (read, issue, lift) used to be one list, which meant every
+ * role that could open the tab could also mint a suspension and a Plh role.
+ */
+export const PENGAWASAN_SUSPENSION_READ_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PENGAWAS",
+  "YAYASAN_PEMBINA",
+];
+
+/**
+ * Issuing an SK Pembekuan (and enumerating the suspend/Plh candidate lists).
+ *
+ * Reserved for the Pengawas — the oversight organ that audits the Pengurus —
+ * and Super Admin for operational recovery. The Pembina is intentionally
+ * excluded: it is the body that *appoints* the Pengurus, so letting it also
+ * freeze them through the oversight endpoint collapses the separation between
+ * the appointing organ and the supervising one, and lets the same officer
+ * suspend and (as lifter) restore with no second signature. The service
+ * re-enforces this, so an internal caller cannot bypass the route.
+ */
+export const PENGAWASAN_SUSPENSION_ISSUE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PENGAWAS",
+];
+
+/**
+ * @deprecated Use {@link PENGAWASAN_SUSPENSION_READ_ROLES} (list) or
+ * {@link PENGAWASAN_SUSPENSION_ISSUE_ROLES} (issuance). Kept as an alias of the
+ * read list so any consumer that only gates visibility keeps compiling; the
+ * API's write routes no longer read it.
+ */
+export const PENGAWASAN_SUSPENSION_ROLES: readonly string[] =
+  PENGAWASAN_SUSPENSION_READ_ROLES;
+
+/** Pemulihan status is the Pembina's, with Super Admin for operational recovery. */
+export const PENGAWASAN_LIFT_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PEMBINA",
+];
+
+/** Periodic oversight report submission. */
+export const PENGAWASAN_PERIODIC_REPORT_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PENGAWAS",
+];
+
+/** WBS handling: governance plus principals, unit admins and their buckets. */
+export const PENGAWASAN_WBS_HANDLER_ROLES: readonly string[] = [
+  ...GOVERNANCE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...ADMIN_ROLE_CODES,
+];
+
+/** Reads the arrears oversight report. */
+export const PENGAWASAN_ARREARS_ROLES: readonly string[] = [
+  ...GOVERNANCE_ROLE_CODES,
+  ...ADMIN_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+];
+
+/** Writes audits, findings and follow-up deletions. */
+export const PENGAWASAN_AUDIT_WRITE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PENGAWAS",
+  ...ADMIN_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+];
+
+/** Reads audits, and submits follow-ups, at unit level. */
+export const PENGAWASAN_AUDIT_GENERAL_ROLES: readonly string[] = [
+  ...GOVERNANCE_ROLE_CODES,
+  ...ADMIN_ROLE_CODES,
+  ...SCHOOL_TEACHER_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...VICE_PRINCIPAL_ROLE_CODES,
+  ...PESANTREN_LEADER_ROLE_CODES,
+  ...PESANTREN_EDUCATOR_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+  ...SUPPORT_ROLE_CODES,
+  ...BUSINESS_ROLE_CODES,
+];
+
+/**
+ * The governance actions a role may take, resolved from the lists above. One
+ * function for both the page and its tests, so the visibility rule is exercised
+ * once instead of re-derived per control.
+ */
+export function pengawasanAccessOf(roleCode: string | null | undefined) {
+  const code = roleCode ?? "";
+  const has = (list: readonly string[]) => list.includes(code);
+  return {
+    /** Can *see* the register and its tabs (read/list). */
+    canReadSuspensions: has(PENGAWASAN_SUSPENSION_READ_ROLES),
+    /** Can issue an SK Pembekuan and enumerate the candidate pickers. */
+    canIssueSuspension: has(PENGAWASAN_SUSPENSION_ISSUE_ROLES),
+    /**
+     * @deprecated Retained for a control that only needs the tab to render.
+     * Use `canReadSuspensions` for visibility and `canIssueSuspension` for the
+     * button that posts the SK. The page no longer offers issuance on this.
+     */
+    canManageSuspensions: has(PENGAWASAN_SUSPENSION_READ_ROLES),
+    canLiftSuspension: has(PENGAWASAN_LIFT_ROLES),
+    canSubmitPeriodicReport: has(PENGAWASAN_PERIODIC_REPORT_ROLES),
+    canHandleWbs: has(PENGAWASAN_WBS_HANDLER_ROLES),
+    canViewArrears: has(PENGAWASAN_ARREARS_ROLES),
+    canWriteAudits: has(PENGAWASAN_AUDIT_WRITE_ROLES),
+    canReadAudits: has(PENGAWASAN_AUDIT_GENERAL_ROLES),
+  };
 }

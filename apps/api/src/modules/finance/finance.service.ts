@@ -184,12 +184,28 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
         }
       }
 
+      // Resolve the unit of record at issuance. The issuing unit is the one
+      // that owns the payment type — a "SPP SMP IT" bill raised for a pupil
+      // belongs to SMP IT's books even if the pupil has since transferred to
+      // SMA. `PaymentType.unitId` is NOT NULL, so this is always resolved; a
+      // missing payment type is a bug, not a case to paper over with the
+      // student's current unit.
+      const paymentType = await dbClient.paymentType.findUnique({
+        where: { id: paymentTypeId },
+        select: { unitId: true },
+      });
+      if (!paymentType) {
+        throw new Error(`Payment type ${paymentTypeId} not found; cannot attribute the invoice`);
+      }
+      const issuingUnitId = paymentType.unitId;
+
       invoice = await dbClient.invoice.create({
         data: {
           ...invoiceData,
           invoiceNumber,
           amount: finalAmount.lt(0) ? 0 : finalAmount,
           dueDate: new Date(data.dueDate),
+          unitId: issuingUnitId,
           student: { connect: { id: studentId } },
           paymentType: { connect: { id: paymentTypeId } },
         },
@@ -1521,6 +1537,13 @@ export async function generateBulkSppInvoices(data: {
           amount: paymentType.amount,
           dueDate,
           period,
+          // Freeze the issuing unit on the invoice so a later transfer does
+          // not relocate this arrears to the pupil's new unit. The unit of
+          // record is the one that owns the payment type — a "SPP SMP IT" bill
+          // raised for a pupil belongs to SMP IT's books even if the pupil has
+          // since moved to SMA. `PaymentType.unitId` is NOT NULL, so there is
+          // no fallback to the pupil's current unit.
+          unitId: paymentType.unitId,
           notes: `Tagihan ${paymentType.name} untuk ${period}`,
         },
       });
@@ -1610,6 +1633,10 @@ export async function generateRecurringBills() {
             amount: paymentType.amount,
             dueDate,
             period,
+            // Unit of record is the payment type's unit, which the filter above
+            // already matched against the pupil's unit; there is no fallback to
+            // the pupil's current unit (`PaymentType.unitId` is NOT NULL).
+            unitId: paymentType.unitId,
             notes: `Tagihan ${paymentType.name} otomatis untuk ${period}`,
           },
         });

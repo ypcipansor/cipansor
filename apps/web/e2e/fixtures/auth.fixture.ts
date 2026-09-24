@@ -66,9 +66,14 @@ export async function loginAsUser(page: Page, user: AuthUser) {
   // busy, so networkidle would always time out.
   await page.waitForLoadState("domcontentloaded");
 
-  // Verify token is stored
-  const token = await page.evaluate(() => localStorage.getItem("accessToken"));
-  expect(token).toBeTruthy();
+  // Verify the server-issued session cookie is present (it is `HttpOnly`, so
+  // localStorage must NOT hold a token).
+  const cookies = await page.context().cookies();
+  expect(cookies.find((c) => c.name === "access_token")?.httpOnly).toBe(true);
+  const storedToken = await page.evaluate(() =>
+    localStorage.getItem("accessToken"),
+  );
+  expect(storedToken).toBeNull();
 }
 
 /**

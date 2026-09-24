@@ -1,22 +1,15 @@
 /**
- * The API serves /uploads behind authentication (files hold student photos
- * and documents). Browser-native fetches — <img src>, <a href>, window.open,
- * <object data> — cannot send an Authorization header, so the access token is
- * passed as a ?token= query parameter instead; the API's uploadsAuth
- * middleware accepts either form.
+ * URLs for API-served uploads.
  *
- * Wrap any URL that may point at /uploads with this helper before handing it
- * to the browser. Non-upload URLs (external links, data URIs) pass through
- * untouched.
+ * The API serves `/uploads` behind authentication (files hold student photos
+ * and documents). Browser-native fetches — `<img src>`, `<a href>`,
+ * `window.open`, `<object data>` — cannot send an `Authorization` header, but
+ * they *do* send cookies. The session access token now lives in an `HttpOnly`
+ * cookie, so a same-origin upload URL is authenticated by the browser with no
+ * JavaScript involvement and no token in the URL.
+ *
+ * Non-upload URLs (external links, data URIs) pass through untouched.
  */
 export function authFileUrl(url: string | null | undefined): string {
-  if (!url) return "";
-  if (!url.includes("/uploads/")) return url;
-  if (typeof window === "undefined") return url;
-
-  const token = localStorage.getItem("accessToken");
-  if (!token) return url;
-
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}token=${encodeURIComponent(token)}`;
+  return url ?? "";
 }

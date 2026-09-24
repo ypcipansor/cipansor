@@ -8,6 +8,7 @@ import {
   verifyRevocation,
   type SignablePayload,
 } from '@/utils/esign';
+import { SIGNING_KEY_SUSPENSION_LOCK } from '@/utils/esign-suspension-lock';
 import crypto from 'crypto';
 
 const { emitMock, compareMock } = vi.hoisted(() => ({
@@ -17,11 +18,13 @@ const { emitMock, compareMock } = vi.hoisted(() => ({
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
-    $executeRaw: vi.fn(),
+    $executeRaw: vi.fn().mockResolvedValue(0),
+    $queryRaw: vi.fn().mockResolvedValue([{ locked_until: null }]),
     userSigningKey: {
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       deleteMany: vi.fn(),
     },
     signingKeyRequest: {
@@ -51,6 +54,19 @@ vi.mock('../../lib/prisma', () => ({
 vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
+
+// `Errors` is real in the service, but the signing tests reach it through the
+// shared suspension-lock util; a lightweight mock keeps this suite focused on
+// the transaction logic rather than HTTP error construction.
+vi.mock('@/middleware/error', () => ({
+  Errors: {
+    badRequest: (message: string) => Object.assign(new Error(message), { statusCode: 400 }),
+    unauthorized: (message: string) => Object.assign(new Error(message), { statusCode: 401 }),
+    forbidden: (message: string) => Object.assign(new Error(message), { statusCode: 403 }),
+    notFound: (message: string) => Object.assign(new Error(message), { statusCode: 404 }),
+    conflict: (message: string) => Object.assign(new Error(message), { statusCode: 409 }),
+  },
+}));
 
 const PASS = 'passphrase-tanda-tangan-2026';
 const DAY = 24 * 60 * 60 * 1000;
@@ -521,8 +537,11 @@ describe('ganti passphrase', () => {
       )
     ).rejects.toThrow();
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'key-1',
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
+      },
       data: expect.objectContaining({ failedAttempts: 1 }),
     });
   });
@@ -581,8 +600,11 @@ describe('menandatangani surat', () => {
 
     expect(prisma.letterSignature.create).not.toHaveBeenCalled();
     expect(prisma.letter.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'key-1',
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
+      },
       data: expect.objectContaining({ failedAttempts: 1 }),
     });
   });
@@ -618,6 +640,40 @@ describe('menandatangani surat', () => {
         pdfHash: expect.stringMatching(/^[0-9a-f]{64}$/),
         pdfSignature: expect.any(String),
       }),
+    });
+  });
+
+  it('tidak menghapus sentinel pembekuan saat membersihkan lockout setelah tanda tangan sukses', async () => {
+    // Skenario: pembekuan Pengurus dipasang tepat saat permintaan tanda tangan
+    // sedang berjalan. Penandatanganan sukses lalu memanggil pembersih lockout
+    // — yang, tanpa penjagaan, menulis `lockedUntil: null` dan menghidupkan
+    // kembali kunci yang baru saja dibekukan. Pembersihnya harus mengecualikan
+    // nilai sentinel.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+    vi.mocked(prisma.letterSignature.update).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+
+    await EsignService.signLetter('letter-1', 'ketua', PASS);
+
+    const clearCall = vi
+      .mocked(prisma.userSigningKey.updateMany)
+      .mock.calls.find((c) => c[0].data && 'lockedUntil' in (c[0].data as object));
+    expect(clearCall).toBeDefined();
+    // `IS NULL OR < sentinel`, stated explicitly. The old `NOT (>= sentinel)`
+    // form was a three-valued negation that matched no row for an unlocked key,
+    // so the counter was never cleared.
+    expect(clearCall![0].where).toMatchObject({
+      id: 'key-1',
+      OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
     });
   });
 
@@ -1145,8 +1201,11 @@ describe('mencabut naskah dinas', () => {
     ).rejects.toThrow(/Passphrase/i);
 
     expect(prisma.letterSignature.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-ketua' },
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'key-ketua',
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
+      },
       data: expect.objectContaining({ failedAttempts: 1 }),
     });
   });
@@ -1294,5 +1353,199 @@ describe('mencabut naskah dinas', () => {
       EsignService.revokeLetterSignature('letter-1', SIGNER, 'salah', PASS)
     ).rejects.toThrow(/Alasan pencabutan/i);
     expect(prisma.letterSignature.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The board-suspension sentinel, as seen from the E-Sign service.
+ *
+ * A suspension soft-locks every signing key by writing a far-future sentinel to
+ * `lockedUntil`; the key is *not* formally revoked. The pre-flight `assertCanSign`
+ * reads the key before the operation does its work, so a suspension can commit in
+ * that window. Without a re-check on the row being written, a late write either
+ * clears the sentinel (re-enabling signing for a suspended officer) or mints a
+ * signature for someone the board just froze. These tests drive the transaction's
+ * `FOR UPDATE` re-read to that sentinel.
+ */
+describe('kunci dibekukan pembekuan Pengurus (sentinel)', () => {
+  const SENTINEL = SIGNING_KEY_SUSPENSION_LOCK;
+
+  function letter() {
+    return {
+      id: 'letter-1',
+      letterNumber: '434/Sket/Y-CPS/VII/2026',
+      date: new Date('2026-07-13T00:00:00Z'),
+      type: 'SURAT_KETERANGAN',
+      nature: 'PUBLIC',
+      subject: 'Keterangan',
+      content: 'Isi.',
+      unitId: 'unit-1',
+      status: 'READY_TO_SIGN',
+      reviewers: [
+        { id: 'rev-1', reviewerId: 'ketua', isSigner: true, order: 1, status: 'PENDING' },
+      ],
+    };
+  }
+
+  function sentinelKey() {
+    return activeKey({ lockedUntil: SENTINEL });
+  }
+
+  it('menolak penandatanganan yang kalah balapan dan tidak menulis tanda tangan', async () => {
+    // Pre-flight read still sees a signable key; the suspension lands before the
+    // transaction's re-read.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    // The FOR UPDATE re-read sees the sentinel. The advisory lock uses
+    // `$executeRaw` (void return), so `$queryRaw` is called once.
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ locked_until: SENTINEL }] as any);
+
+    await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
+      /dibekukan|Pembekuan/i
+    );
+
+    expect(prisma.letterSignature.create).not.toHaveBeenCalled();
+    expect(prisma.letter.update).not.toHaveBeenCalled();
+  });
+
+  it('menolak pencabutan tanda tangan yang kalah balapan yang sama', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+      id: 'letter-1',
+      status: 'SIGNED',
+      letterNumber: '434/Sket/Y-CPS/VII/2026',
+      subject: 'Keterangan',
+      createdById: 'tata-usaha',
+      signatures: [
+        { id: 'sig-1', signerId: 'ketua', signerRoleCode: 'YAYASAN_KETUA', revokedAt: null },
+      ],
+    } as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
+      activeKey({ id: 'key-ketua', userId: 'ketua' }) as any
+    );
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ locked_until: SENTINEL }] as any);
+
+    await expect(
+      EsignService.revokeLetterSignature(
+        'letter-1',
+        { id: 'ketua', roleCode: 'YAYASAN_KETUA' },
+        'Nomor surat ganda, diterbitkan ulang',
+        PASS
+      )
+    ).rejects.toThrow(/dibekukan|Pembekuan/i);
+
+    expect(prisma.letterSignature.update).not.toHaveBeenCalled();
+  });
+
+  it('ganti passphrase yang kalah balapan tidak membersihkan sentinel dan gagal tertutup', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ passwordHash: 'h' } as any);
+    compareMock.mockResolvedValue(true);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ locked_until: SENTINEL }] as any);
+
+    await expect(
+      EsignService.changePassphrase('ketua', PASS, 'pw', 'passphrase-baru-2026')
+    ).rejects.toThrow(/dibekukan|Pembekuan/i);
+
+    // No write landed, so nothing cleared the sentinel.
+    expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('ganti passphrase melaporkan gagal bila baris kuncinya hilang saat commit', async () => {
+    // The re-read passed, but the key moved before the conditional write: zero
+    // rows affected must NOT be reported as success.
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ passwordHash: 'h' } as any);
+    compareMock.mockResolvedValue(true);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ locked_until: null }] as any);
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValueOnce({ count: 0 } as any);
+
+    await expect(
+      EsignService.changePassphrase('ketua', PASS, 'pw', 'passphrase-baru-2026')
+    ).rejects.toThrow(/berubah|Coba lagi/i);
+  });
+
+  it('percobaan passphrase yang terlambat tidak menghapus sentinel', async () => {
+    // The wrong-passphrase path runs before the transaction. Its write is a
+    // compare-and-set on `lockedUntil: null`; when the suspension owns the key,
+    // the update affects zero rows and the re-read reports the sentinel, so the
+    // caller is told the key is suspended rather than that it is merely locked.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValueOnce({ count: 0 } as any);
+    vi.mocked(prisma.$queryRaw).mockResolvedValueOnce([{ locked_until: SENTINEL }] as any);
+
+    await expect(
+      EsignService.signLetter('letter-1', 'ketua', 'passphrase-yang-salah')
+    ).rejects.toThrow(/Passphrase.*salah/i);
+
+    // The failed attempt is a compare-and-set on `lockedUntil: null`, so it
+    // cannot match — and therefore cannot overwrite — a sentinel-held row.
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'key-1',
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
+      },
+      data: expect.objectContaining({ failedAttempts: 1 }),
+    });
+    // And the sentinel's re-read concluded it is the suspension's lock.
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+  });
+
+  it('lockout singkat biasa tetap bekerja tanpa sentinel', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    // Count 1: the sentinel-free compare-and-set lands normally.
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValueOnce({ count: 1 } as any);
+
+    await expect(
+      EsignService.signLetter('letter-1', 'ketua', 'passphrase-yang-salah')
+    ).rejects.toThrow(/Passphrase.*salah/i);
+
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'key-1',
+        OR: [{ lockedUntil: null }, { lockedUntil: { lt: expect.any(Date) } }],
+      },
+      data: expect.objectContaining({ failedAttempts: 1 }),
+    });
+  });
+
+  it('arms a real short lockout on the threshold failure', async () => {
+    // The Nth wrong passphrase must actually set `lockedUntil` — the compare-and-
+    // set on `lockedUntil: null` still matches, so the short lockout is written
+    // rather than swallowed by the suspension guard.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
+      activeKey({ failedAttempts: 4 }) as any
+    );
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValueOnce({ count: 1 } as any);
+
+    await expect(
+      EsignService.signLetter('letter-1', 'ketua', 'passphrase-yang-salah')
+    ).rejects.toThrow(/Passphrase.*salah/i);
+
+    const call = vi.mocked(prisma.userSigningKey.updateMany).mock.calls[0][0] as any;
+    expect(call.data.failedAttempts).toBe(5);
+    expect(call.data.lockedUntil).toBeInstanceOf(Date);
+  });
+
+  it('re-arms the lockout when a previous lockout has already expired', async () => {
+    // A lockout that ran out leaves a *past* `lockedUntil` in place until a
+    // successful signature clears it. The claim must therefore match an expired
+    // value too, or the 6th wrong passphrase is counted but never re-locks the
+    // key — leaving it immediately guessable again.
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(
+      activeKey({ failedAttempts: 5, lockedUntil: new Date(Date.now() - 60_000) }) as any
+    );
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValueOnce({ count: 1 } as any);
+
+    await expect(
+      EsignService.signLetter('letter-1', 'ketua', 'passphrase-yang-salah')
+    ).rejects.toThrow(/Passphrase.*salah/i);
+
+    const call = vi.mocked(prisma.userSigningKey.updateMany).mock.calls[0][0] as any;
+    expect(call.where.OR).toBeDefined();
+    expect(call.data.lockedUntil.getTime()).toBeGreaterThan(Date.now());
   });
 });

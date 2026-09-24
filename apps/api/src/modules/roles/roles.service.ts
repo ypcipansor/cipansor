@@ -1,12 +1,17 @@
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import { Errors } from '@/middleware/error';
-import { Realm, RoleCode } from '@prisma/client';
+import { BoardSuspensionStatus, Realm, RoleCode } from '@prisma/client';
 import { SUPPORT_ROLE_CODES } from '@cipansor/shared';
 import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
 import { findOrganConflict } from '@/utils/role-eligibility';
 import { isParentRole } from '@/utils/parent-scope';
 import { isAdminRoleCode, isGovernanceRoleCode } from '@/middleware/auth';
+import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
+import { config } from '@/config';
+import { tokenUnitId } from '@/utils/resolve-unit-id';
+import { lockUserAndAssignments, lockUserRows } from '@/utils/role-assignment-lock';
+import { disconnectUserSockets } from '@/lib/realtime';
 
 /** Who is changing someone's roles: the verified token, never the request body. */
 export interface RoleActor {
@@ -241,36 +246,6 @@ export class RolesService {
       unitId: unitId ?? null,
     });
 
-    // Check if assignment already exists
-    const existing = await prisma.userRoleAssignment.findFirst({
-      where: {
-        userId,
-        roleId,
-        unitId: unitId || null,
-      },
-    });
-
-    if (existing) {
-      throw Errors.conflict('User already has this role');
-    }
-
-    // Eligibility. Checked here rather than only in the UI because this route
-    // is reachable without the UI, and a rule that lives only in a form is not
-    // a rule.
-    const heldRoles = await prisma.userRoleAssignment.findMany({
-      where: { userId, isActive: true },
-      select: { role: { select: { code: true } } },
-    });
-
-    // Yayasan organs are mutually exclusive by statute — see role-eligibility.
-    const conflict = findOrganConflict(
-      role.code,
-      heldRoles.map((h) => h.role.code)
-    );
-    if (conflict) {
-      throw Errors.badRequest(conflict.message);
-    }
-
     // A guardian role without a child at that unit produces an account with an
     // empty parent portal, scoped to a school it has no business seeing.
     if (isParentRole(role.code)) {
@@ -290,32 +265,73 @@ export class RolesService {
       }
     }
 
-    // If this is primary, unset other primary roles
-    if (isPrimary) {
-      await prisma.userRoleAssignment.updateMany({
-        where: { userId, isPrimary: true },
-        data: { isPrimary: false },
+    // The existence, eligibility and insert are one transaction under the
+    // shared role-assignment lock protocol.
+    //
+    // The reads above the transaction are a fast fail. The decision is remade
+    // here, holding the user row and its assignment rows: a grant that races a
+    // suspension or a concurrent grant must be serialised, or two writers can
+    // both read "no conflict" and both insert — and the organ-exclusivity rule
+    // (a person holds at most one yayasan organ) is exactly a read-then-write
+    // invariant. Lock order is the documented one: user row first, then the
+    // assignment rows. See `utils/role-assignment-lock.ts`.
+    return prisma.$transaction(async (tx) => {
+      await lockUserAndAssignments(tx, userId);
+
+      const existing = await tx.userRoleAssignment.findFirst({
+        where: {
+          userId,
+          roleId,
+          unitId: unitId || null,
+        },
       });
-    }
 
-    const assignment = await prisma.userRoleAssignment.create({
-      data: {
-        userId,
-        roleId,
-        unitId,
-        isPrimary,
-        isActive: true,
-        // Who granted it. The column existed but was never filled: all 429
-        // assignments in production (2026-09-24) had no author.
-        assignedBy: actor.sub,
-      },
-      include: {
-        role: true,
-        unit: true,
-      },
+      if (existing) {
+        throw Errors.conflict('User already has this role');
+      }
+
+      // Eligibility. Checked here rather than only in the UI because this route
+      // is reachable without the UI, and a rule that lives only in a form is not
+      // a rule. Re-read under the lock so a concurrent grant is visible.
+      const heldRoles = await tx.userRoleAssignment.findMany({
+        where: { userId, isActive: true },
+        select: { role: { select: { code: true } } },
+      });
+
+      // Yayasan organs are mutually exclusive by statute — see role-eligibility.
+      const conflict = findOrganConflict(
+        role.code,
+        heldRoles.map((h) => h.role.code)
+      );
+      if (conflict) {
+        throw Errors.badRequest(conflict.message);
+      }
+
+      // If this is primary, unset other primary roles
+      if (isPrimary) {
+        await tx.userRoleAssignment.updateMany({
+          where: { userId, isPrimary: true },
+          data: { isPrimary: false },
+        });
+      }
+
+      return tx.userRoleAssignment.create({
+        data: {
+          userId,
+          roleId,
+          unitId,
+          isPrimary,
+          isActive: true,
+          // Who granted it. The column existed but was never filled: all 429
+          // assignments in production (2026-09-24) had no author.
+          assignedBy: actor.sub,
+        },
+        include: {
+          role: true,
+          unit: true,
+        },
+      });
     });
-
-    return assignment;
   }
 
   /**
@@ -338,97 +354,249 @@ export class RolesService {
       unitId: assignment.unitId,
     });
 
-    const deleted = await prisma.userRoleAssignment.delete({
-      where: { id: assignmentId },
-    });
+    // Revoke under the shared protocol: the user row first, then the
+    // assignment rows.
+    //
+    // The suspension service re-validates a Pengurus role under a lock on the
+    // user row, so a revocation that does not take that same lock can delete the
+    // assignment between the suspension's check and its commit — the suspension
+    // then switches off an account whose Pengurus role no longer exists, and
+    // mints a replacement for a vacancy that was already handled. Taking the
+    // protocol's locks makes the two writers serialise. The `deleteMany` is
+    // conditional on the row still existing so a concurrent revoke reports a
+    // clean 404 rather than a Prisma P2025 that would surface as a 500.
+    return prisma
+      .$transaction(async (tx) => {
+        await lockUserAndAssignments(tx, assignment.userId);
 
-    return deleted;
+        // Refuse to delete a delegation an ACTIVE suspension still depends on.
+        //
+        // `board_suspension_plh_assignments.assignment_id` cascades on delete, so
+        // revoking a Plh row that a live suspension is relying on would take the
+        // dependency row with it — and with it the `created`/`restore` provenance
+        // the eventual lift needs to decide whether to remove or restore the
+        // assignment. The suspension would then lift against a missing
+        // dependency, leaving the delegation active forever (or deleted when it
+        // should have been restored). The row must outlive the suspension, so the
+        // delete is refused while one is ACTIVE. The suspension's own release
+        // path removes it at lift time, which is the one place that holds the
+        // provenance.
+        const activeDependency = await tx.boardSuspensionPlhAssignment.findFirst({
+          where: {
+            assignmentId,
+            suspension: { status: BoardSuspensionStatus.ACTIVE },
+          },
+          select: { id: true },
+        });
+        if (activeDependency) {
+          throw Errors.conflict(
+            'Peran ini sedang dipakai sebagai delegasi Plh/Plt pada pembekuan pengurus yang masih aktif. ' +
+              'Cabut pembekuannya terlebih dahulu sebelum menghapus penugasan ini.'
+          );
+        }
+
+        const deleted = await tx.userRoleAssignment.deleteMany({
+          where: { id: assignmentId },
+        });
+        if (deleted.count !== 1) {
+          throw Errors.notFound('Role assignment');
+        }
+
+        // Revoking the last assignment must also clear the deprecated legacy
+        // column. `refreshToken` (and the 2FA completion) fall back to
+        // `users.role` only for an account that never held an assignment, but
+        // that column lives on the *user* row, which an assignment delete does
+        // not otherwise touch — so without this a revoked Super Admin kept
+        // renewing sessions through refresh. Nulling it here makes the
+        // revocation durable and lets the issuance paths tell "never migrated"
+        // from "revoked its last role".
+        const remaining = await tx.userRoleAssignment.count({
+          where: { userId: assignment.userId },
+        });
+        if (remaining === 0) {
+          await tx.user.update({
+            where: { id: assignment.userId },
+            data: { role: null },
+          });
+        }
+
+        return assignment;
+      })
+      .then((assignment) => {
+        // The revocation changed this user's realtime scope (role rooms, unit
+        // rooms, dashboard). A socket opened before it still holds those rooms and
+        // would keep receiving their broadcasts; disconnect it across every
+        // replica so the cut-off is immediate rather than waiting for the next
+        // `join-*`. Published after the transaction commits, so a rollback cannot
+        // disconnect a user whose assignment survived. The per-event scope
+        // revalidation in `realtime.ts` is the backstop if Redis is down.
+        disconnectUserSockets(assignment.userId);
+        return assignment;
+      });
   }
 
   /**
    * Set primary role for user
    */
   async setPrimaryRole(actor: RoleActor, userId: string, assignmentId: string) {
-    // Check if assignment exists and belongs to user
-    const assignment = await prisma.userRoleAssignment.findFirst({
-      where: { id: assignmentId, userId },
-      include: { role: { select: { code: true, realm: true } } },
+    // "Exactly one primary" is a read-then-write invariant across two rows, so
+    // the whole swap runs under the shared protocol rather than as two
+    // independent statements that a concurrent writer can interleave.
+    return prisma.$transaction(async (tx) => {
+      await lockUserAndAssignments(tx, userId);
+
+      // Check if assignment exists and belongs to user
+      const assignment = await tx.userRoleAssignment.findFirst({
+        where: { id: assignmentId, userId },
+        include: { role: { select: { code: true, realm: true } } },
+      });
+
+      if (!assignment) {
+        throw Errors.notFound('Role assignment');
+      }
+
+      await this.assertMayManage(actor, {
+        userId,
+        roleCode: assignment.role.code,
+        roleRealm: assignment.role.realm,
+        unitId: assignment.unitId,
+      });
+
+      // Unset all primary roles for user
+      await tx.userRoleAssignment.updateMany({
+        where: { userId, isPrimary: true },
+        data: { isPrimary: false },
+      });
+
+      // Set new primary role
+      return tx.userRoleAssignment.update({
+        where: { id: assignmentId },
+        data: { isPrimary: true },
+        include: {
+          role: true,
+          unit: true,
+        },
+      });
     });
-
-    if (!assignment) {
-      throw Errors.notFound('Role assignment');
-    }
-
-    await this.assertMayManage(actor, {
-      userId,
-      roleCode: assignment.role.code,
-      roleRealm: assignment.role.realm,
-      unitId: assignment.unitId,
-    });
-
-    // Unset all primary roles for user
-    await prisma.userRoleAssignment.updateMany({
-      where: { userId, isPrimary: true },
-      data: { isPrimary: false },
-    });
-
-    // Set new primary role
-    const updated = await prisma.userRoleAssignment.update({
-      where: { id: assignmentId },
-      data: { isPrimary: true },
-      include: {
-        role: true,
-        unit: true,
-      },
-    });
-
-    return updated;
   }
 
   /**
-   * Switch active role (for frontend role switcher)
-   * This sets the primary role and returns new tokens
+   * Switch the caller's active role and issue the replacement session in one
+   * transaction.
+   *
+   * The old split — switch here, mint and store the refresh token in the
+   * controller — had the same suspension race every other issuance path was
+   * fixed for. The controller read the (already switched) user, generated a
+   * token pair, and inserted the refresh token outside any lock. A suspension
+   * committing in that window switched the account off and deleted the tokens
+   * it could see, but the one created afterwards survived and authenticated
+   * away the suspension — from the role switcher, which is reachable by any
+   * signed-in user.
+   *
+   * So the whole thing is one transaction that takes the user row first (the
+   * lock order `BoardSuspensionService`, `refreshToken`, login and 2FA all
+   * use), re-asserts account state and the active suspension, re-reads the
+   * assignment under that lock, then flips primary, mints the pair and stores
+   * the refresh token in the same commit. A concurrent revocation of the
+   * assignment cannot slip between the eligibility read and the flip, and a
+   * suspension cannot commit between the state check and the token insert.
    */
-  async switchRole(userId: string, roleAssignmentId: string) {
-    const assignment = await prisma.userRoleAssignment.findFirst({
-      where: {
-        id: roleAssignmentId,
-        userId,
-        isActive: true,
-      },
-      include: {
-        role: true,
-        unit: true,
-        user: true,
-      },
+  async switchRoleAndIssueSession(userId: string, roleAssignmentId: string) {
+    return prisma.$transaction(async (tx) => {
+      // User row first, then the assignment rows — the shared order. The
+      // account-state read below is re-made against the locked row.
+      await lockUserRows(tx, [userId]);
+      const claimed = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "users"
+        WHERE id = ${userId} AND is_active = true AND deleted_at IS NULL
+      `;
+      if (claimed.length !== 1) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+      await lockUserAndAssignments(tx, userId);
+
+      const blockingSuspension = await tx.boardMemberSuspension.findFirst({
+        where: { userId, status: BoardSuspensionStatus.ACTIVE },
+        select: { id: true },
+      });
+      if (blockingSuspension) {
+        throw Errors.unauthorized('Account is deactivated');
+      }
+
+      // Re-read under the lock: `isActive`, `expiresAt` and the row's existence
+      // are all checked against the state that holds at commit. The pre-flight
+      // read in the controller was only a fast fail.
+      const assignment = await tx.userRoleAssignment.findFirst({
+        where: {
+          id: roleAssignmentId,
+          userId,
+          isActive: true,
+          OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+          // The role definition itself must still be active, matching the
+          // login / 2FA / refresh reads (`AuthService`). An inactive role is
+          // not a grantable one, and minting a session for it here would make
+          // switch the odd writer out.
+          role: { isActive: true },
+        },
+        include: { role: true, unit: true, user: true },
+      });
+
+      if (!assignment) {
+        throw Errors.notFound('Role assignment');
+      }
+
+      // An admin session must not be obtainable without the second factor.
+      //
+      // Login forces an admin account through 2FA setup before it will issue a
+      // session-at-rest (`AuthService.login` → `requiresTwoFactorSetup`). Switch
+      // is a second door to the same session and did not enforce it: an account
+      // whose *primary* role is non-admin (so login never challenged it) could
+      // hold an admin assignment and switch straight into it, minting an admin
+      // access+refresh pair with 2FA never enabled — the very state login
+      // refuses to produce. The check is the same set login enforces
+      // (`isAdminRoleCode`); governance roles are not forced through 2FA at
+      // login either, so switch stays consistent with login on that point.
+      if (isAdminRoleCode(assignment.role.code) && !assignment.user.isTwoFactorEnabled) {
+        throw Errors.forbidden(
+          'Aktifkan autentikasi dua faktor (2FA) sebelum beralih ke peran admin.'
+        );
+      }
+
+      // Update primary role
+      await tx.userRoleAssignment.updateMany({
+        where: { userId, isPrimary: true },
+        data: { isPrimary: false },
+      });
+
+      await tx.userRoleAssignment.update({
+        where: { id: roleAssignmentId },
+        data: { isPrimary: true },
+      });
+
+      const tokens = generateTokenPair({
+        id: assignment.user.id,
+        sub: assignment.user.id,
+        email: assignment.user.email,
+        role: assignment.user.role ?? '',
+        roleCode: assignment.role.code,
+        roleId: assignment.roleId,
+        // Same rule as login, 2FA and refresh (tokenUnitId): only a foundation
+        // role may carry no unit. Deciding it differently here gave a switched
+        // role one scope until the next refresh and another after it.
+        unitId: tokenUnitId(assignment.unitId, assignment.role.code, assignment.user.unitId),
+        permissions: (assignment.role.permissions as string[]) ?? [],
+      });
+
+      await tx.refreshToken.create({
+        data: {
+          token: tokens.refreshToken,
+          userId: assignment.user.id,
+          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
+        },
+      });
+
+      return { activeRole: assignment, user: assignment.user, tokens };
     });
-
-    if (!assignment) {
-      throw Errors.notFound('Role assignment');
-    }
-
-    // Assignment yang sudah kedaluwarsa tidak boleh dipakai untuk berpindah
-    // peran — `isActive` saja tidak cukup, karena baterai peran bisa dibiarkan
-    // aktif setelah tanggal akhirnya lewat.
-    if (assignment.expiresAt && assignment.expiresAt < new Date()) {
-      throw Errors.badRequest('Role assignment has expired');
-    }
-
-    // Update primary role
-    await prisma.userRoleAssignment.updateMany({
-      where: { userId, isPrimary: true },
-      data: { isPrimary: false },
-    });
-
-    await prisma.userRoleAssignment.update({
-      where: { id: roleAssignmentId },
-      data: { isPrimary: true },
-    });
-
-    return {
-      activeRole: assignment,
-      user: assignment.user,
-    };
   }
 }
 

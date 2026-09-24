@@ -11,7 +11,7 @@ import {
   type LegacyRole,
 } from "./rbac";
 import { getNavigationForRoleCode, type NavGroup } from "@/config/navigation";
-import { DEMO_ACCOUNTS } from "@cipansor/shared";
+import { DEMO_ACCOUNTS, pengawasanAccessOf } from "@cipansor/shared";
 
 /**
  * Semua href dalam menu sebuah peran, TERMASUK submenu.
@@ -522,9 +522,9 @@ describe("navigation — every page renders the app shell", () => {
     return [...block[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   })();
 
-  // `/public/*` never reaches the list above: middleware's own matcher excludes
-  // it, so it is public without being named in publicPrefixes. Reading only
-  // publicPrefixes therefore under-counts what may be seen without a session.
+  // `/public` is now named in `publicPrefixes` (the matcher no longer exempts
+  // the segment), but keep the explicit `/public` union as belt-and-braces: it
+  // is what makes this test correct even if the list entry is ever reworded.
   const isPublic = (route: string) =>
     route === "/public" ||
     route.startsWith("/public/") ||
@@ -1070,5 +1070,45 @@ describe("e-office menu coverage", () => {
       roleCode === "SUPER_ADMIN" ? "SUPER_ADMIN" : deriveLegacyRole(roleCode);
     expect(legacy, `${roleCode} has no legacy role mapping`).toBeTruthy();
     expect(canAccessRoute(legacy as never, "/e-office")).toBe(true);
+  });
+});
+
+describe("pengawasan governance control visibility", () => {
+  /**
+   * The page must not offer a control the API will refuse. These are the same
+   * lists the routes authorize with (`PENGAWASAN_*` in @cipansor/shared), read
+   * here through the one helper the page uses.
+   */
+  it("hides pemulihan status from the Pengawas but shows it to the Pembina", () => {
+    expect(pengawasanAccessOf("YAYASAN_PENGAWAS").canLiftSuspension).toBe(
+      false,
+    );
+    expect(pengawasanAccessOf("YAYASAN_PEMBINA").canLiftSuspension).toBe(true);
+    expect(pengawasanAccessOf("SUPER_ADMIN").canLiftSuspension).toBe(true);
+  });
+
+  it("shows the periodic-report control only to Pengawas and Super Admin", () => {
+    expect(pengawasanAccessOf("YAYASAN_PENGAWAS").canSubmitPeriodicReport).toBe(
+      true,
+    );
+    expect(pengawasanAccessOf("SUPER_ADMIN").canSubmitPeriodicReport).toBe(
+      true,
+    );
+    expect(pengawasanAccessOf("YAYASAN_PEMBINA").canSubmitPeriodicReport).toBe(
+      false,
+    );
+    expect(pengawasanAccessOf("SDIT_ADMIN").canSubmitPeriodicReport).toBe(
+      false,
+    );
+  });
+
+  it("lets a unit treasurer read the arrears oversight tab", () => {
+    expect(pengawasanAccessOf("SDIT_BENDAHARA").canViewArrears).toBe(true);
+    expect(pengawasanAccessOf("YAYASAN_BENDAHARA").canViewArrears).toBe(true);
+  });
+
+  it("denies every control to an anonymous visitor", () => {
+    const access = pengawasanAccessOf(null);
+    expect(Object.values(access).some(Boolean)).toBe(false);
   });
 });
