@@ -133,7 +133,11 @@ describe('the SPMB read routes admit the Kepala Sekolah', async () => {
   const { default: waveRouter } = await import('../ppdb-wave.routes');
 
   type Layer = {
-    route?: { path: string; methods: Record<string, boolean>; stack: { handle: Function }[] };
+    route?: {
+      path: string;
+      methods: Record<string, boolean>;
+      stack: { handle: (req: Request, res: Response, next: NextFunction) => void }[];
+    };
   };
   // The guard is the route's first handler (authenticate runs router-wide).
   function guardOf(router: unknown, path: string) {
@@ -141,7 +145,7 @@ describe('the SPMB read routes admit the Kepala Sekolah', async () => {
       (l) => l.route?.path === path && l.route.methods.get
     );
     if (!layer?.route) throw new Error(`no GET ${path}`);
-    return layer.route.stack[0].handle as ReturnType<typeof authorizeOrPermission>;
+    return layer.route.stack[0].handle;
   }
 
   const kepalaToken = { roleCode: 'SMPIT_KEPALA_SEKOLAH', permissions: ['ADMISSION_VIEW'] };
