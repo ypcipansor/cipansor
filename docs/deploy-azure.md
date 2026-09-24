@@ -71,8 +71,9 @@ from the backup, as the VM runbook describes, not on staging.
 
 1. **Pull request** — CI (`ci.yml`) and E2E (`e2e-tests.yml`) must be green
    before merging (the ruleset requires Build, Lint, Tests, Security and
-   E2E Tests (Chromium)). E2E skips itself on a draft and on a
-   documentation-only change; a skipped job counts as passed.
+   E2E Tests (Chromium)). A change with no code in it — documentation or
+   agent tooling only, as `.github/scripts/change-scope.sh` defines it — skips
+   all of them, and E2E also skips a draft; a skipped job counts as passed.
 2. **Merge to `main`** — after CI **and** E2E Tests pass on `main`,
    `deploy-staging.yml` (triggered by E2E, which first confirms CI passed on
    the same commit) builds
@@ -81,7 +82,10 @@ from the backup, as the VM runbook describes, not on staging.
    `https://staging.cipansor.or.id/healthz` reports that SHA (see
    [Verifying a release](#verifying-a-release)). The api applies pending
    migrations to the staging database as it starts, so a migration that cannot
-   apply fails here first.
+   apply fails here first. When nothing between the commit staging runs and the
+   new one is code, the build and restart are skipped and staging keeps
+   reporting the earlier commit — the same code. Release that commit: it is
+   the one whose images exist.
 3. **Production** — only when the user asks for a release. Claude:
    1. confirms staging runs the SHA to be released and has been checked;
    2. takes a backup (`pg_dump` through the backup job, in addition to the

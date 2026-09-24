@@ -27,9 +27,44 @@ env:
   PNPM_VERSION: '9.15.9'
 
 jobs:
+  # Does this change touch code at all? A change to documentation or agent
+  # tooling only (`*.md`, `docs/`, `.claude/` …; the list and its exceptions
+  # live in .github/scripts/change-scope.sh) cannot change what lint, the
+  # builds, the tests or the dependency audit report, so they are skipped.
+  # Build and Tests need Lint, so they are skipped with it. A job skipped by
+  # its `if:` reports success, which satisfies the required checks; a `paths:`
+  # filter on the trigger would leave them pending instead.
+  scope:
+    name: CI scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) sh .github/scripts/change-scope.sh pr "$PR" ;;
+            push) sh .github/scripts/change-scope.sh since-pass ci.yml ;;
+            *) echo "run=true" >> "$GITHUB_OUTPUT"; echo "scope: $GITHUB_EVENT_NAME always runs" ;;
+          esac
+
   # Lint (build the shared package first so its types resolve).
   lint:
     name: Lint
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -159,6 +194,8 @@ jobs:
   # Supply-chain / dependency security.
   security:
     name: Security
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
