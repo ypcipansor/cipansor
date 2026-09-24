@@ -100,9 +100,15 @@ describe('/uploads read limiter wiring', () => {
 describe('upload write limiter is mounted on exactly the write route', () => {
   // Locate `router.post(<path>` without pinning the exact source text: prettier
   // may wrap the path onto its own line, and this guard is about which route the
-  // limiter is mounted on, not how the call is formatted.
-  const routeStart = (route: string): number =>
-    UPLOAD_ROUTES_SOURCE.search(new RegExp(`router\\.post\\(\\s*'${route.replace(/\//g, '\\/')}'`));
+  // limiter is mounted on, not how the call is formatted. Plain substring search
+  // (no RegExp built from input) keeps the route path out of regex escaping.
+  const routeStart = (route: string): number => {
+    const marker = `router.post('${route}'`;
+    const at = UPLOAD_ROUTES_SOURCE.indexOf(marker);
+    if (at !== -1) return at;
+    // Reflowed form: `router.post(\n  '<route>',`
+    return UPLOAD_ROUTES_SOURCE.indexOf(`'${route}',`);
+  };
 
   it('applies uploadLimiter to POST / and to no other upload route', () => {
     // The limiter existed but was mounted on NOTHING, so a write endpoint had no
