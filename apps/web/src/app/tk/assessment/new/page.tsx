@@ -746,12 +746,16 @@ export default function CreateTKAssessmentPage() {
               </Button>
 
               <div className="flex gap-3">
+                {/* Distinct keys stop React reusing the same <button> node
+                    across the step-3 -> 4 flip from type="button" to
+                    type="submit", which makes the advancing click also submit. */}
                 {step < 4 ? (
-                  <Button type="button" onClick={nextStep}>
+                  <Button key="next" type="button" onClick={nextStep}>
                     Lanjut
                   </Button>
                 ) : (
                   <Button
+                    key="submit"
                     type="submit"
                     disabled={
                       createMutation.isPending || addEvidenceMutation.isPending

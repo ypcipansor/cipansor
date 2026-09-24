@@ -164,8 +164,21 @@ export default function EditTKAssessmentPage() {
   const addEvidenceMutation = useAddEvidence();
   const deleteEvidenceMutation = useDeleteEvidence();
 
+  // Derive booleans so the reset effect below does not depend on the React
+  // Query result objects, which are recreated every render (that would re-run
+  // the reset and discard anything the user has typed).
+  const hasStudents = (students?.data?.length ?? 0) > 0;
+  const hasAcademicYears = (academicYears?.data?.length ?? 0) > 0;
+
   useEffect(() => {
-    if (assessment) {
+    // The student/year lists load async, and the Radix selects below register
+    // their hidden native <option>s only once those render. Resetting the
+    // controlled value in that same commit lets the bubble <select> coerce it to
+    // "" (no matching option yet) and dispatch a change that clears the field,
+    // so the wizard never leaves step 1. Wait for the lists, then defer a frame.
+    if (!assessment || loadingStudents || !hasStudents || !hasAcademicYears)
+      return;
+    const raf = requestAnimationFrame(() => {
       form.reset({
         studentId: assessment.studentId,
         academicYearId: assessment.academicYearId,
@@ -180,8 +193,9 @@ export default function EditTKAssessmentPage() {
         recommendations: assessment.recommendations || "",
       });
       setExistingEvidences(assessment.evidences || []);
-    }
-  }, [assessment, form]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [assessment, hasStudents, hasAcademicYears, loadingStudents, form]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) addFiles(Array.from(e.target.files));
@@ -759,12 +773,17 @@ export default function EditTKAssessmentPage() {
               </Button>
 
               <div className="flex gap-3">
+                {/* Distinct keys matter: without them React reuses the same
+                    <button> node across the step-3 -> 4 flip from
+                    type="button" to type="submit", and the click that advances
+                    the step also submits the form. */}
                 {step < 4 ? (
-                  <Button type="button" onClick={nextStep}>
+                  <Button key="next" type="button" onClick={nextStep}>
                     Lanjut
                   </Button>
                 ) : (
                   <Button
+                    key="submit"
                     type="submit"
                     disabled={
                       updateMutation.isPending || addEvidenceMutation.isPending
