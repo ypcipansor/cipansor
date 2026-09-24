@@ -15,7 +15,11 @@ export const ACCOUNT_MAPPING_KEYS = {
   COGS: 'ACCOUNT_MAPPING_COGS',
 };
 
-export async function getAccountMapping(unitId: string, key: string, tx: TransactionClient | typeof prisma = prisma): Promise<string | null> {
+export async function getAccountMapping(
+  unitId: string,
+  key: string,
+  tx: TransactionClient | typeof prisma = prisma
+): Promise<string | null> {
   const setting = await tx.setting.findUnique({
     where: {
       unitId_key: {

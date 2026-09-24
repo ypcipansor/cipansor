@@ -8,12 +8,7 @@ import { Prisma } from '@prisma/client';
 
 // Available report types
 export type ReportType =
-  | 'students'
-  | 'attendance'
-  | 'finance'
-  | 'tahfidz'
-  | 'academic'
-  | 'teachers';
+  'students' | 'attendance' | 'finance' | 'tahfidz' | 'academic' | 'teachers';
 
 // Field definition for report builder
 export interface ReportField {

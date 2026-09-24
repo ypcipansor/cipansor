@@ -53,9 +53,13 @@ describe("EscalationFlow", () => {
 
     // `getByLabelText(/pertanyaan/i)` cocok dengan dua hal — labelnya dan
     // kalimat pengantarnya — jadi elemennya diambil menurut perannya.
-    expect((screen.getByRole("textbox", { name: /pertanyaan/i }) as HTMLTextAreaElement).value).toBe(
-      PERTANYAAN,
-    );
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: /pertanyaan/i,
+        }) as HTMLTextAreaElement
+      ).value,
+    ).toBe(PERTANYAAN);
   });
 
   it("memperlihatkan persis apa yang akan dikirim sebelum mengirimnya", async () => {

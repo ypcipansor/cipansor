@@ -55,10 +55,7 @@ export async function getParentEngagement(unitId?: string): Promise<ParentEngage
   });
 
   // Deduplicate parents (a parent can be linked to several children)
-  const parents = new Map<
-    string,
-    { name: string; lastLoginAt: Date | null; childName: string }
-  >();
+  const parents = new Map<string, { name: string; lastLoginAt: Date | null; childName: string }>();
   const classes = new Map<
     string,
     { className: string; parentIds: Set<string>; activeParentIds: Set<string> }
@@ -161,9 +158,8 @@ export async function getParentEngagement(unitId?: string): Promise<ParentEngage
       date: key,
       day: DAY_NAMES_ID[date.getDay()],
       messages: parentMessages.filter((m) => dateKey(m.createdAt) === key).length,
-      notificationsRead: readNotifications.filter(
-        (n) => n.readAt && dateKey(n.readAt) === key
-      ).length,
+      notificationsRead: readNotifications.filter((n) => n.readAt && dateKey(n.readAt) === key)
+        .length,
     });
   }
 
@@ -188,9 +184,7 @@ export async function getParentEngagement(unitId?: string): Promise<ParentEngage
       parentName: p.name,
       childName: p.childName,
       lastLoginAt: p.lastLoginAt ? p.lastLoginAt.toISOString() : null,
-      daysSinceLogin: p.lastLoginAt
-        ? Math.floor((now - p.lastLoginAt.getTime()) / 864e5)
-        : null,
+      daysSinceLogin: p.lastLoginAt ? Math.floor((now - p.lastLoginAt.getTime()) / 864e5) : null,
     }))
     // Never logged in first, then longest-inactive
     .sort((a, b) => {
@@ -209,8 +203,7 @@ export async function getParentEngagement(unitId?: string): Promise<ParentEngage
     summary: {
       totalParents,
       activeParents,
-      engagementRate:
-        totalParents > 0 ? Math.round((activeParents / totalParents) * 1000) / 10 : 0,
+      engagementRate: totalParents > 0 ? Math.round((activeParents / totalParents) * 1000) / 10 : 0,
       avgResponseHours,
     },
     weeklyActivity,

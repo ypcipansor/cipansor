@@ -11,11 +11,7 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 import { prisma } from '@/lib/prisma';
-import {
-  calculateStreak,
-  getStudentAchievements,
-  getMyAchievements,
-} from './ibadah.service';
+import { calculateStreak, getStudentAchievements, getMyAchievements } from './ibadah.service';
 
 const mocked = prisma as unknown as {
   dailyIbadahRecord: {
@@ -31,9 +27,7 @@ describe('calculateStreak', () => {
   const now = new Date('2026-07-04T10:00:00Z');
 
   it('counts consecutive days ending today', () => {
-    expect(
-      calculateStreak([day('2026-07-04'), day('2026-07-03'), day('2026-07-02')], now)
-    ).toBe(3);
+    expect(calculateStreak([day('2026-07-04'), day('2026-07-03'), day('2026-07-02')], now)).toBe(3);
   });
 
   it('keeps the streak alive when the latest record was yesterday', () => {
@@ -58,10 +52,7 @@ describe('getStudentAchievements', () => {
     });
     const today = new Date();
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    mocked.dailyIbadahRecord.findMany.mockResolvedValue([
-      { date: today },
-      { date: yesterday },
-    ]);
+    mocked.dailyIbadahRecord.findMany.mockResolvedValue([{ date: today }, { date: yesterday }]);
 
     const result = await getStudentAchievements('student-1');
 

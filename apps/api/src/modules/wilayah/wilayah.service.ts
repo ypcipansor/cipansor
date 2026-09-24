@@ -88,9 +88,7 @@ export function createDistrict(data: { code: string; name: string; regencyId: st
 
 // ==================== VILLAGES ====================
 
-export async function listVillages(
-  filters: RegionListFilters & { page: number; limit: number },
-) {
+export async function listVillages(filters: RegionListFilters & { page: number; limit: number }) {
   const whereClause: Prisma.VillageWhereInput = { ...nameFilter(filters.search) };
   if (filters.districtId) whereClause.districtId = filters.districtId;
 

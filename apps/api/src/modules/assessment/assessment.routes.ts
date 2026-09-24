@@ -17,9 +17,21 @@ router.use(authenticate);
 // ==================== EXAMS ====================
 
 router.get('/exams/:id/analytics', controller.getExamAnalytics);
-router.get('/units/:unitId/analytics', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), controller.getUnitEducationAnalytics);
-router.get('/analytics/integrated-alerts', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), controller.getIntegratedRiskAlerts);
-router.get('/students/:studentId/holistic', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER), controller.getStudentHolisticAnalytics);
+router.get(
+  '/units/:unitId/analytics',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  controller.getUnitEducationAnalytics
+);
+router.get(
+  '/analytics/integrated-alerts',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  controller.getIntegratedRiskAlerts
+);
+router.get(
+  '/students/:studentId/holistic',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  controller.getStudentHolisticAnalytics
+);
 
 /**
  * @swagger
@@ -796,8 +808,16 @@ router.post('/p5-projects/assessments/bulk', P5ProjectController.bulkUpsertAsses
 
 // ==================== UNIFIED RAPORT ====================
 
-router.get('/unified-raport/students/:studentId', isTeacherOrAbove, UnifiedRaportController.generateUnifiedRaport);
-router.get('/unified-raport/print/:studentId', isTeacherOrAbove, UnifiedRaportController.getPrintData);
+router.get(
+  '/unified-raport/students/:studentId',
+  isTeacherOrAbove,
+  UnifiedRaportController.generateUnifiedRaport
+);
+router.get(
+  '/unified-raport/print/:studentId',
+  isTeacherOrAbove,
+  UnifiedRaportController.getPrintData
+);
 
 // ==================== RAPORT MERDEKA (KURIKULUM MERDEKA) ====================
 
@@ -920,8 +940,18 @@ router.get('/raport-merdeka/capaian', RaportMerdekaController.getCapaianMapping)
  *       200:
  *         description: Complete Raport Merdeka with intrakurikuler, P5, ekstrakurikuler
  */
-router.get('/raport-merdeka/students/:studentId', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.generateStudentRaport);
-router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.exportStudentRaportPdf);
+router.get(
+  '/raport-merdeka/students/:studentId',
+  isTeacherOrAbove,
+  validateQuery(raportMerdekaQuerySchema),
+  RaportMerdekaController.generateStudentRaport
+);
+router.get(
+  '/raport-merdeka/students/:studentId/pdf',
+  isTeacherOrAbove,
+  validateQuery(raportMerdekaQuerySchema),
+  RaportMerdekaController.exportStudentRaportPdf
+);
 
 /**
  * @swagger
@@ -952,6 +982,11 @@ router.get('/raport-merdeka/students/:studentId/pdf', isTeacherOrAbove, validate
  *       200:
  *         description: Bulk Raport Merdeka for all students in class
  */
-router.get('/raport-merdeka/classes/:classId', isTeacherOrAbove, validateQuery(raportMerdekaQuerySchema), RaportMerdekaController.generateClassRaport);
+router.get(
+  '/raport-merdeka/classes/:classId',
+  isTeacherOrAbove,
+  validateQuery(raportMerdekaQuerySchema),
+  RaportMerdekaController.generateClassRaport
+);
 
 export default router;

@@ -25,8 +25,12 @@ function GradeQuestionForm({
   gradeAnswer: any;
   onSuccess: () => void;
 }) {
-  const [score, setScore] = useState<string>(answerData?.score ? String(parseFloat(answerData.score)) : "0");
-  const [isCorrect, setIsCorrect] = useState<boolean>(answerData?.isCorrect === true);
+  const [score, setScore] = useState<string>(
+    answerData?.score ? String(parseFloat(answerData.score)) : "0",
+  );
+  const [isCorrect, setIsCorrect] = useState<boolean>(
+    answerData?.isCorrect === true,
+  );
   const [isLoading, setIsLoading] = useState(false);
 
   // Sync state if answerData updates from refetch
@@ -55,7 +59,10 @@ function GradeQuestionForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col md:flex-row items-end gap-4">
+    <form
+      onSubmit={handleSubmit}
+      className="flex flex-col md:flex-row items-end gap-4"
+    >
       <div className="space-y-2 flex-1">
         <label className="text-sm font-medium">Nilai / Poin</label>
         <Input
@@ -130,7 +137,8 @@ export default function AttemptGradingPage({
             </h1>
             <p className="text-muted-foreground">
               Siswa: {attempt.student?.user?.name || "Unknown"} | Total Skor
-              Saat Ini: {attempt.score ? parseFloat(attempt.score).toFixed(2) : 0}
+              Saat Ini:{" "}
+              {attempt.score ? parseFloat(attempt.score).toFixed(2) : 0}
             </p>
           </div>
           <Button variant="outline" asChild>
@@ -143,7 +151,7 @@ export default function AttemptGradingPage({
         <div className="space-y-4">
           {questions.map((question: any, idx: number) => {
             const answerData = answers.find(
-              (a: any) => a.questionId === question.id
+              (a: any) => a.questionId === question.id,
             );
 
             // Filter out non-essay if desired, but we can allow override for all.
@@ -193,8 +201,8 @@ export default function AttemptGradingPage({
 
                   {!isEssay && (
                     <p className="text-sm text-muted-foreground italic">
-                      Jawaban {question.type} dinilai otomatis oleh sistem.{" "}
-                      Skor saat ini:{" "}
+                      Jawaban {question.type} dinilai otomatis oleh sistem. Skor
+                      saat ini:{" "}
                       {answerData?.score ? parseFloat(answerData.score) : 0}
                     </p>
                   )}

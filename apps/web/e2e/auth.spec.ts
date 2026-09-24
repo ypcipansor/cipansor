@@ -135,9 +135,7 @@ test.describe("Authentication", () => {
     // Logout lives in the header user menu (avatar dropdown, aria-label
     // "User menu") as a menuitem.
     await page.getByRole("button", { name: "User menu" }).click();
-    await page
-      .getByRole("menuitem", { name: /logout|keluar/i })
-      .click();
+    await page.getByRole("menuitem", { name: /logout|keluar/i }).click();
 
     // Should redirect to login
     await expect(page).toHaveURL(/login/, { timeout: 10000 });

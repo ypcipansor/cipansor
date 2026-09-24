@@ -60,11 +60,13 @@ function KinerjaHubPageContent() {
     user?.role === "SUPER_ADMIN";
 
   const { data: pks, isLoading: loadingPK } = usePKList();
-  const { data: dashboard, isLoading: loadingDashboard } = usePerformanceDashboard(isExecutive);
+  const { data: dashboard, isLoading: loadingDashboard } =
+    usePerformanceDashboard(isExecutive);
   const { data: plans } = usePlans();
 
   const myPk = pks?.find((p) => p.user?.id === user?.id);
-  const subordinatesPk = pks?.filter((p) => p.supervisor?.id === user?.id) || [];
+  const subordinatesPk =
+    pks?.filter((p) => p.supervisor?.id === user?.id) || [];
 
   return (
     <div className="container mx-auto space-y-8 p-6">
@@ -79,7 +81,11 @@ function KinerjaHubPageContent() {
             Manajemen Kinerja: Perencanaan Strategis, Perjanjian & Evaluasi
           </h1>
           <p className="text-emerald-100/90 text-sm leading-relaxed sm:text-base">
-            Mengintegrasikan alur <b>RPJP (20 Thn) &rarr; Renstra (5 Thn) &rarr; RKA (1 Thn)</b> ke dalam <b>Perjanjian Kinerja (PK) Pegawai</b> serta Evaluasi Bulanan berbasis Budaya Perilaku <b>SAFTI</b> (Siddiq, Amanah, Fathonah, Tabligh, Istiqomah).
+            Mengintegrasikan alur{" "}
+            <b>RPJP (20 Thn) &rarr; Renstra (5 Thn) &rarr; RKA (1 Thn)</b> ke
+            dalam <b>Perjanjian Kinerja (PK) Pegawai</b> serta Evaluasi Bulanan
+            berbasis Budaya Perilaku <b>SAFTI</b> (Siddiq, Amanah, Fathonah,
+            Tabligh, Istiqomah).
           </p>
         </div>
         <div className="absolute -right-10 -bottom-10 opacity-10 pointer-events-none">
@@ -95,34 +101,78 @@ function KinerjaHubPageContent() {
             Alur Proses Bisnis Manajemen Kinerja
           </CardTitle>
           <CardDescription>
-            Menjamin keselarasan (*cascading*) dari Visi Yayasan hingga ke target individu pegawai
+            Menjamin keselarasan (*cascading*) dari Visi Yayasan hingga ke
+            target individu pegawai
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-center">
             <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1">
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">1. RPJP (20 Thn)</Badge>
-              <span className="text-xs text-muted-foreground font-medium">Visi & Sasaran Visi (IUP)</span>
+              <Badge
+                variant="outline"
+                className="bg-blue-50 text-blue-700 border-blue-200"
+              >
+                1. RPJP (20 Thn)
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium">
+                Visi & Sasaran Visi (IUP)
+              </span>
             </div>
-            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">&rarr;</div>
+            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">
+              &rarr;
+            </div>
             <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1">
-              <Badge variant="outline" className="bg-indigo-50 text-indigo-700 border-indigo-200">2. Renstra (5 Thn)</Badge>
-              <span className="text-xs text-muted-foreground font-medium">Misi & IKU Unit</span>
+              <Badge
+                variant="outline"
+                className="bg-indigo-50 text-indigo-700 border-indigo-200"
+              >
+                2. Renstra (5 Thn)
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium">
+                Misi & IKU Unit
+              </span>
             </div>
-            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">&rarr;</div>
+            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">
+              &rarr;
+            </div>
             <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1">
-              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">3. RKA (1 Thn)</Badge>
-              <span className="text-xs text-muted-foreground font-medium">Kegiatan & RAB Unit</span>
+              <Badge
+                variant="outline"
+                className="bg-amber-50 text-amber-700 border-amber-200"
+              >
+                3. RKA (1 Thn)
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium">
+                Kegiatan & RAB Unit
+              </span>
             </div>
-            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold md:col-span-5 text-emerald-600">&darr; Cascading Target</div>
-            <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1 md:col-span-2">
-              <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200">4. Perjanjian Kinerja (PK)</Badge>
-              <span className="text-xs text-muted-foreground font-medium">Target Hasil Kerja (KPI Individu)</span>
+            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold md:col-span-5 text-emerald-600">
+              &darr; Cascading Target
             </div>
-            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">&rarr;</div>
             <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1 md:col-span-2">
-              <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200">5. Evaluasi & Perilaku SAFTI</Badge>
-              <span className="text-xs text-muted-foreground font-medium">Realisasi Bulanan + Skor SAFTI</span>
+              <Badge
+                variant="outline"
+                className="bg-emerald-50 text-emerald-700 border-emerald-200"
+              >
+                4. Perjanjian Kinerja (PK)
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium">
+                Target Hasil Kerja (KPI Individu)
+              </span>
+            </div>
+            <div className="hidden md:flex items-center justify-center text-muted-foreground font-bold">
+              &rarr;
+            </div>
+            <div className="p-3 bg-background rounded-lg border shadow-sm flex flex-col items-center justify-center space-y-1 md:col-span-2">
+              <Badge
+                variant="outline"
+                className="bg-purple-50 text-purple-700 border-purple-200"
+              >
+                5. Evaluasi & Perilaku SAFTI
+              </Badge>
+              <span className="text-xs text-muted-foreground font-medium">
+                Realisasi Bulanan + Skor SAFTI
+              </span>
             </div>
           </div>
         </CardContent>
@@ -138,25 +188,36 @@ function KinerjaHubPageContent() {
           <CardContent>
             <div className="text-2xl font-bold">
               {myPk ? (
-                <Badge className={
-                  myPk.status === "APPROVED" ? "bg-emerald-500" :
-                  myPk.status === "PROPOSED" ? "bg-amber-500" : "bg-gray-400"
-                }>
+                <Badge
+                  className={
+                    myPk.status === "APPROVED"
+                      ? "bg-emerald-500"
+                      : myPk.status === "PROPOSED"
+                        ? "bg-amber-500"
+                        : "bg-gray-400"
+                  }
+                >
                   {myPk.status}
                 </Badge>
               ) : (
-                <span className="text-muted-foreground text-sm font-normal">Belum disusun</span>
+                <span className="text-muted-foreground text-sm font-normal">
+                  Belum disusun
+                </span>
               )}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {myPk ? `${myPk.indicators?.length || 0} Indikator Kinerja` : "Buat dokumen Perjanjian Kinerja baru"}
+              {myPk
+                ? `${myPk.indicators?.length || 0} Indikator Kinerja`
+                : "Buat dokumen Perjanjian Kinerja baru"}
             </p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-md transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Capaian Kinerja Tahun Berjalan</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Capaian Kinerja Tahun Berjalan
+            </CardTitle>
             <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
@@ -169,14 +230,18 @@ function KinerjaHubPageContent() {
               {myPk ? `${(myPk.totalScore ?? 0).toFixed(1)}%` : "—"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              {myPk ? "Rata-rata realisasi indikator kinerja" : "Belum ada Perjanjian Kinerja"}
+              {myPk
+                ? "Rata-rata realisasi indikator kinerja"
+                : "Belum ada Perjanjian Kinerja"}
             </p>
           </CardContent>
         </Card>
 
         <Card className="hover:shadow-md transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Nilai Perilaku SAFTI</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Nilai Perilaku SAFTI
+            </CardTitle>
             <ShieldCheck className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
@@ -193,13 +258,16 @@ function KinerjaHubPageContent() {
 
         <Card className="hover:shadow-md transition-all">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Persyaratan Bawahan</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Persyaratan Bawahan
+            </CardTitle>
             <Users className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{subordinatesPk.length}</div>
             <p className="text-xs text-muted-foreground mt-1">
-              {subordinatesPk.filter(p => p.status === "PROPOSED").length} menunggu persetujuan
+              {subordinatesPk.filter((p) => p.status === "PROPOSED").length}{" "}
+              menunggu persetujuan
             </p>
           </CardContent>
         </Card>
@@ -214,7 +282,8 @@ function KinerjaHubPageContent() {
             </div>
             <CardTitle>Perjanjian Kinerja (PK)</CardTitle>
             <CardDescription>
-              Susun target hasil kerja tahunan yang diturunkan dari RKA & Renstra unit kerja Anda.
+              Susun target hasil kerja tahunan yang diturunkan dari RKA &
+              Renstra unit kerja Anda.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -234,12 +303,16 @@ function KinerjaHubPageContent() {
             </div>
             <CardTitle>Evaluasi & Perilaku SAFTI</CardTitle>
             <CardDescription>
-              Input realisasi capaian bulanan dan evaluasi nilai perilaku akhlak mulia pegawai.
+              Input realisasi capaian bulanan dan evaluasi nilai perilaku akhlak
+              mulia pegawai.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <Link href="/kinerja/evaluasi">
-              <Button variant="outline" className="w-full border-purple-200 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950">
+              <Button
+                variant="outline"
+                className="w-full border-purple-200 hover:bg-purple-50 hover:text-purple-700 dark:hover:bg-purple-950"
+              >
                 Evaluasi Periodik Bulanan
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
@@ -255,12 +328,16 @@ function KinerjaHubPageContent() {
               </div>
               <CardTitle>Analitik & Peta Strategi</CardTitle>
               <CardDescription>
-                Visualisasi matriks korelasi alur RPJP &rarr; Renstra &rarr; RKA &rarr; PK & Laporan Konsolidasi.
+                Visualisasi matriks korelasi alur RPJP &rarr; Renstra &rarr; RKA
+                &rarr; PK & Laporan Konsolidasi.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               <Link href="/kinerja/analytics">
-                <Button variant="outline" className="w-full border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950">
+                <Button
+                  variant="outline"
+                  className="w-full border-blue-200 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-950"
+                >
                   Dashboard & Report
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -280,11 +357,15 @@ function KinerjaHubPageContent() {
                 Integrasi Perencanaan Strategis (RPJP, Renstra & RKA)
               </CardTitle>
               <CardDescription>
-                Rujukan dokumen utama sumber pencapaian indikator kinerja pegawai
+                Rujukan dokumen utama sumber pencapaian indikator kinerja
+                pegawai
               </CardDescription>
             </div>
             <Link href="/perencanaan">
-              <Button variant="ghost" className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50">
+              <Button
+                variant="ghost"
+                className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
+              >
                 Lihat Semua Dokumen Perencanaan &rarr;
               </Button>
             </Link>
@@ -293,16 +374,29 @@ function KinerjaHubPageContent() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {plans?.slice(0, 3).map((plan) => (
-              <div key={plan.id} className="p-4 rounded-lg border bg-card space-y-2">
+              <div
+                key={plan.id}
+                className="p-4 rounded-lg border bg-card space-y-2"
+              >
                 <div className="flex justify-between items-start">
                   <Badge variant="secondary">{plan.type}</Badge>
-                  <span className="text-xs text-muted-foreground">{plan.progress}% selesai</span>
+                  <span className="text-xs text-muted-foreground">
+                    {plan.progress}% selesai
+                  </span>
                 </div>
-                <h4 className="font-semibold text-sm line-clamp-1">{plan.title}</h4>
-                <p className="text-xs text-muted-foreground line-clamp-2">{plan.description || "Dokumen perencanaan strategis unit/yayasan"}</p>
+                <h4 className="font-semibold text-sm line-clamp-1">
+                  {plan.title}
+                </h4>
+                <p className="text-xs text-muted-foreground line-clamp-2">
+                  {plan.description ||
+                    "Dokumen perencanaan strategis unit/yayasan"}
+                </p>
                 <div className="pt-2">
                   <Link href={`/perencanaan/${plan.id}`}>
-                    <Button variant="link" className="p-0 h-auto text-xs text-emerald-600">
+                    <Button
+                      variant="link"
+                      className="p-0 h-auto text-xs text-emerald-600"
+                    >
                       Buka Dokumen Indikator &rarr;
                     </Button>
                   </Link>

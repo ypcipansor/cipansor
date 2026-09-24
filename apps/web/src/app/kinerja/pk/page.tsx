@@ -106,11 +106,23 @@ function PerformanceAgreementListPageContent() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "APPROVED":
-        return <Badge className="bg-emerald-500 hover:bg-emerald-600"><CheckCircle2 className="w-3 h-3 mr-1" /> APPROVED</Badge>;
+        return (
+          <Badge className="bg-emerald-500 hover:bg-emerald-600">
+            <CheckCircle2 className="w-3 h-3 mr-1" /> APPROVED
+          </Badge>
+        );
       case "PROPOSED":
-        return <Badge className="bg-amber-500 hover:bg-amber-600"><Clock className="w-3 h-3 mr-1" /> PROPOSED</Badge>;
+        return (
+          <Badge className="bg-amber-500 hover:bg-amber-600">
+            <Clock className="w-3 h-3 mr-1" /> PROPOSED
+          </Badge>
+        );
       default:
-        return <Badge variant="secondary"><AlertCircle className="w-3 h-3 mr-1" /> DRAFT</Badge>;
+        return (
+          <Badge variant="secondary">
+            <AlertCircle className="w-3 h-3 mr-1" /> DRAFT
+          </Badge>
+        );
     }
   };
 
@@ -119,9 +131,12 @@ function PerformanceAgreementListPageContent() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Perjanjian Kinerja (PK) Pegawai</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Perjanjian Kinerja (PK) Pegawai
+          </h1>
           <p className="text-muted-foreground text-sm">
-            Dokumen penetapan target indikator hasil kerja pegawai yang diturunkan dari RKA & Renstra Unit
+            Dokumen penetapan target indikator hasil kerja pegawai yang
+            diturunkan dari RKA & Renstra Unit
           </p>
         </div>
         <Dialog open={openCreate} onOpenChange={setOpenCreate}>
@@ -135,7 +150,8 @@ function PerformanceAgreementListPageContent() {
               <DialogHeader>
                 <DialogTitle>Buat Perjanjian Kinerja Baru</DialogTitle>
                 <DialogDescription>
-                  Pilih Atasan Langsung dan RKA/Renstra Unit rujukan untuk cascading indikator.
+                  Pilih Atasan Langsung dan RKA/Renstra Unit rujukan untuk
+                  cascading indikator.
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
@@ -143,7 +159,9 @@ function PerformanceAgreementListPageContent() {
                   <Label htmlFor="supervisor">Atasan Langsung (Penilai)</Label>
                   <Select
                     value={formData.supervisorId}
-                    onValueChange={(val) => setFormData({ ...formData, supervisorId: val })}
+                    onValueChange={(val) =>
+                      setFormData({ ...formData, supervisorId: val })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Pilih atasan langsung..." />
@@ -153,7 +171,8 @@ function PerformanceAgreementListPageContent() {
                         ?.filter((u) => u.id !== user?.id)
                         .map((u) => (
                           <SelectItem key={u.id} value={u.id}>
-                            {u.name} {u.unit ? `(${u.unit.name})` : "(Yayasan)"} - #{u.id.slice(0, 6)}
+                            {u.name} {u.unit ? `(${u.unit.name})` : "(Yayasan)"}{" "}
+                            - #{u.id.slice(0, 6)}
                           </SelectItem>
                         ))}
                     </SelectContent>
@@ -161,10 +180,14 @@ function PerformanceAgreementListPageContent() {
                 </div>
 
                 <div className="grid gap-2">
-                  <Label htmlFor="plan">RKA / Renstra Rujukan (Cascading)</Label>
+                  <Label htmlFor="plan">
+                    RKA / Renstra Rujukan (Cascading)
+                  </Label>
                   <Select
                     value={formData.strategicPlanId}
-                    onValueChange={(val) => setFormData({ ...formData, strategicPlanId: val })}
+                    onValueChange={(val) =>
+                      setFormData({ ...formData, strategicPlanId: val })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Pilih dokumen RKA / Renstra unit..." />
@@ -185,7 +208,12 @@ function PerformanceAgreementListPageContent() {
                     <Input
                       type="date"
                       value={formData.periodStart}
-                      onChange={(e) => setFormData({ ...formData, periodStart: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          periodStart: e.target.value,
+                        })
+                      }
                       required
                     />
                   </div>
@@ -194,7 +222,9 @@ function PerformanceAgreementListPageContent() {
                     <Input
                       type="date"
                       value={formData.periodEnd}
-                      onChange={(e) => setFormData({ ...formData, periodEnd: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({ ...formData, periodEnd: e.target.value })
+                      }
                       required
                     />
                   </div>
@@ -205,15 +235,25 @@ function PerformanceAgreementListPageContent() {
                   <Textarea
                     placeholder="Misal: Sasaran strategis fokus penguatan akademik..."
                     value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, notes: e.target.value })
+                    }
                   />
                 </div>
               </div>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpenCreate(false)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setOpenCreate(false)}
+                >
                   Batal
                 </Button>
-                <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={createPK.isPending}>
+                <Button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={createPK.isPending}
+                >
                   {createPK.isPending ? "Menyimpan..." : "Buat PK"}
                 </Button>
               </DialogFooter>
@@ -229,27 +269,36 @@ function PerformanceAgreementListPageContent() {
             <FileText className="w-4 h-4" /> PK Saya ({myPks.length})
           </TabsTrigger>
           <TabsTrigger value="subordinates" className="flex items-center gap-2">
-            <UserCheck className="w-4 h-4" /> Persetujuan PK Bawahan ({subordinatePks.length})
+            <UserCheck className="w-4 h-4" /> Persetujuan PK Bawahan (
+            {subordinatePks.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="mypk" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Daftar Perjanjian Kinerja Saya</CardTitle>
+              <CardTitle className="text-lg">
+                Daftar Perjanjian Kinerja Saya
+              </CardTitle>
               <CardDescription>
-                Kelola indikator, isi bobot target (total 100%), dan ajukan ke atasan untuk disetujui
+                Kelola indikator, isi bobot target (total 100%), dan ajukan ke
+                atasan untuk disetujui
               </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">Memuat data PK...</div>
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Memuat data PK...
+                </div>
               ) : myPks.length === 0 ? (
                 <div className="py-12 text-center space-y-3 border-2 border-dashed rounded-lg">
                   <FileText className="w-10 h-10 text-muted-foreground mx-auto" />
-                  <div className="text-sm font-medium">Belum ada dokumen Perjanjian Kinerja</div>
+                  <div className="text-sm font-medium">
+                    Belum ada dokumen Perjanjian Kinerja
+                  </div>
                   <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                    Klik tombol &quot;Buat Perjanjian Kinerja&quot; di atas untuk mulai membuat penetapan kinerja tahunan Anda.
+                    Klik tombol &quot;Buat Perjanjian Kinerja&quot; di atas
+                    untuk mulai membuat penetapan kinerja tahunan Anda.
                   </p>
                 </div>
               ) : (
@@ -275,21 +324,27 @@ function PerformanceAgreementListPageContent() {
                         <TableCell>
                           {pk.strategicPlan ? (
                             <Badge variant="outline" className="text-xs">
-                              <Building2 className="w-3 h-3 mr-1" /> {pk.strategicPlan.title}
+                              <Building2 className="w-3 h-3 mr-1" />{" "}
+                              {pk.strategicPlan.title}
                             </Badge>
                           ) : (
                             "-"
                           )}
                         </TableCell>
-                        <TableCell>{pk.indicators?.length || 0} Indikator</TableCell>
+                        <TableCell>
+                          {pk.indicators?.length || 0} Indikator
+                        </TableCell>
                         <TableCell className="font-semibold text-emerald-600">
-                          {pk.overallScore ? `${pk.overallScore.toFixed(1)}%` : "0%"}
+                          {pk.overallScore
+                            ? `${pk.overallScore.toFixed(1)}%`
+                            : "0%"}
                         </TableCell>
                         <TableCell>{getStatusBadge(pk.status)}</TableCell>
                         <TableCell className="text-right space-x-2">
                           <Link href={`/kinerja/pk/${pk.id}`}>
                             <Button size="sm" variant="outline">
-                              <Eye className="w-4 h-4 mr-1" /> Detail & Indikator
+                              <Eye className="w-4 h-4 mr-1" /> Detail &
+                              Indikator
                             </Button>
                           </Link>
                           {pk.status === "DRAFT" && (
@@ -307,7 +362,11 @@ function PerformanceAgreementListPageContent() {
                                 variant="destructive"
                                 disabled={deletePK.isPending}
                                 onClick={() => {
-                                  if (confirm("Apakah Anda yakin ingin menghapus draft Perjanjian Kinerja ini?")) {
+                                  if (
+                                    confirm(
+                                      "Apakah Anda yakin ingin menghapus draft Perjanjian Kinerja ini?",
+                                    )
+                                  ) {
                                     deletePK.mutate(pk.id);
                                   }
                                 }}
@@ -329,14 +388,19 @@ function PerformanceAgreementListPageContent() {
         <TabsContent value="subordinates" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Perjanjian Kinerja Bawahan Saya</CardTitle>
+              <CardTitle className="text-lg">
+                Perjanjian Kinerja Bawahan Saya
+              </CardTitle>
               <CardDescription>
-                Verifikasi dan setujui draft usulan Perjanjian Kinerja staf/tim di bawah koordinasi Anda
+                Verifikasi dan setujui draft usulan Perjanjian Kinerja staf/tim
+                di bawah koordinasi Anda
               </CardDescription>
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">Memuat data PK...</div>
+                <div className="py-8 text-center text-sm text-muted-foreground">
+                  Memuat data PK...
+                </div>
               ) : subordinatePks.length === 0 ? (
                 <div className="py-12 text-center text-sm text-muted-foreground border-2 border-dashed rounded-lg">
                   Tidak ada dokumen PK bawahan yang terhubung dengan akun Anda.
@@ -350,21 +414,34 @@ function PerformanceAgreementListPageContent() {
                       <TableHead>RKA/Renstra Rujukan</TableHead>
                       <TableHead>Indikator</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Aksi Verifikasi</TableHead>
+                      <TableHead className="text-right">
+                        Aksi Verifikasi
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {subordinatePks.map((pk) => (
                       <TableRow key={pk.id}>
-                        <TableCell className="font-semibold">{pk.user?.name}</TableCell>
-                        <TableCell>{new Date(pk.periodStart).getFullYear()}</TableCell>
+                        <TableCell className="font-semibold">
+                          {pk.user?.name}
+                        </TableCell>
+                        <TableCell>
+                          {new Date(pk.periodStart).getFullYear()}
+                        </TableCell>
                         <TableCell>{pk.strategicPlan?.title || "-"}</TableCell>
-                        <TableCell>{pk.indicators?.length || 0} Indikator</TableCell>
+                        <TableCell>
+                          {pk.indicators?.length || 0} Indikator
+                        </TableCell>
                         <TableCell>{getStatusBadge(pk.status)}</TableCell>
                         <TableCell className="text-right">
                           <Link href={`/kinerja/pk/${pk.id}`}>
-                            <Button size="sm" variant="outline" className="border-emerald-200 hover:bg-emerald-50 text-emerald-700">
-                              <Eye className="w-4 h-4 mr-1" /> Tinjau & Verifikasi
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-emerald-200 hover:bg-emerald-50 text-emerald-700"
+                            >
+                              <Eye className="w-4 h-4 mr-1" /> Tinjau &
+                              Verifikasi
                             </Button>
                           </Link>
                         </TableCell>

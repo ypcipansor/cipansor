@@ -1,10 +1,10 @@
-'use client';
+"use client";
 import { MainLayout } from "@/components/layout";
 
-import { useResearchThemes } from '@/hooks/research/use-research';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import Link from 'next/link';
+import { useResearchThemes } from "@/hooks/research/use-research";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
 
 function ResearchPageContent() {
   const { data: themes, isLoading } = useResearchThemes();
@@ -24,7 +24,9 @@ function ResearchPageContent() {
               <CardHeader>
                 <div className="flex justify-between items-start">
                   <Badge variant="outline">{theme.category}</Badge>
-                  <span className="text-xs text-muted-foreground">{theme._count.submissions} submissions</span>
+                  <span className="text-xs text-muted-foreground">
+                    {theme._count.submissions} submissions
+                  </span>
                 </div>
                 <CardTitle className="mt-2">{theme.title}</CardTitle>
               </CardHeader>

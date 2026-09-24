@@ -106,7 +106,9 @@ test.describe("Generator Sertifikat — stabilitas nomor", () => {
     // number (and a new type segment).
     await page.getByRole("button", { name: /^Kembali$/ }).click();
     await pickTemplate(page, /Syahadah Tahfidz/i);
-    const second = (await (await waitForFinalNumber(page)).textContent())?.trim();
+    const second = (
+      await (await waitForFinalNumber(page)).textContent()
+    )?.trim();
     expect(second).not.toBe(first);
     expect(second).toMatch(/\/TAH\//);
 

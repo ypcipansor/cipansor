@@ -25,7 +25,6 @@ import { api } from "@/lib/api";
 import type { ParentChild } from "@/hooks/use-parent-portal";
 import { Award, Trophy, Star, Calendar, User } from "lucide-react";
 
-
 interface Reward {
   id: string;
   type: string;
@@ -63,9 +62,8 @@ export default function RewardsPage() {
 
         if (childrenData.length > 0) {
           const defaultChild = selectedStudentId
-            ? childrenData.find(
-                (c: ParentChild) => c.id === selectedStudentId,
-              )?.id
+            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
+                ?.id
             : childrenData[0].id;
           setSelectedChild(defaultChild || childrenData[0].id);
         }

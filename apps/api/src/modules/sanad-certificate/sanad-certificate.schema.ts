@@ -89,10 +89,7 @@ export const MIN_BULK_CREATE_RECORDS = 1;
 export const MAX_BULK_CREATE_RECORDS = 50;
 
 export const bulkCreateSanadSchema = z.object({
-  records: z
-    .array(createSanadSchema)
-    .min(MIN_BULK_CREATE_RECORDS)
-    .max(MAX_BULK_CREATE_RECORDS),
+  records: z.array(createSanadSchema).min(MIN_BULK_CREATE_RECORDS).max(MAX_BULK_CREATE_RECORDS),
 });
 
 export type BulkCreateSanadInput = z.infer<typeof bulkCreateSanadSchema>;

@@ -295,7 +295,13 @@ const AR: PagesContent = {
     // paucity are not optional politeness. Anything past ten takes the
     // accusative singular, which is why 11+ reads صورة and not صور.
     photoCount: (n) =>
-      n === 1 ? "صورة واحدة" : n === 2 ? "صورتان" : n <= 10 ? `${n} صور` : `${n} صورة`,
+      n === 1
+        ? "صورة واحدة"
+        : n === 2
+          ? "صورتان"
+          : n <= 10
+            ? `${n} صور`
+            : `${n} صورة`,
   },
   leadership: {
     title: "الهيئة القيادية للمعهد",
@@ -325,8 +331,7 @@ const AR: PagesContent = {
     emailHeading: "البريد الإلكتروني",
     whatsappHeading: "واتساب",
     whatsappCta: "المحادثة عبر واتساب",
-    whatsappMessage:
-      "السلام عليكم، أودّ الاستفسار عن معهد سيبانسور.",
+    whatsappMessage: "السلام عليكم، أودّ الاستفسار عن معهد سيبانسور.",
   },
   article: {
     otherNewsHeading: "أخبار أخرى",

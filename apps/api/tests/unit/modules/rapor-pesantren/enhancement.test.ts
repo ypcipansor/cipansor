@@ -165,7 +165,12 @@ describe('Rapor Pesantren Enhancements', () => {
         { studentId: 's1', unitId: 'u-smp', nis: 'SMP-2026-01' },
       ]);
 
-      const result = await getLegerPesantren({ unitId: 'u1', classId: 'c1', academicYearId: 'ay1', semester: 1 });
+      const result = await getLegerPesantren({
+        unitId: 'u1',
+        classId: 'c1',
+        academicYearId: 'ay1',
+        semester: 1,
+      });
 
       expect(result.map((r) => [r.studentName, r.studentNis])).toEqual([
         ['Alice', 'SD-123'],

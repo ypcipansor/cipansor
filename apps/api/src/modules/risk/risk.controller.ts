@@ -106,10 +106,13 @@ export const updateRisk = asyncHandler(async (req: Request, res: Response) => {
 
   const risk = await riskService.updateRisk(id, {
     ...updateData,
-    ...(strategicPlanId !== undefined ?
-      { strategicPlan: strategicPlanId ? { connect: { id: strategicPlanId } } : { disconnect: true } }
-      : {}
-    ),
+    ...(strategicPlanId !== undefined
+      ? {
+          strategicPlan: strategicPlanId
+            ? { connect: { id: strategicPlanId } }
+            : { disconnect: true },
+        }
+      : {}),
   });
   res.json({ success: true, data: risk });
 });

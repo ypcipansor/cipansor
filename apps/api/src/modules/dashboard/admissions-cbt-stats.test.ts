@@ -119,7 +119,9 @@ describe('dashboardService.getCBTSummary', () => {
       expect(args.where).toMatchObject({ unitId: 'unit-1', questionBankId: { not: null } });
     }
     expect(mocked.exam.count).toHaveBeenCalledTimes(3);
-    expect(mocked.examAttempt.count.mock.calls[0][0].where.exam).toMatchObject({ questionBankId: { not: null } });
+    expect(mocked.examAttempt.count.mock.calls[0][0].where.exam).toMatchObject({
+      questionBankId: { not: null },
+    });
   });
 
   it('returns 0 average when no attempts are scored', async () => {

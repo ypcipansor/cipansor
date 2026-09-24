@@ -1,10 +1,17 @@
-'use client';
+"use client";
 
-import { useLessonPlans } from '@/hooks/practicum/use-practicum';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import Link from 'next/link';
+import { useLessonPlans } from "@/hooks/practicum/use-practicum";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import Link from "next/link";
 import { MainLayout } from "@/components/layout";
 
 function PracticumPageContent() {
@@ -14,7 +21,10 @@ function PracticumPageContent() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Practicum (Amaliyah Tadris)</h1>
-        <Link href="/practicum/new" className="bg-primary text-primary-foreground px-4 py-2 rounded-md">
+        <Link
+          href="/practicum/new"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded-md"
+        >
           Create Lesson Plan
         </Link>
       </div>
@@ -47,7 +57,10 @@ function PracticumPageContent() {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Link href={`/practicum/${lp.id}`} className="text-primary hover:underline">
+                      <Link
+                        href={`/practicum/${lp.id}`}
+                        className="text-primary hover:underline"
+                      >
                         View
                       </Link>
                     </TableCell>

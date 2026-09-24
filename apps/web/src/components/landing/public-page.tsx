@@ -66,10 +66,16 @@ export async function PublicPage({
                         <span className="text-foreground">{crumb.label}</span>
                       ) : (
                         <>
-                          <Link href={crumb.href} className="hover:text-foreground">
+                          <Link
+                            href={crumb.href}
+                            className="hover:text-foreground"
+                          >
                             {crumb.label}
                           </Link>
-                          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                          <ChevronRight
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
                         </>
                       )}
                     </li>
@@ -125,13 +131,19 @@ export function ContentBlocks({ blocks }: { blocks: ContentBlock[] }) {
         switch (block.type) {
           case "h2":
             return (
-              <h2 key={i} className="pt-4 text-2xl font-semibold tracking-tight">
+              <h2
+                key={i}
+                className="pt-4 text-2xl font-semibold tracking-tight"
+              >
                 {block.text}
               </h2>
             );
           case "ul":
             return (
-              <ul key={i} className="list-disc space-y-2 pl-6 text-muted-foreground">
+              <ul
+                key={i}
+                className="list-disc space-y-2 pl-6 text-muted-foreground"
+              >
                 {block.items.map((item) => (
                   <li key={item} className="leading-relaxed">
                     {item}

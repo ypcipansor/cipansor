@@ -121,7 +121,11 @@ function CreateRiskPageContent() {
 
     try {
       await createRisk.mutateAsync(payload);
-      router.push(strategicPlanId ? `/perencanaan/${strategicPlanId}` : "/risk-management");
+      router.push(
+        strategicPlanId
+          ? `/perencanaan/${strategicPlanId}`
+          : "/risk-management",
+      );
     } catch (error) {
       console.error(error);
     }
@@ -133,7 +137,11 @@ function CreateRiskPageContent() {
         title="Create New Risk"
         description="Identify and register a new risk."
         actions={
-          <Button variant="outline" size="sm" onClick={() => router.push("/risk-management")}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/risk-management")}
+          >
             Back
           </Button>
         }
@@ -147,9 +155,12 @@ function CreateRiskPageContent() {
           {strategicPlanId && (
             <Alert className="bg-blue-50 border-blue-200">
               <InfoIcon className="h-4 w-4 text-blue-600" />
-              <AlertTitle className="text-blue-800">Ditautkan ke Perencanaan Strategis</AlertTitle>
+              <AlertTitle className="text-blue-800">
+                Ditautkan ke Perencanaan Strategis
+              </AlertTitle>
               <AlertDescription className="text-blue-700">
-                Risiko ini akan secara otomatis ditautkan dengan rencana strategis yang sedang Anda kelola.
+                Risiko ini akan secara otomatis ditautkan dengan rencana
+                strategis yang sedang Anda kelola.
               </AlertDescription>
             </Alert>
           )}

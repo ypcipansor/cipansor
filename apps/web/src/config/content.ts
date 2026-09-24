@@ -38,7 +38,7 @@ export const profileSections: ContentBlock[] = [
   },
   {
     type: "p",
-    text: "Nama \"Cipansor\" sendiri menyimpan doa: air yang mengalir dan menaungi. Harapannya, manfaat ilmu yang lahir dari pesantren ini terus mengalir kepada santri, keluarga, dan masyarakat sekitarnya.",
+    text: 'Nama "Cipansor" sendiri menyimpan doa: air yang mengalir dan menaungi. Harapannya, manfaat ilmu yang lahir dari pesantren ini terus mengalir kepada santri, keluarga, dan masyarakat sekitarnya.',
   },
   { type: "h2", text: "Visi" },
   {
@@ -235,7 +235,8 @@ export const leadership: Leader[] = [
     name: "H. M. Rizkon Hakiki, Lc., Al-Hafidz",
     photo: "/images/people/kepala-smaquran.webp",
     position: "Kepala SMA Qur'an",
-    motto: "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya.",
+    motto:
+      "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya.",
   },
 ];
 

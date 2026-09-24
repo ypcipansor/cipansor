@@ -1,5 +1,10 @@
 import type { Locale } from "@/locales";
-import { siteConfig, educationUnits, featuredPrograms, galleryItems } from "./site";
+import {
+  siteConfig,
+  educationUnits,
+  featuredPrograms,
+  galleryItems,
+} from "./site";
 import { unitDetails } from "./content";
 
 /**
@@ -399,7 +404,10 @@ const ID: SiteText = {
     ]),
   ),
   programs: Object.fromEntries(
-    featuredPrograms.map((p) => [p.slug, { title: p.title, description: p.description }]),
+    featuredPrograms.map((p) => [
+      p.slug,
+      { title: p.title, description: p.description },
+    ]),
   ),
   gallery: Object.fromEntries(galleryItems.map((g) => [g.slug, g.title])),
   galleryAlts: Object.fromEntries(

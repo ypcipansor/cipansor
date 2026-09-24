@@ -29,12 +29,17 @@ function mapStudent(s: PrismaStudentShape) {
   return { name: s.user?.name ?? '', nis: s.nis, class: s.enrollments?.[0]?.class };
 }
 
-const toStudentVisit = (v: Record<string, unknown> & { student?: PrismaStudentShape }): StudentVisit =>
-  ({ ...v, student: mapStudent(v.student ?? null) }) as unknown as StudentVisit;
+const toStudentVisit = (
+  v: Record<string, unknown> & { student?: PrismaStudentShape }
+): StudentVisit => ({ ...v, student: mapStudent(v.student ?? null) }) as unknown as StudentVisit;
 
 const toStudentPackage = (
-  p: Record<string, unknown> & { student?: PrismaStudentShape; receivedBy?: { name: string } | null }
-): StudentPackage => ({ ...p, student: mapStudent(p.student ?? null) }) as unknown as StudentPackage;
+  p: Record<string, unknown> & {
+    student?: PrismaStudentShape;
+    receivedBy?: { name: string } | null;
+  }
+): StudentPackage =>
+  ({ ...p, student: mapStudent(p.student ?? null) }) as unknown as StudentPackage;
 
 // --- Stats ---
 

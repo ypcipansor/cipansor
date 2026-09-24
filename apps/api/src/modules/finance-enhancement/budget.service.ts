@@ -202,7 +202,7 @@ export async function recalculateBudgetUsage(unitId: string, academicYearId: str
 async function triggerBudgetAlerts(unitId: string, academicYearId: string) {
   try {
     const alerts = await getBudgetUtilizationAlerts(unitId, academicYearId);
-    const criticalAlerts = alerts.filter(a => a.status !== 'NORMAL');
+    const criticalAlerts = alerts.filter((a) => a.status !== 'NORMAL');
 
     if (criticalAlerts.length === 0) return;
 
@@ -213,17 +213,17 @@ async function triggerBudgetAlerts(unitId: string, academicYearId: string) {
         userRoles: {
           some: {
             role: {
-              code: { in: ['YAYASAN_BENDAHARA', 'SUPER_ADMIN'] }
-            }
-          }
-        }
+              code: { in: ['YAYASAN_BENDAHARA', 'SUPER_ADMIN'] },
+            },
+          },
+        },
       },
-      select: { id: true }
+      select: { id: true },
     });
 
     await Promise.allSettled(
-      treasuryUsers.flatMap(user =>
-        criticalAlerts.map(alert =>
+      treasuryUsers.flatMap((user) =>
+        criticalAlerts.map((alert) =>
           prisma.notification.create({
             data: {
               userId: user.id,
@@ -232,7 +232,7 @@ async function triggerBudgetAlerts(unitId: string, academicYearId: string) {
               message: `Akun ${alert.accountCode} (${alert.accountName}) di unit ${alert.unitName} telah mencapai ${alert.percentage}% penggunaan.`,
               link: '/finance/budget',
               status: 'UNREAD',
-            }
+            },
           })
         )
       )

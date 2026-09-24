@@ -11,8 +11,12 @@ test.describe("GRC Dashboard Live Data", () => {
 
     // Cards aggregate real seeded data — counts are data-dependent, so assert
     // the rendered metric formats instead of fixed values.
-    await expect(page.getByText(/\d+ Active/).first()).toBeVisible({ timeout: 20000 });
-    await expect(page.getByText(/Average Progress: [\d.]+%/).first()).toBeVisible();
+    await expect(page.getByText(/\d+ Active/).first()).toBeVisible({
+      timeout: 20000,
+    });
+    await expect(
+      page.getByText(/Average Progress: [\d.]+%/).first(),
+    ).toBeVisible();
     await expect(page.getByText(/\d+ Risks/).first()).toBeVisible();
     await expect(page.getByText(/\d+ Findings/).first()).toBeVisible();
     await expect(page.getByText(/\d+ Unresolved/).first()).toBeVisible();
@@ -30,7 +34,10 @@ test.describe("GRC Dashboard Live Data", () => {
       await route.fulfill({
         status: 500,
         contentType: "application/json",
-        body: JSON.stringify({ success: false, message: "Internal Server Error" }),
+        body: JSON.stringify({
+          success: false,
+          message: "Internal Server Error",
+        }),
       });
     });
 

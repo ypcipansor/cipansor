@@ -20,7 +20,10 @@ import type { RbacUser } from "./rbac";
  * much profile a user has. localStorage still holds the full user for the UI.
  */
 interface PersistedAuth {
-  state?: { user?: (RbacUser & { id?: string }) | null; isAuthenticated?: boolean };
+  state?: {
+    user?: (RbacUser & { id?: string }) | null;
+    isAuthenticated?: boolean;
+  };
   version?: number;
 }
 
@@ -46,7 +49,12 @@ export function middlewareAuthCookieValue(persisted: string): string | null {
             id: user.id,
             role: user.role ?? null,
             userRoles: primary
-              ? [{ isPrimary: true, role: { code: primary.role?.code ?? null } }]
+              ? [
+                  {
+                    isPrimary: true,
+                    role: { code: primary.role?.code ?? null },
+                  },
+                ]
               : [],
           }
         : null,

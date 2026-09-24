@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { mustahikService } from "./donation.service";
+import { mustahikService } from './donation.service';
 import { campaignController, donationController } from './donation.controller';
 import { requireUser, authenticate, authorize, optionalAuth } from '@/middleware/auth';
-import httpStatus from "http-status";
+import httpStatus from 'http-status';
 import { validate } from '@/middleware/validate';
 import { UserRole } from '@prisma/client';
 import { requireTurnstile } from '@/middleware/turnstile';
@@ -250,10 +250,7 @@ router.post(
   async (req, res) => {
     // JWT payload carries the user id in `sub` (the PR read `.id`, which is
     // undefined and would have broken the recordedBy FK).
-    const distribution = await mustahikService.distribute(
-      req.body,
-      requireUser(req).sub
-    );
+    const distribution = await mustahikService.distribute(req.body, requireUser(req).sub);
     res.status(httpStatus.CREATED).send(distribution);
   }
 );

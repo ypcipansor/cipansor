@@ -33,12 +33,24 @@ import * as controller from '../ibadah.controller';
 import * as service from '../ibadah.service';
 
 function mockReqRes(overrides: Partial<Request> = {}) {
-  const req = { query: {}, params: {}, body: {}, user: { sub: 'user-1' }, ...overrides } as unknown as Request;
+  const req = {
+    query: {},
+    params: {},
+    body: {},
+    user: { sub: 'user-1' },
+    ...overrides,
+  } as unknown as Request;
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
-    status(code: number) { (this as any).statusCode = code; return this; },
-    json(payload: unknown) { (this as any).jsonPayload = payload; return this; },
+    status(code: number) {
+      (this as any).statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      (this as any).jsonPayload = payload;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
   return { req, res };
 }

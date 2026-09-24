@@ -137,8 +137,8 @@ export const QURAN_SURAHS: ReadonlyArray<QuranSurah> = [
  * 564 — jadi "ayat ÷ angka tetap" tidak pernah bisa menjadi hitungan juz.
  */
 export const JUZ_AYAH_COUNTS: ReadonlyArray<number> = [
-  148, 111, 126, 131, 124, 110, 149, 142, 159, 127, 151, 170, 154, 227, 185, 269, 190, 202, 339, 171,
-  178, 169, 357, 175, 246, 195, 399, 137, 431, 564,
+  148, 111, 126, 131, 124, 110, 149, 142, 159, 127, 151, 170, 154, 227, 185, 269, 190, 202, 339,
+  171, 178, 169, 357, 175, 246, 195, 399, 137, 431, 564,
 ];
 
 /**
@@ -179,12 +179,13 @@ const juzComplete = (juz: number, ayah: number): boolean => {
  */
 export function tahfidzMilestones(
   ayahByJuzAfter: ReadonlyMap<number, number>,
-  record: { juz: number; totalAyah: number },
+  record: { juz: number; totalAyah: number }
 ): TahfidzMilestone[] {
   if (record.totalAyah <= 0 || JUZ_AYAH_COUNTS[record.juz - 1] === undefined) return [];
 
   const after = ayahByJuzAfter.get(record.juz) ?? 0;
-  if (!juzComplete(record.juz, after) || juzComplete(record.juz, after - record.totalAyah)) return [];
+  if (!juzComplete(record.juz, after) || juzComplete(record.juz, after - record.totalAyah))
+    return [];
 
   let completedAfter = 0;
   for (const [juz, ayah] of ayahByJuzAfter) if (juzComplete(juz, ayah)) completedAfter++;
@@ -193,7 +194,9 @@ export function tahfidzMilestones(
   const reached: TahfidzMilestone[] = [
     { type: 'juz_complete', juz: record.juz, completedJuz: completedAfter },
   ];
-  if (completedBefore < 15 && completedAfter >= 15) reached.push({ type: 'half_quran', completedJuz: completedAfter });
-  if (completedBefore < 30 && completedAfter >= 30) reached.push({ type: 'full_quran', completedJuz: completedAfter });
+  if (completedBefore < 15 && completedAfter >= 15)
+    reached.push({ type: 'half_quran', completedJuz: completedAfter });
+  if (completedBefore < 30 && completedAfter >= 30)
+    reached.push({ type: 'full_quran', completedJuz: completedAfter });
   return reached;
 }

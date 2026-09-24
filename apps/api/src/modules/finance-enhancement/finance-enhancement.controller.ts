@@ -137,8 +137,6 @@ export class FinanceEnhancementController {
     }
   }
 
-
-
   async getJournalEntryById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
@@ -327,12 +325,10 @@ export class FinanceEnhancementController {
       const { unitId, accountId, startDate, endDate } = req.query;
 
       if (!unitId || !startDate || !endDate || !accountId) {
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: 'Unit ID, Start date, End date, and Account ID are required',
-          });
+        return res.status(400).json({
+          success: false,
+          message: 'Unit ID, Start date, End date, and Account ID are required',
+        });
       }
 
       const result = await getGeneralLedger(
@@ -429,9 +425,10 @@ export class FinanceEnhancementController {
       // Validate and cap `months` to prevent abuse (e.g. months=999999 would
       // create that many forecast iterations). Default to 6, clamp to [1, 24].
       const parsedMonths = Number(months);
-      const safeMonths = Number.isFinite(parsedMonths) && parsedMonths >= 1
-        ? Math.min(24, Math.floor(parsedMonths))
-        : 6;
+      const safeMonths =
+        Number.isFinite(parsedMonths) && parsedMonths >= 1
+          ? Math.min(24, Math.floor(parsedMonths))
+          : 6;
       const result = await getCashFlowForecast(unitId as string, safeMonths);
       res.json({ success: true, data: result });
     } catch (error) {
@@ -582,9 +579,7 @@ export class FinanceEnhancementController {
       const { academicYearId } = req.query;
 
       if (!academicYearId) {
-        return res
-          .status(400)
-          .json({ success: false, message: 'Academic Year ID is required' });
+        return res.status(400).json({ success: false, message: 'Academic Year ID is required' });
       }
 
       const result = await financeEnhancementService.getConsolidatedBudget({

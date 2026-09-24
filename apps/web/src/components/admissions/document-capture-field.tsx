@@ -4,7 +4,13 @@ import React, { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Camera, Upload, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
+import {
+  Camera,
+  Upload,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 
@@ -18,8 +24,14 @@ interface DocumentCaptureFieldProps {
     nationalId?: string;
     familyCardNumber?: string;
   };
-  onOcrExtracted?: (extracted: { nationalId?: string; familyCardNumber?: string }) => void;
-  onOcrResult?: (result: { status: "WARNING" | "MISMATCH"; notes: string[] }) => void;
+  onOcrExtracted?: (extracted: {
+    nationalId?: string;
+    familyCardNumber?: string;
+  }) => void;
+  onOcrResult?: (result: {
+    status: "WARNING" | "MISMATCH";
+    notes: string[];
+  }) => void;
 }
 
 export function DocumentCaptureField({
@@ -67,16 +79,24 @@ export function DocumentCaptureField({
         if (data.extractedData && onOcrExtracted) {
           onOcrExtracted(data.extractedData);
         }
-        if (onOcrResult && data.validation?.status && data.validation.status !== "VALID") {
+        if (
+          onOcrResult &&
+          data.validation?.status &&
+          data.validation.status !== "VALID"
+        ) {
           onOcrResult({
             status: data.validation.status,
             notes: data.validation.notes || [],
           });
         }
         if (data.validation?.status === "VALID") {
-          toast.success("Data metadata dokumen cocok. Visual tetap diverifikasi manual oleh petugas.");
+          toast.success(
+            "Data metadata dokumen cocok. Visual tetap diverifikasi manual oleh petugas.",
+          );
         } else if (data.validation?.status === "WARNING") {
-          toast.warning("Dokumen berhasil diunggah. OCR visual tidak tersedia, verifikasi dilakukan manual oleh petugas.");
+          toast.warning(
+            "Dokumen berhasil diunggah. OCR visual tidak tersedia, verifikasi dilakukan manual oleh petugas.",
+          );
         } else {
           toast.error("Dokumen dipindai tetapi terdapat ketidakcocokan data.");
         }
@@ -93,7 +113,9 @@ export function DocumentCaptureField({
       if (onOcrResult) {
         onOcrResult(fallbackStatus);
       }
-      toast.warning("Gagal memverifikasi otomatis, dokumen akan diverifikasi manual oleh petugas.");
+      toast.warning(
+        "Gagal memverifikasi otomatis, dokumen akan diverifikasi manual oleh petugas.",
+      );
     } finally {
       setIsParsing(false);
     }
@@ -178,7 +200,8 @@ export function DocumentCaptureField({
 
       {isParsing && (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse mt-2">
-          <RefreshCw className="h-3 w-3 animate-spin" /> Memeriksa metadata dokumen... (atau gambar akan diverifikasi manual oleh petugas)
+          <RefreshCw className="h-3 w-3 animate-spin" /> Memeriksa metadata
+          dokumen... (atau gambar akan diverifikasi manual oleh petugas)
         </p>
       )}
 

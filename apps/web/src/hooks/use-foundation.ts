@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { FoundationExecutiveSummary, FoundationFinancialOverview } from "@cipansor/shared";
+import type {
+  FoundationExecutiveSummary,
+  FoundationFinancialOverview,
+} from "@cipansor/shared";
 import api from "@/lib/api";
 
 // Types

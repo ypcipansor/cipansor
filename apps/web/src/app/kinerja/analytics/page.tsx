@@ -50,17 +50,23 @@ import {
 // The consolidated report always covers one year. Offering a window around
 // the current one lets a reader reach the year the data actually lives in
 // instead of staring at an all-zero table with no way to tell why.
-const REPORT_YEARS = Array.from({ length: 7 }, (_, i) => new Date().getFullYear() - 2 + i);
+const REPORT_YEARS = Array.from(
+  { length: 7 },
+  (_, i) => new Date().getFullYear() - 2 + i,
+);
 
 function PerformanceAnalyticsPageContent() {
   const { data: dashboard, isLoading: loadingDash } = usePerformanceDashboard();
-  const [reportYear, setReportYear] = useState<number>(new Date().getFullYear());
+  const [reportYear, setReportYear] = useState<number>(
+    new Date().getFullYear(),
+  );
   const { data: consolidated, isLoading: loadingConsolidated } =
     usePerformanceConsolidatedReport(reportYear);
   const { data: units } = useUnits({ limit: 100 });
 
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
-  const { data: drilldown, isLoading: loadingDrill } = usePerformanceDrilldown(selectedUnitId);
+  const { data: drilldown, isLoading: loadingDrill } =
+    usePerformanceDrilldown(selectedUnitId);
 
   return (
     <div className="container mx-auto space-y-6 p-6">
@@ -73,9 +79,12 @@ function PerformanceAnalyticsPageContent() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Analitik & Peta Strategi Kinerja</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Analitik & Peta Strategi Kinerja
+            </h1>
             <p className="text-muted-foreground text-sm">
-              Laporan eksekutif matriks capaian kinerja terintegrasi seluruh unit Yayasan Pesantren Cipansor
+              Laporan eksekutif matriks capaian kinerja terintegrasi seluruh
+              unit Yayasan Pesantren Cipansor
             </p>
           </div>
         </div>
@@ -85,11 +94,15 @@ function PerformanceAnalyticsPageContent() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Dokumen PK</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Dokumen PK
+            </CardTitle>
             <FileText className="h-4 w-4 text-emerald-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dashboard?.totalAgreements || 0}</div>
+            <div className="text-2xl font-bold">
+              {dashboard?.totalAgreements || 0}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               {dashboard?.approvedAgreements || 0} sudah disetujui
             </p>
@@ -98,12 +111,16 @@ function PerformanceAnalyticsPageContent() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Rata-Rata Kinerja Yayasan</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Rata-Rata Kinerja Yayasan
+            </CardTitle>
             <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-              {dashboard?.avgPerformanceScore ? `${dashboard.avgPerformanceScore.toFixed(1)}%` : "0%"}
+              {dashboard?.avgPerformanceScore
+                ? `${dashboard.avgPerformanceScore.toFixed(1)}%`
+                : "0%"}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Capaian realisasi IKU/KPI pegawai
@@ -113,12 +130,17 @@ function PerformanceAnalyticsPageContent() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Rata-Rata Perilaku SAFTI</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Rata-Rata Perilaku SAFTI
+            </CardTitle>
             <ShieldCheck className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
-              {dashboard?.avgBehaviorScore ? `${dashboard.avgBehaviorScore.toFixed(1)}` : "0"} / 100
+              {dashboard?.avgBehaviorScore
+                ? `${dashboard.avgBehaviorScore.toFixed(1)}`
+                : "0"}{" "}
+              / 100
             </div>
             <p className="text-xs text-muted-foreground mt-1">
               Evaluasi akhlak mulia dan disiplin Islami
@@ -128,11 +150,15 @@ function PerformanceAnalyticsPageContent() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Evaluasi Bulanan</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Evaluasi Bulanan
+            </CardTitle>
             <BarChart3 className="h-4 w-4 text-amber-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{dashboard?.totalEvaluations || 0}</div>
+            <div className="text-2xl font-bold">
+              {dashboard?.totalEvaluations || 0}
+            </div>
             <p className="text-xs text-muted-foreground mt-1">
               Evaluasi realisasi periodik
             </p>
@@ -145,10 +171,12 @@ function PerformanceAnalyticsPageContent() {
         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-emerald-600" /> Rincian Capaian per Unit Kerja
+              <Building2 className="w-5 h-5 text-emerald-600" /> Rincian Capaian
+              per Unit Kerja
             </CardTitle>
             <CardDescription>
-              Pilih sekolah atau unit kerja untuk melihat rincian kaskade kinerja pegawai
+              Pilih sekolah atau unit kerja untuk melihat rincian kaskade
+              kinerja pegawai
             </CardDescription>
           </div>
           <div className="w-full sm:w-64">
@@ -169,24 +197,39 @@ function PerformanceAnalyticsPageContent() {
         <CardContent>
           {!selectedUnitId ? (
             <div className="py-8 text-center text-sm text-muted-foreground border-2 border-dashed rounded-lg">
-              Silakan pilih unit kerja pada daftar di atas untuk melihat rincian laporan kinerjanya.
+              Silakan pilih unit kerja pada daftar di atas untuk melihat rincian
+              laporan kinerjanya.
             </div>
           ) : loadingDrill ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">Memuat rincian unit…</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Memuat rincian unit…
+            </div>
           ) : (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-lg bg-emerald-50/50 border border-emerald-100 dark:bg-emerald-950/20">
                 <div>
-                  <span className="text-xs text-muted-foreground">Unit Kerja:</span>
-                  <div className="font-bold text-base">{drilldown?.unit?.name}</div>
+                  <span className="text-xs text-muted-foreground">
+                    Unit Kerja:
+                  </span>
+                  <div className="font-bold text-base">
+                    {drilldown?.unit?.name}
+                  </div>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground">RKA/Renstra Unit Terkait:</span>
-                  <div className="font-semibold text-emerald-700">{drilldown?.strategicPlan?.title || "Belum Ditetapkan"}</div>
+                  <span className="text-xs text-muted-foreground">
+                    RKA/Renstra Unit Terkait:
+                  </span>
+                  <div className="font-semibold text-emerald-700">
+                    {drilldown?.strategicPlan?.title || "Belum Ditetapkan"}
+                  </div>
                 </div>
                 <div>
-                  <span className="text-xs text-muted-foreground">Progres RKA Unit:</span>
-                  <div className="font-bold text-base text-blue-600">{drilldown?.strategicPlan?.progress || 0}%</div>
+                  <span className="text-xs text-muted-foreground">
+                    Progres RKA Unit:
+                  </span>
+                  <div className="font-bold text-base text-blue-600">
+                    {drilldown?.strategicPlan?.progress || 0}%
+                  </div>
                 </div>
               </div>
 
@@ -204,12 +247,22 @@ function PerformanceAnalyticsPageContent() {
                 <TableBody>
                   {drilldown?.agreements?.map((pk: PerformanceAgreementDTO) => (
                     <TableRow key={pk.id}>
-                      <TableCell className="font-semibold">{pk.user?.name}</TableCell>
+                      <TableCell className="font-semibold">
+                        {pk.user?.name}
+                      </TableCell>
                       <TableCell>{pk.supervisor?.name || "-"}</TableCell>
-                      <TableCell>{pk.indicators?.length || 0} Indikator</TableCell>
-                      <TableCell className="font-medium text-blue-600">{pk.totalScore?.toFixed(1) || 0}%</TableCell>
-                      <TableCell className="font-medium text-purple-600">{pk.behaviorScore?.toFixed(1) || 0}</TableCell>
-                      <TableCell className="font-bold text-emerald-700">{pk.overallScore?.toFixed(1) || 0}%</TableCell>
+                      <TableCell>
+                        {pk.indicators?.length || 0} Indikator
+                      </TableCell>
+                      <TableCell className="font-medium text-blue-600">
+                        {pk.totalScore?.toFixed(1) || 0}%
+                      </TableCell>
+                      <TableCell className="font-medium text-purple-600">
+                        {pk.behaviorScore?.toFixed(1) || 0}
+                      </TableCell>
+                      <TableCell className="font-bold text-emerald-700">
+                        {pk.overallScore?.toFixed(1) || 0}%
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -225,11 +278,12 @@ function PerformanceAnalyticsPageContent() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
-                <Layers className="w-5 h-5 text-emerald-600" /> Ringkasan Laporan Konsolidasi Kinerja Yayasan
+                <Layers className="w-5 h-5 text-emerald-600" /> Ringkasan
+                Laporan Konsolidasi Kinerja Yayasan
               </CardTitle>
               <CardDescription>
-                Rekapitulasi Perjanjian Kinerja dan evaluasi bulanan seluruh unit
-                sepanjang <strong>tahun {reportYear}</strong>
+                Rekapitulasi Perjanjian Kinerja dan evaluasi bulanan seluruh
+                unit sepanjang <strong>tahun {reportYear}</strong>
               </CardDescription>
             </div>
             <Select
@@ -251,7 +305,9 @@ function PerformanceAnalyticsPageContent() {
         </CardHeader>
         <CardContent>
           {loadingConsolidated ? (
-            <div className="py-8 text-center text-sm text-muted-foreground">Memuat laporan konsolidasi...</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Memuat laporan konsolidasi...
+            </div>
           ) : (
             <Table>
               <TableHeader>

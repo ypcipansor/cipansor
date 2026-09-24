@@ -125,7 +125,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Login failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -171,7 +173,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "2FA Verification failed";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:
@@ -270,7 +274,9 @@ export const useAuthStore = create<AuthState>()(
           const message =
             error instanceof Error ? error.message : "Failed to switch role";
           const axiosError = error as {
-            response?: { data?: { error?: { message?: string }; message?: string } };
+            response?: {
+              data?: { error?: { message?: string }; message?: string };
+            };
           };
           set({
             error:

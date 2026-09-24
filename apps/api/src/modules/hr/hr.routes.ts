@@ -8,7 +8,12 @@ import { employeeDocumentController } from './employee-documents.controller';
 import { employmentHistoryController } from './employment-history.controller';
 import { authenticate, authorize } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/error';
-import { queryStaffAttendanceSchema, queryLeaveSchema, queryStaffSchema, queryTeachersSchema } from './hr.schema';
+import {
+  queryStaffAttendanceSchema,
+  queryLeaveSchema,
+  queryStaffSchema,
+  queryTeachersSchema,
+} from './hr.schema';
 
 const router = Router();
 

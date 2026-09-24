@@ -1,6 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
-import { RaportMerdekaPdfData, AssessmentStudentItem, AssessmentAcademicYearItem } from "@cipansor/shared";
+import {
+  RaportMerdekaPdfData,
+  AssessmentStudentItem,
+  AssessmentAcademicYearItem,
+} from "@cipansor/shared";
 
 // ==================== CONSTANTS ====================
 
@@ -421,7 +425,7 @@ export function useLearningPhases(params?: UseLearningPhasesParams) {
 export function useRaportMerdekaStudentData(
   studentId?: string,
   academicYearId?: string,
-  semester?: string | number
+  semester?: string | number,
 ) {
   return useQuery({
     queryKey: ["raport-merdeka-student", studentId, academicYearId, semester],
@@ -431,7 +435,7 @@ export function useRaportMerdekaStudentData(
         `/assessment/raport-merdeka/students/${studentId}`,
         {
           params: { academicYearId, semester },
-        }
+        },
       );
       return response.data.data;
     },
@@ -443,9 +447,16 @@ export function useRaportMerdekaStudentsList(unitId?: string, search?: string) {
   return useQuery({
     queryKey: ["students-list", unitId, search],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<AssessmentStudentItem[]>>("/students", {
-        params: { unitId: unitId || undefined, search: search || undefined, limit: 100 },
-      });
+      const response = await api.get<ApiResponse<AssessmentStudentItem[]>>(
+        "/students",
+        {
+          params: {
+            unitId: unitId || undefined,
+            search: search || undefined,
+            limit: 100,
+          },
+        },
+      );
       return response.data.data;
     },
   });
@@ -455,21 +466,31 @@ export function useRaportMerdekaP5Dimensions() {
   return useQuery({
     queryKey: ["p5-dimensions"],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Array<{ code: string; name: string; description: string; elements: string[] }>>>(
-        "/assessment/raport-merdeka/p5-dimensions"
-      );
+      const response = await api.get<
+        ApiResponse<
+          Array<{
+            code: string;
+            name: string;
+            description: string;
+            elements: string[];
+          }>
+        >
+      >("/assessment/raport-merdeka/p5-dimensions");
       return response.data.data;
     },
   });
 }
 
-export function useRaportMerdekaCpMapping(subjectCode: string, gradeLevel: string) {
+export function useRaportMerdekaCpMapping(
+  subjectCode: string,
+  gradeLevel: string,
+) {
   return useQuery({
     queryKey: ["cp-mapping", subjectCode, gradeLevel],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<{ fase: string; cp: string[] }>>(
-        `/assessment/raport-merdeka/cp/${subjectCode}/${gradeLevel}`
-      );
+      const response = await api.get<
+        ApiResponse<{ fase: string; cp: string[] }>
+      >(`/assessment/raport-merdeka/cp/${subjectCode}/${gradeLevel}`);
       return response.data.data;
     },
     enabled: !!subjectCode && !!gradeLevel,
@@ -508,7 +529,7 @@ export function useExportRaportMerdekaPdf() {
         {
           params: { academicYearId, semester },
           responseType: "blob",
-        }
+        },
       );
       return response.data;
     },

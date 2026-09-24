@@ -38,9 +38,7 @@ vi.mock('../../lib/prisma', () => ({
     user: {
       findMany: vi
         .fn()
-        .mockResolvedValue([
-          { id: 'user-1', email: 'test@cipansor.or.id', phone: '08123456789' },
-        ]),
+        .mockResolvedValue([{ id: 'user-1', email: 'test@cipansor.or.id', phone: '08123456789' }]),
     },
   },
 }));
@@ -85,7 +83,7 @@ describe('NotificationService email dispatch', () => {
         to: 'santri@cipansor.or.id',
         subject: 'Akun Anda di Sistem Cipansor sudah aktif',
         html: expect.stringContaining('Ahmad Santri'),
-      }),
+      })
     );
 
     /**
@@ -140,7 +138,7 @@ describe('NotificationService email dispatch', () => {
 
     expect(result.success).toBe(true);
     expect(deliverEmailMock).toHaveBeenCalledWith(
-      expect.objectContaining({ to: 'orang-luar@example.test' }),
+      expect.objectContaining({ to: 'orang-luar@example.test' })
     );
   });
 
@@ -180,7 +178,7 @@ describe('NotificationService email dispatch', () => {
         data: expect.objectContaining({
           message: expect.stringContaining('Fauzan'),
         }),
-      }),
+      })
     );
   });
 });

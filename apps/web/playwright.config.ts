@@ -105,7 +105,11 @@ export default defineConfig({
         // PW_CHROMIUM_EXECUTABLE_PATH is set, launch that binary instead of
         // downloading. Unset in CI, so CI behaviour is unchanged.
         ...(process.env.PW_CHROMIUM_EXECUTABLE_PATH
-          ? { launchOptions: { executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH } }
+          ? {
+              launchOptions: {
+                executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH,
+              },
+            }
           : {}),
       },
       dependencies: ["setup"],

@@ -28,15 +28,12 @@ import {
  */
 describe('LetterAuthoringTrack — Prisma dan shared harus sama persis', () => {
   it('anggotanya sama, tanpa kurang maupun lebih di salah satu sisi', () => {
-    expect(Object.values(SharedTrack).sort()).toEqual(
-      Object.values(PrismaTrack).sort()
-    );
+    expect(Object.values(SharedTrack).sort()).toEqual(Object.values(PrismaTrack).sort());
   });
 
   it('setiap nilai dari basis data punya keterangan yang dapat dibaca', () => {
     for (const value of Object.values(PrismaTrack)) {
-      const entry =
-        LETTER_AUTHORING_TRACK_LABELS[value as unknown as SharedTrack];
+      const entry = LETTER_AUTHORING_TRACK_LABELS[value as unknown as SharedTrack];
       expect(entry, `tidak ada keterangan untuk ${value}`).toBeDefined();
       expect(entry.label.length).toBeGreaterThan(0);
       expect(entry.assurance.length).toBeGreaterThan(0);

@@ -25,7 +25,11 @@ router.get('/targets/:id', controller.getTarget);
 router.post('/targets', isTeacherOrAbove, validate(createTargetSchema), controller.createTarget);
 router.put('/targets/:id', isTeacherOrAbove, validate(updateTargetSchema), controller.updateTarget);
 router.delete('/targets/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN'), controller.deleteTarget);
-router.post('/targets/seed/:unitId', authorize('SUPER_ADMIN', 'UNIT_ADMIN'), controller.seedTargets);
+router.post(
+  '/targets/seed/:unitId',
+  authorize('SUPER_ADMIN', 'UNIT_ADMIN'),
+  controller.seedTargets
+);
 
 // ==================== RECORDS ====================
 router.get('/records', controller.listRecords);
@@ -34,7 +38,12 @@ router.post('/records', validate(createRecordSchema), controller.createRecord);
 router.put('/records/:id', validate(updateRecordSchema), controller.updateRecord);
 router.delete('/records/:id', isTeacherOrAbove, controller.deleteRecord);
 router.post('/records/bulk', validate(bulkCreateRecordsSchema), controller.bulkCreateRecords);
-router.post('/records/verify', isTeacherOrAbove, validate(verifyRecordSchema), controller.verifyRecords);
+router.post(
+  '/records/verify',
+  isTeacherOrAbove,
+  validate(verifyRecordSchema),
+  controller.verifyRecords
+);
 
 // ==================== DAILY CHECK-IN ====================
 router.post('/check-in', validate(dailyCheckInSchema), controller.dailyCheckIn);
@@ -54,8 +63,18 @@ router.get('/stats/class', controller.getClassStats);
 // ==================== ISLAMIC EVENTS ====================
 router.get('/events', controller.listEvents);
 router.get('/events/:id', controller.getEvent);
-router.post('/events', isTeacherOrAbove, validate(createIslamicEventSchema), controller.createEvent);
-router.put('/events/:id', isTeacherOrAbove, validate(updateIslamicEventSchema), controller.updateEvent);
+router.post(
+  '/events',
+  isTeacherOrAbove,
+  validate(createIslamicEventSchema),
+  controller.createEvent
+);
+router.put(
+  '/events/:id',
+  isTeacherOrAbove,
+  validate(updateIslamicEventSchema),
+  controller.updateEvent
+);
 router.delete('/events/:id', authorize('SUPER_ADMIN', 'UNIT_ADMIN'), controller.deleteEvent);
 
 export default router;

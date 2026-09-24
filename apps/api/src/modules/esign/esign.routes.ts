@@ -32,8 +32,7 @@ const passphraseLimiter = rateLimit({
     success: false,
     error: {
       code: 'RATE_LIMIT_EXCEEDED',
-      message:
-        'Terlalu banyak percobaan tanda tangan elektronik. Coba lagi beberapa saat lagi.',
+      message: 'Terlalu banyak percobaan tanda tangan elektronik. Coba lagi beberapa saat lagi.',
     },
   },
   standardHeaders: true,
@@ -203,13 +202,19 @@ router.get('/requests', isSuperAdmin, EsignController.listRequests);
  * balik `uploadsAuth`, yang membuktikan pemanggilnya sudah masuk dan bukan
  * bahwa ia berhak atas berkas itu. Ini satu-satunya jalan membacanya.
  */
-router.get(
-  '/identities/:userId/ktp',
-  isSuperAdmin,
-  EsignController.readIdentityDocument
-);
+router.get('/identities/:userId/ktp', isSuperAdmin, EsignController.readIdentityDocument);
 router.get('/keys', isSuperAdmin, EsignController.listKeys);
-router.post('/requests/:id/decide', isSuperAdmin, validate(decideRequestSchema), EsignController.decide);
-router.post('/keys/:userId/revoke', isSuperAdmin, validate(revokeKeySchema), EsignController.revoke);
+router.post(
+  '/requests/:id/decide',
+  isSuperAdmin,
+  validate(decideRequestSchema),
+  EsignController.decide
+);
+router.post(
+  '/keys/:userId/revoke',
+  isSuperAdmin,
+  validate(revokeKeySchema),
+  EsignController.revoke
+);
 
 export default router;

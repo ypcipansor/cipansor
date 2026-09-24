@@ -18,7 +18,11 @@ function respondWith(body: unknown) {
 }
 
 const provider = () => new OpenAiCompatibleProvider('https://x.test/v1', 'k', 'model-a');
-const request = { messages: [{ role: 'user' as const, content: 'halo' }], maxTokens: 700, temperature: 0.2 };
+const request = {
+  messages: [{ role: 'user' as const, content: 'halo' }],
+  maxTokens: 700,
+  temperature: 0.2,
+};
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => vi.unstubAllGlobals());
@@ -64,7 +68,9 @@ function errorResponse(status: number, retryAfter?: string) {
   return {
     ok: false,
     status,
-    headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? retryAfter ?? null : null) },
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'retry-after' ? (retryAfter ?? null) : null),
+    },
     json: async () => ({}),
   };
 }
@@ -142,12 +148,17 @@ describe('OpenAiCompatibleProvider ketika penyedianya sedang penuh', () => {
     // Habis-waktu berarti panggilannya sudah memakan seluruh kesabaran penanya;
     // mengulanginya meminta ia menunggu dua kali lipat untuk panggilan yang
     // memang terlalu lambat. Putus jaringan lain sembuh dalam milidetik.
-    const putus = vi.fn().mockRejectedValueOnce(new Error('ECONNRESET')).mockResolvedValueOnce(okResponse());
+    const putus = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce(okResponse());
     vi.stubGlobal('fetch', putus);
     await expect(provider().complete(request)).resolves.toMatchObject({ text: 'jawaban' });
     expect(putus).toHaveBeenCalledTimes(2);
 
-    const habisWaktu = vi.fn().mockRejectedValue(Object.assign(new Error('timed out'), { name: 'TimeoutError' }));
+    const habisWaktu = vi
+      .fn()
+      .mockRejectedValue(Object.assign(new Error('timed out'), { name: 'TimeoutError' }));
     vi.stubGlobal('fetch', habisWaktu);
     await expect(provider().complete(request)).rejects.toThrow('timed out');
     expect(habisWaktu).toHaveBeenCalledTimes(1);

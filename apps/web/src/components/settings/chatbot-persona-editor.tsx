@@ -93,7 +93,12 @@ export function ChatbotPersonaEditor() {
 
   // Remount the form whenever the stored value changes (after a save or reset),
   // so the textarea re-seeds from the server without a state-syncing effect.
-  return <PersonaForm key={`${data.isCustom}:${data.updatedAt ?? "default"}`} data={data} />;
+  return (
+    <PersonaForm
+      key={`${data.isCustom}:${data.updatedAt ?? "default"}`}
+      data={data}
+    />
+  );
 }
 
 function PersonaForm({ data }: { data: ChatbotPersonaResponse }) {

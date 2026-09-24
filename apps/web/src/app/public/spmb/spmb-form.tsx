@@ -209,7 +209,9 @@ export function SpmbForm({
     ktp: null,
   });
 
-  const [ocrResults, setOcrResults] = useState<Record<string, { status: "WARNING" | "MISMATCH"; notes: string[] }>>({});
+  const [ocrResults, setOcrResults] = useState<
+    Record<string, { status: "WARNING" | "MISMATCH"; notes: string[] }>
+  >({});
   const [activeRegistration, setActiveRegistration] = useState<{
     registrantId: string;
     registrationToken: string;
@@ -287,12 +289,30 @@ export function SpmbForm({
     }
   };
 
-  const uploadSelectedDocuments = async (registrantId: string, registrationToken?: string) => {
-    const fileEntries: { key: keyof typeof files; file: File | null; type: string; label: string }[] = [
+  const uploadSelectedDocuments = async (
+    registrantId: string,
+    registrationToken?: string,
+  ) => {
+    const fileEntries: {
+      key: keyof typeof files;
+      file: File | null;
+      type: string;
+      label: string;
+    }[] = [
       { key: "photo", file: files.photo, type: "PHOTO", label: "Pas Foto" },
       { key: "ktp", file: files.ktp, type: "ID_CARD", label: "KTP Orang Tua" },
-      { key: "familyCard", file: files.familyCard, type: "FAMILY_CARD", label: "Kartu Keluarga" },
-      { key: "birthCertificate", file: files.birthCertificate, type: "BIRTH_CERTIFICATE", label: "Akte Kelahiran" },
+      {
+        key: "familyCard",
+        file: files.familyCard,
+        type: "FAMILY_CARD",
+        label: "Kartu Keluarga",
+      },
+      {
+        key: "birthCertificate",
+        file: files.birthCertificate,
+        type: "BIRTH_CERTIFICATE",
+        label: "Akte Kelahiran",
+      },
     ];
 
     const failedKeys: (keyof typeof files)[] = [];
@@ -310,14 +330,17 @@ export function SpmbForm({
         });
 
         const ocr = ocrResults[key];
-        await api.post(`/admissions/public/registrants/${registrantId}/documents`, {
-          type,
-          base64,
-          fileName: file.name,
-          registrationToken,
-          ocrNotes: ocr?.notes,
-          ocrStatus: ocr?.status,
-        });
+        await api.post(
+          `/admissions/public/registrants/${registrantId}/documents`,
+          {
+            type,
+            base64,
+            fileName: file.name,
+            registrationToken,
+            ocrNotes: ocr?.notes,
+            ocrStatus: ocr?.status,
+          },
+        );
       } catch (err: any) {
         failedKeys.push(key);
         failedLabels.push(label);
@@ -334,7 +357,7 @@ export function SpmbForm({
     try {
       const { failedKeys, failedLabels } = await uploadSelectedDocuments(
         activeRegistration.registrantId,
-        activeRegistration.registrationToken
+        activeRegistration.registrationToken,
       );
 
       setFiles((prev) => {
@@ -342,7 +365,8 @@ export function SpmbForm({
         if (!failedKeys.includes("photo")) next.photo = null;
         if (!failedKeys.includes("ktp")) next.ktp = null;
         if (!failedKeys.includes("familyCard")) next.familyCard = null;
-        if (!failedKeys.includes("birthCertificate")) next.birthCertificate = null;
+        if (!failedKeys.includes("birthCertificate"))
+          next.birthCertificate = null;
         return next;
       });
 
@@ -356,7 +380,9 @@ export function SpmbForm({
         setFormData(initialFormData);
         setCurrentStep(0);
       } else {
-        toast.error(`Beberapa berkas masih gagal diunggah: ${failedLabels.join(", ")}`);
+        toast.error(
+          `Beberapa berkas masih gagal diunggah: ${failedLabels.join(", ")}`,
+        );
       }
     } catch (err) {
       toast.error("Gagal mengunggah ulang berkas dokumen. Silakan coba lagi.");
@@ -426,23 +452,33 @@ export function SpmbForm({
 
       const result = await createRegistration.mutateAsync(payload);
       const createdRegistrantId = result?.id || result?.data?.id;
-      const registrationToken = result?.registrationToken || result?.data?.registrationToken;
-      const registrationNo = result?.registrationNo || result?.registrationNumber || "PSB-" + Date.now();
+      const registrationToken =
+        result?.registrationToken || result?.data?.registrationToken;
+      const registrationNo =
+        result?.registrationNo ||
+        result?.registrationNumber ||
+        "PSB-" + Date.now();
 
       if (createdRegistrantId) {
-        const { failedKeys, failedLabels } = await uploadSelectedDocuments(createdRegistrantId, registrationToken);
+        const { failedKeys, failedLabels } = await uploadSelectedDocuments(
+          createdRegistrantId,
+          registrationToken,
+        );
 
         setFiles((prev) => {
           const next = { ...prev };
           if (!failedKeys.includes("photo")) next.photo = null;
           if (!failedKeys.includes("ktp")) next.ktp = null;
           if (!failedKeys.includes("familyCard")) next.familyCard = null;
-          if (!failedKeys.includes("birthCertificate")) next.birthCertificate = null;
+          if (!failedKeys.includes("birthCertificate"))
+            next.birthCertificate = null;
           return next;
         });
 
         if (failedLabels.length > 0) {
-          toast.error(`Pendaftaran tersimpan (${registrationNo}), tetapi berkas gagal diunggah: ${failedLabels.join(", ")}`);
+          toast.error(
+            `Pendaftaran tersimpan (${registrationNo}), tetapi berkas gagal diunggah: ${failedLabels.join(", ")}`,
+          );
           setActiveRegistration({
             registrantId: createdRegistrantId,
             registrationToken,
@@ -462,7 +498,9 @@ export function SpmbForm({
       setFormData(initialFormData);
       setCurrentStep(0);
     } catch (error: any) {
-      const msg = error?.response?.data?.message || "Gagal mengirim pendaftaran. Silakan coba lagi.";
+      const msg =
+        error?.response?.data?.message ||
+        "Gagal mengirim pendaftaran. Silakan coba lagi.";
       toast.error(msg);
       // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
       turnstile.refresh();
@@ -496,9 +534,9 @@ export function SpmbForm({
             */}
             Sistem Penerimaan Murid Baru (SPMB) Yayasan Pesantren Cipansor
             melayani seluruh unit pendidikan: TK Qur&rsquo;an, SD IT, SMP IT,
-            SMA Qur&rsquo;an, dan program Takhosus. Pendaftaran dilakukan
-            secara online. Unit dan biaya pendaftaran mengikuti gelombang yang
-            sedang dibuka.
+            SMA Qur&rsquo;an, dan program Takhosus. Pendaftaran dilakukan secara
+            online. Unit dan biaya pendaftaran mengikuti gelombang yang sedang
+            dibuka.
           </p>
           <p className="mt-3 text-muted-foreground">
             Isi formulir pada tab <strong>Informasi &amp; Pendaftaran</strong>,
@@ -656,7 +694,9 @@ export function SpmbForm({
                                     style: "currency",
                                     currency: "IDR",
                                     minimumFractionDigits: 0,
-                                  }).format(Number(activePeriod.registrationFee))
+                                  }).format(
+                                    Number(activePeriod.registrationFee),
+                                  )
                                 : "Gratis"}
                             </strong>
                           </span>
@@ -1115,10 +1155,15 @@ export function SpmbForm({
                                 <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                                 <div className="text-sm">
                                   <p className="font-medium text-amber-900">
-                                    Pendaftaran Tersimpan ({activeRegistration.registrationNo})
+                                    Pendaftaran Tersimpan (
+                                    {activeRegistration.registrationNo})
                                   </p>
                                   <p className="text-amber-800">
-                                    Data formulir pendaftaran Anda sudah tersimpan. Beberapa berkas dokumen gagal diunggah. Silakan pilih kembali berkas yang gagal dan tekan tombol di bawah untuk mencoba mengunggah ulang.
+                                    Data formulir pendaftaran Anda sudah
+                                    tersimpan. Beberapa berkas dokumen gagal
+                                    diunggah. Silakan pilih kembali berkas yang
+                                    gagal dan tekan tombol di bawah untuk
+                                    mencoba mengunggah ulang.
                                   </p>
                                 </div>
                               </div>
@@ -1135,7 +1180,11 @@ export function SpmbForm({
                                   Instruksi Unggah Dokumen:
                                 </p>
                                 <p className="text-blue-700">
-                                  Anda dapat memilih file dari perangkat atau mengambil foto langsung dari kamera HP/laptop. Dokumen akan diverifikasi secara manual oleh petugas SPMB untuk mencocokkan NIK & No. KK dengan data formulir.
+                                  Anda dapat memilih file dari perangkat atau
+                                  mengambil foto langsung dari kamera HP/laptop.
+                                  Dokumen akan diverifikasi secara manual oleh
+                                  petugas SPMB untuk mencocokkan NIK & No. KK
+                                  dengan data formulir.
                                 </p>
                               </div>
                             </div>
@@ -1147,8 +1196,12 @@ export function SpmbForm({
                             label="Pas Foto Calon Santri (3x4 Latar Biru)"
                             documentType="foto"
                             file={files.photo}
-                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, photo: f }))}
-                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, photo: res }))}
+                            onFileSelect={(f) =>
+                              setFiles((prev) => ({ ...prev, photo: f }))
+                            }
+                            onOcrResult={(res) =>
+                              setOcrResults((prev) => ({ ...prev, photo: res }))
+                            }
                           />
 
                           <DocumentCaptureField
@@ -1156,10 +1209,15 @@ export function SpmbForm({
                             documentType="ktp"
                             file={files.ktp}
                             userInputData={{
-                              fullName: formData.fatherName || formData.motherName,
+                              fullName:
+                                formData.fatherName || formData.motherName,
                             }}
-                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, ktp: f }))}
-                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, ktp: res }))}
+                            onFileSelect={(f) =>
+                              setFiles((prev) => ({ ...prev, ktp: f }))
+                            }
+                            onOcrResult={(res) =>
+                              setOcrResults((prev) => ({ ...prev, ktp: res }))
+                            }
                           />
 
                           <DocumentCaptureField
@@ -1167,24 +1225,48 @@ export function SpmbForm({
                             documentType="kk"
                             file={files.familyCard}
                             userInputData={{
-                              fullName: formData.fatherName || formData.motherName,
+                              fullName:
+                                formData.fatherName || formData.motherName,
                               familyCardNumber: formData.familyCardNumber,
                             }}
-                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, familyCard: f }))}
+                            onFileSelect={(f) =>
+                              setFiles((prev) => ({ ...prev, familyCard: f }))
+                            }
                             onOcrExtracted={(ext) => {
-                              if (ext.familyCardNumber && !formData.familyCardNumber) {
-                                setFormData((prev) => ({ ...prev, familyCardNumber: ext.familyCardNumber! }));
+                              if (
+                                ext.familyCardNumber &&
+                                !formData.familyCardNumber
+                              ) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  familyCardNumber: ext.familyCardNumber!,
+                                }));
                               }
                             }}
-                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, familyCard: res }))}
+                            onOcrResult={(res) =>
+                              setOcrResults((prev) => ({
+                                ...prev,
+                                familyCard: res,
+                              }))
+                            }
                           />
 
                           <DocumentCaptureField
                             label="Akte Kelahiran"
                             documentType="akta"
                             file={files.birthCertificate}
-                            onFileSelect={(f) => setFiles((prev) => ({ ...prev, birthCertificate: f }))}
-                            onOcrResult={(res) => setOcrResults((prev) => ({ ...prev, birthCertificate: res }))}
+                            onFileSelect={(f) =>
+                              setFiles((prev) => ({
+                                ...prev,
+                                birthCertificate: f,
+                              }))
+                            }
+                            onOcrResult={(res) =>
+                              setOcrResults((prev) => ({
+                                ...prev,
+                                birthCertificate: res,
+                              }))
+                            }
                           />
                         </div>
                       </div>
@@ -1372,8 +1454,8 @@ export function SpmbForm({
             </h2>
             <p className="mb-6 text-sm text-muted-foreground">
               Masukkan nomor pendaftaran dan tanggal lahir calon santri. Nomor
-              pendaftaran ditampilkan setelah formulir berhasil dikirim —
-              simpan nomor tersebut untuk memantau proses seleksi.
+              pendaftaran ditampilkan setelah formulir berhasil dikirim — simpan
+              nomor tersebut untuk memantau proses seleksi.
             </p>
             <RegistrationTracker />
           </TabsContent>

@@ -1,11 +1,6 @@
 import { z } from 'zod';
 import { JournalReferenceType } from '@cipansor/shared';
-import {
-  AccountType,
-  ScholarshipType,
-  ScholarshipSource,
-  PaymentCategory,
-} from '@cipansor/shared';
+import { AccountType, ScholarshipType, ScholarshipSource, PaymentCategory } from '@cipansor/shared';
 
 // ==================== ACCOUNT CODES ====================
 

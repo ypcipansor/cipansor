@@ -63,7 +63,8 @@ export const useWasteRecords = (unitId?: string) => {
     queryKey: ["lingkungan", "waste", unitId],
     enabled: !!unitId,
     queryFn: async () =>
-      (await api.get("/lingkungan/waste", { params: { unitId } })).data.data ?? [],
+      (await api.get("/lingkungan/waste", { params: { unitId } })).data.data ??
+      [],
   });
 };
 

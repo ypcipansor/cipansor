@@ -38,7 +38,9 @@ test.describe("PWA assets", () => {
     }
   });
 
-  test("serves the service worker and offline fallback", async ({ request }) => {
+  test("serves the service worker and offline fallback", async ({
+    request,
+  }) => {
     const sw = await request.get("/sw.js");
     expect(sw.status()).toBe(200);
     expect(await sw.text()).toContain("addEventListener");

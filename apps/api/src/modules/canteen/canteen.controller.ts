@@ -6,7 +6,12 @@ import {
   ListTransactionsQuerySchema,
   ListStockMovementsQuerySchema,
 } from './canteen.schema';
-import { categoryService, itemService, transactionService, stockMovementService } from './canteen.service';
+import {
+  categoryService,
+  itemService,
+  transactionService,
+  stockMovementService,
+} from './canteen.service';
 import { ApiResponse } from '../../utils/response';
 import { resolveUnitId, isSuperAdminUser } from '../../utils/resolve-unit-id';
 
@@ -93,7 +98,7 @@ export const listItems = asyncHandler(async (req: Request, res: Response) => {
   const parsedQuery = ListItemsQuerySchema.parse(req.query);
   const result = await itemService.getAll(unitId, parsedQuery);
   return res.json(
-    ApiResponse.success(result.data, 'Berhasil mengambil data item', result.pagination),
+    ApiResponse.success(result.data, 'Berhasil mengambil data item', result.pagination)
   );
 });
 
@@ -163,7 +168,7 @@ export const listTransactions = asyncHandler(async (req: Request, res: Response)
   const parsedQuery = ListTransactionsQuerySchema.parse(req.query);
   const result = await transactionService.getAll(unitId, parsedQuery);
   return res.json(
-    ApiResponse.success(result.data, 'Berhasil mengambil data transaksi', result.pagination),
+    ApiResponse.success(result.data, 'Berhasil mengambil data transaksi', result.pagination)
   );
 });
 
@@ -217,7 +222,7 @@ export const updateTransactionStatus = asyncHandler(async (req: Request, res: Re
     req.params.id,
     unitId,
     userId,
-    req.body,
+    req.body
   );
   return res.json(ApiResponse.success(transaction, 'Status transaksi berhasil diperbarui'));
 });
@@ -235,7 +240,7 @@ export const listStockMovements = asyncHandler(async (req: Request, res: Respons
   const parsedQuery = ListStockMovementsQuerySchema.parse(req.query);
   const result = await stockMovementService.getAll(unitId, parsedQuery);
   return res.json(
-    ApiResponse.success(result.data, 'Berhasil mengambil data pergerakan stok', result.pagination),
+    ApiResponse.success(result.data, 'Berhasil mengambil data pergerakan stok', result.pagination)
   );
 });
 

@@ -41,7 +41,7 @@ const DELIBERATELY_UNGATED: Record<string, string> = {
   'admissions.routes.ts POST /public/registrants/:registrantId/documents':
     'Unggah dokumen pasca-pendaftaran. Izinnya adalah `registrationToken` bertanda-tangan HMAC (kadaluarsa ' +
     '2 jam) yang hanya dicetak peladen di `/public/registrants` — permukaan yang SUDAH dijaga ' +
-    '`requireTurnstile(\'spmb-daftar\')`. Jadi permintaan ini hanya dapat muncul dari pendaftaran yang sudah ' +
+    "`requireTurnstile('spmb-daftar')`. Jadi permintaan ini hanya dapat muncul dari pendaftaran yang sudah " +
     'lulus Turnstile, dan menyelesaikan tantangan kedua tepat setelah menyerahkan formulir yang sudah tervet ' +
     'adalah permusuhan tanpa tambahan perlindungan. Dijaga registrationToken + documentUploadLimiter.',
   'admissions.routes.ts POST /public/parse-document':

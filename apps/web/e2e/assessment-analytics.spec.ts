@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { apiLogin, apiRequest, injectSession, SEED_USERS } from "./helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  SEED_USERS,
+} from "./helpers/auth-api";
 
 test.describe("Assessment Analytics", () => {
   test("should render analytics statistics and chart", async ({ page }) => {
@@ -31,19 +36,32 @@ test.describe("Assessment Analytics", () => {
     await page.getByRole("tab", { name: /Statistik/i }).click();
 
     // Summary cards render the real analytics values
-    await expect(page.getByText("Nilai Tertinggi", { exact: true })).toBeVisible();
-    await expect(page.getByText("Nilai Terendah", { exact: true })).toBeVisible();
-    await expect(page.getByText("Rata-rata", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Persentase Lulus", { exact: true }).first()).toBeVisible();
     await expect(
-      page.getByRole("paragraph").filter({ hasText: String(analytics.data.highestScore) }).first(),
+      page.getByText("Nilai Tertinggi", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Nilai Terendah", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Rata-rata", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Persentase Lulus", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("paragraph")
+        .filter({ hasText: String(analytics.data.highestScore) })
+        .first(),
     ).toBeVisible();
 
     // Verify chart visibility
     await expect(page.locator(".recharts-responsive-container")).toBeVisible();
 
     // Verify top students section shows the real best performer
-    await expect(page.getByText("Santri Nilai Tertinggi", { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText("Santri Nilai Tertinggi", { exact: true }).first(),
+    ).toBeVisible();
     const topStudent = analytics.data.topStudents?.[0]?.studentName;
     expect(topStudent, "analytics should report a top student").toBeTruthy();
     await expect(page.getByText(topStudent!).first()).toBeVisible();

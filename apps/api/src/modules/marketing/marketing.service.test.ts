@@ -97,15 +97,13 @@ describe('Marketing Service', () => {
 
       expect(prisma.registrant.groupBy).toHaveBeenCalled();
       expect(prisma.marketingCampaign.findMany).toHaveBeenCalled();
-      
+
       expect(result).toEqual({
         sources: [
           { source: 'FACEBOOK', count: 50 },
           { source: 'INSTAGRAM', count: 30 },
         ],
-        topCampaigns: [
-          { name: 'Camp 1', code: 'C1', budget: 1000, registrants: 20 },
-        ],
+        topCampaigns: [{ name: 'Camp 1', code: 'C1', budget: 1000, registrants: 20 }],
       });
     });
   });

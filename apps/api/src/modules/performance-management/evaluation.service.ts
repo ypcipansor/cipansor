@@ -361,71 +361,74 @@ export class EvaluationService {
   }
 
   async approveEvaluation(id: string, callerId: string, isAdmin: boolean, feedback?: string) {
-    return prisma.$transaction(async (tx) => {
-      const evaluation = await tx.pKEvaluation.findUnique({
-        where: { id },
-        include: { pk: true },
-      });
-      if (!evaluation) throw Errors.notFound('Evaluation');
-      pkService.assertAccess(evaluation.pk, callerId, isAdmin, { supervisorOnly: true });
+    return prisma.$transaction(
+      async (tx) => {
+        const evaluation = await tx.pKEvaluation.findUnique({
+          where: { id },
+          include: { pk: true },
+        });
+        if (!evaluation) throw Errors.notFound('Evaluation');
+        pkService.assertAccess(evaluation.pk, callerId, isAdmin, { supervisorOnly: true });
 
-      // Acquire an explicit row lock on the PerformanceAgreement row to serialize concurrent approvals for the same PK
-      if (typeof tx.$queryRaw === 'function') {
-        await tx.$queryRaw`SELECT id FROM "performance_agreements" WHERE id = ${evaluation.pkId} FOR UPDATE`;
-      }
+        // Acquire an explicit row lock on the PerformanceAgreement row to serialize concurrent approvals for the same PK
+        if (typeof tx.$queryRaw === 'function') {
+          await tx.$queryRaw`SELECT id FROM "performance_agreements" WHERE id = ${evaluation.pkId} FOR UPDATE`;
+        }
 
-      // Atomic conditional update ensuring status is not already APPROVED
-      const updateResult = await tx.pKEvaluation.updateMany({
-        where: {
-          id,
-          status: { not: PlanStatus.APPROVED },
-        },
-        data: {
-          status: PlanStatus.APPROVED,
-          feedback: feedback !== undefined ? feedback : evaluation.feedback,
-        },
-      });
-
-      if (updateResult.count === 0) {
-        throw Errors.conflict('Evaluation already approved');
-      }
-
-      await this.syncToPKAndTalentInTx(tx, evaluation.pkId);
-      const approved = await tx.pKEvaluation.findUnique({
-        where: { id },
-        include: {
-          pk: {
-            include: {
-              user: { select: { id: true, name: true } },
-              supervisor: { select: { id: true, name: true } },
-            },
+        // Atomic conditional update ensuring status is not already APPROVED
+        const updateResult = await tx.pKEvaluation.updateMany({
+          where: {
+            id,
+            status: { not: PlanStatus.APPROVED },
           },
-          indicatorDetails: { include: { indicator: true } },
-          behaviorDetails: { include: { behaviorValue: true } },
-        },
-      });
+          data: {
+            status: PlanStatus.APPROVED,
+            feedback: feedback !== undefined ? feedback : evaluation.feedback,
+          },
+        });
 
-      // Predikat ikut di sini, bukan hanya di getEvaluationById.
-      // Ditemukan saat menjalankan alurnya sungguhan: persetujuan mengembalikan
-      // predikat null sementara GET yang sama mengisinya, sehingga layar
-      // persetujuan menampilkan skor tanpa predikatnya sampai halaman dimuat
-      // ulang — padahal predikat itulah kesimpulan penilaiannya.
-      return approved
-        ? {
-            ...approved,
-            predikat: predikatKinerja(approved.performanceScore, approved.behaviorScore),
-          }
-        : approved;
-    }, {
-      // Di dalam satu transaksi ini ada SELECT ... FOR UPDATE, updateMany,
-      // satu update per indikator secara berurutan, sinkronisasi matriks
-      // talenta, lalu satu findUnique dengan empat include. Batas bawaan
-      // Prisma 5 detik terlampaui pada PK dengan belasan indikator di basis
-      // data yang sedang sibuk: P2028, rollback, penyetuju melihat 500, dan
-      // penguncian baris sempat ditahan selama seluruh jendela itu.
-      timeout: 30_000,
-      maxWait: 10_000,
-    });
+        if (updateResult.count === 0) {
+          throw Errors.conflict('Evaluation already approved');
+        }
+
+        await this.syncToPKAndTalentInTx(tx, evaluation.pkId);
+        const approved = await tx.pKEvaluation.findUnique({
+          where: { id },
+          include: {
+            pk: {
+              include: {
+                user: { select: { id: true, name: true } },
+                supervisor: { select: { id: true, name: true } },
+              },
+            },
+            indicatorDetails: { include: { indicator: true } },
+            behaviorDetails: { include: { behaviorValue: true } },
+          },
+        });
+
+        // Predikat ikut di sini, bukan hanya di getEvaluationById.
+        // Ditemukan saat menjalankan alurnya sungguhan: persetujuan mengembalikan
+        // predikat null sementara GET yang sama mengisinya, sehingga layar
+        // persetujuan menampilkan skor tanpa predikatnya sampai halaman dimuat
+        // ulang — padahal predikat itulah kesimpulan penilaiannya.
+        return approved
+          ? {
+              ...approved,
+              predikat: predikatKinerja(approved.performanceScore, approved.behaviorScore),
+            }
+          : approved;
+      },
+      {
+        // Di dalam satu transaksi ini ada SELECT ... FOR UPDATE, updateMany,
+        // satu update per indikator secara berurutan, sinkronisasi matriks
+        // talenta, lalu satu findUnique dengan empat include. Batas bawaan
+        // Prisma 5 detik terlampaui pada PK dengan belasan indikator di basis
+        // data yang sedang sibuk: P2028, rollback, penyetuju melihat 500, dan
+        // penguncian baris sempat ditahan selama seluruh jendela itu.
+        timeout: 30_000,
+        maxWait: 10_000,
+      }
+    );
   }
 
   /**

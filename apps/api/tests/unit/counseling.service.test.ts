@@ -82,7 +82,9 @@ describe('CounselingService', () => {
 
       const result = await counselingService.createSession(input, mockUser);
 
-      expect(mockPrisma.student.findUnique).toHaveBeenCalledWith({ where: { id: 'student-1', deletedAt: null } });
+      expect(mockPrisma.student.findUnique).toHaveBeenCalledWith({
+        where: { id: 'student-1', deletedAt: null },
+      });
       expect(mockPrisma.teacher.findFirst).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
       expect(mockPrisma.counselingSession.create).toHaveBeenCalled();
       expect(result).toEqual(mockSession);
@@ -91,7 +93,9 @@ describe('CounselingService', () => {
     it('should throw error if student not found', async () => {
       mockPrisma.student.findUnique.mockResolvedValue(null);
 
-      await expect(counselingService.createSession(input, mockUser)).rejects.toThrow('Student not found');
+      await expect(counselingService.createSession(input, mockUser)).rejects.toThrow(
+        'Student not found'
+      );
     });
   });
 
@@ -123,7 +127,9 @@ describe('CounselingService', () => {
         unitId: 'unit-1',
       });
 
-      expect(mockPrisma.counselingSession.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expectedWhere }));
+      expect(mockPrisma.counselingSession.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expectedWhere })
+      );
     });
   });
 
@@ -134,7 +140,10 @@ describe('CounselingService', () => {
     };
 
     it('should add a note to a session', async () => {
-      mockPrisma.counselingSession.findUnique.mockResolvedValue({ id: 'session-1', unitId: 'unit-1' });
+      mockPrisma.counselingSession.findUnique.mockResolvedValue({
+        id: 'session-1',
+        unitId: 'unit-1',
+      });
 
       const mockNote = {
         id: 'note-1',
@@ -147,26 +156,37 @@ describe('CounselingService', () => {
 
       const result = await counselingService.addNote('session-1', noteInput, mockUser);
 
-      expect(mockPrisma.counselingSession.findUnique).toHaveBeenCalledWith({ where: { id: 'session-1' } });
-      expect(mockPrisma.counselingNote.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
-          sessionId: 'session-1',
-          content: 'Test Note',
-        }),
-      }));
+      expect(mockPrisma.counselingSession.findUnique).toHaveBeenCalledWith({
+        where: { id: 'session-1' },
+      });
+      expect(mockPrisma.counselingNote.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            sessionId: 'session-1',
+            content: 'Test Note',
+          }),
+        })
+      );
       expect(result).toEqual(mockNote);
     });
 
     it('should throw error if session not found', async () => {
       mockPrisma.counselingSession.findUnique.mockResolvedValue(null);
 
-      await expect(counselingService.addNote('session-1', noteInput, mockUser)).rejects.toThrow('Session not found');
+      await expect(counselingService.addNote('session-1', noteInput, mockUser)).rejects.toThrow(
+        'Session not found'
+      );
     });
 
     it('should throw error if user unit does not match session unit', async () => {
-      mockPrisma.counselingSession.findUnique.mockResolvedValue({ id: 'session-1', unitId: 'unit-2' });
+      mockPrisma.counselingSession.findUnique.mockResolvedValue({
+        id: 'session-1',
+        unitId: 'unit-2',
+      });
 
-      await expect(counselingService.addNote('session-1', noteInput, mockUser)).rejects.toThrow('Access denied');
+      await expect(counselingService.addNote('session-1', noteInput, mockUser)).rejects.toThrow(
+        'Access denied'
+      );
     });
   });
 });

@@ -105,6 +105,8 @@ describe('createThrottle', () => {
     ).rejects.toThrow('penyedia gagal');
 
     expect(throttle.stats()).toEqual({ active: 0, queued: 0 });
-    await expect(throttle.run(async () => 'giliran berikutnya')).resolves.toBe('giliran berikutnya');
+    await expect(throttle.run(async () => 'giliran berikutnya')).resolves.toBe(
+      'giliran berikutnya'
+    );
   });
 });

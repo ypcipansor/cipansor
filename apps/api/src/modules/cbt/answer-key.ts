@@ -107,9 +107,7 @@ export function isAnswerCorrect(
 /** Every option identifier of a multiple-choice question, in order. */
 export function optionIdentifiers(options: unknown): string[] {
   if (!Array.isArray(options)) return [];
-  return options
-    .map((opt) => asIdentifier(unwrap(opt)))
-    .filter((id): id is string => id !== null);
+  return options.map((opt) => asIdentifier(unwrap(opt))).filter((id): id is string => id !== null);
 }
 
 /**

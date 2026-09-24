@@ -81,7 +81,9 @@ beforeEach(() => {
     { studentId: 's1', unitId: SD.id, nis: 'SD-0007' },
     { studentId: 's1', unitId: SMP.id, nis: 'SMP-0099' },
   ]);
-  db.classEnrollment.findMany.mockResolvedValue([{ classId: 'kelas-6a', class: { unitId: SD.id } }]);
+  db.classEnrollment.findMany.mockResolvedValue([
+    { classId: 'kelas-6a', class: { unitId: SD.id } },
+  ]);
   // Pembantu privat yang tidak diuji di sini (P5, ekskul, tahfidz, kehadiran).
   const svc = RaportMerdekaService as unknown as Record<
     'getP5Projects' | 'getEkstrakurikulerData' | 'getTahfidzSummary' | 'getAttendanceSummary',
@@ -100,9 +102,15 @@ afterEach(() => {
 
 describe('isi rapor Merdeka tahun lalu untuk santri yang sudah pindah unit', () => {
   it('kop, jenis unit, jabatan kepala, fase, dan NIS milik unit rombelnya', async () => {
-    const rapor = await RaportMerdekaService.generateRaportMerdeka('s1', tahunLalu.id, 2, undefined, {
-      skipScopeValidation: true,
-    });
+    const rapor = await RaportMerdekaService.generateRaportMerdeka(
+      's1',
+      tahunLalu.id,
+      2,
+      undefined,
+      {
+        skipScopeValidation: true,
+      }
+    );
     expect(rapor.siswa).toMatchObject({
       unit: 'SD IT Cipansor',
       unitType: 'SD',

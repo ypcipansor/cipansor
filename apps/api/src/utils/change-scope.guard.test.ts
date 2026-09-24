@@ -13,7 +13,10 @@ const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCRIPT = join(REPO_ROOT, '.github', 'scripts', 'change-scope.sh');
 
 function codeAmong(paths: string[]): string[] {
-  const out = execFileSync('sh', [SCRIPT, 'classify'], { input: paths.join('\n') + '\n', encoding: 'utf8' });
+  const out = execFileSync('sh', [SCRIPT, 'classify'], {
+    input: paths.join('\n') + '\n',
+    encoding: 'utf8',
+  });
   return out.split('\n').filter(Boolean);
 }
 
@@ -73,7 +76,7 @@ describe('change-scope.sh', () => {
     const misclassified = [...read].filter((f) => !codeAmong([f]).includes(f));
     expect(
       misclassified,
-      'a test reads these files but change-scope.sh would skip CI for a change to them — add each to the first branch of is_code()',
+      'a test reads these files but change-scope.sh would skip CI for a change to them — add each to the first branch of is_code()'
     ).toEqual([]);
   });
 });

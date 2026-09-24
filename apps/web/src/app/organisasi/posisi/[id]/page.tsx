@@ -3,7 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,8 +24,11 @@ function PositionDetailPageContent() {
   const positionId = params.id as string;
 
   const { data: position, isLoading } = useQuery({
-    queryKey: ['org-position', positionId],
-    queryFn: () => api.get(`/organisasi/positions/${positionId}`).then(res => res.data.data),
+    queryKey: ["org-position", positionId],
+    queryFn: () =>
+      api
+        .get(`/organisasi/positions/${positionId}`)
+        .then((res) => res.data.data),
   });
 
   if (isLoading) {
@@ -42,19 +51,26 @@ function PositionDetailPageContent() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
-      <Button variant="ghost" className="mb-2 -ml-4" onClick={() => router.back()}>
+      <Button
+        variant="ghost"
+        className="mb-2 -ml-4"
+        onClick={() => router.back()}
+      >
         <ArrowLeft className="h-4 w-4 mr-2" />
         Kembali
       </Button>
 
       <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
         <div>
-          <PageHeader 
-            title={position.title} 
-            description={`Kode: ${position.code || '-'} | Unit: ${position.orgUnit?.name}`} 
+          <PageHeader
+            title={position.title}
+            description={`Kode: ${position.code || "-"} | Unit: ${position.orgUnit?.name}`}
           />
         </div>
-        <Badge variant={position.holder ? "default" : "secondary"} className="text-sm px-3 py-1">
+        <Badge
+          variant={position.holder ? "default" : "secondary"}
+          className="text-sm px-3 py-1"
+        >
           {position.holder ? "Terisi" : "Kosong"}
         </Badge>
       </div>
@@ -74,24 +90,32 @@ function PositionDetailPageContent() {
                 </div>
                 <div>
                   <h4 className="font-semibold">{position.holder.name}</h4>
-                  <p className="text-sm text-muted-foreground">{position.holder.email}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {position.holder.email}
+                  </p>
                 </div>
               </div>
             ) : (
               <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-lg">
                 <p>Belum ada penjabat yang ditugaskan</p>
-                <Button variant="outline" size="sm" className="mt-4">Tugaskan Personil</Button>
+                <Button variant="outline" size="sm" className="mt-4">
+                  Tugaskan Personil
+                </Button>
               </div>
             )}
-            
+
             <div className="mt-6 pt-6 border-t space-y-3">
               <div>
-                <span className="text-sm text-muted-foreground">Unit Kerja</span>
+                <span className="text-sm text-muted-foreground">
+                  Unit Kerja
+                </span>
                 <p className="font-medium">{position.orgUnit?.name}</p>
               </div>
               {position.parentPosition && (
                 <div>
-                  <span className="text-sm text-muted-foreground">Melapor Kepada</span>
+                  <span className="text-sm text-muted-foreground">
+                    Melapor Kepada
+                  </span>
                   <p className="font-medium">{position.parentPosition.title}</p>
                 </div>
               )}
@@ -103,18 +127,37 @@ function PositionDetailPageContent() {
           <Tabs defaultValue="tugas">
             <CardHeader className="pb-0 border-b">
               <TabsList className="bg-transparent border-none">
-                <TabsTrigger value="tugas" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">Tugas & Tanggung Jawab</TabsTrigger>
-                <TabsTrigger value="syarat" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">Persyaratan</TabsTrigger>
-                <TabsTrigger value="sop" className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none">SOP Terkait</TabsTrigger>
+                <TabsTrigger
+                  value="tugas"
+                  className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+                >
+                  Tugas & Tanggung Jawab
+                </TabsTrigger>
+                <TabsTrigger
+                  value="syarat"
+                  className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+                >
+                  Persyaratan
+                </TabsTrigger>
+                <TabsTrigger
+                  value="sop"
+                  className="data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none"
+                >
+                  SOP Terkait
+                </TabsTrigger>
               </TabsList>
             </CardHeader>
             <CardContent className="pt-6">
               <TabsContent value="tugas" className="space-y-4 m-0">
                 <div className="prose prose-sm dark:prose-invert max-w-none">
                   {position.description ? (
-                    <p className="whitespace-pre-line">{position.description}</p>
+                    <p className="whitespace-pre-line">
+                      {position.description}
+                    </p>
                   ) : (
-                    <p className="text-muted-foreground italic">Deskripsi tugas belum diisi untuk posisi ini.</p>
+                    <p className="text-muted-foreground italic">
+                      Deskripsi tugas belum diisi untuk posisi ini.
+                    </p>
                   )}
                 </div>
               </TabsContent>
@@ -127,7 +170,10 @@ function PositionDetailPageContent() {
               <TabsContent value="sop" className="m-0">
                 <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg">
                   <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>Integrasi dengan modul Tata Laksana (SOP) akan ditampilkan di sini.</p>
+                  <p>
+                    Integrasi dengan modul Tata Laksana (SOP) akan ditampilkan
+                    di sini.
+                  </p>
                 </div>
               </TabsContent>
             </CardContent>

@@ -116,12 +116,7 @@ router.delete(
 
 // Pemakaian dan taksiran biaya. Sama seperti persona: bukan rahasia, tetapi
 // siapa yang boleh melihat belanja yayasan tetap sebuah kewenangan.
-router.get(
-  '/admin/usage',
-  authenticate,
-  authorize(RoleCode.SUPER_ADMIN),
-  controller.getUsage
-);
+router.get('/admin/usage', authenticate, authorize(RoleCode.SUPER_ADMIN), controller.getUsage);
 
 // Riwayat tanya-jawab. Dikunci ke SUPER_ADMIN dengan alasan yang lebih keras
 // daripada persona: yang tersimpan di sini adalah kalimat yang benar-benar

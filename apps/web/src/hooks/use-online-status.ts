@@ -229,7 +229,10 @@ export function useIsOnline(): boolean {
     window.addEventListener("offline", handleOffline);
 
     void verifyOffline();
-    const intervalId = setInterval(() => void verifyOffline(), OFFLINE_RECHECK_MS);
+    const intervalId = setInterval(
+      () => void verifyOffline(),
+      OFFLINE_RECHECK_MS,
+    );
 
     return () => {
       cancelled = true;

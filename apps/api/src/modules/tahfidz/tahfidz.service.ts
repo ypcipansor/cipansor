@@ -446,10 +446,7 @@ export class TahfidzService {
       juzCovered: juzCovered.map((j) => j.juz).sort((a, b) => a - b),
       surahCovered: surahCovered.sort((a, b) => a.surahNumber - b.surahNumber),
       recentRecords,
-      estimation: calculateCompletionEstimate(
-        totalAyahZiyadah._sum?.totalAyah || 0,
-        paceRecords
-      ),
+      estimation: calculateCompletionEstimate(totalAyahZiyadah._sum?.totalAyah || 0, paceRecords),
     };
   }
 

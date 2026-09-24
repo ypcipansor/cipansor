@@ -7,7 +7,9 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/layout/main-layout", () => ({
-  MainLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  MainLayout: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@/hooks/use-admissions", () => ({

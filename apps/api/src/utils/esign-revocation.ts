@@ -119,10 +119,7 @@ export function assertKeyRevocable(key: RevocableKey | null): void {
  * mengelola kunci dan sertifikat, bukan kewenangan menandatangani atas nama
  * yayasan.
  */
-export function actorMayRevoke(
-  signature: RevocableSignature,
-  actor: RevocationActor
-): boolean {
+export function actorMayRevoke(signature: RevocableSignature, actor: RevocationActor): boolean {
   return mayRevokeSignature(
     { userId: signature.signerId, roleCode: signature.signerRoleCode ?? null },
     { userId: actor.id, roleCode: actor.roleCode }

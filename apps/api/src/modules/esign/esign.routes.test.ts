@@ -105,21 +105,19 @@ describe('esign.routes rate limiting', () => {
  */
 describe('esign.routes authority gates', () => {
   it('GET /requests requires isSuperAdmin', () => {
-    expect(handlersFor('get', '/requests').some((h) => h.handle === isSuperAdmin)).toBe(
+    expect(handlersFor('get', '/requests').some((h) => h.handle === isSuperAdmin)).toBe(true);
+  });
+
+  it('POST /requests/:id/decide requires isSuperAdmin', () => {
+    expect(handlersFor('post', '/requests/:id/decide').some((h) => h.handle === isSuperAdmin)).toBe(
       true
     );
   });
 
-  it('POST /requests/:id/decide requires isSuperAdmin', () => {
-    expect(
-      handlersFor('post', '/requests/:id/decide').some((h) => h.handle === isSuperAdmin)
-    ).toBe(true);
-  });
-
   it('POST /keys/:userId/revoke requires isSuperAdmin', () => {
-    expect(
-      handlersFor('post', '/keys/:userId/revoke').some((h) => h.handle === isSuperAdmin)
-    ).toBe(true);
+    expect(handlersFor('post', '/keys/:userId/revoke').some((h) => h.handle === isSuperAdmin)).toBe(
+      true
+    );
   });
 
   /**

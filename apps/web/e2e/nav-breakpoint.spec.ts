@@ -82,7 +82,10 @@ for (const locale of LOCALES) {
       const gap = isRtl
         ? brandBox.x - (navBox.x + navBox.width)
         : navBox.x - (brandBox.x + brandBox.width);
-      expect(gap, `brand and nav overlap in ${locale} at ${width}px`).toBeGreaterThanOrEqual(0);
+      expect(
+        gap,
+        `brand and nav overlap in ${locale} at ${width}px`,
+      ).toBeGreaterThanOrEqual(0);
 
       // An overflowing nav scrolls internally instead of visibly colliding,
       // which is the quieter half of the same bug.
@@ -114,9 +117,7 @@ test("hamburger replaces the nav below lg, and never doubles up", async ({
   await page.goto("/");
 
   await expect(page.locator("header nav")).toBeHidden();
-  await expect(
-    page.getByRole("button", { name: MENU_LABEL }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: MENU_LABEL })).toBeVisible();
 });
 
 test("exactly one of nav and hamburger is shown, at every width", async ({

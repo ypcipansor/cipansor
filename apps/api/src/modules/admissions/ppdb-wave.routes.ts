@@ -30,11 +30,7 @@ router.use(authenticate);
  * @desc Get all waves
  * @access Private - Admin, Staff
  */
-router.get(
-  '/',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
-  waveController.list
-);
+router.get('/', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveController.list);
 
 /**
  * @route GET /api/ppdb-wave/stats/:periodId
@@ -52,11 +48,7 @@ router.get(
  * @desc Get wave by ID
  * @access Private - Admin, Staff
  */
-router.get(
-  '/:id',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
-  waveController.getById
-);
+router.get('/:id', authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'), waveController.getById);
 
 /**
  * @route GET /api/ppdb-wave/:id/registrants

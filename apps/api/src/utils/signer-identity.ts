@@ -74,9 +74,7 @@ export function identitySerialNumber(nik: string): string {
  * Mengembalikan daftar, bukan boolean: "lengkapi dulu data Anda" tanpa menyebut
  * apa yang kurang memaksa orang menebak-nebak formulirnya sendiri.
  */
-export function missingIdentityFields(
-  identity: SignerIdentityInput | null | undefined
-): string[] {
+export function missingIdentityFields(identity: SignerIdentityInput | null | undefined): string[] {
   if (!identity) return Object.values(FIELD_LABELS);
 
   const missing: string[] = [];
@@ -150,10 +148,7 @@ export function assertIdentityReadyToRequest(
  * dilakukan fungsi ini adalah memunculkannya di hadapan orang yang memang
  * bertugas mencocokkan — bukan memutuskan menggantikannya.
  */
-export function nikBirthDateMismatch(
-  nik: string,
-  birthDate: Date | string
-): string | null {
+export function nikBirthDateMismatch(nik: string, birthDate: Date | string): string | null {
   const digits = normaliseNik(nik);
   if (!isWellFormedNik(digits)) return null;
 

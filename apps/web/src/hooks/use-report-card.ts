@@ -224,9 +224,12 @@ export function useMyChildrenReportCards() {
 export function useDownloadReportCard() {
   return useMutation({
     mutationFn: async (reportCardId: string) => {
-      const response = await api.get(`/assessment/report-cards/${reportCardId}/download`, {
-        responseType: "blob",
-      });
+      const response = await api.get(
+        `/assessment/report-cards/${reportCardId}/download`,
+        {
+          responseType: "blob",
+        },
+      );
       return response.data;
     },
   });

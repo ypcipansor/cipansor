@@ -31,11 +31,10 @@ describe('CBT Controller', () => {
 
       await CBTController.recordSecurityLog(req, res, next);
 
-      expect(CBTService.recordSecurityLog).toHaveBeenCalledWith(
-        'attempt-1',
-        'user-std-1',
-        { type: 'TAB_SWITCH', details: { note: 'Minimizing browser' } }
-      );
+      expect(CBTService.recordSecurityLog).toHaveBeenCalledWith('attempt-1', 'user-std-1', {
+        type: 'TAB_SWITCH',
+        details: { note: 'Minimizing browser' },
+      });
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { id: 'log-1' } });
     });
 

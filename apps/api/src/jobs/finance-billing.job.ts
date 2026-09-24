@@ -22,18 +22,22 @@ export async function runMonthlyAutoBilling(): Promise<void> {
         isActive: true,
       },
       include: {
-        unit: { select: { name: true } }
-      }
+        unit: { select: { name: true } },
+      },
     });
 
-    logger.info(`[AutoBilling] Found ${recurringPaymentTypes.length} active recurring payment types.`);
+    logger.info(
+      `[AutoBilling] Found ${recurringPaymentTypes.length} active recurring payment types.`
+    );
 
     let totalCreated = 0;
     let totalSkipped = 0;
 
     for (const paymentType of recurringPaymentTypes) {
-      logger.info(`[AutoBilling] Processing ${paymentType.name} for unit ${paymentType.unit.name}...`);
-      
+      logger.info(
+        `[AutoBilling] Processing ${paymentType.name} for unit ${paymentType.unit.name}...`
+      );
+
       try {
         const result = await generateBulkSppInvoices({
           unitId: paymentType.unitId,
@@ -45,16 +49,22 @@ export async function runMonthlyAutoBilling(): Promise<void> {
 
         totalCreated += result.created;
         totalSkipped += result.skipped;
-        
-        logger.info(`[AutoBilling] Completed processing ${paymentType.name}: ${result.created} invoices created, ${result.skipped} skipped.`);
+
+        logger.info(
+          `[AutoBilling] Completed processing ${paymentType.name}: ${result.created} invoices created, ${result.skipped} skipped.`
+        );
       } catch (err) {
-        logger.error(`[AutoBilling] Error processing ${paymentType.name} (Unit: ${paymentType.unitId}):`, err);
+        logger.error(
+          `[AutoBilling] Error processing ${paymentType.name} (Unit: ${paymentType.unitId}):`,
+          err
+        );
       }
     }
 
     const duration = Date.now() - startTime;
-    logger.info(`[AutoBilling] Auto-billing process completed in ${duration}ms. Invoices Created: ${totalCreated}, Skipped: ${totalSkipped}.`);
-
+    logger.info(
+      `[AutoBilling] Auto-billing process completed in ${duration}ms. Invoices Created: ${totalCreated}, Skipped: ${totalSkipped}.`
+    );
   } catch (error) {
     logger.error('[AutoBilling] Critical crash in auto-billing process:', error);
   }

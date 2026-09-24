@@ -12,7 +12,10 @@ describe('quran-surahs', () => {
   it('agrees with the surah table where a whole juz is whole surahs', () => {
     // Juz 28, 29 and 30 start and end on surah boundaries (58–66, 67–77, 78–114).
     const versesIn = (first: number, last: number) =>
-      QURAN_SURAHS.filter((s) => s.number >= first && s.number <= last).reduce((sum, s) => sum + s.verses, 0);
+      QURAN_SURAHS.filter((s) => s.number >= first && s.number <= last).reduce(
+        (sum, s) => sum + s.verses,
+        0
+      );
     expect(JUZ_AYAH_COUNTS[27]).toBe(versesIn(58, 66));
     expect(JUZ_AYAH_COUNTS[28]).toBe(versesIn(67, 77));
     expect(JUZ_AYAH_COUNTS[29]).toBe(versesIn(78, 114));
@@ -23,7 +26,12 @@ describe('memorizedJuz', () => {
   it('weighs each juz by its own size', () => {
     // All of juz 30 (564 ayat) plus half of juz 29 (431 ayat) is 1.5 juz.
     // The old "ayat / 600" said 1; "juz touched" would say 2.
-    expect(memorizedJuz([[30, 564], [29, 215.5]])).toBeCloseTo(1.5, 5);
+    expect(
+      memorizedJuz([
+        [30, 564],
+        [29, 215.5],
+      ])
+    ).toBeCloseTo(1.5, 5);
   });
 
   it('counts juz 28 in full at 137 ayat, which ayat / 600 put at 0.2', () => {
@@ -31,7 +39,14 @@ describe('memorizedJuz', () => {
   });
 
   it('caps a juz at 1 and ignores unknown juz and empty rows', () => {
-    expect(memorizedJuz([[30, 9999], [31, 50], [0, 10], [1, 0]])).toBe(1);
+    expect(
+      memorizedJuz([
+        [30, 9999],
+        [31, 50],
+        [0, 10],
+        [1, 0],
+      ])
+    ).toBe(1);
     expect(memorizedJuz([])).toBe(0);
   });
 });
@@ -39,7 +54,8 @@ describe('memorizedJuz', () => {
 describe('tahfidzMilestones', () => {
   const full = (juz: number) => JUZ_AYAH_COUNTS[juz - 1];
   /** The first `n` juz from 30 downwards, all complete. */
-  const completeJuz = (n: number) => new Map(Array.from({ length: n }, (_, i) => [30 - i, full(30 - i)] as const));
+  const completeJuz = (n: number) =>
+    new Map(Array.from({ length: n }, (_, i) => [30 - i, full(30 - i)] as const));
 
   it('fires when the setoran completes its juz — juz 28 at 137 ayat, not at 600', () => {
     const after = new Map([[28, 137]]);
@@ -63,14 +79,15 @@ describe('tahfidzMilestones', () => {
       { type: 'half_quran', completedJuz: 15 },
     ]);
     const sixteen = completeJuz(16);
-    expect(tahfidzMilestones(sixteen, { juz: 15, totalAyah: 30 }).map((m) => m.type)).toEqual(['juz_complete']);
+    expect(tahfidzMilestones(sixteen, { juz: 15, totalAyah: 30 }).map((m) => m.type)).toEqual([
+      'juz_complete',
+    ]);
   });
 
   it('adds full_quran on the 30th juz', () => {
-    expect(tahfidzMilestones(completeJuz(30), { juz: 1, totalAyah: 148 }).map((m) => m.type)).toEqual([
-      'juz_complete',
-      'full_quran',
-    ]);
+    expect(
+      tahfidzMilestones(completeJuz(30), { juz: 1, totalAyah: 148 }).map((m) => m.type)
+    ).toEqual(['juz_complete', 'full_quran']);
   });
 
   it('ignores unknown juz and empty setoran', () => {

@@ -72,7 +72,8 @@ export default function RegistrationsPage() {
   const registrants: any[] = data?.data ?? [];
   const filtered = registrants.filter((r) => {
     if (!search) return true;
-    const haystack = `${r.fullName ?? r.name ?? ""} ${r.registrationNo ?? ""}`.toLowerCase();
+    const haystack =
+      `${r.fullName ?? r.name ?? ""} ${r.registrationNo ?? ""}`.toLowerCase();
     return haystack.includes(search.toLowerCase());
   });
 
@@ -145,7 +146,9 @@ export default function RegistrationsPage() {
                       </TableCell>
                       <TableCell>{reg.registrationNo || "-"}</TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANT[reg.status] ?? "secondary"}>
+                        <Badge
+                          variant={STATUS_VARIANT[reg.status] ?? "secondary"}
+                        >
                           {STATUS_LABEL[reg.status] ?? reg.status}
                         </Badge>
                       </TableCell>

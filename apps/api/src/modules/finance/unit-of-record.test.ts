@@ -105,9 +105,14 @@ describe('laporan dan antrean per unit menyaring lewat jenis bayar', () => {
   it('antrean verifikasi TU SD IT memuat tagihan SD IT milik santri yang sudah pindah', async () => {
     db.payment.findMany.mockResolvedValue([]);
     db.payment.count.mockResolvedValue(0);
-    await getPendingVerifications({ sub: 'tu-sd', role: 'STAFF', roleCode: 'SDIT_TATA_USAHA', unitId: SD }, {});
+    await getPendingVerifications(
+      { sub: 'tu-sd', role: 'STAFF', roleCode: 'SDIT_TATA_USAHA', unitId: SD },
+      {}
+    );
 
-    expect(db.payment.findMany.mock.calls[0][0].where.invoice).toEqual({ paymentType: { unitId: SD } });
+    expect(db.payment.findMany.mock.calls[0][0].where.invoice).toEqual({
+      paymentType: { unitId: SD },
+    });
   });
 
   it('statistik keuangan unit', async () => {

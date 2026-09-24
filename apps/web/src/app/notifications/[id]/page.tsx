@@ -421,7 +421,9 @@ function NotificationDetailPageContent({ params }: PageProps) {
   );
 }
 
-export default function NotificationDetailPage(props: Parameters<typeof NotificationDetailPageContent>[0]) {
+export default function NotificationDetailPage(
+  props: Parameters<typeof NotificationDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <NotificationDetailPageContent {...props} />

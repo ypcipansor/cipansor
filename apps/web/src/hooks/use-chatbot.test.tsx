@@ -30,7 +30,9 @@ describe("usePublicChat", () => {
     // globalnya menambahkan baris "Error Code: CHATBOT_BUSY" di bawahnya.
     // Sebuah konstanta teknis di layar orang tua calon santri bukan informasi;
     // ia hanya membuat halaman terasa rusak.
-    post.mockResolvedValueOnce({ data: { data: { answer: "x", sources: [], refused: false } } });
+    post.mockResolvedValueOnce({
+      data: { data: { answer: "x", sources: [], refused: false } },
+    });
 
     const { result } = renderHook(() => usePublicChat(), { wrapper });
     await result.current.mutateAsync({ message: "halo" });

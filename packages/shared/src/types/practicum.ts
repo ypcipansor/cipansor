@@ -40,7 +40,9 @@ export const CreatePracticumLessonPlanSchema = PracticumLessonPlanSchema.omit({
   updatedAt: true,
 });
 
-export type CreatePracticumLessonPlan = z.infer<typeof CreatePracticumLessonPlanSchema>;
+export type CreatePracticumLessonPlan = z.infer<
+  typeof CreatePracticumLessonPlanSchema
+>;
 
 export const PracticumScheduleSchema = z.object({
   id: z.string().uuid(),

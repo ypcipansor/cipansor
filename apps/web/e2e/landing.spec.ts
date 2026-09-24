@@ -53,7 +53,9 @@ test.describe("Landing Page", () => {
     // regression.
     const { home, profile, programs, units, news, donate } = id.public.nav;
     for (const title of [home, profile, programs, units, news, donate]) {
-      await expect(nav.getByRole("link", { name: title, exact: true })).toBeVisible();
+      await expect(
+        nav.getByRole("link", { name: title, exact: true }),
+      ).toBeVisible();
     }
   });
 
@@ -68,7 +70,9 @@ test.describe("Landing Page", () => {
       await page.getByRole("button", { name: MENU_LABEL }).click();
     }
 
-    await expect(page.getByRole("link", { name: /login|masuk/i })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /login|masuk/i })).toHaveCount(
+      0,
+    );
     await expect(page.locator('a[href="/login"]')).toHaveCount(0);
   });
 
@@ -82,7 +86,9 @@ test.describe("Landing Page", () => {
     const stats = page.locator("#stats");
     // Enrollment and alumni counts are deliberately absent from this section —
     // see the note in stats.tsx. These four are the substantiable facts.
-    await expect(stats.getByText("Berdiri Sejak", { exact: true })).toBeVisible();
+    await expect(
+      stats.getByText("Berdiri Sejak", { exact: true }),
+    ).toBeVisible();
     await expect(
       stats.getByText("Unit Pendidikan", { exact: true }),
     ).toBeVisible();
@@ -118,9 +124,7 @@ test.describe("Landing Page", () => {
     // Google for Nonprofits rejected the domain for not displaying the
     // registered ID, so its presence on the landing page is a requirement and
     // not decoration.
-    const strip = page.locator(
-      'section[aria-labelledby="legalitas-ringkas"]',
-    );
+    const strip = page.locator('section[aria-labelledby="legalitas-ringkas"]');
     await expect(strip).toBeVisible();
     await expect(strip.getByText("31.512.635.9-425.000")).toBeVisible();
   });

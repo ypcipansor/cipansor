@@ -38,7 +38,7 @@ describe('nextAcademicYear', () => {
   it('is the intake the current registration recruits for', () => {
     expect(nextAcademicYear(JUL_24_2026).name).toBe('2027/2028');
     expect(nextAcademicYear(JUL_24_2026).startYear).toBe(
-      currentAcademicYear(JUL_24_2026).startYear + 1,
+      currentAcademicYear(JUL_24_2026).startYear + 1
     );
   });
 });
@@ -55,11 +55,12 @@ describe('admissionWindows', () => {
     ]) {
       const now = new Date(iso);
       const [wave1] = admissionWindows(now);
-      expect(wave1.startDate.getTime(), `wave 1 should have opened before ${iso}`).toBeLessThanOrEqual(
-        now.getTime(),
-      );
+      expect(
+        wave1.startDate.getTime(),
+        `wave 1 should have opened before ${iso}`
+      ).toBeLessThanOrEqual(now.getTime());
       expect(wave1.endDate.getTime(), `wave 1 should still be open at ${iso}`).toBeGreaterThan(
-        now.getTime(),
+        now.getTime()
       );
     }
   });

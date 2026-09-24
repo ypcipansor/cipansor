@@ -25,7 +25,6 @@ import { api } from "@/lib/api";
 import type { ParentChild } from "@/hooks/use-parent-portal";
 import { AlertTriangle, Calendar, User } from "lucide-react";
 
-
 interface Violation {
   id: string;
   type: string;
@@ -64,9 +63,8 @@ export default function ViolationsPage() {
 
         if (childrenData.length > 0) {
           const defaultChild = selectedStudentId
-            ? childrenData.find(
-                (c: ParentChild) => c.id === selectedStudentId,
-              )?.id
+            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
+                ?.id
             : childrenData[0].id;
           setSelectedChild(defaultChild || childrenData[0].id);
         }

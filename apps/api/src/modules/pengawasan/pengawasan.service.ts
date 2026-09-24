@@ -42,7 +42,10 @@ export class PengawasanService {
     });
   }
 
-  async getAudits(unitId: string | undefined, query: { status?: string; auditType?: string; strategicPlanId?: string; riskId?: string }) {
+  async getAudits(
+    unitId: string | undefined,
+    query: { status?: string; auditType?: string; strategicPlanId?: string; riskId?: string }
+  ) {
     const where: Prisma.InternalAuditWhereInput = unitId ? { unitId } : {};
     if (query.status) where.status = query.status as any;
     if (query.auditType) where.auditType = query.auditType;
@@ -126,7 +129,8 @@ export class PengawasanService {
       // friendly 404 instead of a raw Prisma P2025 from the `connect` call.
       // We also read consequence/status here to use in the side-effect below,
       // avoiding a redundant second query.
-      let existingRisk: { consequence: string | null; status: string; impact: string } | null = null;
+      let existingRisk: { consequence: string | null; status: string; impact: string } | null =
+        null;
       if (data.linkToRiskId) {
         existingRisk = await tx.risk.findUnique({
           where: { id: data.linkToRiskId },
@@ -150,7 +154,9 @@ export class PengawasanService {
           recommendation: data.recommendation,
           responsible: data.responsibleId ? { connect: { id: data.responsibleId } } : undefined,
           dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-          planObjective: data.planObjectiveId ? { connect: { id: data.planObjectiveId } } : undefined,
+          planObjective: data.planObjectiveId
+            ? { connect: { id: data.planObjectiveId } }
+            : undefined,
           risk: data.linkToRiskId ? { connect: { id: data.linkToRiskId } } : undefined,
         },
         include: {
@@ -166,7 +172,8 @@ export class PengawasanService {
         const auditNote = `[Audit Finding ${data.findingNumber}: ${data.title}]`;
 
         // Guard against duplicate notes if createFinding is called twice with the same data
-        const alreadyLinked = existingRisk.consequence?.includes(`[Audit Finding ${data.findingNumber}:`) ?? false;
+        const alreadyLinked =
+          existingRisk.consequence?.includes(`[Audit Finding ${data.findingNumber}:`) ?? false;
 
         if (!alreadyLinked) {
           const updatedConsequence = existingRisk.consequence
@@ -182,7 +189,11 @@ export class PengawasanService {
           // Only escalate if the new impact is actually higher than the current one
           // to avoid accidentally downgrading a risk (e.g. CATASTROPHIC → MAJOR).
           const IMPACT_WEIGHTS: Record<string, number> = {
-            INSIGNIFICANT: 1, MINOR: 2, MODERATE: 3, MAJOR: 4, CATASTROPHIC: 5,
+            INSIGNIFICANT: 1,
+            MINOR: 2,
+            MODERATE: 3,
+            MAJOR: 4,
+            CATASTROPHIC: 5,
           };
 
           // Reuse impact from the earlier existingRisk read to avoid an extra query.
@@ -198,11 +209,15 @@ export class PengawasanService {
           if (impactEscalation) {
             // updateRisk recalculates riskScore, riskLevel, and residualRisk.
             // Pass `tx` so the risk update participates in the same transaction.
-            await riskService.updateRisk(data.linkToRiskId!, {
-              status: newStatus,
-              consequence: updatedConsequence,
-              ...impactEscalation,
-            } as Prisma.RiskUpdateInput, tx);
+            await riskService.updateRisk(
+              data.linkToRiskId!,
+              {
+                status: newStatus,
+                consequence: updatedConsequence,
+                ...impactEscalation,
+              } as Prisma.RiskUpdateInput,
+              tx
+            );
           } else {
             await tx.risk.update({
               where: { id: data.linkToRiskId },
@@ -213,7 +228,6 @@ export class PengawasanService {
             });
           }
         }
-
       }
 
       // If linked to a strategic objective, update its progress (conservative decrement if critical finding)
@@ -450,9 +464,7 @@ export class PengawasanService {
     //    correctly treat each unit independently. A risk in unit A is only "covered"
     //    if unit A itself has a non-cancelled audit for it — an audit in unit B
     //    should not suppress the suggestion for unit A.
-    const coveredKeys = new Set(
-      existingAudits.map((a) => `${a.riskId}::${a.unitId}`),
-    );
+    const coveredKeys = new Set(existingAudits.map((a) => `${a.riskId}::${a.unitId}`));
 
     // 4. Suggest audits for risks that don't have a linked internal audit
     //    in their own unit yet.

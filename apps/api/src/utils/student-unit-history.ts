@@ -50,11 +50,7 @@ export interface UnitAtResult {
  * yang tanggal masuknya paling baru yang menang: itu keadaan paling akhir yang
  * diketahui pada tanggal itu.
  */
-export async function unitAt(
-  studentId: string,
-  at: Date,
-  db: Db = prisma
-): Promise<UnitAtResult> {
+export async function unitAt(studentId: string, at: Date, db: Db = prisma): Promise<UnitAtResult> {
   const row = await db.studentUnitEnrollment.findFirst({
     where: {
       studentId,

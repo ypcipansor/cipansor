@@ -188,10 +188,16 @@ describe('generateBulkSppInvoices', () => {
       name: 'SPP',
       amount: new Prisma.Decimal(350000),
     });
-    const findStudents = (prisma as unknown as { student: { findMany: ReturnType<typeof vi.fn> } }).student.findMany;
+    const findStudents = (prisma as unknown as { student: { findMany: ReturnType<typeof vi.fn> } })
+      .student.findMany;
     findStudents.mockResolvedValue([]);
 
-    await financeService.generateBulkSppInvoices({ unitId: 'unit-1', paymentTypeId: 'pt-spp', year: 2026, month: 9 });
+    await financeService.generateBulkSppInvoices({
+      unitId: 'unit-1',
+      paymentTypeId: 'pt-spp',
+      year: 2026,
+      month: 9,
+    });
 
     expect(findStudents).toHaveBeenCalledWith({
       where: expect.objectContaining({ unitId: 'unit-1', status: 'active', deletedAt: null }),

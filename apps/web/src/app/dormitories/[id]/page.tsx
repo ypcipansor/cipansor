@@ -550,7 +550,9 @@ function DormitoryDetailPageContent({
   );
 }
 
-export default function DormitoryDetailPage(props: Parameters<typeof DormitoryDetailPageContent>[0]) {
+export default function DormitoryDetailPage(
+  props: Parameters<typeof DormitoryDetailPageContent>[0],
+) {
   return (
     <MainLayout>
       <DormitoryDetailPageContent {...props} />

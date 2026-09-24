@@ -257,7 +257,8 @@ function NavItemComponent({
   const hasChildren = children.length > 0;
   // Aktif bila halamannya sendiri atau salah satu anaknya sedang dibuka.
   const branchActive =
-    isWithin(pathname, item.href) || children.some((c) => isWithin(pathname, c.href));
+    isWithin(pathname, item.href) ||
+    children.some((c) => isWithin(pathname, c.href));
   const [open, setOpen] = useState(branchActive);
   const Icon = item.icon;
 

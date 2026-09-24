@@ -44,7 +44,8 @@ export const STUDENT_STATUS = {
   TRANSFERRED: "transferred",
 } as const;
 
-export type StudentStatus = (typeof STUDENT_STATUS)[keyof typeof STUDENT_STATUS];
+export type StudentStatus =
+  (typeof STUDENT_STATUS)[keyof typeof STUDENT_STATUS];
 
 export const STUDENT_STATUS_VALUES = [
   STUDENT_STATUS.ACTIVE,
@@ -82,7 +83,9 @@ export const CLASS_ENROLLMENT_STATUS_VALUES = [
   CLASS_ENROLLMENT_STATUS.DROPPED,
 ] as const;
 
-export function isClassEnrollmentStatus(value: unknown): value is ClassEnrollmentStatus {
+export function isClassEnrollmentStatus(
+  value: unknown,
+): value is ClassEnrollmentStatus {
   return (
     typeof value === "string" &&
     (CLASS_ENROLLMENT_STATUS_VALUES as readonly string[]).includes(value)

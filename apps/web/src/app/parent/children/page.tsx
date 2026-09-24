@@ -31,7 +31,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 
-
 interface AttendanceSummary {
   period: string;
   summary: {
@@ -253,9 +252,7 @@ export default function ChildrenPage() {
                     </Badge>
                   )}
                   {selectedChild.unit && (
-                    <Badge variant="outline">
-                      {selectedChild.unit.name}
-                    </Badge>
+                    <Badge variant="outline">{selectedChild.unit.name}</Badge>
                   )}
                 </CardDescription>
               </div>
@@ -310,24 +307,24 @@ export default function ChildrenPage() {
                       </label>
                       <p className="mt-1">{selectedChild.name}</p>
                     </div>
-                    {selectedChild.birthPlace &&
-                      selectedChild.birthDate && (
-                        <div>
-                          <label className="text-sm font-medium text-muted-foreground">
-                            Tempat, Tanggal Lahir
-                          </label>
-                          <p className="mt-1">
-                            {selectedChild.birthPlace},{" "}
-                            {new Date(
-                              selectedChild.birthDate,
-                            ).toLocaleDateString("id-ID", {
+                    {selectedChild.birthPlace && selectedChild.birthDate && (
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">
+                          Tempat, Tanggal Lahir
+                        </label>
+                        <p className="mt-1">
+                          {selectedChild.birthPlace},{" "}
+                          {new Date(selectedChild.birthDate).toLocaleDateString(
+                            "id-ID",
+                            {
                               day: "numeric",
                               month: "long",
                               year: "numeric",
-                            })}
-                          </p>
-                        </div>
-                      )}
+                            },
+                          )}
+                        </p>
+                      </div>
+                    )}
                     {selectedChild.gender && (
                       <div>
                         <label className="text-sm font-medium text-muted-foreground">
@@ -357,9 +354,7 @@ export default function ChildrenPage() {
                         <label className="text-sm font-medium text-muted-foreground">
                           Unit
                         </label>
-                        <p className="mt-1">
-                          {selectedChild.unit.name}
-                        </p>
+                        <p className="mt-1">{selectedChild.unit.name}</p>
                       </div>
                     )}
                     {selectedChild.address && (
@@ -655,9 +650,7 @@ export default function ChildrenPage() {
               {/* More Tab */}
               <TabsContent value="more" className="mt-6">
                 <div className="grid gap-4 md:grid-cols-2">
-                  <a
-                    href={`/parent/violations?studentId=${selectedChild.id}`}
-                  >
+                  <a href={`/parent/violations?studentId=${selectedChild.id}`}>
                     <Card className="cursor-pointer hover:border-primary transition-colors">
                       <CardContent className="p-4 flex items-center gap-4">
                         <AlertTriangle className="h-8 w-8 text-red-500" />
@@ -670,9 +663,7 @@ export default function ChildrenPage() {
                       </CardContent>
                     </Card>
                   </a>
-                  <a
-                    href={`/parent/rewards?studentId=${selectedChild.id}`}
-                  >
+                  <a href={`/parent/rewards?studentId=${selectedChild.id}`}>
                     <Card className="cursor-pointer hover:border-primary transition-colors">
                       <CardContent className="p-4 flex items-center gap-4">
                         <Award className="h-8 w-8 text-yellow-500" />
@@ -685,9 +676,7 @@ export default function ChildrenPage() {
                       </CardContent>
                     </Card>
                   </a>
-                  <a
-                    href={`/parent/health?studentId=${selectedChild.id}`}
-                  >
+                  <a href={`/parent/health?studentId=${selectedChild.id}`}>
                     <Card className="cursor-pointer hover:border-primary transition-colors">
                       <CardContent className="p-4 flex items-center gap-4">
                         <Heart className="h-8 w-8 text-pink-500" />
@@ -700,9 +689,7 @@ export default function ChildrenPage() {
                       </CardContent>
                     </Card>
                   </a>
-                  <a
-                    href={`/parent/finance?studentId=${selectedChild.id}`}
-                  >
+                  <a href={`/parent/finance?studentId=${selectedChild.id}`}>
                     <Card className="cursor-pointer hover:border-primary transition-colors">
                       <CardContent className="p-4 flex items-center gap-4">
                         <Receipt className="h-8 w-8 text-green-500" />

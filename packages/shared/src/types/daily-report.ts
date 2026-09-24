@@ -1,10 +1,5 @@
 export type DailyMood =
-  | "HAPPY"
-  | "NEUTRAL"
-  | "SAD"
-  | "TIRED"
-  | "EXCITED"
-  | "SICK";
+  "HAPPY" | "NEUTRAL" | "SAD" | "TIRED" | "EXCITED" | "SICK";
 
 export type MealConsumption = "HABIS" | "SETENGAH" | "SEDIKIT" | "TIDAK_MAU";
 
@@ -24,12 +19,7 @@ export interface DailyReport {
   academicYearId?: string;
   reportDate: string;
   unitType:
-    | "PESANTREN"
-    | "TK_QURAN"
-    | "SD_IT"
-    | "SMP_IT"
-    | "SMA_QURAN"
-    | "OTHER";
+    "PESANTREN" | "TK_QURAN" | "SD_IT" | "SMP_IT" | "SMA_QURAN" | "OTHER";
   arrivalTime?: string;
   mood?: DailyMood;
   healthStatus?: string;

@@ -15,10 +15,7 @@ router.use(authenticate);
 // students/parents/teachers must NOT reach these endpoints — only admin
 // roles can. Each handler still applies its own unit-level scoping where
 // applicable (see e.g. `getCashFlowForecast`).
-const forecastViewer = authorize(
-  UserRole.SUPER_ADMIN,
-  UserRole.UNIT_ADMIN
-);
+const forecastViewer = authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN);
 
 /**
  * @swagger

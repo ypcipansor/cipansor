@@ -6,11 +6,7 @@ import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 // =====================================
 
 export type MuhasabahMood =
-  | "EXCELLENT"
-  | "GOOD"
-  | "NEUTRAL"
-  | "LOW"
-  | "STRUGGLING";
+  "EXCELLENT" | "GOOD" | "NEUTRAL" | "LOW" | "STRUGGLING";
 
 export interface DailyMuhasabah {
   id: string;
@@ -185,8 +181,9 @@ export function useMyMuhasabahStats() {
   return useQuery({
     queryKey: ["muhasabah", "stats"],
     queryFn: async () => {
-      const response =
-        await api.get<ApiResponse<MuhasabahStats>>("/muhasabah/me/stats");
+      const response = await api.get<ApiResponse<MuhasabahStats>>(
+        "/muhasabah/me/stats",
+      );
       return response.data.data;
     },
   });

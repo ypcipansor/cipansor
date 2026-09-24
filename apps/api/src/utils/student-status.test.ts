@@ -109,15 +109,33 @@ function statusTingkatLangsung(obj: string): Array<{ nilai: string; offset: numb
   let depth = 0;
   for (let i = 0; i < obj.length; i++) {
     const c = obj[i];
-    if (c === '/' && obj[i + 1] === '/') { i = obj.indexOf('\n', i); if (i < 0) break; continue; }
-    if (c === '/' && obj[i + 1] === '*') { i = obj.indexOf('*/', i); if (i < 0) break; i += 1; continue; }
-    if (c === "'" || c === '"' || c === '`') {
-      const q = c;
-      for (i++; i < obj.length; i++) { if (obj[i] === '\\') i++; else if (obj[i] === q) break; }
+    if (c === '/' && obj[i + 1] === '/') {
+      i = obj.indexOf('\n', i);
+      if (i < 0) break;
       continue;
     }
-    if (c === '{' || c === '[') { depth++; continue; }
-    if (c === '}' || c === ']') { depth--; continue; }
+    if (c === '/' && obj[i + 1] === '*') {
+      i = obj.indexOf('*/', i);
+      if (i < 0) break;
+      i += 1;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c;
+      for (i++; i < obj.length; i++) {
+        if (obj[i] === '\\') i++;
+        else if (obj[i] === q) break;
+      }
+      continue;
+    }
+    if (c === '{' || c === '[') {
+      depth++;
+      continue;
+    }
+    if (c === '}' || c === ']') {
+      depth--;
+      continue;
+    }
     if (depth === 1 && obj.startsWith('status:', i)) {
       const m = /^status:\s*['"]([A-Za-z_]+)['"]/.exec(obj.slice(i));
       if (m) hasil.push({ nilai: m[1], offset: i });
@@ -126,7 +144,11 @@ function statusTingkatLangsung(obj: string): Array<{ nilai: string; offset: numb
   return hasil;
 }
 
-interface Temuan { model: string; nilai: string; offset: number }
+interface Temuan {
+  model: string;
+  nilai: string;
+  offset: number;
+}
 
 function pindai(isi: string): Temuan[] {
   const temuan: Temuan[] = [];

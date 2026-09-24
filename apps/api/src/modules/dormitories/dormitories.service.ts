@@ -345,14 +345,10 @@ export async function createRoomAssignment(data: CreateRoomAssignmentDto) {
     throw Errors.notFound('Room not found');
   }
   if (BOARDING_POLICY[student.unit.type] === 'NONE') {
-    throw Errors.badRequest(
-      `Santri ${student.unit.name} tidak menginap di asrama`
-    );
+    throw Errors.badRequest(`Santri ${student.unit.name} tidak menginap di asrama`);
   }
   if (room.dormitory.gender !== student.gender) {
-    throw Errors.badRequest(
-      `${room.dormitory.name} tidak sesuai dengan jenis kelamin santri`
-    );
+    throw Errors.badRequest(`${room.dormitory.name} tidak sesuai dengan jenis kelamin santri`);
   }
 
   // Deactivate any existing assignment for this student
@@ -567,18 +563,18 @@ export async function getRoomSocialAnalytics(roomId: string) {
               medicalRecords: {
                 select: { id: true },
                 orderBy: { visitDate: 'desc' },
-                take: 1
-              }
-            }
-          }
-        }
-      }
-    }
+                take: 1,
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!room) return null;
 
-  const members = room.assignments.map(a => {
+  const members = room.assignments.map((a) => {
     const s = a.student;
     const violationPoints = s.violations.reduce((sum, v) => sum + Number(v.points), 0);
 
@@ -587,7 +583,7 @@ export async function getRoomSocialAnalytics(roomId: string) {
       name: s.user?.name,
       riskScore: violationPoints,
       lastHealthStatus: s.medicalRecords.length > 0 ? 'Tercatat' : 'Sehat',
-      recentViolations: s.violations.length
+      recentViolations: s.violations.length,
     };
   });
 
@@ -598,11 +594,14 @@ export async function getRoomSocialAnalytics(roomId: string) {
   const totalViolations = members.reduce((sum, m) => sum + m.riskScore, 0);
   const avgViolationPoints = totalViolations / Math.max(1, members.length);
   // Scale: 0 pts → 100, ~10 pts → ~82, ~50 pts → ~37, ~100 pts → ~14, ~250+ pts → ~0
-  const harmonyScore = Math.round(Math.max(0, 100 * Math.exp(-avgViolationPoints / 50)) * 100) / 100;
+  const harmonyScore =
+    Math.round(Math.max(0, 100 * Math.exp(-avgViolationPoints / 50)) * 100) / 100;
 
   // Enhanced: Detect "Murojaah Social Contagion" (Positive peer influence)
   // If many members have high tahfidz progress, it boosts the room status.
-  const topMemorizers = room.assignments.filter(a => (a.student as any).tahfidzRecords?.length > 10).length;
+  const topMemorizers = room.assignments.filter(
+    (a) => (a.student as any).tahfidzRecords?.length > 10
+  ).length;
   const peerInfluenceBonus = Math.min(10, topMemorizers * 2);
 
   const finalHarmonyScore = Math.min(100, harmonyScore + peerInfluenceBonus);
@@ -612,7 +611,12 @@ export async function getRoomSocialAnalytics(roomId: string) {
     roomName: room.name,
     harmonyScore: finalHarmonyScore,
     members,
-    status: finalHarmonyScore > 80 ? 'KONDUSIF' : finalHarmonyScore > 50 ? 'PERLU_PENGAWASAN' : 'RAWAN_KONFLIK'
+    status:
+      finalHarmonyScore > 80
+        ? 'KONDUSIF'
+        : finalHarmonyScore > 50
+          ? 'PERLU_PENGAWASAN'
+          : 'RAWAN_KONFLIK',
   };
 }
 

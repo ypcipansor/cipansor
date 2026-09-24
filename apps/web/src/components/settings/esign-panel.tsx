@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { useEsign, type SigningKeyState } from "@/hooks/use-esign";
 import { safeFormat } from "@/lib/date";
@@ -41,10 +47,13 @@ export function StateBadge({ state }: { state: SigningKeyState }) {
     REVOKED: "border-red-700 text-red-800 bg-red-100",
   };
   const Icon =
-    state === "ACTIVE" ? ShieldCheck
-    : state === "EXPIRING_SOON" ? Clock
-    : state === "REVOKED" ? Ban
-    : ShieldAlert;
+    state === "ACTIVE"
+      ? ShieldCheck
+      : state === "EXPIRING_SOON"
+        ? Clock
+        : state === "REVOKED"
+          ? Ban
+          : ShieldAlert;
 
   return (
     <Badge variant="outline" className={`gap-1 ${tone[state]}`}>
@@ -55,8 +64,14 @@ export function StateBadge({ state }: { state: SigningKeyState }) {
 }
 
 export function EsignPanel() {
-  const { status, saveIdentity, uploadKtp, requestKey, activate, changePassphrase } =
-    useEsign();
+  const {
+    status,
+    saveIdentity,
+    uploadKtp,
+    requestKey,
+    activate,
+    changePassphrase,
+  } = useEsign();
   const [reason, setReason] = useState("");
   const [identityForm, setIdentityForm] = useState({
     legalName: "",
@@ -73,7 +88,11 @@ export function EsignPanel() {
   const s = status.data;
 
   if (status.isLoading) {
-    return <p className="text-sm text-muted-foreground">Memuat status tanda tangan…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        Memuat status tanda tangan…
+      </p>
+    );
   }
 
   const fmt = (d: string | null) =>
@@ -89,7 +108,9 @@ export function EsignPanel() {
       if (result?.warning) {
         toast.warning(result.warning);
       } else {
-        toast.success("Data identitas tersimpan, menunggu verifikasi Super Admin.");
+        toast.success(
+          "Data identitas tersimpan, menunggu verifikasi Super Admin.",
+        );
       }
     } catch (e: any) {
       toast.error(
@@ -132,7 +153,9 @@ export function EsignPanel() {
     try {
       await activate.mutateAsync(newPass);
       setNewPass("");
-      toast.success("Kunci tanda tangan aktif. Simpan passphrase Anda baik-baik.");
+      toast.success(
+        "Kunci tanda tangan aktif. Simpan passphrase Anda baik-baik.",
+      );
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Gagal mengaktifkan kunci");
     }
@@ -145,7 +168,9 @@ export function EsignPanel() {
         accountPassword: acctPass,
         newPassphrase: changePass,
       });
-      setCurPass(""); setAcctPass(""); setChangePass("");
+      setCurPass("");
+      setAcctPass("");
+      setChangePass("");
       toast.success("Passphrase berhasil diganti.");
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? "Gagal mengganti passphrase");
@@ -168,13 +193,16 @@ export function EsignPanel() {
       <CardContent className="space-y-6">
         {/* Keadaan sekarang */}
         <div className="flex flex-wrap items-center gap-3">
-          {s?.state ? <StateBadge state={s.state} /> : (
+          {s?.state ? (
+            <StateBadge state={s.state} />
+          ) : (
             <Badge variant="outline">Belum memiliki kunci</Badge>
           )}
           {s?.expiresAt && (
             <span className="text-sm text-muted-foreground">
               Berlaku sampai {fmt(s.expiresAt)}
-              {typeof s.daysUntilExpiry === "number" && s.daysUntilExpiry >= 0 &&
+              {typeof s.daysUntilExpiry === "number" &&
+                s.daysUntilExpiry >= 0 &&
                 ` (${s.daysUntilExpiry} hari lagi)`}
             </span>
           )}
@@ -188,7 +216,8 @@ export function EsignPanel() {
         {s?.lockedUntil && new Date(s.lockedUntil) > new Date() && (
           <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
             Terkunci sementara karena passphrase salah berulang kali, sampai{" "}
-            {safeFormat(new Date(s.lockedUntil), "HH:mm", { locale: idLocale })}.
+            {safeFormat(new Date(s.lockedUntil), "HH:mm", { locale: idLocale })}
+            .
           </p>
         )}
 
@@ -196,7 +225,9 @@ export function EsignPanel() {
         {s?.pendingRequest && (
           <p className="rounded-md bg-blue-50 p-3 text-sm text-blue-800">
             Pengajuan{" "}
-            {s.pendingRequest.kind === "RENEWAL" ? "perpanjangan" : "penerbitan"}{" "}
+            {s.pendingRequest.kind === "RENEWAL"
+              ? "perpanjangan"
+              : "penerbitan"}{" "}
             Anda sedang menunggu keputusan Super Admin.
           </p>
         )}
@@ -216,7 +247,9 @@ export function EsignPanel() {
         {s?.identity && (
           <div className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <Label className="text-sm font-medium">Identitas penandatangan</Label>
+              <Label className="text-sm font-medium">
+                Identitas penandatangan
+              </Label>
               {s.identity.verifiedAt ? (
                 <Badge
                   variant="outline"
@@ -254,7 +287,9 @@ export function EsignPanel() {
             {s.identity.missingFields.length === 0 && !identityOpen && (
               <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-2">
                 <div>
-                  <dt className="text-xs text-muted-foreground">Nama sesuai KTP</dt>
+                  <dt className="text-xs text-muted-foreground">
+                    Nama sesuai KTP
+                  </dt>
                   <dd className="font-medium">{s.identity.legalName}</dd>
                 </div>
                 <div>
@@ -264,11 +299,15 @@ export function EsignPanel() {
                   <dd className="text-muted-foreground">tersimpan</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Tempat lahir</dt>
+                  <dt className="text-xs text-muted-foreground">
+                    Tempat lahir
+                  </dt>
                   <dd>{s.identity.birthPlace}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Tanggal lahir</dt>
+                  <dt className="text-xs text-muted-foreground">
+                    Tanggal lahir
+                  </dt>
                   <dd>{fmt(s.identity.birthDate)}</dd>
                 </div>
               </dl>
@@ -331,7 +370,10 @@ export function EsignPanel() {
                       id="id-name"
                       value={identityForm.legalName}
                       onChange={(e) =>
-                        setIdentityForm({ ...identityForm, legalName: e.target.value })
+                        setIdentityForm({
+                          ...identityForm,
+                          legalName: e.target.value,
+                        })
                       }
                     />
                   </div>
@@ -343,7 +385,10 @@ export function EsignPanel() {
                       placeholder="16 angka"
                       value={identityForm.nik}
                       onChange={(e) =>
-                        setIdentityForm({ ...identityForm, nik: e.target.value })
+                        setIdentityForm({
+                          ...identityForm,
+                          nik: e.target.value,
+                        })
                       }
                     />
                   </div>
@@ -353,7 +398,10 @@ export function EsignPanel() {
                       id="id-birthplace"
                       value={identityForm.birthPlace}
                       onChange={(e) =>
-                        setIdentityForm({ ...identityForm, birthPlace: e.target.value })
+                        setIdentityForm({
+                          ...identityForm,
+                          birthPlace: e.target.value,
+                        })
                       }
                     />
                   </div>
@@ -364,21 +412,30 @@ export function EsignPanel() {
                       type="date"
                       value={identityForm.birthDate}
                       onChange={(e) =>
-                        setIdentityForm({ ...identityForm, birthDate: e.target.value })
+                        setIdentityForm({
+                          ...identityForm,
+                          birthDate: e.target.value,
+                        })
                       }
                     />
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Menyimpan perubahan akan membatalkan verifikasi yang sudah ada —
-                  yang dinyatakan Super Admin adalah data yang itu, bukan bahwa
-                  Anda pernah diperiksa sekali.
+                  Menyimpan perubahan akan membatalkan verifikasi yang sudah ada
+                  — yang dinyatakan Super Admin adalah data yang itu, bukan
+                  bahwa Anda pernah diperiksa sekali.
                 </p>
                 <div className="flex gap-2">
-                  <Button onClick={submitIdentity} disabled={saveIdentity.isPending}>
+                  <Button
+                    onClick={submitIdentity}
+                    disabled={saveIdentity.isPending}
+                  >
                     {saveIdentity.isPending ? "Menyimpan…" : "Simpan Identitas"}
                   </Button>
-                  <Button variant="outline" onClick={() => setIdentityOpen(false)}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIdentityOpen(false)}
+                  >
                     Batal
                   </Button>
                 </div>
@@ -393,7 +450,9 @@ export function EsignPanel() {
                     nik: "",
                     birthPlace: s.identity.birthPlace ?? "",
                     birthDate: s.identity.birthDate
-                      ? new Date(s.identity.birthDate).toISOString().slice(0, 10)
+                      ? new Date(s.identity.birthDate)
+                          .toISOString()
+                          .slice(0, 10)
                       : "",
                   });
                   setIdentityOpen(true);
@@ -408,39 +467,40 @@ export function EsignPanel() {
         )}
 
         {/* Mengajukan penerbitan / perpanjangan */}
-        {!s?.pendingRequest && (s?.needsNewIssuance || s?.canRequestRenewal) && (
-          <div className="space-y-2 rounded-lg border p-4">
-            <Label htmlFor="esign-reason">
-              {s.canRequestRenewal
-                ? "Ajukan perpanjangan masa berlaku"
-                : "Ajukan penerbitan kunci tanda tangan"}
-            </Label>
-            <Textarea
-              id="esign-reason"
-              placeholder="Alasan pengajuan (opsional)"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-            {/* Tombolnya menolak sebelum ditekan, dan mengatakan alasannya —
+        {!s?.pendingRequest &&
+          (s?.needsNewIssuance || s?.canRequestRenewal) && (
+            <div className="space-y-2 rounded-lg border p-4">
+              <Label htmlFor="esign-reason">
+                {s.canRequestRenewal
+                  ? "Ajukan perpanjangan masa berlaku"
+                  : "Ajukan penerbitan kunci tanda tangan"}
+              </Label>
+              <Textarea
+                id="esign-reason"
+                placeholder="Alasan pengajuan (opsional)"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              {/* Tombolnya menolak sebelum ditekan, dan mengatakan alasannya —
                 server akan menolak dengan alasan yang sama, jadi menawarkan
                 tombol yang pasti gagal hanya membuat orang menebak-nebak. */}
-            <Button
-              onClick={submitRequest}
-              disabled={requestKey.isPending || !s.identity?.verifiedAt}
-            >
-              {requestKey.isPending ? "Mengirim…" : "Kirim Pengajuan"}
-            </Button>
-            {!s.identity?.verifiedAt && (
-              <p className="text-xs text-muted-foreground">
-                {s.identity?.missingFields.length
-                  ? "Lengkapi identitas Anda terlebih dahulu."
-                  : !s.identity?.hasKtpOnFile
-                    ? "Unggah foto KTP Anda terlebih dahulu."
-                    : "Menunggu Super Admin memverifikasi identitas Anda."}
-              </p>
-            )}
-          </div>
-        )}
+              <Button
+                onClick={submitRequest}
+                disabled={requestKey.isPending || !s.identity?.verifiedAt}
+              >
+                {requestKey.isPending ? "Mengirim…" : "Kirim Pengajuan"}
+              </Button>
+              {!s.identity?.verifiedAt && (
+                <p className="text-xs text-muted-foreground">
+                  {s.identity?.missingFields.length
+                    ? "Lengkapi identitas Anda terlebih dahulu."
+                    : !s.identity?.hasKtpOnFile
+                      ? "Unggah foto KTP Anda terlebih dahulu."
+                      : "Menunggu Super Admin memverifikasi identitas Anda."}
+                </p>
+              )}
+            </div>
+          )}
 
         {/*
           Menetapkan passphrase — hanya setelah pengajuan benar-benar disetujui.
@@ -458,7 +518,9 @@ export function EsignPanel() {
         */}
         {s?.approvedAwaitingActivation && (
           <div className="space-y-2 rounded-lg border p-4">
-            <Label htmlFor="esign-new">Tetapkan passphrase (minimal 12 karakter)</Label>
+            <Label htmlFor="esign-new">
+              Tetapkan passphrase (minimal 12 karakter)
+            </Label>
             <Input
               id="esign-new"
               type="password"
@@ -489,26 +551,34 @@ export function EsignPanel() {
           <div className="space-y-3 rounded-lg border p-4">
             <Label>Ganti passphrase</Label>
             <Input
-              type="password" autoComplete="current-password"
+              type="password"
+              autoComplete="current-password"
               placeholder="Passphrase saat ini"
-              value={curPass} onChange={(e) => setCurPass(e.target.value)}
+              value={curPass}
+              onChange={(e) => setCurPass(e.target.value)}
             />
             <Input
-              type="password" autoComplete="current-password"
+              type="password"
+              autoComplete="current-password"
               placeholder="Password akun Anda"
-              value={acctPass} onChange={(e) => setAcctPass(e.target.value)}
+              value={acctPass}
+              onChange={(e) => setAcctPass(e.target.value)}
             />
             <Input
-              type="password" autoComplete="new-password"
+              type="password"
+              autoComplete="new-password"
               placeholder="Passphrase baru (minimal 12 karakter)"
-              value={changePass} onChange={(e) => setChangePass(e.target.value)}
+              value={changePass}
+              onChange={(e) => setChangePass(e.target.value)}
             />
             <Button
               variant="outline"
               onClick={submitChange}
               disabled={
                 changePassphrase.isPending ||
-                !curPass || !acctPass || changePass.length < 12
+                !curPass ||
+                !acctPass ||
+                changePass.length < 12
               }
             >
               {changePassphrase.isPending ? "Menyimpan…" : "Ganti Passphrase"}
