@@ -165,8 +165,10 @@ before removing anything, prove it is unused — grep for callers, check
 | `skills/sync-records` | move findings out of the transcript and into files |
 | `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
 | `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
-| `hooks/pre-compact-sync.sh` | PreCompact — pauses `/compact` when there is new work the durable records do not yet reflect |
-| `hooks/sync_stamp.py` | shared by the hook above and the `sync-records` skill: one definition of "the records are level" |
+| `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
+| `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |
+| `hooks/main-ci-watch.sh` | SessionStart + UserPromptSubmit + PostToolUse — reports once when a workflow on `main` fails (CI, E2E, CodeQL, Deploy staging/production), and once when it recovers |
+| `hooks/sync_stamp.py` | shared by the hooks above and the `sync-records` skill: one definition of "the records are level", plus the context-size reading |
 | `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
 | `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
 
@@ -186,14 +188,47 @@ six-hour ceiling remains for findings that never touch git. The
 pass the user ran directly did nothing to quiet the next `/compact`, which was
 backwards.
 
-**Auto-compaction is blocked only when there is headroom below it**, and the
-interlock is the setting itself: with `autoCompactWindow` under 800k there is
-room to run the pass, so the hook pauses once; unset, or at the model's own
-window, it never touches auto — refusing at the context wall would strand the
-session. A blocked compaction is *cancelled, not deferred* (undocumented, but
-reported consistently), which is safe here only because the condition persists
-and the next turn triggers a fresh attempt that the stamp lets through. A manual
-`/compact` has no such retry, which is why it costs a second keystroke.
+**Auto-compaction is held, and the warning comes from a different hook**
+(rebuilt 2026-09-23). The first design assumed auto worked like manual: block
+once, the model reads the message, runs the pass, the retry goes through. It
+never did. For an *automatic* compaction Claude Code writes the block reason to
+its debug log only — the model never sees it — and because the hook wrote the
+stamp while blocking, the retry one tool call later went through. Measured in a
+session transcript: nine auto-compactions, zero passes caused by the hook.
+
+What reaches the model is `additionalContext` from PostToolUse and
+UserPromptSubmit (tested live with a probe hook). So `context-sync-warn.sh`
+reads the current context size from the transcript (`usage` of the last
+main-chain reply) and warns twice per round: at `autoCompactWindow` − 120k
+("run `sync-records` now") and at − 60k ("compaction is due and held").
+`pre-compact-sync.sh` holds the auto-compaction in that band without writing
+any stamp; only a `sync-records` pass by *this* session since the round began
+releases it (`sync_stamp.py` run from the skill records
+`CLAUDE_CODE_SESSION_ID`). A "round" runs from the last SessionStart, which
+`stop-sync-baseline.sh` records.
+
+Safety rails: nothing is held unless `autoCompactWindow` is set at or below
+800k (unset = the model's own window = never held); a compaction far below the
+window — a smaller model, a reactive retry — is never held; and the hold lets
+go at window + 150k (at most 900k), so the worst case is a late compaction
+without a pass, never a session stranded at the context wall.
+`CLAUDE_SKIP_CONTEXT_SYNC=1` silences the warning.
+
+**Why `main` is watched too** (added 2026-09-24, the user's proposal). A
+failing PR is visible — it has checks, and a session can subscribe to it. After
+the merge nobody was looking, and that is where the expensive failures hide:
+#504 and #505 were green alone and red together, `audit:deps` can turn `main`
+red with a newly published CVE and no diff at all, and Deploy staging only runs
+after the merge. `main-ci-watch.sh` looks at the latest *completed* run of each
+workflow on `main` (`cancelled` is ignored — concurrency cancels runs on
+purpose) and tells the model once per failing run, and once when it goes green
+again. `gh run list` costs about a second, so tool calls read a cache and a
+stale cache (over three minutes) is refreshed by a detached background process;
+only SessionStart waits for a fresh answer (8 s cap), so a new session knows at
+once that `main` is red. Without `gh` or a network it stays silent.
+`CLAUDE_SKIP_MAIN_CI_WATCH=1` turns it off. It is a backstop, not a
+replacement: after merging, still follow the merge commit's runs to the end
+before releasing it.
 
 **Why there is a `Stop` hook too.** The compaction hook only guards the
 compaction door. A session that finishes without ever being compacted never
