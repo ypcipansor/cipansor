@@ -40,6 +40,12 @@ const SEED = `
 INSERT INTO users (id, name, email, is_active, updated_at) VALUES
   ('user-pengawas', 'Pengawas', 'pengawas@example.com', true, now());
 
+INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
+  ('role-pengawas', 'YAYASAN_PENGAWAS', 'Pengawas Yayasan', 'YAYASAN', '[]'::jsonb, now());
+
+INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
+  ('a-pengawas', 'user-pengawas', 'role-pengawas', true, true, now());
+
 INSERT INTO wbs_reports
   (id, ticket_code, tracking_token, category, target_level, subject, description,
    primary_handler_role, status, assigned_user_id, updated_at)

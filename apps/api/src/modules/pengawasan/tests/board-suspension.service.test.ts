@@ -89,6 +89,11 @@ describe('BoardSuspensionService Unit Tests', () => {
     // rows; the legacy single-assignment path is exercised explicitly below.
     (prisma.boardSuspensionPlhAssignment.findMany as any).mockResolvedValue([]);
     (prisma.boardSuspensionPlhAssignment.count as any).mockResolvedValue(0);
+    // The lift's compare-and-restore touches the assignment with a conditional
+    // delete/update and reads `.count` off the result; default it to a claimed
+    // write so the happy-path lifts proceed.
+    (prisma.userRoleAssignment.deleteMany as any).mockResolvedValue({ count: 1 });
+    (prisma.userRoleAssignment.updateMany as any).mockResolvedValue({ count: 1 });
     // Defaults; a test that cares overrides them.
     (prisma.userSigningKey.findMany as any).mockResolvedValue([]);
     (prisma.role.findFirst as any).mockResolvedValue(null);
@@ -767,7 +772,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       data: { lockedUntil: new Date('2026-01-01T00:00:00.000Z') },
     });
     expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
-      where: { id: 'assign-new' },
+      where: { id: 'assign-new', isActive: true, expiresAt: null },
     });
   });
 
@@ -964,7 +969,7 @@ describe('BoardSuspensionService Unit Tests', () => {
 
     expect(prisma.userRoleAssignment.deleteMany).not.toHaveBeenCalled();
     expect(prisma.userRoleAssignment.updateMany).toHaveBeenCalledWith({
-      where: { id: 'assign-old' },
+      where: { id: 'assign-old', isActive: true, expiresAt: null },
       data: { isActive: false, expiresAt: new Date('2020-01-01T00:00:00.000Z') },
     });
   });
@@ -1151,7 +1156,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       await boardSuspensionService.liftBoardSuspension('susp-b', 'lifter', 'Pulih');
 
       expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
-        where: { id: sharedAssignmentId },
+        where: { id: sharedAssignmentId, isActive: true, expiresAt: null },
       });
     });
 
@@ -1324,7 +1329,7 @@ describe('BoardSuspensionService Unit Tests', () => {
       await boardSuspensionService.liftBoardSuspension('susp-a', 'lifter', 'Pulih');
 
       expect(prisma.userRoleAssignment.deleteMany).toHaveBeenCalledWith({
-        where: { id: sharedAssignmentId },
+        where: { id: sharedAssignmentId, isActive: true, expiresAt: null },
       });
     });
   });

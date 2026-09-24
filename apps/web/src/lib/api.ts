@@ -140,6 +140,24 @@ class NoSessionError extends Error {
   }
 }
 
+/**
+ * Whether a failed refresh was the *loser* of a concurrent rotation rather than
+ * a rejected credential.
+ *
+ * Two tabs sharing one `HttpOnly` refresh cookie both present it; the API lets
+ * exactly one rotate and answers the other `409 REFRESH_RACE` (it deliberately
+ * does not clear cookies, because the winner just set a fresh pair). The client
+ * must treat this like `NoSessionError`-but-retryable: retry the original
+ * request with whatever cookie is now current, and never run the logout path —
+ * logging out over a benign two-tab race destroyed a valid session.
+ */
+export function isRefreshRaceError(error: unknown): boolean {
+  const data = (error as AxiosError)?.response?.data as
+    | { error?: { code?: string } }
+    | undefined;
+  return data?.error?.code === "REFRESH_RACE";
+}
+
 export function hasSessionHint(): boolean {
   if (typeof window === "undefined") return false;
   // The `auth-storage` key holds the (non-credential) user blob the store
@@ -217,6 +235,16 @@ api.interceptors.response.use(
         await refreshSession();
         return api(originalRequest);
       } catch (refreshError) {
+        // A `REFRESH_RACE` is not a dead session: a parallel request in another
+        // tab rotated the same refresh token first and already set fresh
+        // cookies. Retry the original request once with whatever cookie is
+        // current — never treat this as a logout, or the loser of a benign
+        // two-tab refresh would clear the winner's brand-new session.
+        // `_retry` is already true, so a second failure cannot recurse here.
+        if (isRefreshRaceError(refreshError)) {
+          return api(originalRequest);
+        }
+
         // An anonymous visitor never had a session to lose. Public pages call
         // protected endpoints (the SPMB page reads /units), and bouncing a
         // prospective parent to the staff login screen over that 401 is far

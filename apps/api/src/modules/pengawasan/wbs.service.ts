@@ -4,6 +4,7 @@ import { WbsTargetLevel, WbsStatus, WbsSenderType, Prisma } from '@prisma/client
 import {
   WBS_FORWARD_ROLE_CODES,
   isClosedWbsStatus,
+  isFoundationWideRoleCode,
   isWbsForwardRecipientRole,
   wbsAssignmentBucketsForRole,
   type CreatePublicWbsInput,
@@ -302,31 +303,37 @@ export class WbsService {
    * Query WBS reports for authenticated staff/governance according to role hierarchy.
    */
   async getReportsForUser(actor: { id?: string; roleCode?: string; unitId?: string | null }) {
-    return prisma.wbsReport.findMany({
-      where: this.buildScopeWhere(actor),
-      include: {
-        unit: { select: { id: true, name: true } },
-        assignedUser: { select: { id: true, name: true, email: true } },
-        comments: {
-          orderBy: { createdAt: 'asc' },
-          select: {
-            id: true,
-            senderType: true,
-            senderName: true,
-            message: true,
-            attachments: true,
-            createdAt: true,
+    // Re-validate the token's role against persistent state *inside* the same
+    // transaction as the read, under the assignment-row lock, so a concurrent
+    // revocation cannot commit between the check and the query.
+    return prisma.$transaction(async (tx) => {
+      await this.assertActorAssignmentValid(tx, actor);
+      return tx.wbsReport.findMany({
+        where: this.buildScopeWhere(actor),
+        include: {
+          unit: { select: { id: true, name: true } },
+          assignedUser: { select: { id: true, name: true, email: true } },
+          comments: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              senderType: true,
+              senderName: true,
+              message: true,
+              attachments: true,
+              createdAt: true,
+            },
+          },
+          forwardLogs: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              forwardedBy: { select: { id: true, name: true } },
+              toUser: { select: { id: true, name: true } },
+            },
           },
         },
-        forwardLogs: {
-          orderBy: { createdAt: 'asc' },
-          include: {
-            forwardedBy: { select: { id: true, name: true } },
-            toUser: { select: { id: true, name: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'desc' },
+      });
     });
   }
 
@@ -474,6 +481,70 @@ export class WbsService {
   }
 
   /**
+   * Assert that the actor's *persistent* role assignment still backs the
+   * `roleCode` / `unitId` its access token carries.
+   *
+   * `authenticate` only re-checks the account's suspension state, not whether
+   * the role in the token is still held. The token is a snapshot: an access
+   * token minted while a user held `YAYASAN_PENGAWAS` keeps asserting that role
+   * (and its foundation-wide WBS scope) until it expires, even after the
+   * assignment was revoked. Every WBS authorization is therefore answered from
+   * a fresh read of `user_role_assignments` rather than from the token alone,
+   * so a revoked handler loses access on the next request instead of at token
+   * expiry.
+   *
+   * The unit comparison follows `tokenUnitId` (`utils/resolve-unit-id.ts`), the
+   * one rule every token path uses. An assignment that carries a unit must
+   * match the token's unit exactly; a unit-less assignment is the home-unit
+   * fallback only for a non-foundation role, which `tokenUnitId` resolves to
+   * the user's home unit — i.e. to whatever unit the token already carries.
+   * Comparing straight to `assignment.unitId` would wrongly refuse that
+   * fallback. A foundation-scoped token (`unitId === null`) is refused when the
+   * live assignment carries a concrete unit, because that is a narrower grant
+   * than the token claims.
+   */
+  private async assertActorAssignmentValid(
+    tx: Prisma.TransactionClient,
+    actor: WbsActor | { id?: string; roleCode?: string; unitId?: string | null }
+  ): Promise<void> {
+    const userId = actor.id;
+    if (!userId) {
+      // No principal to re-validate (an internal/system caller on the list
+      // path). There is no assignment to check, so there is nothing to refuse;
+      // the scope itself still fails closed for an unknown actor.
+      return;
+    }
+
+    const roleCode = actor.roleCode;
+    if (!roleCode) {
+      throw Errors.forbidden('Peran Anda tidak lagi aktif untuk mengakses laporan WBS ini.');
+    }
+
+    const assignments = await tx.userRoleAssignment.findMany({
+      where: {
+        userId,
+        isActive: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+        role: { isActive: true, code: roleCode },
+      },
+      select: { id: true, unitId: true },
+    });
+
+    const tokenUnit = actor.unitId ?? null;
+    const backed = assignments.some((assignment) => {
+      // An assignment bound to a unit must be the unit the token claims.
+      if (assignment.unitId !== null) return assignment.unitId === tokenUnit;
+      // A unit-less assignment: `tokenUnitId` returns `null` for a foundation
+      // role and the home unit otherwise, which the token already carries.
+      return tokenUnit === null || !isFoundationWideRoleCode(roleCode);
+    });
+
+    if (!backed) {
+      throw Errors.forbidden('Peran Anda tidak lagi aktif untuk mengakses laporan WBS ini.');
+    }
+  }
+
+  /**
    * Load a report only if the actor is within its scope.
    *
    * Returns 404 when no such report exists and 403 when it exists but belongs
@@ -530,6 +601,10 @@ export class WbsService {
     if (locked.length !== 1) {
       throw Errors.notFound(`Laporan WBS dengan ID ${id} tidak ditemukan`);
     }
+
+    // Re-check the actor's persistent assignment under the same transaction.
+    // A revoked role must lose access here even though the token still names it.
+    await this.assertActorAssignmentValid(tx, actor);
 
     const inScope = await tx.wbsReport.findFirst({
       where: { id, ...this.buildScopeWhere(actor) },

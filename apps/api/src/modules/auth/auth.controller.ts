@@ -117,7 +117,15 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     // working session over a transient failure — the same distinction the web
     // interceptor draws.
     const status = (error as { statusCode?: number })?.statusCode;
-    if (status === 400 || status === 401 || status === 403) {
+    const code = (error as { code?: string })?.code;
+    // A `REFRESH_RACE` is deliberately *not* a dead session: the same token was
+    // rotated by a parallel request (two tabs sharing one cookie), so a winner
+    // already set fresh cookies. Clearing them here — or letting the web client
+    // treat it as a logout — would destroy the session the winner just created.
+    // The caller retries with whatever cookie is current. Only a definitive
+    // rejection of the credential itself clears.
+    const isRace = code === 'REFRESH_RACE';
+    if (!isRace && (status === 400 || status === 401 || status === 403)) {
       setCookies(res, clearedSessionCookies());
     }
     throw error;

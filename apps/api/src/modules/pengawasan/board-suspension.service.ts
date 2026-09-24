@@ -117,26 +117,79 @@ interface AccountStateSnapshot {
  * deletes it. Otherwise a recorded `restore` puts a reactivated row back to its
  * prior state; an assignment that was already effective when a suspension
  * merely reused it is left untouched.
+ *
+ * Both branches are **compare-and-restore**, not blind writes.
+ *
+ * The suspension is not the only writer of this row. An admin can revoke,
+ * deactivate or re-expire the delegation while the officer is suspended, and a
+ * later lift that blindly wrote `isActive`/`expiresAt` back — or blindly deleted
+ * a row it created — silently overwrote that decision. The row is only touched
+ * while it still holds the exact state this suspension left it in (`isActive`
+ * true or false, `expiresAt` null or the claimed value); once an admin has
+ * changed either, the row is theirs and the lift leaves it alone, recording a
+ * `PLH_ASSIGNMENT_RELEASE_SKIPPED` audit row so the divergence is visible. This
+ * mirrors `accountStateWriter`/the E-Sign `lockedUntil` sentinel: prove the
+ * claim still holds before undoing it.
+ *
+ * The caller holds the assignment row `FOR UPDATE` for the whole lift
+ * transaction, so the compare and the write cannot be split by another writer.
  */
 async function releasePlhAssignment(
   tx: Prisma.TransactionClient,
   assignmentId: string,
   created: boolean,
-  restore: PlhAssignmentRestore | null
+  restore: PlhAssignmentRestore | null,
+  context: { suspensionId: string; userId: string }
 ): Promise<void> {
   if (created) {
-    await tx.userRoleAssignment.deleteMany({ where: { id: assignmentId } });
+    // Only remove the row while it still holds the state the suspension left:
+    // active and unbounded. An admin who deactivated it, or gave it an expiry,
+    // made a deliberate change that a lift must not erase.
+    const deleted = await tx.userRoleAssignment.deleteMany({
+      where: { id: assignmentId, isActive: true, expiresAt: null },
+    });
+    if (deleted.count === 0) {
+      await logSkippedRelease(tx, assignmentId, context);
+    }
     return;
   }
   if (restore) {
-    await tx.userRoleAssignment.updateMany({
-      where: { id: assignmentId },
+    const claimedExpiresAt = restore.expiresAt ? new Date(restore.expiresAt) : null;
+    const restored = await tx.userRoleAssignment.updateMany({
+      where: {
+        id: assignmentId,
+        isActive: true,
+        expiresAt: null,
+      },
       data: {
         isActive: restore.isActive,
-        expiresAt: restore.expiresAt ? new Date(restore.expiresAt) : null,
+        expiresAt: claimedExpiresAt,
       },
     });
+    if (restored.count === 0) {
+      await logSkippedRelease(tx, assignmentId, context);
+    }
   }
+}
+
+/** Record that a lift chose not to touch an assignment an admin had changed. */
+async function logSkippedRelease(
+  tx: Prisma.TransactionClient,
+  assignmentId: string,
+  context: { suspensionId: string; userId: string }
+): Promise<void> {
+  await tx.auditLog.create({
+    data: {
+      action: 'PLH_ASSIGNMENT_RELEASE_SKIPPED',
+      entity: 'UserRoleAssignment',
+      entityId: assignmentId,
+      newValues: {
+        reason: 'admin-modified-during-suspension',
+        suspensionId: context.suspensionId,
+        userId: context.userId,
+      } as Prisma.InputJsonValue,
+    },
+  });
 }
 
 export class BoardSuspensionService {
@@ -1041,7 +1094,8 @@ export class BoardSuspensionService {
             tx,
             updated.plhAssignmentId,
             updated.plhAssignmentCreated,
-            (updated.plhAssignmentRestore ?? null) as PlhAssignmentRestore | null
+            (updated.plhAssignmentRestore ?? null) as PlhAssignmentRestore | null,
+            { suspensionId: id, userId: suspension.userId }
           );
         }
       }
@@ -1118,7 +1172,8 @@ export class BoardSuspensionService {
           tx,
           dependency.assignmentId,
           dependency.created,
-          (dependency.restore ?? null) as PlhAssignmentRestore | null
+          (dependency.restore ?? null) as PlhAssignmentRestore | null,
+          { suspensionId: id, userId: suspension.userId }
         );
       }
 

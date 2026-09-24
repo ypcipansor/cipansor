@@ -137,7 +137,7 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
     });
   };
 
-  it('two parallel refreshes: exactly one rotates, the loser is a plain 401', async () => {
+  it('two parallel refreshes: exactly one rotates, the loser is a REFRESH_RACE, not a logout', async () => {
     const { service, jwt, previousUrl } = await loadService();
     try {
       const { refreshToken } = jwt.generateTokenPair({
@@ -162,14 +162,18 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
 
       expect(fulfilled, 'exactly one of two parallel refreshes may rotate').toHaveLength(1);
 
-      // The loser must be a *401*, never a 500. This is the finding: the old
-      // `delete` threw P2025 on the spent row and the handler mapped that to 500.
+      // The loser must be a *409 REFRESH_RACE*, never a 500 and never a plain
+      // 401. The 401 is what the web treats as "session dead" and logs out; a
+      // 409 REFRESH_RACE is what it treats as "retry with the cookie the winner
+      // just set". The finding is that the loser used to be indistinguishable
+      // from an invalid credential, so its `clearedSessionCookies()` Set-Cookie
+      // could land after the winner's fresh cookies and destroy a valid session.
       for (const r of rejected) {
-        const reason = r.reason as { statusCode?: number; status?: number };
-        expect(
-          reason?.statusCode ?? reason?.status,
-          'a spent refresh token must be a 401, not a 500'
-        ).toBe(401);
+        const reason = r.reason as { statusCode?: number; status?: number; code?: string };
+        expect(reason?.code, 'the loser of a benign concurrent refresh must be REFRESH_RACE').toBe(
+          'REFRESH_RACE'
+        );
+        expect(reason?.statusCode ?? reason?.status).toBe(409);
       }
     } finally {
       await unloadService(previousUrl);
@@ -185,7 +189,7 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
     });
   });
 
-  it('reusing a consumed refresh token is a 401 and never mints a second replacement', async () => {
+  it('reusing a consumed refresh token is a plain 401 and never mints a second replacement', async () => {
     const { service, jwt, previousUrl } = await loadService();
     try {
       const { refreshToken } = jwt.generateTokenPair({
@@ -202,7 +206,17 @@ describeDb('concurrent refresh rotation (real PostgreSQL)', () => {
 
       await service.refreshToken(refreshToken);
 
-      await expect(service.refreshToken(refreshToken)).rejects.toMatchObject({ statusCode: 401 });
+      // The row was consumed by the first call, so this second call is a
+      // *sequential replay*, not a benign two-tab race: by the time it reaches
+      // the pre-read the token is already gone, so it is indistinguishable from
+      // any other missing credential and fails closed as a 401. Only a token
+      // that is still present at the pre-read but vanishes before the
+      // conditional delete — an actual parallel rotation — is a `REFRESH_RACE`
+      // (see the two-parallel-refreshes case). Replay protection is unchanged:
+      // the spent token buys nothing and exactly one replacement exists.
+      await expect(service.refreshToken(refreshToken)).rejects.toMatchObject({
+        statusCode: 401,
+      });
     } finally {
       await unloadService(previousUrl);
     }

@@ -302,14 +302,21 @@ describe('AuthService.refreshToken — rotation under suspension', () => {
     expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
   });
 
-  it('answers 401, not 500, when a parallel refresh already consumed the token', async () => {
-    // Finding 7: after the first request deletes the row, the second request
-    // reaches the conditional `deleteMany` and affects zero rows. That is a
-    // replay/spent token, so it must surface as a plain 401 — the old plain
-    // `delete` threw Prisma P2025, which the error handler mapped to 500.
+  it('answers a REFRESH_RACE, not a 500 or a logout, when a parallel refresh already consumed the token', async () => {
+    // Finding 7 (500), superseded by the concurrent-refresh finding: after the
+    // first request deletes the row, the second request reaches the conditional
+    // `deleteMany` and affects zero rows. The old plain `delete` threw Prisma
+    // P2025, which the error handler mapped to 500. A plain 401 then replaced
+    // that, but a 401 is what the web treats as "session dead" and logs out —
+    // wrong for two tabs sharing one cookie, where a winner already rotated and
+    // set fresh cookies. The loser is a spent-but-legitimate token, so it is a
+    // `REFRESH_RACE` the client retries, never a 500 and never a logout.
     prismaMock.refreshToken.deleteMany.mockResolvedValueOnce({ count: 0 });
 
-    await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({ statusCode: 401 });
+    await expect(service.refreshToken('refresh-token')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'REFRESH_RACE',
+    });
     expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
   });
 });

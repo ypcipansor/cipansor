@@ -88,6 +88,7 @@ vi.mock('@/lib/prisma', () => ({
     },
     userRoleAssignment: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       deleteMany: vi.fn(),
       update: vi.fn(),
@@ -134,6 +135,14 @@ vi.mock('@/utils/user-suspension', () => ({
 describe('WbsService Unit Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // F4: the WBS authorization path re-reads the actor's persistent role
+    // assignment. Default it to "still held" (a unit-less foundation grant, the
+    // shape the actors below carry) so scope tests that predate the guard keep
+    // exercising the scope predicate; the dedicated tests below override it to
+    // prove revocation is refused.
+    (prisma.userRoleAssignment.findMany as any).mockResolvedValue([
+      { id: 'a-still-held', unitId: null },
+    ]);
   });
 
   it('creates public WBS report with correct primary handler role for PENGURUS_YAYASAN', async () => {
@@ -1632,6 +1641,68 @@ describe('WbsService Unit Tests', () => {
       await expect(call()).rejects.toMatchObject({ statusCode: 403 });
       expect(prisma.wbsReport.update).not.toHaveBeenCalled();
       expect(prisma.wbsComment.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a handler whose role assignment was revoked, even for an in-scope report', async () => {
+      // F4 (critical): the scope was derived from the access token's `roleCode`
+      // / `unitId`, which is a snapshot. A handler whose assignment was revoked
+      // still read and mutated every report its old role could see until the
+      // token expired. The guard re-reads the persistent assignment, so a
+      // revoked role is refused at the authorization boundary.
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([]);
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({ id: 'report-9' });
+
+      await expect(
+        wbsService.forwardReport(
+          'report-9',
+          { toRole: 'YAYASAN_KETUA', reason: 'alasan panjang' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 403 });
+      expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses a revoked handler on the list query too', async () => {
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([]);
+      await expect(
+        wbsService.getReportsForUser({ id: 'u1', roleCode: 'YAYASAN_PENGAWAS', unitId: null })
+      ).rejects.toMatchObject({ statusCode: 403 });
+      expect(prisma.wbsReport.findMany).not.toHaveBeenCalled();
+    });
+
+    it('accepts a unit-less assignment whose token carries the home unit', async () => {
+      // The token for a non-foundation role with a unit-less assignment carries
+      // the user's home unit (`tokenUnitId`). The guard must not refuse it just
+      // because the assignment row's `unitId` is null.
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([
+        { id: 'a-home', unitId: null },
+      ]);
+      (prisma.wbsReport.findMany as any).mockResolvedValue([]);
+
+      await expect(
+        wbsService.getReportsForUser({
+          id: 'u-home',
+          roleCode: 'SDIT_ADMIN',
+          unitId: 'unit-sdit',
+        })
+      ).resolves.toEqual([]);
+    });
+
+    it('refuses a foundation token when the live assignment is bound to a unit', async () => {
+      // The reverse mismatch: the token claims foundation scope (no unit) but
+      // the only surviving assignment is unit-bound — a narrower grant the
+      // token does not name.
+      (prisma.userRoleAssignment.findMany as any).mockResolvedValue([
+        { id: 'a-unit', unitId: 'unit-sdit' },
+      ]);
+
+      await expect(
+        wbsService.getReportsForUser({
+          id: 'u-pengawas',
+          roleCode: 'YAYASAN_PENGAWAS',
+          unitId: null,
+        })
+      ).rejects.toMatchObject({ statusCode: 403 });
     });
 
     it('lets a Super Admin resolve any report by id', async () => {

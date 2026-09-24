@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   usePublicTrackWbs,
@@ -82,6 +82,19 @@ function PublicWbsTrackContent() {
   const [ticketCode, setTicketCode] = useState<string>("");
   const [trackingToken, setTrackingToken] = useState<string>("");
   const [reportData, setReportData] = useState<WbsTrackingDto | null>(null);
+  // The ticket/token the displayed report was actually loaded with.
+  //
+  // The reply form must post against these, never against the input state:
+  // the reporter can edit the ticket while a lookup is pending, and the reply
+  // would otherwise be sent with the *new* ticket against the *old* token —
+  // silently posting the message to a report the lookup never resolved.
+  const [reportCredentials, setReportCredentials] = useState<{
+    ticketCode: string;
+    trackingToken: string;
+  } | null>(null);
+  // Identifies the newest lookup so a slow earlier response cannot overwrite
+  // the result of a faster later one. Incremented on every `handleTrack`.
+  const lookupSeq = useRef(0);
 
   const [newMessage, setNewMessage] = useState<string>("");
   const [trackError, setTrackError] = useState<string | null>(null);
@@ -108,6 +121,12 @@ function PublicWbsTrackContent() {
     if (e) e.preventDefault();
     if (!ticketCode || !trackingToken) return;
 
+    const credentials = {
+      ticketCode: ticketCode.trim(),
+      trackingToken: trackingToken.trim(),
+    };
+    const seq = ++lookupSeq.current;
+
     setTrackError(null);
     // Clear the previous report before the lookup. A failed lookup must not
     // leave the last ticket's detail on screen: it would then describe a
@@ -115,17 +134,24 @@ function PublicWbsTrackContent() {
     // to the *old* ticket/token. The displayed report is always the result of
     // the current lookup — or nothing while it is pending/failed.
     setReportData(null);
+    setReportCredentials(null);
     try {
       const res = await trackMutation.mutateAsync({
-        ticketCode: ticketCode.trim(),
-        trackingToken: trackingToken.trim(),
+        ...credentials,
         turnstileToken: trackTurnstile.token || undefined,
       });
+      // A superseded lookup (the input changed and a newer request started)
+      // must not install its result: the report would not match the inputs,
+      // and its bound credentials would let the reply form post to a report
+      // the reporter is no longer looking at.
+      if (seq !== lookupSeq.current) return;
       if (res) {
         setReportData(res);
+        setReportCredentials(credentials);
       }
       trackTurnstile.refresh();
     } catch (err) {
+      if (seq !== lookupSeq.current) return;
       setTrackError(errorMessage(err, "Gagal memuat status laporan."));
       trackTurnstile.refresh();
     }
@@ -133,13 +159,17 @@ function PublicWbsTrackContent() {
 
   const handleSendComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !ticketCode || !trackingToken) return;
+    // Post against the credentials the displayed report was loaded with, not
+    // the current inputs. If the reporter edited the ticket/token after the
+    // lookup, `reportCredentials` still names the resolved report — and when no
+    // report is loaded there is nothing to reply to.
+    if (!newMessage.trim() || !reportCredentials) return;
 
     setCommentError(null);
     try {
       const created = await addCommentMutation.mutateAsync({
-        ticketCode: ticketCode.trim(),
-        trackingToken: trackingToken.trim(),
+        ticketCode: reportCredentials.ticketCode,
+        trackingToken: reportCredentials.trackingToken,
         message: newMessage.trim(),
         turnstileToken: commentTurnstile.token || undefined,
       });
@@ -229,6 +259,11 @@ function PublicWbsTrackContent() {
                     onChange={(e) => {
                       setTicketCode(e.target.value);
                       setReportData(null);
+                      setReportCredentials(null);
+                      // Invalidate any in-flight lookup: it was started for the
+                      // previous inputs, so its result must not be installed
+                      // against the edited ones.
+                      lookupSeq.current += 1;
                     }}
                     required
                     className="bg-white font-mono"
@@ -245,6 +280,8 @@ function PublicWbsTrackContent() {
                     onChange={(e) => {
                       setTrackingToken(e.target.value);
                       setReportData(null);
+                      setReportCredentials(null);
+                      lookupSeq.current += 1;
                     }}
                     required
                     className="bg-white font-mono"

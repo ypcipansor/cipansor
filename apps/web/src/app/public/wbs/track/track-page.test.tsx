@@ -230,3 +230,139 @@ describe("PublicWbsTrackPage — reply control respects a closed case", () => {
     expect(screen.queryByText(/telah ditutup/i)).toBeNull();
   });
 });
+
+/**
+ * A reply must post against the credentials the *displayed* report was loaded
+ * with, not the current inputs.
+ *
+ * Finding 3 (this session). The reporter can edit the ticket/token while a
+ * lookup is pending. The old code kept installing the older lookup's response
+ * and used the live input state when sending a reply, so a slow lookup for A
+ * could resolve after the input was changed to B and then `handleSendComment`
+ * would post to ticket B with A's token — a message for the wrong report.
+ */
+describe("PublicWbsTrackPage — lookup result is bound to the credentials that fetched it", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+
+  it("ignores a superseded lookup so the screen never shows a report that mismatches the inputs", async () => {
+    const user = userEvent.setup();
+
+    const lookupA = deferred<typeof report>();
+    const lookupB = deferred<typeof report>();
+    trackMutate
+      .mockReturnValueOnce(lookupA.promise)
+      .mockReturnValueOnce(lookupB.promise);
+
+    const reportB = {
+      ...report,
+      ticketCode: "WBS-202601-BBBBBB",
+      trackingToken: "token-b",
+      subject: "Laporan B",
+    };
+
+    render(<PublicWbsTrackPage />);
+
+    // Start lookup A and leave it pending.
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      report.ticketCode,
+    );
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      report.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+    expect(trackMutate).toHaveBeenCalledTimes(1);
+
+    // Edit the inputs to a second ticket and look it up; B resolves first.
+    await user.clear(screen.getByLabelText(/Kode Tiket WBS/i));
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      reportB.ticketCode,
+    );
+    await user.clear(screen.getByLabelText(/Token Akses Rahasia/i));
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      reportB.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+    expect(trackMutate).toHaveBeenCalledTimes(2);
+
+    lookupB.resolve(reportB);
+    expect(await screen.findByText(reportB.subject)).toBeDefined();
+
+    // The stale A response lands *afterwards*. It no longer matches the inputs,
+    // so installing it would put a report on screen the inputs cannot fetch —
+    // and, before the fix, the reply form would then post to the *live* inputs
+    // (B) rather than to the report actually displayed (A). It must be ignored:
+    // the screen still shows B.
+    lookupA.resolve(report);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText(reportB.subject)).toBeDefined();
+    expect(screen.queryByText(report.subject)).toBeNull();
+  });
+
+  it("does not post a reply when the displayed report has no bound credentials", async () => {
+    // A superseded lookup leaves `reportCredentials` null (its result was
+    // discarded), so even though the inputs are filled there is no resolved
+    // report to reply to and the reply control stays hidden.
+    const user = userEvent.setup();
+
+    const lookupA = deferred<typeof report>();
+    trackMutate.mockReturnValueOnce(lookupA.promise);
+
+    render(<PublicWbsTrackPage />);
+
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      report.ticketCode,
+    );
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      report.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+
+    // Edit the ticket before A resolves; A then resolves against stale inputs.
+    await user.type(screen.getByLabelText(/Kode Tiket WBS/i), "X");
+    lookupA.resolve(report);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByPlaceholderText(/Ketik pesan Anda/i)).toBeNull();
+    expect(commentMutate).not.toHaveBeenCalled();
+  });
+
+  it("does not post a reply when the displayed report was cleared by an input edit", async () => {
+    const user = userEvent.setup();
+    trackMutate.mockResolvedValueOnce(report);
+
+    render(<PublicWbsTrackPage />);
+
+    await user.type(
+      screen.getByLabelText(/Kode Tiket WBS/i),
+      report.ticketCode,
+    );
+    await user.type(
+      screen.getByLabelText(/Token Akses Rahasia/i),
+      report.trackingToken,
+    );
+    await user.click(screen.getByRole("button", { name: /Lacak|Cari|Cek/i }));
+    await screen.findByText(report.ticketCode, { exact: false });
+
+    // Editing the ticket clears the loaded report and its bound credentials.
+    await user.type(screen.getByLabelText(/Kode Tiket WBS/i), "X");
+
+    expect(screen.queryByPlaceholderText(/Ketik pesan Anda/i)).toBeNull();
+    expect(commentMutate).not.toHaveBeenCalled();
+  });
+});

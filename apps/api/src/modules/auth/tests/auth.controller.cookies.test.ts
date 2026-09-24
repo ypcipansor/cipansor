@@ -107,7 +107,13 @@ describe('auth cookie issuance', () => {
 
     const temp = cookies().find((c) => c.startsWith(`${TWO_FACTOR_TOKEN_COOKIE}=`));
     expect(temp).toBeDefined();
-    expect(temp).toMatch(/Max-Age=600/);
+    // The cookie must live as long as the 10-minute token, not the old 5-minute
+    // default. Allow a few seconds of slack: the max-age is computed from the
+    // token's expiry at header-build time, so it can be 599 or 598 depending on
+    // where the clock lands between minting and building.
+    const maxAge = Number(/Max-Age=(\d+)/.exec(temp ?? '')?.[1]);
+    expect(maxAge).toBeGreaterThan(590);
+    expect(maxAge).toBeLessThanOrEqual(600);
   });
 
   it('login sets HttpOnly session cookies and keeps the bearer fields', async () => {
@@ -227,9 +233,6 @@ describe('auth cookie issuance', () => {
   });
 
   it('refresh answers a definitive rejection by clearing every session cookie', async () => {
-    // Finding 3's server half: the 401 that tells the client a refresh failed
-    // must carry the cookie deletions itself, so no client has to remember a
-    // second call to avoid the stale-routing login loop.
     vi.mocked(authService.refreshToken).mockRejectedValue(
       Object.assign(new Error('Refresh token not found or expired'), { statusCode: 401 })
     );
@@ -247,6 +250,30 @@ describe('auth cookie issuance', () => {
       ROUTING_COOKIE,
     ]);
     for (const c of cleared) expect(c).toMatch(/Max-Age=0/);
+    expect(next).toHaveBeenCalled();
+  });
+
+  it('refresh does NOT clear cookies when the loser of a concurrent rotation races the winner', async () => {
+    // Finding 1 (this session). Two tabs refresh the same cookie: the winner
+    // sets fresh session cookies, the loser is told REFRESH_RACE. If the loser
+    // also returned `clearedSessionCookies()`, its Set-Cookie deletion could
+    // arrive after the winner's fresh cookies (response ordering is independent
+    // of the transaction) and log the user out of a session that is perfectly
+    // valid. The race rejection must therefore carry no cookie header at all.
+    vi.mocked(authService.refreshToken).mockRejectedValue(
+      Object.assign(new Error('Refresh token is being rotated by another request'), {
+        statusCode: 409,
+        code: 'REFRESH_RACE',
+      })
+    );
+    const { req, res, cookies } = mockReqRes({ refreshToken: 'spent' });
+    const next = vi.fn();
+
+    await refreshTokenHandler(req, res, next);
+    await flushAsync();
+
+    // No Set-Cookie: neither a fresh pair nor a deletion.
+    expect(cookies()).toEqual([]);
     expect(next).toHaveBeenCalled();
   });
 

@@ -131,6 +131,13 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
     withClient(targetUrl, async (db) => {
       await db.query(`DELETE FROM board_suspension_plh_assignments`);
       await db.query(`DELETE FROM board_member_suspensions`);
+      // Clear every assignment for the seeded users first: a prior test may
+      // have left a suspension-minted delegate row whose unique
+      // (user_id, role_id, unitless) key would otherwise block the re-insert.
+      await db.query(
+        `DELETE FROM user_role_assignments
+         WHERE user_id IN ('u-target-a', 'u-target-b', 'u-target-c', 'u-delegate')`
+      );
       // Recreate every assignment, including a delegate row a prior test may
       // have released, with the effective pre-suspension expiry.
       await db.query(
@@ -354,6 +361,125 @@ describeDb('Shared Plh delegation expiry restoration (real PostgreSQL)', () => {
       await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
       const after = await delegateRow();
       expect(new Date(after.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('does not overwrite an admin expiry set on a reused assignment during the suspension', async () => {
+    // Finding 2 (this session). The suspension reused an effective row, cleared
+    // its expiry and recorded the prior value. An admin then gave the delegate a
+    // NEW expiry while the officer was still suspended. A blind restore on lift
+    // wrote the pre-suspension value back, silently discarding the admin's
+    // decision. The compare-and-restore only writes while the row still holds
+    // the state the suspension left (is_active=true, expires_at NULL).
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/ADMIN-EXP-1', HORIZON_A);
+
+      const adminExpiry = new Date(Date.now() + 5 * 86_400_000).toISOString();
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE user_role_assignments SET expires_at = $1 WHERE id = 'a-delegate'`,
+          [adminExpiry]
+        );
+      });
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+
+      const row = await delegateRow();
+      expect(
+        new Date(row.expires_at).toISOString(),
+        "the admin's expiry survives the lift"
+      ).toBe(adminExpiry);
+
+      // The divergence is recorded so it is visible rather than silent.
+      const audit = await withClient(targetUrl, async (db) =>
+        db.query(
+          `SELECT count(*)::int AS n FROM audit_logs
+           WHERE action = 'PLH_ASSIGNMENT_RELEASE_SKIPPED' AND entity_id = 'a-delegate'`
+        )
+      );
+      expect(audit.rows[0].n).toBeGreaterThanOrEqual(1);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('does not reactivate a delegation an admin deactivated during the suspension', async () => {
+    // The same lost-update in the `isActive` dimension: the suspension recorded
+    // `isActive` to restore, but an admin revoked the delegation mid-suspension.
+    // The lift must leave the admin's `false` untouched.
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/ADMIN-ACT-1', HORIZON_A);
+
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE user_role_assignments SET is_active = false WHERE id = 'a-delegate'`
+        );
+      });
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+
+      const row = await delegateRow();
+      expect(row.is_active, 'the admin deactivation survives the lift').toBe(false);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('does not delete a suspension-created delegation an admin modified during the suspension', async () => {
+    // The `created` branch was a blind `deleteMany({ where: { id } })`. If an
+    // admin granted the minted delegation an expiry while the officer was
+    // suspended, the lift erased a row the admin had deliberately kept alive.
+    await resetState();
+    await withClient(targetUrl, async (db) => {
+      await db.query(`DELETE FROM user_role_assignments WHERE id = 'a-delegate'`);
+    });
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/ADMIN-CREATED-1', HORIZON_A);
+
+      const adminExpiry = new Date(Date.now() + 3 * 86_400_000).toISOString();
+      await withClient(targetUrl, async (db) => {
+        await db.query(
+          `UPDATE user_role_assignments SET expires_at = $1 WHERE user_id = 'u-delegate'`,
+          [adminExpiry]
+        );
+      });
+
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+
+      const rows = await withClient(targetUrl, async (db) =>
+        db.query(
+          `SELECT expires_at FROM user_role_assignments WHERE user_id = 'u-delegate'`
+        )
+      );
+      expect(
+        rows.rows,
+        'the admin-modified delegation is not deleted by the lift'
+      ).toHaveLength(1);
+      expect(new Date(rows.rows[0].expires_at).toISOString()).toBe(adminExpiry);
+    } finally {
+      await unloadService(previousUrl);
+    }
+  });
+
+  it('still restores a reused assignment when no admin touched it', async () => {
+    // The compare-and-restore must not regress the happy path: untouched row in
+    // the suspension's claimed state restores exactly as before.
+    await resetState();
+    const { suspension, previousUrl } = await loadService();
+    try {
+      const a = await suspend(suspension, 'u-target-a', 'SK/RESTORE-OK-1', HORIZON_A);
+      await suspension.liftBoardSuspension(a.id, 'u-issuer', 'Pemulihan status A.');
+
+      const row = await delegateRow();
+      expect(new Date(row.expires_at).toISOString()).toBe(DELEGATE_EXPIRY);
+      expect(row.is_active).toBe(true);
     } finally {
       await unloadService(previousUrl);
     }

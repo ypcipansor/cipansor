@@ -696,7 +696,7 @@ export class AuthService {
         where: { id: storedToken.id, token: refreshToken },
       });
       if (consumed.count !== 1) {
-        throw Errors.unauthorized('Refresh token not found or expired');
+        throw Errors.refreshRace();
       }
 
       const tokens = generateTokenPair({
