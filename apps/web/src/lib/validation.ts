@@ -2,6 +2,7 @@
  * Validation utilities
  * Consistent form validation throughout the application
  */
+import { EMAIL_PATTERN } from "./string";
 
 export interface ValidationRule {
   validate: (value: unknown) => boolean;
@@ -103,8 +104,7 @@ export const email = (
 ): ValidationRule => ({
   validate: (value) => {
     if (!value || typeof value !== "string") return true; // Skip if empty (use required for that)
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    return emailRegex.test(value);
+    return EMAIL_PATTERN.test(value);
   },
   message,
 });
