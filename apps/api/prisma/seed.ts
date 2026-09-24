@@ -130,7 +130,6 @@ import {
 } from '../src/utils/parent-scope';
 import { seedImmunizationReference } from './seeds/immunization-reference';
 import { seedStrategicPlans } from './seeds/strategic-plan-cipansor';
-import { seedPaketPresentasi } from './seeds/paket-presentasi';
 import {
   admissionWindows,
   currentAcademicYear,
@@ -7816,13 +7815,6 @@ async function main() {
   // (and deterministic manual testing) we can pre-enable 2FA with a FIXED secret
   // so a valid TOTP can be generated offline. Opt-in via E2E_FIXED_2FA=1 so the
   // fixed secret never lands in a real environment's seed.
-  // Satu tahun ajaran yang utuh dan saling menyambung di atas data dasar di
-  // atas (rombel per jenjang, presensi, nilai, tagihan, tahfidz, SPMB). Paket
-  // yang sama diterapkan ke basis data yang sudah terisi lewat
-  // `db:seed:presentasi`, tanpa TRUNCATE — lihat seeds/paket-presentasi.ts.
-  // Dipanggil sebelum pemeriksaan di bawah supaya akun yang dibuatnya ikut diuji.
-  await seedPaketPresentasi(prisma);
-
   if (process.env.E2E_FIXED_2FA === '1') {
     const fixedSecret = process.env.E2E_2FA_SECRET || 'NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE';
     const updated = await prisma.user.updateMany({

@@ -35,6 +35,13 @@ Yang masih terbuka:
 - **Tagihan otomatis** ikut menagih alumni.
 - **`lib/event-bus.ts`** masih memakai `ayat ÷ 600` untuk notifikasi "tuntas
   satu juz".
+- **Cookie `auth-storage` melewati 4 KB untuk lebih banyak akun** begitu paket
+  diterapkan. Wali kelas mendapat peran kedua, dan unit kini punya alamat.
+  Contoh terukur: `fatimah@` 5.705 byte, `admin.sdit@` 4.869 byte. Peramban
+  membuang cookie itu tanpa pesan, lalu middleware web jatuh ke `accessToken`
+  saja: pengguna tetap masuk, tetapi tanpa peran, sehingga gerbang rute web
+  tidak berlaku (API tetap menjaga). Perbaikannya adalah menulis cookie ramping
+  yang berisi hanya apa yang dibaca middleware.
 - **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
   2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
   SMA.

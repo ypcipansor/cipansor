@@ -48,10 +48,18 @@ timetable, attendance on school days only, exams and grades, last semester's
 rapor, SPP billing paid according to each family's habit, tahfidz that follows
 one curriculum from SD 1 to SMA 12 (earlier hafalan recorded as history, this
 year's setoran continuing where it stops), UKS records that match the attendance,
-asrama rooms, discipline, and SPMB for next year. `db:seed` runs it at the end;
-`db:seed:presentasi` adds it to a database that already has the base data
+asrama rooms, discipline, and SPMB for next year. It runs ONLY through
+`db:seed:presentasi`, on top of a database that already has the base data
 (staging, production demo data). It is idempotent — it skips itself when SD IT
 already has a class `6A` in the active year — and every date derives from today.
+
+**`db:seed` deliberately does not run it.** The e2e suite is written against the
+base seed, and the pack changes what that suite relies on: 12 of 386 tests
+failed when it ran inside `db:seed` (#530) — "the first exam" is a different
+exam among 648, a homeroom teacher gains the `WALI_KELAS` role, and unit
+addresses push `admin.sdit@`'s and `fatimah@`'s `auth-storage` cookie past 4 KB,
+which Playwright refuses outright (the browser drops it silently — see
+`docs/KNOWN_ISSUES.md`). Test fixtures and presentation data do different jobs.
 
 Its guarantees are checked by invariants rather than by eye: nobody in two
 classes, no teacher or class in two places at once, no setoran on a day the
