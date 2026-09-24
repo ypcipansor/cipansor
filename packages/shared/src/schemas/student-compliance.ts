@@ -136,7 +136,10 @@ export const INCOME_RANGE_OPTIONS = [
 
 type Opsi = readonly { value: string }[];
 const nilaiDari = <T extends Opsi>(opsi: T) =>
-  opsi.map((o) => o.value) as unknown as [T[number]["value"], ...T[number]["value"][]];
+  opsi.map((o) => o.value) as unknown as [
+    T[number]["value"],
+    ...T[number]["value"][],
+  ];
 
 export const TRANSPORT_MODE_VALUES = nilaiDari(TRANSPORT_MODE_OPTIONS);
 export const BLOOD_TYPE_VALUES = nilaiDari(BLOOD_TYPE_OPTIONS);
@@ -167,7 +170,12 @@ export const updateStudentComplianceSchema = z
 
     // Domisili
     // Kolomnya NOT NULL: alamat boleh tidak dikirim, tapi tidak boleh dikosongkan.
-    address: z.string().trim().min(5, "Alamat minimal 5 karakter").max(500).optional(),
+    address: z
+      .string()
+      .trim()
+      .min(5, "Alamat minimal 5 karakter")
+      .max(500)
+      .optional(),
     rt: teksOpsional(5),
     rw: teksOpsional(5),
     postalCode: teksOpsional(10),
@@ -200,7 +208,14 @@ export const updateStudentComplianceSchema = z
 
     // Ayah
     fatherName: teksOpsional(),
-    fatherNik: z.preprocess(kosongJadiNull, z.string().regex(NIK_PATTERN, "NIK ayah harus 16 digit angka").nullable().optional()),
+    fatherNik: z.preprocess(
+      kosongJadiNull,
+      z
+        .string()
+        .regex(NIK_PATTERN, "NIK ayah harus 16 digit angka")
+        .nullable()
+        .optional(),
+    ),
     fatherBirthPlace: teksOpsional(),
     fatherBirthDate: tanggalOpsional,
     fatherEducation: enumOpsional(EDUCATION_LEVEL_VALUES),
@@ -210,7 +225,14 @@ export const updateStudentComplianceSchema = z
 
     // Ibu
     motherName: teksOpsional(),
-    motherNik: z.preprocess(kosongJadiNull, z.string().regex(NIK_PATTERN, "NIK ibu harus 16 digit angka").nullable().optional()),
+    motherNik: z.preprocess(
+      kosongJadiNull,
+      z
+        .string()
+        .regex(NIK_PATTERN, "NIK ibu harus 16 digit angka")
+        .nullable()
+        .optional(),
+    ),
     motherBirthPlace: teksOpsional(),
     motherBirthDate: tanggalOpsional,
     motherEducation: enumOpsional(EDUCATION_LEVEL_VALUES),
@@ -220,7 +242,14 @@ export const updateStudentComplianceSchema = z
 
     // Wali
     guardianName: teksOpsional(),
-    guardianNik: z.preprocess(kosongJadiNull, z.string().regex(NIK_PATTERN, "NIK wali harus 16 digit angka").nullable().optional()),
+    guardianNik: z.preprocess(
+      kosongJadiNull,
+      z
+        .string()
+        .regex(NIK_PATTERN, "NIK wali harus 16 digit angka")
+        .nullable()
+        .optional(),
+    ),
     guardianRelation: teksOpsional(64),
     guardianEducation: enumOpsional(EDUCATION_LEVEL_VALUES),
     guardianOccupation: enumOpsional(OCCUPATION_VALUES),
@@ -229,7 +258,9 @@ export const updateStudentComplianceSchema = z
   })
   .strict();
 
-export type UpdateStudentComplianceInput = z.infer<typeof updateStudentComplianceSchema>;
+export type UpdateStudentComplianceInput = z.infer<
+  typeof updateStudentComplianceSchema
+>;
 
 /**
  * Bentuk yang dikirim peramban: sama dengan hasil skema, kecuali tanggal yang
@@ -247,7 +278,11 @@ export type UpdateStudentComplianceRequest = Omit<
 export const bulkUpdateStudentComplianceSchema = z
   .object({
     updates: z
-      .array(updateStudentComplianceSchema.extend({ studentId: z.string().uuid("studentId harus UUID") }))
+      .array(
+        updateStudentComplianceSchema.extend({
+          studentId: z.string().uuid("studentId harus UUID"),
+        }),
+      )
       .min(1)
       .max(500),
   })

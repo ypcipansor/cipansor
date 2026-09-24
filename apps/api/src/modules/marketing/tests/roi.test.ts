@@ -27,11 +27,13 @@ describe('Marketing ROI Service', () => {
     ];
 
     vi.mocked(prisma.marketingCampaign.findMany).mockResolvedValue(mockCampaigns as any);
-    vi.mocked(prisma.registrant.groupBy).mockResolvedValue([{ campaignId: 'c1', _count: { _all: 20 } }] as any);
+    vi.mocked(prisma.registrant.groupBy).mockResolvedValue([
+      { campaignId: 'c1', _count: { _all: 20 } },
+    ] as any);
     // Satu santri kini boleh punya beberapa pendaftaran (progresi internal
     // antarunit), jadi relasinya jamak.
     vi.mocked(prisma.invoice.findMany).mockResolvedValue([
-      { paidAmount: 5000, student: { registrants: [{ campaignId: 'c1' }] } }
+      { paidAmount: 5000, student: { registrants: [{ campaignId: 'c1' }] } },
     ] as any);
 
     const result = await calculateCampaignROI();

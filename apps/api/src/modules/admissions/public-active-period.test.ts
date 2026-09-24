@@ -14,9 +14,7 @@ const mocked = prisma as unknown as {
 };
 
 function invoke() {
-  const res = { json: vi.fn() } as unknown as Parameters<
-    typeof getPublicActiveAdmissionPeriod
-  >[1];
+  const res = { json: vi.fn() } as unknown as Parameters<typeof getPublicActiveAdmissionPeriod>[1];
   const next = vi.fn();
   return {
     res,
@@ -71,7 +69,7 @@ describe('getPublicActiveAdmissionPeriod', () => {
   // form while registration was actually open.
   it('does not let a later-starting future wave hide the open one', async () => {
     mocked.admissionPeriod.findFirst.mockImplementation(async (args: PeriodQuery) =>
-      windowOf(args.where) === 'open' ? { id: 'wave-1-open' } : { id: 'wave-2-future' },
+      windowOf(args.where) === 'open' ? { id: 'wave-1-open' } : { id: 'wave-2-future' }
     );
 
     const call = invoke();
@@ -82,14 +80,14 @@ describe('getPublicActiveAdmissionPeriod', () => {
 
   it('falls back to the next upcoming period when none is open', async () => {
     mocked.admissionPeriod.findFirst.mockImplementation(async (args: PeriodQuery) =>
-      windowOf(args.where) === 'upcoming' ? { id: 'next-wave' } : null,
+      windowOf(args.where) === 'upcoming' ? { id: 'next-wave' } : null
     );
 
     const call = invoke();
     await call.run();
 
     const asked = mocked.admissionPeriod.findFirst.mock.calls.map((c: unknown[]) =>
-      windowOf(queryOf(c).where),
+      windowOf(queryOf(c).where)
     );
     expect(asked).toEqual(['open', 'upcoming']);
     expect(call.payload().data).toEqual({ id: 'next-wave' });
@@ -101,14 +99,14 @@ describe('getPublicActiveAdmissionPeriod', () => {
 
   it('falls back to the most recently closed period so the page can say when it ended', async () => {
     mocked.admissionPeriod.findFirst.mockImplementation(async (args: PeriodQuery) =>
-      windowOf(args.where) === 'closed' ? { id: 'last-closed' } : null,
+      windowOf(args.where) === 'closed' ? { id: 'last-closed' } : null
     );
 
     const call = invoke();
     await call.run();
 
     const asked = mocked.admissionPeriod.findFirst.mock.calls.map((c: unknown[]) =>
-      windowOf(queryOf(c).where),
+      windowOf(queryOf(c).where)
     );
     expect(asked).toEqual(['open', 'upcoming', 'closed']);
     expect(queryOf(mocked.admissionPeriod.findFirst.mock.calls[2]).orderBy).toEqual({

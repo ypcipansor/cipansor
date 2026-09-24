@@ -61,6 +61,26 @@ describe('dashboardService.getAdmissionsStats', () => {
       where: { admissionPeriod: { unitId: 'unit-1' } },
     });
   });
+
+  it('counts a period as active only while it is switched on AND open today', async () => {
+    mocked.registrant.count.mockResolvedValue(0);
+    mocked.registrant.groupBy.mockResolvedValue([]);
+    mocked.admissionPeriod.count.mockResolvedValue(4);
+    mocked.registrant.findMany.mockResolvedValue([]);
+
+    const before = Date.now();
+    await dashboardService.getAdmissionsStats({});
+    const after = Date.now();
+
+    // Same rule as the registration gate: a closed wave or one opening next
+    // month is not an "active period", even with isActive still true.
+    const where = mocked.admissionPeriod.count.mock.calls[0][0].where;
+    expect(where.isActive).toBe(true);
+    expect(where.startDate.lte.getTime()).toBeGreaterThanOrEqual(before);
+    expect(where.startDate.lte.getTime()).toBeLessThanOrEqual(after);
+    expect(where.endDate.gte.getTime()).toBeGreaterThanOrEqual(before);
+    expect(where.endDate.gte.getTime()).toBeLessThanOrEqual(after);
+  });
 });
 
 describe('dashboardService.getCBTSummary', () => {
@@ -86,6 +106,22 @@ describe('dashboardService.getCBTSummary', () => {
     expect(mocked.examAttempt.aggregate).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ score: { not: null } }) })
     );
+  });
+
+  it('counts only question-bank (CBT) exams, not written ones sharing the table', async () => {
+    mocked.exam.count.mockResolvedValue(0);
+    mocked.examAttempt.count.mockResolvedValue(0);
+    mocked.examAttempt.aggregate.mockResolvedValue({ _avg: { score: null } });
+
+    await dashboardService.getCBTSummary({ unitId: 'unit-1' });
+
+    for (const [args] of mocked.exam.count.mock.calls) {
+      expect(args.where).toMatchObject({ unitId: 'unit-1', questionBankId: { not: null } });
+    }
+    expect(mocked.exam.count).toHaveBeenCalledTimes(3);
+    expect(mocked.examAttempt.count.mock.calls[0][0].where.exam).toMatchObject({
+      questionBankId: { not: null },
+    });
   });
 
   it('returns 0 average when no attempts are scored', async () => {

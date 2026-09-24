@@ -137,7 +137,9 @@ describe('decommission purge — migrations', () => {
     // migration and the runbook must agree on, so the next schema change that
     // moves the closure is told to update both rather than leaving one stale.
     const deployment = read(resolve(API_ROOT, '..', '..', 'docs', 'DEPLOYMENT.md'));
-    const dependents = DECOMMISSION.match(/deletes (\d+) dependent tables \((\d+) including `units`/);
+    const dependents = DECOMMISSION.match(
+      /deletes (\d+) dependent tables \((\d+) including `units`/
+    );
     expect(dependents, 'migration header states the blast radius').not.toBeNull();
     const [, migrationDependents, migrationTotal] = dependents!;
     expect(migrationDependents).toBe('232');
@@ -556,9 +558,7 @@ describe('decommission purge — migrations', () => {
     // reads never scope by unit, and the account code it holds is globally
     // unique, so a detached `unit_id = NULL` row both stays on every unit's
     // chart and keeps its code occupied for a real unit.
-    const accounting = read(
-      join(API_ROOT, 'src', 'modules', 'finance', 'accounting.service.ts')
-    );
+    const accounting = read(join(API_ROOT, 'src', 'modules', 'finance', 'accounting.service.ts'));
     const getAccounts = accounting.slice(
       accounting.indexOf('export async function getAccounts'),
       accounting.indexOf('export async function getAccountById')
@@ -567,13 +567,7 @@ describe('decommission purge — migrations', () => {
     expect(getAccounts).not.toMatch(/unitId/);
 
     const financeEnhancement = read(
-      join(
-        API_ROOT,
-        'src',
-        'modules',
-        'finance-enhancement',
-        'finance-enhancement.service.ts'
-      )
+      join(API_ROOT, 'src', 'modules', 'finance-enhancement', 'finance-enhancement.service.ts')
     );
     const getAccountCodes = financeEnhancement.slice(
       financeEnhancement.indexOf('async getAccountCodes'),

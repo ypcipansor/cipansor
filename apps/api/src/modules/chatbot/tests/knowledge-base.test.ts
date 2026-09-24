@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { donationConfig, educationUnits, siteConfig } from '@cipansor/shared';
-import {
-  TOPIC_HUB_IDS,
-  knowledgeBase,
-  knowledgeById,
-  topicLabels,
-} from '../knowledge-base';
+import { TOPIC_HUB_IDS, knowledgeBase, knowledgeById, topicLabels } from '../knowledge-base';
 
 describe('knowledge base', () => {
   it('derives every unit entry from the shared config', () => {

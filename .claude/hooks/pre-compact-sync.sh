@@ -24,21 +24,28 @@
 # pass the user asked for directly also silences the next compaction — which it
 # did not before, and that was plainly the wrong way round.
 #
-# Auto-compaction is blocked ONLY when there is room to spare, and never
-# otherwise. Left at its default, Claude Code compacts when the conversation
-# reaches the model's context limit — refusing it there would strand the session
-# at the wall with no way out, which is why this hook used to ignore auto
-# entirely.
+# AUTO-COMPACTION IS A DIFFERENT PROTOCOL, and the first version got it wrong.
+# It assumed auto worked like manual: block once, the model reads the message,
+# runs the pass, the retry goes through. Measured on 2026-09-23 it does not —
+# for an AUTO compaction Claude Code writes the block reason to its debug log
+# only; the model never sees it. And because this hook wrote the stamp while
+# blocking, the retry one tool call later (~40 s) sailed through. Nine auto
+# compactions in one session, zero passes caused by this hook.
 #
-# Setting `autoCompactWindow` below the model's window changes that, and it is
-# the whole reason this branch exists. At 700k on a 1M-token model, auto-compact
-# fires with 300k still free: ample room to run the records pass and let the
-# retry through. So the interlock is the setting itself — no reduced window, no
-# blocking. Remove the setting and this hook silently goes back to never
-# touching auto, with nobody needing to remember to disarm it.
+# So for auto this hook no longer talks; it only HOLDS. The talking is done by
+# `context-sync-warn.sh` (PostToolUse + UserPromptSubmit), whose
+# `additionalContext` does reach the model — tested live. The hold:
+#   - never writes the stamp; only a real `sync-records` pass by THIS session,
+#     since the current round began, releases it (`sync_stamp.synced_this_round`);
+#   - applies only when `autoCompactWindow` is set with headroom (<= 800k), and
+#     only when the context is actually at that window — a compaction far below
+#     it comes from something else (a smaller model, a reactive retry) and is
+#     left alone;
+#   - lets go at window + 150k (max 900k), so the worst case is a late
+#     compaction without a pass, never a session stranded at the wall.
 #
-#   /autocompact 700k     (writes autoCompactWindow to your user settings)
-#   /autocompact auto     (back to the model's tuned window; auto stops being blocked)
+#   /autocompact 600k     (arms it: writes autoCompactWindow to user settings)
+#   /autocompact auto     (disarms it: the model's own window, never held)
 #
 # Fails open in every other respect — unparseable input, unwritable stamp
 # directory, anything unexpected — because a hook that breaks a session is worse
@@ -65,44 +72,39 @@ trigger = (
 )
 
 
-def reduced_window() -> int:
-    """The configured auto-compact window in tokens, or 0 when none is set.
-
-    Read in the same precedence Claude Code uses: the environment variable wins,
-    then the settings files from most specific to least. Anything unreadable
-    counts as "not set", which disarms the auto branch — the safe direction.
-    """
-    raw = os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
-    if raw and raw.strip().isdigit():
-        return int(raw.strip())
-
-    project = os.environ.get("CLAUDE_PROJECT_DIR", "")
-    home = os.path.expanduser("~")
-    for path in (
-        os.path.join(project, ".claude", "settings.local.json"),
-        os.path.join(project, ".claude", "settings.json"),
-        os.path.join(home, ".claude", "settings.json"),
-    ):
-        try:
-            with open(path, encoding="utf-8") as handle:
-                value = json.load(handle).get("autoCompactWindow")
-            if isinstance(value, int) and value > 0:
-                return value
-        except Exception:
-            continue
-    return 0
-
+project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+sys.path.insert(0, os.path.join(project_dir, ".claude", "hooks"))
+try:
+    import sync_stamp  # type: ignore
+except Exception:
+    sys.exit(0)  # tak bisa menilai -> jangan pernah menahan
 
 if trigger != "manual":
-    # Blocking auto-compaction is only safe with headroom below it, and the
-    # only evidence of headroom available here is a window set well under the
-    # smallest model window this repo runs against (1M). Above the ceiling —
-    # or unset — auto is left alone, exactly as before.
-    HEADROOM_CEILING = 800_000
-    window = reduced_window()
-    if window == 0 or window > HEADROOM_CEILING:
+    try:
+        window = sync_stamp.configured_window(project_dir)
+        if not sync_stamp.auto_hold_armed(window):
+            sys.exit(0)
+        session = str(data.get("session_id") or "")
+        started = sync_stamp.round_started_at(session)
+        if sync_stamp.synced_this_round(session, started):
+            sys.exit(0)
+        tokens = sync_stamp.context_tokens(data.get("transcript_path") or "", since=started)
+        due_from = window - sync_stamp.DUE_MARGIN_TOKENS
+        if not (due_from <= tokens < sync_stamp.hold_limit(window)):
+            sys.exit(0)
+    except SystemExit:
+        raise
+    except Exception:
         sys.exit(0)
+    # Hanya sampai ke log debug; yang menegur model adalah context-sync-warn.sh.
+    sys.stderr.write(
+        f"Auto-compaction held at {tokens} tokens: this session has not run "
+        "`sync-records` since the round began. Released by the pass, or at "
+        f"{sync_stamp.hold_limit(window)} tokens.\n"
+    )
+    sys.exit(2)
 
+# ── Manual `/compact` ──────────────────────────────────────────────────────
 # Explicit opt-out: `/compact skip-sync`.
 instructions = (data.get("custom_instructions") or "").lower()
 if "skip-sync" in instructions or "nosync" in instructions:
@@ -111,12 +113,7 @@ if "skip-sync" in instructions or "nosync" in instructions:
 # Sudah level? Lewatkan. `sync-stamp.py` yang memutuskan artinya, dan modul yang
 # sama dipakai skill `sync-records` untuk menuliskannya — satu definisi, bukan
 # dua yang harus sepakat selamanya.
-project_dir = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
-sys.path.insert(0, os.path.join(project_dir, ".claude", "hooks"))
-
 try:
-    import sync_stamp  # type: ignore
-
     if sync_stamp.is_level(project_dir):
         sys.exit(0)
     sync_stamp.write(project_dir)   # percobaan ulang berikutnya lolos

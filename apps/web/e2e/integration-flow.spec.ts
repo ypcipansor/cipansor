@@ -1,5 +1,11 @@
 import { test, expect } from "@playwright/test";
-import { apiLogin, apiRequest, injectSession, loginAs, SEED_USERS } from "./helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  loginAs,
+  SEED_USERS,
+} from "./helpers/auth-api";
 
 test.describe("Integrated School Management Flow", () => {
   test("Unified Raport - Access and Display Data", async ({ page }) => {
@@ -13,19 +19,22 @@ test.describe("Integrated School Management Flow", () => {
       "GET",
       "/students?limit=20",
     );
-    expect(students.data?.length, "seed should provide students").toBeGreaterThan(0);
+    expect(
+      students.data?.length,
+      "seed should provide students",
+    ).toBeGreaterThan(0);
 
-    const years = await apiRequest<{ data: Array<{ id: string; isActive: boolean }> }>(
-      session,
-      "GET",
-      "/academic-years",
-    );
+    const years = await apiRequest<{
+      data: Array<{ id: string; isActive: boolean }>;
+    }>(session, "GET", "/academic-years");
     const year = years.data?.find((y) => y.isActive) ?? years.data?.[0];
     expect(year, "seed should provide an academic year").toBeTruthy();
 
     // Not every student is enrolled in the active year — find one the
     // aggregation endpoint can actually build a raport for.
-    type Raport = { data: { student: { name: string }; school: { name: string } } };
+    type Raport = {
+      data: { student: { name: string }; school: { name: string } };
+    };
     let student: { id: string } | undefined;
     let raport: Raport | undefined;
     for (const candidate of students.data) {
@@ -49,9 +58,13 @@ test.describe("Integrated School Management Flow", () => {
     );
 
     // The page renders exactly what the aggregation endpoint returned
-    await expect(page.getByText("Pratinjau Rapor Terpadu")).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText("Pratinjau Rapor Terpadu")).toBeVisible({
+      timeout: 20000,
+    });
     await expect(page.getByText(raport.data.school.name).first()).toBeVisible();
-    await expect(page.getByText(raport.data.student.name).first()).toBeVisible();
+    await expect(
+      page.getByText(raport.data.student.name).first(),
+    ).toBeVisible();
   });
 
   test("Talent Management - Display Talent Matrix", async ({ page }) => {

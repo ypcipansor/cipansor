@@ -20,13 +20,17 @@ const desa = {
 describe('updateCompliance', () => {
   beforeEach(() => {
     vi.mocked(prisma.student.findFirst).mockReset();
-    vi.mocked(prisma.student.update).mockReset().mockResolvedValue({ id: 's1' } as never);
+    vi.mocked(prisma.student.update)
+      .mockReset()
+      .mockResolvedValue({ id: 's1' } as never);
     vi.mocked(prisma.village.findUnique).mockReset();
   });
 
   it('404 bila santri tidak ada (atau sudah dihapus)', async () => {
     vi.mocked(prisma.student.findFirst).mockResolvedValue(null);
-    await expect(updateCompliance('s1', { rt: '001' }, superAdmin)).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(updateCompliance('s1', { rt: '001' }, superAdmin)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
     expect(vi.mocked(prisma.student.findFirst).mock.calls[0][0]).toMatchObject({
       where: { id: 's1', deletedAt: null },
     });
@@ -48,7 +52,9 @@ describe('updateCompliance', () => {
     vi.mocked(prisma.student.findFirst)
       .mockResolvedValueOnce(santri as never)
       .mockResolvedValueOnce({ id: 's2' } as never);
-    await expect(updateCompliance('s1', { nik: '3206071204120001' }, superAdmin)).rejects.toMatchObject({
+    await expect(
+      updateCompliance('s1', { nik: '3206071204120001' }, superAdmin)
+    ).rejects.toMatchObject({
       code: 'CONFLICT',
       message: expect.stringMatching(/^NIK ini sudah tercatat pada santri lain/),
     });
@@ -83,16 +89,20 @@ describe('updateCompliance', () => {
   it('400 bila desanya tidak dikenal — bukan 500 pelanggaran foreign key', async () => {
     vi.mocked(prisma.student.findFirst).mockResolvedValueOnce(santri as never);
     vi.mocked(prisma.village.findUnique).mockResolvedValue(null);
-    await expect(updateCompliance('s1', { villageId: 'ngawur' }, superAdmin)).rejects.toMatchObject({
-      code: 'BAD_REQUEST',
-    });
+    await expect(updateCompliance('s1', { villageId: 'ngawur' }, superAdmin)).rejects.toMatchObject(
+      {
+        code: 'BAD_REQUEST',
+      }
+    );
   });
 });
 
 describe('bulkUpdate', () => {
   beforeEach(() => {
     vi.mocked(prisma.student.findFirst).mockReset();
-    vi.mocked(prisma.student.update).mockReset().mockResolvedValue({ id: 'x' } as never);
+    vi.mocked(prisma.student.update)
+      .mockReset()
+      .mockResolvedValue({ id: 'x' } as never);
   });
 
   it('memakai jalur yang sama dengan PUT: baris dengan NISN kembar gagal sendirian', async () => {
@@ -117,8 +127,14 @@ describe('bulkUpdate', () => {
   });
 
   it('galat basis data tidak diteruskan mentah ke klien', async () => {
-    vi.mocked(prisma.student.findFirst).mockResolvedValueOnce({ id: 's1', nisn: null, nik: null } as never);
-    vi.mocked(prisma.student.update).mockRejectedValue(new Error('Invalid `prisma.student.update()` invocation …'));
+    vi.mocked(prisma.student.findFirst).mockResolvedValueOnce({
+      id: 's1',
+      nisn: null,
+      nik: null,
+    } as never);
+    vi.mocked(prisma.student.update).mockRejectedValue(
+      new Error('Invalid `prisma.student.update()` invocation …')
+    );
     const hasil = await bulkUpdate([{ studentId: 's1', rt: '001' }], superAdmin);
     expect(hasil.failed).toEqual([{ studentId: 's1', error: 'Gagal menyimpan baris ini' }]);
   });

@@ -34,10 +34,7 @@ describe('seesAllUnits', () => {
       // No unitId at all — this is exactly the shape that used to resolve to
       // 'none'. The legacy role is deliberately the misleading 'UNIT_ADMIN'
       // that deriveLegacyRole() produces, to prove the decision ignores it.
-      expect(
-        seesAllUnits({ roleCode, role: 'UNIT_ADMIN' }),
-        roleCode
-      ).toBe(true);
+      expect(seesAllUnits({ roleCode, role: 'UNIT_ADMIN' }), roleCode).toBe(true);
     }
   });
 
@@ -55,10 +52,7 @@ describe('seesAllUnits', () => {
     ]) {
       // Seeded into SMP IT but serve every unit; breadth is decided from the
       // role, so the caller's unitId never narrows them.
-      expect(
-        seesAllUnits({ roleCode, role: 'UNIT_ADMIN' }),
-        roleCode
-      ).toBe(true);
+      expect(seesAllUnits({ roleCode, role: 'UNIT_ADMIN' }), roleCode).toBe(true);
     }
   });
 
@@ -66,9 +60,7 @@ describe('seesAllUnits', () => {
     // Some callers predate roleCode and pass `role` alone; SUPER_ADMIN must
     // still be recognised so a global admin is never scoped to one unit.
     expect(seesAllUnits({ role: RoleCode.SUPER_ADMIN })).toBe(true);
-    expect(seesAllUnits({ roleCode: RoleCode.SUPER_ADMIN, role: 'SUPER_ADMIN' })).toBe(
-      true
-    );
+    expect(seesAllUnits({ roleCode: RoleCode.SUPER_ADMIN, role: 'SUPER_ADMIN' })).toBe(true);
   });
 
   it('is false for a genuine single-unit administrator', () => {
@@ -76,17 +68,13 @@ describe('seesAllUnits', () => {
     // 'UNIT_ADMIN' — the same string the yayasan board maps to — so this is the
     // case that proves the decision is made on roleCode, not on the legacy
     // role. If this ever returned true the fix would have widened everyone.
-    expect(
-      seesAllUnits({ roleCode: RoleCode.SMPIT_ADMIN, role: 'UNIT_ADMIN' })
-    ).toBe(false);
+    expect(seesAllUnits({ roleCode: RoleCode.SMPIT_ADMIN, role: 'UNIT_ADMIN' })).toBe(false);
   });
 
   it('is false for a classroom teacher', () => {
     // A unit teacher, not to be confused with USTADZ, which is a
     // pesantren-wide teaching role and is deliberately cross-unit.
-    expect(
-      seesAllUnits({ roleCode: RoleCode.SMPIT_GURU, role: 'TEACHER' })
-    ).toBe(false);
+    expect(seesAllUnits({ roleCode: RoleCode.SMPIT_GURU, role: 'TEACHER' })).toBe(false);
   });
 
   it('is false when neither roleCode nor a SUPER_ADMIN legacy role is present', () => {

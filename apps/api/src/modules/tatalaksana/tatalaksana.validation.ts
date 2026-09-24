@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const createSOPSchema = z.object({
   body: z.object({
@@ -26,7 +26,7 @@ export const updateSOPSchema = z.object({
     responsibility: z.string().optional(),
     effectiveDate: z.string().datetime().optional(),
     reviewDate: z.string().datetime().optional(),
-    status: z.enum(["DRAFT", "REVIEW", "APPROVED", "ACTIVE", "DEPRECATED", "ARCHIVED"]).optional(),
+    status: z.enum(['DRAFT', 'REVIEW', 'APPROVED', 'ACTIVE', 'DEPRECATED', 'ARCHIVED']).optional(),
   }),
 });
 
@@ -41,7 +41,7 @@ export const createRevisionSchema = z.object({
 export const sopQuerySchema = z.object({
   query: z.object({
     unitId: z.string().uuid().optional(),
-    status: z.enum(["DRAFT", "REVIEW", "APPROVED", "ACTIVE", "DEPRECATED", "ARCHIVED"]).optional(),
+    status: z.enum(['DRAFT', 'REVIEW', 'APPROVED', 'ACTIVE', 'DEPRECATED', 'ARCHIVED']).optional(),
     category: z.string().optional(),
     search: z.string().optional(),
   }),

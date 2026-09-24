@@ -92,9 +92,7 @@ export const MIN_PASSPHRASE_LENGTH = 12;
 export function assertPassphraseStrength(passphrase: string): void {
   const p = passphrase.normalize('NFKC');
   if (p.length < MIN_PASSPHRASE_LENGTH) {
-    throw new EsignError(
-      `Passphrase tanda tangan minimal ${MIN_PASSPHRASE_LENGTH} karakter.`
-    );
+    throw new EsignError(`Passphrase tanda tangan minimal ${MIN_PASSPHRASE_LENGTH} karakter.`);
   }
   if (/^\s|\s$/.test(passphrase)) {
     throw new EsignError('Passphrase tidak boleh diawali atau diakhiri spasi.');
@@ -134,10 +132,7 @@ export function createKeyMaterial(passphrase: string): EncryptedKeyMaterial {
  * Kegagalan autentikasi AES-GCM adalah satu-satunya penanda passphrase salah —
  * tidak ada perbandingan hash terpisah yang bisa dijadikan oracle.
  */
-function unsealPrivateKey(
-  material: EncryptedKeyMaterial,
-  passphrase: string
-): crypto.KeyObject {
+function unsealPrivateKey(material: EncryptedKeyMaterial, passphrase: string): crypto.KeyObject {
   const salt = Buffer.from(material.kdfSalt, 'base64');
   const iv = Buffer.from(material.iv, 'base64');
   const authTag = Buffer.from(material.authTag, 'base64');

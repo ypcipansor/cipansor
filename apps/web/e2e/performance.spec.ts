@@ -7,29 +7,45 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
     await setupAuthenticatedPage(page, "SUPER_ADMIN");
   });
 
-  test("main performance hub renders key navigation sections", async ({ page }) => {
+  test("main performance hub renders key navigation sections", async ({
+    page,
+  }) => {
     await page.goto("/kinerja");
     await expect(page).toHaveURL(/\/kinerja/);
     await expect(page.locator("h1")).toContainText(/Manajemen Kinerja/i);
-    await expect(page.getByRole("button", { name: /Kelola PK Saya & Bawahan/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Evaluasi Periodik Bulanan/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Kelola PK Saya & Bawahan/i }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /Evaluasi Periodik Bulanan/i }),
+    ).toBeVisible();
   });
 
-  test("performance agreement page displays PK agreement table and actions", async ({ page }) => {
+  test("performance agreement page displays PK agreement table and actions", async ({
+    page,
+  }) => {
     await page.goto("/kinerja/pk");
     await expect(page).toHaveURL(/\/kinerja\/pk/);
     await expect(page.locator("h1")).toContainText(/Perjanjian Kinerja/i);
-    await expect(page.getByRole("button", { name: "Buat Perjanjian Kinerja" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Buat Perjanjian Kinerja" }),
+    ).toBeVisible();
   });
 
-  test("periodic evaluation hub loads monthly evaluations", async ({ page }) => {
+  test("periodic evaluation hub loads monthly evaluations", async ({
+    page,
+  }) => {
     await page.goto("/kinerja/evaluasi");
     await expect(page).toHaveURL(/\/kinerja\/evaluasi/);
     await expect(page.locator("h1")).toContainText(/Evaluasi.*Periodik/i);
-    await expect(page.getByRole("button", { name: "Buat Evaluasi Bulanan" })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Buat Evaluasi Bulanan" }),
+    ).toBeVisible();
   });
 
-  test("analytics page displays executive overview and consolidated report", async ({ page }) => {
+  test("analytics page displays executive overview and consolidated report", async ({
+    page,
+  }) => {
     await page.goto("/kinerja/analytics");
     await expect(page).toHaveURL(/\/kinerja\/analytics/);
     await expect(page.locator("h1")).toContainText(/Analitik & Peta Strategi/i);
@@ -37,11 +53,14 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
     await expect(page.locator("text=Rata-Rata Perilaku SAFTI")).toBeVisible();
   });
 
-
-  test("interactive PK creation modal opens and validates form inputs", async ({ page }) => {
+  test("interactive PK creation modal opens and validates form inputs", async ({
+    page,
+  }) => {
     await page.goto("/kinerja/pk");
     await page.click("button:has-text('Buat Perjanjian Kinerja')");
-    await expect(page.locator("text=Buat Perjanjian Kinerja Baru")).toBeVisible();
+    await expect(
+      page.locator("text=Buat Perjanjian Kinerja Baru"),
+    ).toBeVisible();
 
     // Fill invalid inverted period dates
     await page.fill("input[type='date'] >> nth=0", "2026-12-31");
@@ -58,7 +77,9 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
     expect(dialogMessage).toContain("tidak boleh lebih awal");
   });
 
-  test("end-to-end flow: full PK lifecycle, indicator, evaluation, SAFTI scoring, and analytics", async ({ page }) => {
+  test("end-to-end flow: full PK lifecycle, indicator, evaluation, SAFTI scoring, and analytics", async ({
+    page,
+  }) => {
     const runTag = `E2E_PK_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const testNote = `Perjanjian Kinerja Tahun 2026 ${runTag}`;
 
@@ -66,7 +87,9 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
       // 1. PK Creation Flow - Fill and Submit
       await page.goto("/kinerja/pk");
       await page.click("button:has-text('Buat Perjanjian Kinerja')");
-      await expect(page.locator("text=Buat Perjanjian Kinerja Baru")).toBeVisible();
+      await expect(
+        page.locator("text=Buat Perjanjian Kinerja Baru"),
+      ).toBeVisible();
 
       // Fill valid period dates and notes
       await page.fill("input[type='date'] >> nth=0", "2026-01-01");
@@ -75,8 +98,12 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
 
       // Submit form
       await page.click("button:has-text('Buat PK')");
-      await expect(page.locator("text=Buat Perjanjian Kinerja Baru")).not.toBeVisible();
-      await expect(page.locator(`text=${testNote}`).or(page.locator("text=PK Saya"))).toBeVisible();
+      await expect(
+        page.locator("text=Buat Perjanjian Kinerja Baru"),
+      ).not.toBeVisible();
+      await expect(
+        page.locator(`text=${testNote}`).or(page.locator("text=PK Saya")),
+      ).toBeVisible();
 
       // 1b. Indicator dialog: "Otomatis" aggregation must be a valid, selectable
       // option. Regression (FLAG D): an empty string "" is reserved by Radix
@@ -85,18 +112,25 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
       // a select-item warning and the option cannot be picked cleanly.
       // Navigate via API since the list table does not link the notes text.
       const pkSession = await apiLogin(SEED_USERS.superAdmin);
-      const pkList = await apiRequest<{ data: Array<{ id: string; notes?: string }> }>(
-        pkSession,
-        "GET",
-        "/performance-agreements"
+      const pkList = await apiRequest<{
+        data: Array<{ id: string; notes?: string }>;
+      }>(pkSession, "GET", "/performance-agreements");
+      const createdPk = (pkList?.data || []).find((p) =>
+        p.notes?.includes(runTag),
       );
-      const createdPk = (pkList?.data || []).find((p) => p.notes?.includes(runTag));
       expect(createdPk, "created PK should exist").toBeTruthy();
       await page.goto(`/kinerja/pk/${createdPk!.id}`);
-      await expect(page.locator("button:has-text('Tambah Indikator')")).toBeVisible();
+      await expect(
+        page.locator("button:has-text('Tambah Indikator')"),
+      ).toBeVisible();
       await page.click("button:has-text('Tambah Indikator')");
-      await expect(page.locator("text=Tambah Indikator Kinerja Baru")).toBeVisible();
-      await page.fill("input[placeholder*='Ketercapaian Target']", `Target ${runTag}`);
+      await expect(
+        page.locator("text=Tambah Indikator Kinerja Baru"),
+      ).toBeVisible();
+      await page.fill(
+        "input[placeholder*='Ketercapaian Target']",
+        `Target ${runTag}`,
+      );
       // Buka Select Metode Agregasi dan pilih "Otomatis (sesuai satuan)".
       // Radix renders the Select trigger as a combobox (button[role="combobox"]),
       // not a plain button — see the repo convention in other e2e specs.
@@ -104,38 +138,54 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
         .locator('button[role="combobox"]')
         .filter({ hasText: /Otomatis \(sesuai satuan\)/ });
       await aggregationTrigger.click({ force: true });
-      await page.getByRole("option", { name: /Otomatis \(sesuai satuan\)/ }).click({ force: true });
+      await page
+        .getByRole("option", { name: /Otomatis \(sesuai satuan\)/ })
+        .click({ force: true });
       await page.click("button:has-text('Simpan Indikator')");
-      await expect(page.locator("text=Tambah Indikator Kinerja Baru")).not.toBeVisible();
+      await expect(
+        page.locator("text=Tambah Indikator Kinerja Baru"),
+      ).not.toBeVisible();
 
       // 2. Periodic Evaluation Hub & Creation Dialog Flow
       await page.goto("/kinerja/evaluasi");
       await expect(page.locator("h1")).toContainText(/Evaluasi.*Periodik/i);
-      await expect(page.getByRole("button", { name: "Buat Evaluasi Bulanan" })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Buat Evaluasi Bulanan" }),
+      ).toBeVisible();
 
       // Open evaluation dialog
       await page.click("button:has-text('Buat Evaluasi Bulanan')");
-      await expect(page.locator("text=Buat Evaluasi Bulanan Baru")).toBeVisible();
+      await expect(
+        page.locator("text=Buat Evaluasi Bulanan Baru"),
+      ).toBeVisible();
       await page.click("button:has-text('Batal')");
 
       // 3. Analytics Unit Drilldown & Report Overview Check
       await page.goto("/kinerja/analytics");
-      await expect(page.locator("h1")).toContainText(/Analitik & Peta Strategi/i);
-      await expect(page.locator("text=Rincian Capaian per Unit Kerja")).toBeVisible();
-      await expect(page.locator("text=Ringkasan Laporan Konsolidasi Kinerja Yayasan")).toBeVisible();
+      await expect(page.locator("h1")).toContainText(
+        /Analitik & Peta Strategi/i,
+      );
+      await expect(
+        page.locator("text=Rincian Capaian per Unit Kerja"),
+      ).toBeVisible();
+      await expect(
+        page.locator("text=Ringkasan Laporan Konsolidasi Kinerja Yayasan"),
+      ).toBeVisible();
     } finally {
       // Cleanup created PK record via API to prevent DB data pollution
       try {
         const session = await apiLogin(SEED_USERS.superAdmin);
-        const res = await apiRequest<{ data: Array<{ id: string; notes?: string }> }>(
-          session,
-          "GET",
-          "/performance-agreements"
-        );
+        const res = await apiRequest<{
+          data: Array<{ id: string; notes?: string }>;
+        }>(session, "GET", "/performance-agreements");
         const createdPks = res?.data || [];
         for (const pk of createdPks) {
           if (pk.notes?.includes(runTag)) {
-            await apiRequest(session, "DELETE", `/performance-agreements/${pk.id}`).catch(() => {});
+            await apiRequest(
+              session,
+              "DELETE",
+              `/performance-agreements/${pk.id}`,
+            ).catch(() => {});
           }
         }
       } catch {
@@ -144,7 +194,9 @@ test.describe("Integrated Performance Management (/kinerja) E2E Flows", () => {
     }
   });
 
-  test("RBAC enforcement: non-leadership role receives restricted or redirected access for analytics", async ({ page }) => {
+  test("RBAC enforcement: non-leadership role receives restricted or redirected access for analytics", async ({
+    page,
+  }) => {
     await setupAuthenticatedPage(page, "SDIT_SISWA");
     await page.goto("/kinerja/analytics");
     // Non-leadership student role should be redirected to their student dashboard (/student)

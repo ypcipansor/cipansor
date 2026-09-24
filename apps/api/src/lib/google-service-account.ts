@@ -57,7 +57,7 @@ function base64url(input: Buffer | string): string {
  */
 export function buildAssertion(
   credentials: ServiceAccountCredentials,
-  nowSeconds: number = Math.floor(Date.now() / 1000),
+  nowSeconds: number = Math.floor(Date.now() / 1000)
 ): string {
   const header = { alg: 'RS256', typ: 'JWT' };
   const claims = {

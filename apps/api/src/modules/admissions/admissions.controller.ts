@@ -138,13 +138,17 @@ export const enrollRegistrant = asyncHandler(async (req: Request, res: Response)
   });
   const user = requireUser(req);
   const data = schema.parse(req.body);
-  const result = await service.enrollRegistrant(req.params.id, {
-    nis: data.nis,
-    nisn: data.nisn ?? undefined,
-    classId: data.classId,
-    roomId: data.roomId,
-    processedById: user.id,
-  }, user);
+  const result = await service.enrollRegistrant(
+    req.params.id,
+    {
+      nis: data.nis,
+      nisn: data.nisn ?? undefined,
+      classId: data.classId,
+      roomId: data.roomId,
+      processedById: user.id,
+    },
+    user
+  );
   res.json(ApiResponse.success(result, 'Registrant enrolled successfully'));
 });
 

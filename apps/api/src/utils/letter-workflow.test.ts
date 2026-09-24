@@ -62,43 +62,36 @@ describe('tiered verification', () => {
   // (letterId, reviewerId) and acted on whatever it found, so the signer could
   // sign a draft the sekretaris had never opened. `order` was decoration.
   it('refuses to let the signer sign ahead of the rungs below', () => {
-    expect(() =>
-      assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'ketua')
-    ).toThrow(WorkflowError);
+    expect(() => assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'ketua')).toThrow(
+      WorkflowError
+    );
   });
 
   it('names who is being waited for, rather than only refusing', () => {
-    expect(() =>
-      assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'wakil')
-    ).toThrow(/urutan 1/);
+    expect(() => assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'wakil')).toThrow(
+      /urutan 1/
+    );
   });
 
   it('lets the rung whose turn it is act', () => {
+    expect(assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'sekretaris').reviewerId).toBe(
+      'sekretaris'
+    );
     expect(
-      assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'sekretaris').reviewerId
-    ).toBe('sekretaris');
-    expect(
-      assertMayReview(
-        LetterStatus.PENDING_REVIEW,
-        ladder({ sekretaris: 'APPROVED' }),
-        'wakil'
-      ).reviewerId
+      assertMayReview(LetterStatus.PENDING_REVIEW, ladder({ sekretaris: 'APPROVED' }), 'wakil')
+        .reviewerId
     ).toBe('wakil');
   });
 
   it('refuses someone who is not a reviewer at all', () => {
-    expect(() =>
-      assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'kepala-sekolah')
-    ).toThrow(/tidak terdaftar/);
+    expect(() => assertMayReview(LetterStatus.PENDING_REVIEW, ladder(), 'kepala-sekolah')).toThrow(
+      /tidak terdaftar/
+    );
   });
 
   it('refuses a second approval from the same person', () => {
     expect(() =>
-      assertMayReview(
-        LetterStatus.PENDING_REVIEW,
-        ladder({ sekretaris: 'APPROVED' }),
-        'sekretaris'
-      )
+      assertMayReview(LetterStatus.PENDING_REVIEW, ladder({ sekretaris: 'APPROVED' }), 'sekretaris')
     ).toThrow(/sudah menyetujui/);
   });
 
@@ -111,17 +104,13 @@ describe('tiered verification', () => {
     LetterStatus.DRAFT,
     LetterStatus.REVISION_NEEDED,
   ])('refuses to review a letter that is %s', (status) => {
-    expect(() => assertMayReview(status, ladder(), 'sekretaris')).toThrow(
-      WorkflowError
-    );
+    expect(() => assertMayReview(status, ladder(), 'sekretaris')).toThrow(WorkflowError);
   });
 });
 
 describe('where an approval leaves the letter', () => {
   it('waits for the next rung when one is below the signer', () => {
-    expect(statusAfterApproval(ladder(), 'sekretaris')).toBe(
-      LetterStatus.PENDING_REVIEW
-    );
+    expect(statusAfterApproval(ladder(), 'sekretaris')).toBe(LetterStatus.PENDING_REVIEW);
   });
 
   it('says READY_TO_SIGN once only the signer is left', () => {
@@ -132,10 +121,7 @@ describe('where an approval leaves the letter', () => {
 
   it("signs the letter on the signer's approval", () => {
     expect(
-      statusAfterApproval(
-        ladder({ sekretaris: 'APPROVED', wakil: 'APPROVED' }),
-        'ketua'
-      )
+      statusAfterApproval(ladder({ sekretaris: 'APPROVED', wakil: 'APPROVED' }), 'ketua')
     ).toBe(LetterStatus.SIGNED);
   });
 
@@ -154,13 +140,13 @@ describe('returning a draft and sending it back up', () => {
     ).not.toThrow();
 
     // A reviewer who could resubmit could clear their own rejection.
-    expect(() =>
-      assertMayResubmit(LetterStatus.REVISION_NEEDED, 'penulis', 'sekretaris')
-    ).toThrow(/pembuat surat/);
+    expect(() => assertMayResubmit(LetterStatus.REVISION_NEEDED, 'penulis', 'sekretaris')).toThrow(
+      /pembuat surat/
+    );
 
-    expect(() =>
-      assertMayResubmit(LetterStatus.PENDING_REVIEW, 'penulis', 'penulis')
-    ).toThrow(/dikembalikan untuk revisi/);
+    expect(() => assertMayResubmit(LetterStatus.PENDING_REVIEW, 'penulis', 'penulis')).toThrow(
+      /dikembalikan untuk revisi/
+    );
   });
 
   // The reason approvals are cleared rather than kept below the rejector: a
@@ -203,9 +189,9 @@ describe('pencatatan pengiriman', () => {
   });
 
   it('menolak surat masuk', () => {
-    expect(() =>
-      assertMayDispatch(LetterDirection.INCOMING, LetterStatus.DISPOSED, false)
-    ).toThrow(/diterima, bukan dikirim/);
+    expect(() => assertMayDispatch(LetterDirection.INCOMING, LetterStatus.DISPOSED, false)).toThrow(
+      /diterima, bukan dikirim/
+    );
   });
 
   it.each([
@@ -220,9 +206,9 @@ describe('pencatatan pengiriman', () => {
   });
 
   it('menolak surat yang sudah diarsipkan', () => {
-    expect(() =>
-      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.ARCHIVED, false)
-    ).toThrow(/sudah diarsipkan/);
+    expect(() => assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.ARCHIVED, false)).toThrow(
+      /sudah diarsipkan/
+    );
   });
 
   /**
@@ -231,9 +217,9 @@ describe('pencatatan pengiriman', () => {
    * baru, dan yang ini ditolak.
    */
   it('menolak naskah yang tanda tangannya sudah dicabut', () => {
-    expect(() =>
-      assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.SIGNED, true)
-    ).toThrow(/sudah dicabut/);
+    expect(() => assertMayDispatch(LetterDirection.OUTGOING, LetterStatus.SIGNED, true)).toThrow(
+      /sudah dicabut/
+    );
   });
 });
 

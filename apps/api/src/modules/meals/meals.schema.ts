@@ -38,7 +38,9 @@ export const createMealScheduleSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-export const updateMealScheduleSchema = partialUpdateSchema(createMealScheduleSchema).omit({ unitId: true });
+export const updateMealScheduleSchema = partialUpdateSchema(createMealScheduleSchema).omit({
+  unitId: true,
+});
 
 // ======================
 // MENU SCHEMAS
@@ -70,7 +72,9 @@ export const createMenuSchema = z.object({
   notes: z.string().max(500).optional(),
 });
 
-export const updateMenuSchema = partialUpdateSchema(createMenuSchema).omit({ mealScheduleId: true });
+export const updateMenuSchema = partialUpdateSchema(createMenuSchema).omit({
+  mealScheduleId: true,
+});
 
 export const bulkCreateMenuSchema = z.object({
   menus: z.array(createMenuSchema).min(1).max(50),

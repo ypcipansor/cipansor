@@ -64,9 +64,7 @@ function mapApiNode(node: ApiSanadTreeNode): SanadNode {
     name: node.name,
     title: node.role === "TEACHER" ? "Muhafidz" : "Hafizh",
     year: node.certifiedYear ? `Ijazah ${node.certifiedYear}` : "—",
-    specialty: node.juzCount
-      ? `${node.juzCount} Juz bi Sanad`
-      : "Guru Sanad",
+    specialty: node.juzCount ? `${node.juzCount} Juz bi Sanad` : "Guru Sanad",
     children: node.children.map(mapApiNode),
   };
 }

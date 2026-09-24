@@ -46,7 +46,8 @@ export function Header({ onMenuClick }: HeaderProps) {
           <div className="text-lg font-semibold">
             {/* Foundation-level accounts have no unit, so the fallback is what
                 the yayasan board actually sees every day. */}
-            {user?.unit?.name || t("common.appName", "Sistem Informasi Cipansor")}
+            {user?.unit?.name ||
+              t("common.appName", "Sistem Informasi Cipansor")}
           </div>
         </div>
       </div>

@@ -4,7 +4,12 @@ import { homeroomService } from './homeroom.service';
 export class HomeroomController {
   async getMyClasses(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const classes = await homeroomService.getMyClasses(user);
       res.json({ data: classes });
     } catch (error) {
@@ -15,7 +20,12 @@ export class HomeroomController {
   async getPerformanceOverview(req: Request, res: Response, next: NextFunction) {
     try {
       const { unitId } = req.query;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const overview = await homeroomService.getPerformanceOverview(
         user,
         unitId as string | undefined
@@ -29,7 +39,12 @@ export class HomeroomController {
   async getClassDashboard(req: Request, res: Response, next: NextFunction) {
     try {
       const { classId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const dashboard = await homeroomService.getClassDashboard(classId, user);
       res.json({ data: dashboard });
     } catch (error) {
@@ -40,7 +55,12 @@ export class HomeroomController {
   async getHomeroomStudents(req: Request, res: Response, next: NextFunction) {
     try {
       const { classId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const students = await homeroomService.getHomeroomStudents(classId, user);
       res.json({ data: students });
     } catch (error) {
@@ -53,7 +73,12 @@ export class HomeroomController {
       const { classId } = req.params;
       const startDate = req.query.startDate as string;
       const endDate = req.query.endDate as string;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const summary = await homeroomService.getAttendanceSummary(classId, startDate, endDate, user);
       res.json({ data: summary });
     } catch (error) {
@@ -64,7 +89,12 @@ export class HomeroomController {
   async getAcademicMonitoring(req: Request, res: Response, next: NextFunction) {
     try {
       const { classId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const monitoring = await homeroomService.getAcademicMonitoring(classId, user);
       res.json({ data: monitoring });
     } catch (error) {
@@ -75,7 +105,12 @@ export class HomeroomController {
   async getStudentDetail(req: Request, res: Response, next: NextFunction) {
     try {
       const { studentId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const student = await homeroomService.getStudentDetail(studentId, user);
       res.json({ data: student });
     } catch (error) {
@@ -86,7 +121,12 @@ export class HomeroomController {
   async getStudentNotes(req: Request, res: Response, next: NextFunction) {
     try {
       const { studentId } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const notes = await homeroomService.getStudentNotes(studentId, user);
       res.json({ data: notes });
     } catch (error) {
@@ -96,7 +136,12 @@ export class HomeroomController {
 
   async createStudentNote(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const note = await homeroomService.createStudentNote(req.body, user);
       res.status(201).json({ data: note });
     } catch (error) {
@@ -108,7 +153,12 @@ export class HomeroomController {
     try {
       const { noteId } = req.params;
       const noteType = req.body.noteType || 'violation';
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const note = await homeroomService.updateStudentNote(noteId, req.body, noteType, user);
       res.json({ data: note });
     } catch (error) {
@@ -120,7 +170,12 @@ export class HomeroomController {
     try {
       const { noteId } = req.params;
       const noteType = (req.query.noteType as 'violation' | 'reward') || 'violation';
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       await homeroomService.deleteStudentNote(noteId, noteType, user);
       res.json({ success: true, message: 'Note deleted successfully' });
     } catch (error) {
@@ -131,7 +186,12 @@ export class HomeroomController {
   async getBehaviorRecords(req: Request, res: Response, next: NextFunction) {
     try {
       const classId = req.query.classId as string;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const records = await homeroomService.getBehaviorRecords(classId, user);
       res.json({ data: records });
     } catch (error) {
@@ -141,7 +201,12 @@ export class HomeroomController {
 
   async recordBehavior(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const record = await homeroomService.recordBehavior(req.body, user);
       res.status(201).json({ data: record });
     } catch (error) {

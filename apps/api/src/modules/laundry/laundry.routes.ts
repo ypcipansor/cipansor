@@ -24,8 +24,18 @@ const ADMIN_ROLES = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN] as const;
 // ==================== PRICING ====================
 router.get('/pricing', controller.listPricing);
 router.get('/pricing/:id', controller.getPricing);
-router.post('/pricing', authorize(...ADMIN_ROLES), validate(CreatePricingSchema), controller.createPricing);
-router.put('/pricing/:id', authorize(...ADMIN_ROLES), validate(UpdatePricingSchema), controller.updatePricing);
+router.post(
+  '/pricing',
+  authorize(...ADMIN_ROLES),
+  validate(CreatePricingSchema),
+  controller.createPricing
+);
+router.put(
+  '/pricing/:id',
+  authorize(...ADMIN_ROLES),
+  validate(UpdatePricingSchema),
+  controller.updatePricing
+);
 router.delete('/pricing/:id', authorize(...ADMIN_ROLES), controller.deletePricing);
 
 // ==================== TRANSACTION ====================
@@ -34,18 +44,23 @@ router.get('/transactions/stats', authorize(...OPERATE_ROLES), controller.getSta
 router.get('/transactions/ready', authorize(...OPERATE_ROLES), controller.getReadyForPickup);
 router.get('/transactions/student/:studentId', controller.getByStudent);
 router.get('/transactions/:id', controller.getTransaction);
-router.post('/transactions', authorize(...OPERATE_ROLES), validate(CreateTransactionSchema), controller.createTransaction);
+router.post(
+  '/transactions',
+  authorize(...OPERATE_ROLES),
+  validate(CreateTransactionSchema),
+  controller.createTransaction
+);
 router.patch(
   '/transactions/:id/status',
   authorize(...OPERATE_ROLES),
   validate(UpdateStatusSchema),
-  controller.updateStatus,
+  controller.updateStatus
 );
 router.post(
   '/transactions/:id/pay',
   authorize(...OPERATE_ROLES),
   validate(ProcessPaymentSchema),
-  controller.processPayment,
+  controller.processPayment
 );
 
 export default router;

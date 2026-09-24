@@ -54,7 +54,10 @@ export async function findInternalCandidates(
   // Nama saja terlalu longgar (banyak "Muhammad"); nama + tanggal lahir adalah
   // pasangan yang dipakai Dapodik untuk hal yang sama.
   if (nama && pendaftar.birthDate) {
-    atau.push({ user: { name: { equals: nama, mode: 'insensitive' } }, birthDate: pendaftar.birthDate });
+    atau.push({
+      user: { name: { equals: nama, mode: 'insensitive' } },
+      birthDate: pendaftar.birthDate,
+    });
   }
   if (telepon) atau.push({ parentPhone: telepon });
   if (nisn) atau.push({ nisn });
@@ -77,8 +80,12 @@ export async function findInternalCandidates(
 
   return kandidat.map((s) => {
     const cocokLewat: KandidatSantriLama['cocokLewat'] = [];
-    if (nama && pendaftar.birthDate && s.user?.name?.toLowerCase() === nama.toLowerCase() &&
-        s.birthDate?.getTime() === pendaftar.birthDate.getTime()) {
+    if (
+      nama &&
+      pendaftar.birthDate &&
+      s.user?.name?.toLowerCase() === nama.toLowerCase() &&
+      s.birthDate?.getTime() === pendaftar.birthDate.getTime()
+    ) {
       cocokLewat.push('nama+tanggal lahir');
     }
     if (telepon && s.parentPhone === telepon) cocokLewat.push('telepon wali');

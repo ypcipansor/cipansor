@@ -51,29 +51,79 @@ export async function isNikTaken(nik: string, excludeTeacherId: string): Promise
 /** Update a teacher's compliance fields (whitelisted; dates coerced from ISO strings). */
 export function updateCompliance(teacherId: string, body: Record<string, any>) {
   const {
-    nik, noKK, gender, birthPlace, birthDate, religion, nationality, address,
-    rt, rw, postalCode, provinceId, regencyId, districtId, villageId,
-    employmentStatus, pangkat, golongan, tmtPNS, tmtGuru, skNumber, skDate,
-    lastEducation, lastEducationYear, lastEducationMajor, lastEducationInstitution,
-    certificationStatus, certificationNumber, certificationYear, certificationSubject,
-    bankName, bankAccountNumber, bankAccountName, weeklyHours,
+    nik,
+    noKK,
+    gender,
+    birthPlace,
+    birthDate,
+    religion,
+    nationality,
+    address,
+    rt,
+    rw,
+    postalCode,
+    provinceId,
+    regencyId,
+    districtId,
+    villageId,
+    employmentStatus,
+    pangkat,
+    golongan,
+    tmtPNS,
+    tmtGuru,
+    skNumber,
+    skDate,
+    lastEducation,
+    lastEducationYear,
+    lastEducationMajor,
+    lastEducationInstitution,
+    certificationStatus,
+    certificationNumber,
+    certificationYear,
+    certificationSubject,
+    bankName,
+    bankAccountNumber,
+    bankAccountName,
+    weeklyHours,
   } = body;
 
   return prisma.teacher.update({
     where: { id: teacherId },
     data: {
-      nik, noKK, gender, birthPlace,
+      nik,
+      noKK,
+      gender,
+      birthPlace,
       birthDate: birthDate ? new Date(birthDate) : undefined,
-      religion, nationality, address, rt, rw, postalCode,
-      provinceId, regencyId, districtId, villageId,
-      employmentStatus, pangkat, golongan,
+      religion,
+      nationality,
+      address,
+      rt,
+      rw,
+      postalCode,
+      provinceId,
+      regencyId,
+      districtId,
+      villageId,
+      employmentStatus,
+      pangkat,
+      golongan,
       tmtPNS: tmtPNS ? new Date(tmtPNS) : undefined,
       tmtGuru: tmtGuru ? new Date(tmtGuru) : undefined,
       skNumber,
       skDate: skDate ? new Date(skDate) : undefined,
-      lastEducation, lastEducationYear, lastEducationMajor, lastEducationInstitution,
-      certificationStatus, certificationNumber, certificationYear, certificationSubject,
-      bankName, bankAccountNumber, bankAccountName, weeklyHours,
+      lastEducation,
+      lastEducationYear,
+      lastEducationMajor,
+      lastEducationInstitution,
+      certificationStatus,
+      certificationNumber,
+      certificationYear,
+      certificationSubject,
+      bankName,
+      bankAccountNumber,
+      bankAccountName,
+      weeklyHours,
     },
   });
 }
@@ -111,7 +161,9 @@ export async function getCompletenessReport(filters: CompletenessFilters) {
     };
   });
 
-  const filteredReport = filters.status ? report.filter((r) => r.status === filters.status) : report;
+  const filteredReport = filters.status
+    ? report.filter((r) => r.status === filters.status)
+    : report;
 
   const summary = {
     total: report.length,

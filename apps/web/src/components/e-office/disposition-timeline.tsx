@@ -7,7 +7,13 @@ import { LetterDispositionDetail } from "@cipansor/shared";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, CalendarClock, CheckCircle2, Clock, Loader2 } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  CheckCircle2,
+  Clock,
+  Loader2,
+} from "lucide-react";
 
 /**
  * The disposition trail: who forwarded this letter to whom, with what
@@ -31,7 +37,10 @@ interface DispositionTimelineProps {
   dispositions: LetterDispositionDetail[];
 }
 
-const STATUS: Record<string, { label: string; tone: string; Icon: typeof Clock }> = {
+const STATUS: Record<
+  string,
+  { label: string; tone: string; Icon: typeof Clock }
+> = {
   PENDING: {
     label: "Menunggu ditindaklanjuti",
     tone: "border-amber-600 bg-amber-50 text-amber-700",
@@ -54,7 +63,9 @@ function initial(name?: string | null): string {
   return name?.trim()?.[0]?.toUpperCase() ?? "?";
 }
 
-export function DispositionTimeline({ dispositions }: DispositionTimelineProps) {
+export function DispositionTimeline({
+  dispositions,
+}: DispositionTimelineProps) {
   /**
    * "Terlambat" is decided by the browser's clock, after mount.
    *
@@ -83,7 +94,9 @@ export function DispositionTimeline({ dispositions }: DispositionTimelineProps) 
         const senderName = disposition.sender?.name ?? "Tidak diketahui";
         const recipientName = disposition.recipient?.name ?? "Tidak diketahui";
         const status = STATUS[disposition.status] ?? STATUS.PENDING;
-        const deadline = disposition.deadline ? new Date(disposition.deadline) : null;
+        const deadline = disposition.deadline
+          ? new Date(disposition.deadline)
+          : null;
         // Only an outstanding disposition can be late; a finished one that ran
         // over is history, not a task.
         const overdue =
@@ -104,7 +117,9 @@ export function DispositionTimeline({ dispositions }: DispositionTimelineProps) 
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
                   <div className="flex items-center gap-2">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback>{initial(disposition.sender?.name)}</AvatarFallback>
+                      <AvatarFallback>
+                        {initial(disposition.sender?.name)}
+                      </AvatarFallback>
                     </Avatar>
                     <span className="font-medium text-sm">{senderName}</span>
                   </div>
@@ -113,7 +128,9 @@ export function DispositionTimeline({ dispositions }: DispositionTimelineProps) 
 
                   <div className="flex items-center gap-2">
                     <Avatar className="h-8 w-8">
-                      <AvatarFallback>{initial(disposition.recipient?.name)}</AvatarFallback>
+                      <AvatarFallback>
+                        {initial(disposition.recipient?.name)}
+                      </AvatarFallback>
                     </Avatar>
                     <span className="font-medium text-sm">{recipientName}</span>
                   </div>
@@ -121,16 +138,22 @@ export function DispositionTimeline({ dispositions }: DispositionTimelineProps) 
 
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" aria-hidden="true" />
-                  {safeFormat(new Date(disposition.createdAt), "dd MMM yyyy HH:mm", {
-                    locale: id,
-                  })}
+                  {safeFormat(
+                    new Date(disposition.createdAt),
+                    "dd MMM yyyy HH:mm",
+                    {
+                      locale: id,
+                    },
+                  )}
                 </div>
               </div>
             </CardHeader>
 
             <CardContent className="space-y-3">
               <div className="rounded-md bg-muted/50 p-3 text-sm">
-                <p className="mb-1 text-xs font-medium text-muted-foreground">Instruksi:</p>
+                <p className="mb-1 text-xs font-medium text-muted-foreground">
+                  Instruksi:
+                </p>
                 <p>{disposition.instruction}</p>
               </div>
 
@@ -158,9 +181,13 @@ export function DispositionTimeline({ dispositions }: DispositionTimelineProps) 
                 {disposition.completedAt && (
                   <span className="text-xs text-muted-foreground">
                     Diselesaikan{" "}
-                    {safeFormat(new Date(disposition.completedAt), "dd MMM yyyy HH:mm", {
-                      locale: id,
-                    })}
+                    {safeFormat(
+                      new Date(disposition.completedAt),
+                      "dd MMM yyyy HH:mm",
+                      {
+                        locale: id,
+                      },
+                    )}
                   </span>
                 )}
               </div>

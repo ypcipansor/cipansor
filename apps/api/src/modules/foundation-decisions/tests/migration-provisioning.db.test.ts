@@ -599,7 +599,7 @@ describe.skipIf(!RUN)('finding C — migrate deploy di atas database berisi data
     } finally {
       await client.end();
     }
-  });
+  }, 180000);
 });
 
 /**

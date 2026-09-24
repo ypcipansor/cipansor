@@ -2,12 +2,7 @@
 
 import { MainLayout } from "@/components/layout";
 import { useMyIbadahAchievements, getStreakEmoji } from "@/hooks/use-ibadah";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Trophy, Flame, Star } from "lucide-react";

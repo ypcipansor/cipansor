@@ -26,8 +26,7 @@ const API_ROOT = path.resolve(__dirname, '..', '..');
 const TSX = path.join(API_ROOT, 'node_modules', '.bin', 'tsx');
 
 /** The value cipansor.or.id was live with, from .env.example in a public repo. */
-const SHIPPED_PLACEHOLDER =
-  'your-super-secret-key-change-this-in-production-min-32-chars';
+const SHIPPED_PLACEHOLDER = 'your-super-secret-key-change-this-in-production-min-32-chars';
 
 const GOOD_SECRET = 'f'.repeat(96);
 
@@ -114,9 +113,7 @@ describe('production boot guard (real module load)', () => {
       STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
-    expect(result.ok, `config loaded when it should have refused:\n${result.output}`).toBe(
-      false
-    );
+    expect(result.ok, `config loaded when it should have refused:\n${result.output}`).toBe(false);
     expect(result.output).toContain('BOOT_REFUSED');
     expect(result.output).toMatch(/example value/);
   }, 90_000);

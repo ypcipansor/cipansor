@@ -45,11 +45,7 @@ router.post(
   CorrespondenceController.submitForReview
 );
 // The way back from REVISION_NEEDED, which previously had none.
-router.post(
-  '/letters/:id/resubmit',
-  validate(letterNoteSchema),
-  CorrespondenceController.resubmit
-);
+router.post('/letters/:id/resubmit', validate(letterNoteSchema), CorrespondenceController.resubmit);
 // Tembusan sebuah naskah yang belum ditandatangani, diganti utuh.
 router.put(
   '/letters/:id/tembusan',
@@ -63,11 +59,7 @@ router.post(
   CorrespondenceController.dispatch
 );
 // The end of the chain: the last official to hold the letter files it.
-router.post(
-  '/letters/:id/archive',
-  validate(letterNoteSchema),
-  CorrespondenceController.archive
-);
+router.post('/letters/:id/archive', validate(letterNoteSchema), CorrespondenceController.archive);
 router.post(
   '/dispositions',
   validate(createDispositionSchema),

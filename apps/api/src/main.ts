@@ -65,7 +65,9 @@ async function bootstrap() {
       if (config.scheduler.enabled) {
         initializeScheduler();
       } else {
-        logger.warn('⏸️  Scheduler disabled (SCHEDULER_ENABLED=false): no cron jobs run in this process');
+        logger.warn(
+          '⏸️  Scheduler disabled (SCHEDULER_ENABLED=false): no cron jobs run in this process'
+        );
       }
     }
 

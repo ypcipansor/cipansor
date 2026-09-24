@@ -3,7 +3,11 @@ import { UserRole } from '@prisma/client';
 import * as controller from './dormitories.controller';
 import { authenticate, authorize } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/error';
-import { queryDormitorySchema, queryRoomSchema, queryRoomAssignmentSchema } from './dormitories.schema';
+import {
+  queryDormitorySchema,
+  queryRoomSchema,
+  queryRoomAssignmentSchema,
+} from './dormitories.schema';
 
 const router = Router();
 

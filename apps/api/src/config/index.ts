@@ -502,9 +502,7 @@ export const config = {
        * menjadi BATAS ATAS. Untuk sebuah peringatan anggaran, arah galat itu
        * yang benar: ia berbunyi terlalu awal, bukan terlambat.
        */
-      cachedInputPricePerMillionTokens: parsePrice(
-        process.env.CHATBOT_PRICE_CACHED_INPUT_PER_MTOK
-      ),
+      cachedInputPricePerMillionTokens: parsePrice(process.env.CHATBOT_PRICE_CACHED_INPUT_PER_MTOK),
       /** Label only — no conversion happens anywhere. Set it to whatever the invoice is in. */
       currency: process.env.CHATBOT_PRICE_CURRENCY || 'USD',
       /** 0 disables the budget comparison; the monthly volume report still goes out. */

@@ -12,11 +12,7 @@ import { ShieldAlert } from "lucide-react";
 import { MainLayout } from "@/components/layout";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ChatbotPersonaEditor } from "@/components/settings/chatbot-persona-editor";
 import { ChatbotUsageCard } from "@/components/settings/chatbot-usage-card";
 

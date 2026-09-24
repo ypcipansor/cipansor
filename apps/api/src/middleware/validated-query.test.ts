@@ -77,7 +77,7 @@ describe('validateQuery / res.locals.validatedQuery pairing', () => {
       const all = routes + rest;
       if (!all.includes('validatedQuery')) {
         offenders.push(
-          `${dir}: routes call validateQuery() but no file reads res.locals.validatedQuery`,
+          `${dir}: routes call validateQuery() but no file reads res.locals.validatedQuery`
         );
       }
     }

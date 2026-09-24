@@ -30,7 +30,7 @@ type WhatsAppProvider = 'META' | 'FONNTE' | 'WATROOP' | 'WHACENTER' | 'SIMULATOR
  */
 export function resolveWhatsAppProvider(
   envProvider: string | undefined,
-  outboundEnabled: boolean,
+  outboundEnabled: boolean
 ): WhatsAppProvider {
   if (!outboundEnabled) return 'SIMULATOR';
   return (envProvider as WhatsAppProvider) || 'SIMULATOR';
@@ -335,7 +335,10 @@ class WhatsAppService {
   constructor() {
     // Load configuration from environment
     this.config = {
-      provider: resolveWhatsAppProvider(process.env.WA_PROVIDER, appConfig.outboundMessages.enabled),
+      provider: resolveWhatsAppProvider(
+        process.env.WA_PROVIDER,
+        appConfig.outboundMessages.enabled
+      ),
       apiKey: process.env.WA_API_KEY,
       phoneNumberId: process.env.WA_PHONE_NUMBER_ID,
       accessToken: process.env.WA_ACCESS_TOKEN,

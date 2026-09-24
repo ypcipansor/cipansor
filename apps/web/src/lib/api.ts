@@ -204,7 +204,8 @@ api.interceptors.response.use(
         // prospective parent to the staff login screen over that 401 is far
         // worse than letting the caller render its own empty state.
         const hadSession =
-          typeof window !== "undefined" && !!localStorage.getItem("accessToken");
+          typeof window !== "undefined" &&
+          !!localStorage.getItem("accessToken");
         if (!hadSession) {
           return Promise.reject(error);
         }

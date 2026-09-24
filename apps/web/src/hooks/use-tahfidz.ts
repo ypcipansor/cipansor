@@ -15,11 +15,7 @@ export type { TahfidzRecord, CreateTahfidzInput, UpdateTahfidzInput };
 export type TahfidzType = TahfidzActivityType;
 
 export type TahfidzGrade =
-  | "MUMTAZ"
-  | "JAYYID_JIDDAN"
-  | "JAYYID"
-  | "MAQBUL"
-  | "RASIB";
+  "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "RASIB";
 
 export const TAHFIDZ_TYPES: { value: TahfidzType; label: string }[] = [
   { value: "ZIYADAH", label: "Setoran Baru (Ziyadah)" },

@@ -42,7 +42,9 @@ function LeavesPageContent() {
   // Fetch My Leaves
   // Since backend filters by user automatically if not admin, we can reuse query.
   // But for Admin, they might want to see "All".
-  const isAdmin = getEffectiveRole(user) === "SUPER_ADMIN" || getEffectiveRole(user) === "UNIT_ADMIN";
+  const isAdmin =
+    getEffectiveRole(user) === "SUPER_ADMIN" ||
+    getEffectiveRole(user) === "UNIT_ADMIN";
 
   // For "My Leaves", if admin, we might need to pass their own ID?
   // But admins usually don't apply for leave in this system or they do via same UI.

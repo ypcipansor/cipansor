@@ -104,7 +104,8 @@ function collectRoutes(dir: string, prefix = ""): Set<string> {
       if (entry.name.startsWith("(") || entry.name.startsWith("_")) {
         for (const r of collectRoutes(full, prefix)) routes.add(r);
       } else if (!entry.name.startsWith("@")) {
-        for (const r of collectRoutes(full, `${prefix}/${entry.name}`)) routes.add(r);
+        for (const r of collectRoutes(full, `${prefix}/${entry.name}`))
+          routes.add(r);
       }
     } else if (entry.name === "page.tsx" || entry.name === "route.ts") {
       routes.add(prefix || "/");
@@ -122,7 +123,8 @@ function routeExists(pathname: string, routes: Set<string>): boolean {
     if (actual.length !== wanted.length) continue;
     const matches = actual.every(
       (segment, i) =>
-        (segment.startsWith("[") && segment.endsWith("]")) || segment === wanted[i],
+        (segment.startsWith("[") && segment.endsWith("]")) ||
+        segment === wanted[i],
     );
     if (matches) return true;
   }
@@ -138,7 +140,8 @@ function collectHrefs(dir: string): Map<string, Set<string>> {
         walk(full);
         continue;
       }
-      if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+      if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name))
+        continue;
 
       const source = fs.readFileSync(full, "utf8");
       /**
@@ -154,7 +157,10 @@ function collectHrefs(dir: string): Map<string, Set<string>> {
         /(?:href=|router\.(?:push|replace)\(|\bredirect\()\s*(?:"([^"]+)"|`([^`]+)`|\{`([^`]+)`\})/g;
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(source))) {
-        let href = (match[1] ?? match[2] ?? match[3]).replace(/\$\{[^}]*\}/g, "X");
+        let href = (match[1] ?? match[2] ?? match[3]).replace(
+          /\$\{[^}]*\}/g,
+          "X",
+        );
         if (!href.startsWith("/")) continue;
         href = href.split("?")[0].split("#")[0].replace(/\/$/, "") || "/";
         // Static assets and API calls are not App Router pages.
@@ -205,7 +211,9 @@ describe("in-app links", () => {
   });
 
   it("does not keep entries for pages that now exist", () => {
-    const stale = [...KNOWN_MISSING].filter((href) => routeExists(href, routes));
+    const stale = [...KNOWN_MISSING].filter((href) =>
+      routeExists(href, routes),
+    );
     expect(stale.sort()).toEqual([]);
   });
 });

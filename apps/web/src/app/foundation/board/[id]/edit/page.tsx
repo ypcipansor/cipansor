@@ -332,7 +332,9 @@ function EditBoardMemberPageContent({ params }: PageProps) {
   );
 }
 
-export default function EditBoardMemberPage(props: Parameters<typeof EditBoardMemberPageContent>[0]) {
+export default function EditBoardMemberPage(
+  props: Parameters<typeof EditBoardMemberPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditBoardMemberPageContent {...props} />

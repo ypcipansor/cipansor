@@ -193,7 +193,9 @@ describe('StudentService', () => {
       );
 
       expect(prisma.student.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: expect.not.objectContaining({ status: expect.anything() }) })
+        expect.objectContaining({
+          where: expect.not.objectContaining({ status: expect.anything() }),
+        })
       );
     });
 
@@ -275,7 +277,9 @@ describe('StudentService', () => {
       (prisma.user.findFirst as any).mockResolvedValue(null);
       (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-1', type: 'SD_IT' });
       (prisma.student.findFirst as any).mockResolvedValue(null);
-      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue({ studentId: 'santri-lain' });
+      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue({
+        studentId: 'santri-lain',
+      });
 
       await expect(service.create(mockInput)).rejects.toThrow(
         'NIS ini sudah dipakai santri lain di unit yang sama.'
@@ -345,7 +349,9 @@ describe('StudentService', () => {
     it('tanpa NISN tidak mencari kembarannya (santri baru sering belum punya NISN)', async () => {
       (prisma.user.findFirst as any).mockResolvedValue(null);
       (prisma.unit.findFirst as any).mockResolvedValue({ id: 'unit-1', type: 'SD_IT' });
-      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue({ studentId: 'santri-lain' });
+      (prisma.studentUnitIdentifier.findFirst as any).mockResolvedValue({
+        studentId: 'santri-lain',
+      });
 
       await expect(service.create({ ...mockInput, nisn: null })).rejects.toThrow(
         'NIS ini sudah dipakai santri lain di unit yang sama.'
@@ -531,14 +537,23 @@ describe('StudentService', () => {
   });
 
   describe('update — NISN', () => {
-    const santri = { id: 's1', userId: 'u1', nis: '2024001', nisn: '0012345678', nik: null, user: {} };
+    const santri = {
+      id: 's1',
+      userId: 'u1',
+      nis: '2024001',
+      nisn: '0012345678',
+      nik: null,
+      user: {},
+    };
 
     it('menolak NISN baru yang milik santri lain — 409, tidak menulis apa pun', async () => {
       (prisma.student.findFirst as any)
         .mockResolvedValueOnce(santri)
         .mockResolvedValueOnce({ id: 's2' });
 
-      await expect(service.update('s1', { nisn: '0099999999' })).rejects.toMatchObject({ code: 'CONFLICT' });
+      await expect(service.update('s1', { nisn: '0099999999' })).rejects.toMatchObject({
+        code: 'CONFLICT',
+      });
       const cari = (prisma.student.findFirst as any).mock.calls[1][0];
       expect(cari.where).toEqual({ nisn: '0099999999', id: { not: 's1' } });
       expect(prisma.student.update).not.toHaveBeenCalled();
@@ -555,7 +570,9 @@ describe('StudentService', () => {
 
       expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledTimes(1);
       expect(prisma.studentUnitIdentifier.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { studentId_unitId: { studentId: 's1', unitId: 'unit-smp' } } })
+        expect.objectContaining({
+          where: { studentId_unitId: { studentId: 's1', unitId: 'unit-smp' } },
+        })
       );
     });
 

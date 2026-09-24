@@ -16,15 +16,24 @@ import { LetterDirection, LetterStatus } from "@cipansor/shared";
  * halaman ini.
  */
 function ArchiveContent() {
-  const [direction, setDirection] = useState<LetterDirection>(LetterDirection.INCOMING);
+  const [direction, setDirection] = useState<LetterDirection>(
+    LetterDirection.INCOMING,
+  );
 
   return (
     <div>
       <div className="px-6 pt-6">
-        <Tabs value={direction} onValueChange={(v) => setDirection(v as LetterDirection)}>
+        <Tabs
+          value={direction}
+          onValueChange={(v) => setDirection(v as LetterDirection)}
+        >
           <TabsList>
-            <TabsTrigger value={LetterDirection.INCOMING}>Surat masuk</TabsTrigger>
-            <TabsTrigger value={LetterDirection.OUTGOING}>Surat keluar</TabsTrigger>
+            <TabsTrigger value={LetterDirection.INCOMING}>
+              Surat masuk
+            </TabsTrigger>
+            <TabsTrigger value={LetterDirection.OUTGOING}>
+              Surat keluar
+            </TabsTrigger>
           </TabsList>
         </Tabs>
       </div>
@@ -45,7 +54,9 @@ function ArchiveContent() {
 
 export default function ArchivePage() {
   return (
-    <Suspense fallback={<div className="p-6 text-muted-foreground">Memuat arsip…</div>}>
+    <Suspense
+      fallback={<div className="p-6 text-muted-foreground">Memuat arsip…</div>}
+    >
       <ArchiveContent />
     </Suspense>
   );

@@ -70,7 +70,11 @@ export class ResearchService {
     });
   }
 
-  async reviewSubmission(id: string, reviewerId: string, data: { status: string; feedback?: string }) {
+  async reviewSubmission(
+    id: string,
+    reviewerId: string,
+    data: { status: string; feedback?: string }
+  ) {
     return prisma.researchSubmission.update({
       where: { id },
       data: {

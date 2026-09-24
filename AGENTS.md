@@ -36,7 +36,16 @@ monorepo**:
    Prisma) → `schema.ts` (Zod). Routes never touch Prisma directly; controllers
    never embed business logic.
 5. **Prove it locally before pushing.** Run the gate below; do not rely on CI to
-   discover failures. CI is a backstop only.
+   discover failures. CI is a backstop only. A change with **no code** in it
+   (`*.md`, `docs/`, `.claude/` …, defined once in
+   `.github/scripts/change-scope.sh`) skips Lint, Build, Tests, Security, E2E
+   and the staging rebuild; skipped jobs report success. E2E also skips a
+   **draft** PR until it is marked ready. **A file a test reads is code:** add
+   it to the first branch of `is_code()` (a guard test enforces this for
+   markdown). Staging deploys only after CI **and** E2E pass on `main`.
+   **Format before pushing** (`pnpm format`): every `.ts`/`.tsx` is kept in
+   Prettier's format, CI's Lint job fails otherwise, and for Claude a
+   pre-push hook refuses the push and names the files and the fix command.
 6. **Develop on the feature branch, commit with clear messages, never push to
    `main`.**
 7. **Ship tests with the code — no behavior change merges untested.** Every
@@ -97,7 +106,7 @@ pnpm --filter api test                # vitest (API)
 pnpm --filter web build               # next build
 pnpm --filter web test                # vitest (web)
 pnpm --filter web test:e2e            # Playwright e2e (needs the local stack up)
-pnpm format                           # prettier
+pnpm format                           # prettier --write every .ts/.tsx (not .md); CI fails on `pnpm format:check`
 pnpm lint                             # eslint (api + web)
 ```
 
@@ -164,51 +173,17 @@ before removing anything, prove it is unused — grep for callers, check
 | `skills/screenshot-roles` | render real components for before/after shots |
 | `skills/sync-records` | move findings out of the transcript and into files |
 | `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
+| `hooks/format-before-push.sh` | PreToolUse — refuses a `git push` whose commits carry `.ts`/`.tsx` files Prettier would change, and prints the command that fixes them |
 | `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
-| `hooks/pre-compact-sync.sh` | PreCompact — pauses `/compact` when there is new work the durable records do not yet reflect |
-| `hooks/sync_stamp.py` | shared by the hook above and the `sync-records` skill: one definition of "the records are level" |
+| `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
+| `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |
+| `hooks/main-ci-watch.sh` | SessionStart + UserPromptSubmit + PostToolUse — reports once when a workflow on `main` fails (CI, E2E, CodeQL, Deploy staging/production), and once when it recovers |
+| `hooks/sync_stamp.py` | shared by the hooks above and the `sync-records` skill: one definition of "the records are level", plus the context-size reading |
 | `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
 | `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
 
-**Why the compaction hook exists.** Compaction discards the transcript, and only
-files survive it. Findings were reaching `memory/`, the plan and the ROADMAP
-only because the user remembered to ask, every single time. The hook asks
-instead: it exits 2, which hands control back for a `sync-records` pass, and
-lets the retry through — so it can nag but can never wedge a session.
-`/compact skip-sync` bypasses it deliberately.
-
-**What "level" means is work, not time** (corrected 2026-09-05). The stamp used
-to expire after thirty minutes, which asked for a second pass over a session
-that had produced nothing new. `sync_stamp.py` now compares git HEAD plus the
-working tree, so `/compact` is quiet until something actually changes; a
-six-hour ceiling remains for findings that never touch git. The
-`sync-records` skill writes the stamp itself as its last step — before that, a
-pass the user ran directly did nothing to quiet the next `/compact`, which was
-backwards.
-
-**Auto-compaction is blocked only when there is headroom below it**, and the
-interlock is the setting itself: with `autoCompactWindow` under 800k there is
-room to run the pass, so the hook pauses once; unset, or at the model's own
-window, it never touches auto — refusing at the context wall would strand the
-session. A blocked compaction is *cancelled, not deferred* (undocumented, but
-reported consistently), which is safe here only because the condition persists
-and the next turn triggers a fresh attempt that the stamp lets through. A manual
-`/compact` has no such retry, which is why it costs a second keystroke.
-
-**Why there is a `Stop` hook too.** The compaction hook only guards the
-compaction door. A session that finishes without ever being compacted never
-passes through it — and those are exactly the sessions that leave findings in
-the transcript alone. `stop-sync-records.sh` closes that gap.
-
-It is deliberately hard to trigger, because `Stop` fires at the end of *every*
-turn and a reminder that appears every turn teaches everyone to ignore hook
-messages. It stays quiet unless all five hold: not already continuing from its
-own block (`stop_hook_active` — this is what makes a loop impossible), not yet
-asked this session, at least one commit since the session began, no pending
-changes to tracked files (a resting point, not mid-edit), and no durable record
-touched since the session began. One reminder per session, then never again.
-`CLAUDE_SKIP_STOP_SYNC=1` turns it off.
-
-Both `Stop` and `PreCompact` fail open on everything else — unreadable input, an
-unreadable git tree, an unwritable stamp directory. A hook that breaks a session
-is worse than a hook that misses a reminder.
+**Why each hook works the way it does** — what went wrong before, what was
+measured, and the safety rails — is in [`.claude/README.md`](./.claude/README.md).
+It matters only to whoever changes a hook, so it is kept out of this file,
+which every agent loads whole. Read it before touching a hook: most of these
+designs replaced an earlier one that looked right and did nothing.

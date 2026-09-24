@@ -23,7 +23,10 @@ describe('BusinessUnitService', () => {
   });
 
   it('should list business units with current-month revenue', async () => {
-    const mockBUs = [{ id: '1', name: 'Kantin A' }, { id: '2', name: 'Laundry B' }];
+    const mockBUs = [
+      { id: '1', name: 'Kantin A' },
+      { id: '2', name: 'Laundry B' },
+    ];
     (prisma.businessUnit.findMany as any).mockResolvedValue(mockBUs);
     (prisma.canteenTransaction.groupBy as any).mockResolvedValue([
       { businessUnitId: '1', _sum: { total: 150000 }, _count: { id: 12 } },
@@ -38,9 +41,11 @@ describe('BusinessUnitService', () => {
       { id: '1', name: 'Kantin A', monthlyRevenue: 150000, monthlyTransactions: 12 },
       { id: '2', name: 'Laundry B', monthlyRevenue: 80000, monthlyTransactions: 4 },
     ]);
-    expect(prisma.businessUnit.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ unitId: 'unit-1' }),
-    }));
+    expect(prisma.businessUnit.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ unitId: 'unit-1' }),
+      })
+    );
   });
 
   it('should create a business unit', async () => {
@@ -61,9 +66,11 @@ describe('BusinessUnitService', () => {
     const result = await businessUnitService.getById('bu1', 'unit-1');
 
     expect(result).toEqual(mockBU);
-    expect(prisma.businessUnit.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ id: 'bu1', unitId: 'unit-1' }),
-    }));
+    expect(prisma.businessUnit.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: 'bu1', unitId: 'unit-1' }),
+      })
+    );
   });
 
   it('should throw notFound when getById targets a different unit', async () => {

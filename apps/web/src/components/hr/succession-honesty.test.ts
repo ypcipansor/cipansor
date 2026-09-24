@@ -89,7 +89,9 @@ describe("succession screens — an unmeasured candidate is not a zero", () => {
 
 describe("succession screens — the headline number is withheld when it means nothing", () => {
   it("the list consumes scoreReflectsOnlyCategory rather than always printing matchScore", () => {
-    const src = stripComments(read("components/hr/succession-planning-list.tsx"));
+    const src = stripComments(
+      read("components/hr/succession-planning-list.tsx"),
+    );
     expect(src).toContain("scoreReflectsOnlyCategory");
   });
 

@@ -80,7 +80,9 @@ export default function ESimaanPage() {
 
       toast.success("Setoran terkirim! Menunggu simaan dari muhafidz.");
     } catch (error) {
-      const err = error as { response?: { data?: { error?: { message?: string } } } };
+      const err = error as {
+        response?: { data?: { error?: { message?: string } } };
+      };
       toast.error(
         err.response?.data?.error?.message || "Gagal mengunggah setoran",
       );
@@ -95,8 +97,8 @@ export default function ESimaanPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">E-Simaan</h1>
           <p className="text-muted-foreground">
-            Setoran hafalan mandiri via rekaman audio — muhafidz menyimak
-            secara asinkron
+            Setoran hafalan mandiri via rekaman audio — muhafidz menyimak secara
+            asinkron
           </p>
         </div>
 
@@ -114,17 +116,25 @@ export default function ESimaanPage() {
               <Label>Santri</Label>
               <Select
                 value={formData.studentId}
-                onValueChange={(v) => setFormData({ ...formData, studentId: v })}
+                onValueChange={(v) =>
+                  setFormData({ ...formData, studentId: v })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Pilih santri" />
                 </SelectTrigger>
                 <SelectContent>
-                  {students.map((s: { id: string; user?: { name?: string }; nis?: string }) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.user?.name || s.nis || s.id}
-                    </SelectItem>
-                  ))}
+                  {students.map(
+                    (s: {
+                      id: string;
+                      user?: { name?: string };
+                      nis?: string;
+                    }) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.user?.name || s.nis || s.id}
+                      </SelectItem>
+                    ),
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -144,7 +154,9 @@ export default function ESimaanPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ZIYADAH">Ziyadah (hafalan baru)</SelectItem>
+                  <SelectItem value="ZIYADAH">
+                    Ziyadah (hafalan baru)
+                  </SelectItem>
                   <SelectItem value="MUROJAAH">Murojaah (mengulang)</SelectItem>
                 </SelectContent>
               </Select>
@@ -154,7 +166,9 @@ export default function ESimaanPage() {
               <Label>Surah</Label>
               <Select
                 value={formData.surahName}
-                onValueChange={(v) => setFormData({ ...formData, surahName: v })}
+                onValueChange={(v) =>
+                  setFormData({ ...formData, surahName: v })
+                }
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -177,7 +191,10 @@ export default function ESimaanPage() {
                 max={30}
                 value={formData.juz}
                 onChange={(e) =>
-                  setFormData({ ...formData, juz: parseInt(e.target.value) || 1 })
+                  setFormData({
+                    ...formData,
+                    juz: parseInt(e.target.value) || 1,
+                  })
                 }
               />
             </div>

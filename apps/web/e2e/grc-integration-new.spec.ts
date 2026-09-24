@@ -9,7 +9,9 @@ import {
 import { findStrategicPlan } from "./helpers/seed-data";
 
 test.describe("GRC Integrated Workflow", () => {
-  test("should trigger audit finding from low sharia audit score", async ({ page }) => {
+  test("should trigger audit finding from low sharia audit score", async ({
+    page,
+  }) => {
     const session = await apiLogin(SEED_USERS.superAdmin);
     await injectSession(page, session);
 
@@ -31,12 +33,17 @@ test.describe("GRC Integrated Workflow", () => {
       },
     );
 
-    const compliance = await apiRequest<{ data: { id: string } }>(session, "POST", "/syariah", {
-      category: "MUAMALAH",
-      title: complianceTitle,
-      description: "E2E: pemeriksaan pengelolaan zakat",
-      unitId: plan.unitId,
-    });
+    const compliance = await apiRequest<{ data: { id: string } }>(
+      session,
+      "POST",
+      "/syariah",
+      {
+        category: "MUAMALAH",
+        title: complianceTitle,
+        description: "E2E: pemeriksaan pengelolaan zakat",
+        unitId: plan.unitId,
+      },
+    );
 
     try {
       // Real workflow: a sharia audit scoring below 70 must auto-create a
@@ -50,7 +57,9 @@ test.describe("GRC Integrated Workflow", () => {
 
       // The compliance item renders on the syariah page
       await page.goto("/syariah");
-      await expect(page.getByText(complianceTitle).first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(complianceTitle).first()).toBeVisible({
+        timeout: 15000,
+      });
 
       // ...and the auto-created finding renders under pengawasan
       await page.goto("/pengawasan");
@@ -61,21 +70,39 @@ test.describe("GRC Integrated Workflow", () => {
       // Remove the auto-created finding, then the audit + compliance rows
       const auditDetail = await apiRequest<{
         data: { findings?: Array<{ id: string }> };
-      }>(session, "GET", `/pengawasan/${internalAudit.data.id}`).catch(() => null);
+      }>(session, "GET", `/pengawasan/${internalAudit.data.id}`).catch(
+        () => null,
+      );
       for (const finding of auditDetail?.data.findings ?? []) {
-        await apiRequest(session, "DELETE", `/pengawasan/findings/${finding.id}`).catch(() => {});
+        await apiRequest(
+          session,
+          "DELETE",
+          `/pengawasan/findings/${finding.id}`,
+        ).catch(() => {});
       }
-      await apiRequest(session, "DELETE", `/pengawasan/${internalAudit.data.id}`).catch(() => {});
-      await apiRequest(session, "DELETE", `/syariah/${compliance.data.id}`).catch(() => {});
+      await apiRequest(
+        session,
+        "DELETE",
+        `/pengawasan/${internalAudit.data.id}`,
+      ).catch(() => {});
+      await apiRequest(
+        session,
+        "DELETE",
+        `/syariah/${compliance.data.id}`,
+      ).catch(() => {});
     }
   });
 
-  test("should display detailed sharia breakdown in GRC dashboard", async ({ page }) => {
+  test("should display detailed sharia breakdown in GRC dashboard", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
     await page.goto("/grc-dashboard");
 
     // The breakdown card aggregates the real seeded compliance data
-    await expect(page.getByText("Sharia Compliance Detailed Breakdown")).toBeVisible({
+    await expect(
+      page.getByText("Sharia Compliance Detailed Breakdown"),
+    ).toBeVisible({
       timeout: 20000,
     });
     await expect(page.getByText("Performance score by category")).toBeVisible();

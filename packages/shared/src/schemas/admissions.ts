@@ -7,8 +7,11 @@ export const parseDocumentSchema = z.object({
     .min(1, "Dokumen base64/image wajib diisi")
     .max(2800000, "Ukuran berkas melebihi batas maksimum (2MB)")
     .refine(
-      (val) => /^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,/i.test(val),
-      "Tipe berkas tidak didukung. Hanya gambar (JPEG/PNG/WebP) dan PDF yang diperbolehkan"
+      (val) =>
+        /^data:(image\/(jpeg|jpg|png|webp)|application\/pdf);base64,/i.test(
+          val,
+        ),
+      "Tipe berkas tidak didukung. Hanya gambar (JPEG/PNG/WebP) dan PDF yang diperbolehkan",
     ),
   documentType: z.enum(["ktp", "kk", "akta", "foto", "lainnya"]),
   userInputData: z
@@ -50,7 +53,10 @@ export const onboardRegistrantSchema = z.object({
    * pendaftaran ini ditautkan ke baris santri itu — tanpa akun baru dan tanpa
    * santri kedua (audit #489 bagian 3b-2).
    */
-  existingStudentId: z.string().uuid("existingStudentId tidak valid").optional(),
+  existingStudentId: z
+    .string()
+    .uuid("existingStudentId tidak valid")
+    .optional(),
 });
 
 export interface RegistrantDTO {

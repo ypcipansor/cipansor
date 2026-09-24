@@ -35,7 +35,6 @@ vi.mock('../pengawasan/pengawasan.service', () => ({
   },
 }));
 
-
 describe('Syariah Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -80,7 +79,7 @@ describe('Syariah Service', () => {
       vi.mocked(prisma.shariaAudit.create).mockResolvedValue({
         id: 'audit-1',
         ...dto,
-        compliance: { unitId: 'unit-1', title: 'Koperasi' }
+        compliance: { unitId: 'unit-1', title: 'Koperasi' },
       } as any);
       vi.mocked(prisma.shariaCompliance.update).mockResolvedValue({} as any);
 
@@ -116,7 +115,7 @@ describe('Syariah Service', () => {
       vi.mocked(prisma.shariaAudit.create).mockResolvedValue({
         id: 'audit-2',
         ...dto,
-        compliance: { unitId: 'unit-1', title: 'Koperasi' }
+        compliance: { unitId: 'unit-1', title: 'Koperasi' },
       } as any);
       vi.mocked(prisma.shariaCompliance.update).mockResolvedValue({} as any);
 
@@ -143,7 +142,7 @@ describe('Syariah Service', () => {
       vi.mocked(prisma.shariaAudit.create).mockResolvedValue({
         id: 'audit-3',
         ...dto,
-        compliance: { unitId: 'unit-1', title: 'Koperasi' }
+        compliance: { unitId: 'unit-1', title: 'Koperasi' },
       } as any);
       vi.mocked(prisma.shariaCompliance.update).mockResolvedValue({ title: 'Koperasi' } as any);
       vi.mocked(prisma.internalAudit.findFirst).mockResolvedValue({ id: 'int-audit-1' } as any);
@@ -179,7 +178,7 @@ describe('Syariah Service', () => {
 
       expect(result.byCategory['MUAMALAH'].total).toBe(2);
       expect(result.byCategory['MUAMALAH'].averageScore).toBe(80); // (90 + 70) / 2
-      
+
       expect(result.byCategory['IBADAH'].total).toBe(2);
       expect(result.byCategory['IBADAH'].averageScore).toBe(70); // (40 + 100) / 2
     });

@@ -17,13 +17,19 @@ const superAdmin = { roleCode: 'SUPER_ADMIN', role: 'SUPER_ADMIN', unitId: null 
  */
 describe('laporan siap Dapodik — hitungan belum siap', () => {
   beforeEach(() => {
-    vi.mocked(prisma.student.findMany).mockReset().mockResolvedValue([] as never);
-    vi.mocked(prisma.student.count).mockReset().mockResolvedValue(0 as never);
+    vi.mocked(prisma.student.findMany)
+      .mockReset()
+      .mockResolvedValue([] as never);
+    vi.mocked(prisma.student.count)
+      .mockReset()
+      .mockResolvedValue(0 as never);
   });
 
   it('tidak menyaring kolom NOT NULL dengan null', async () => {
     await getDapodikReady({ unitId: 'u1' }, superAdmin);
-    const arg = vi.mocked(prisma.student.count).mock.calls[0][0] as { where: { OR: object[]; unitId?: string } };
+    const arg = vi.mocked(prisma.student.count).mock.calls[0][0] as {
+      where: { OR: object[]; unitId?: string };
+    };
     expect(arg.where.OR).toEqual([{ nisn: null }, { nik: null }, { birthPlace: '' }]);
     expect(JSON.stringify(arg.where)).not.toContain('birthDate');
     expect(arg.where.unitId).toBe('u1');

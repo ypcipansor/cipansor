@@ -20,21 +20,21 @@ router.use(authenticate);
 router.get(
   '/',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  controller.list,
+  controller.list
 );
 
 /** GET /api/wallet/summary - Get wallet summary/statistics */
 router.get(
   '/summary',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  controller.getSummary,
+  controller.getSummary
 );
 
 /** GET /api/wallet/transactions - List all transactions */
 router.get(
   '/transactions',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  controller.listTransactions,
+  controller.listTransactions
 );
 
 /** GET /api/wallet/:studentId - Get wallet by student ID */
@@ -48,7 +48,7 @@ router.post(
   '/topup',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
   validate(topUpWalletSchema),
-  controller.topUp,
+  controller.topUp
 );
 
 /** POST /api/wallet/bulk-topup - Bulk top up wallets */
@@ -56,7 +56,7 @@ router.post(
   '/bulk-topup',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   validate(bulkTopUpSchema),
-  controller.bulkTopUp,
+  controller.bulkTopUp
 );
 
 /** POST /api/wallet/deduct - Deduct from wallet */
@@ -64,7 +64,7 @@ router.post(
   '/deduct',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
   validate(deductWalletSchema),
-  controller.deduct,
+  controller.deduct
 );
 
 /** POST /api/wallet/transfer - Transfer between wallets */
@@ -72,7 +72,7 @@ router.post(
   '/transfer',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
   validate(transferWalletSchema),
-  controller.transfer,
+  controller.transfer
 );
 
 /** POST /api/wallet/refund - Refund to wallet */
@@ -80,7 +80,7 @@ router.post(
   '/refund',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
   validate(refundWalletSchema),
-  controller.refund,
+  controller.refund
 );
 
 export default router;

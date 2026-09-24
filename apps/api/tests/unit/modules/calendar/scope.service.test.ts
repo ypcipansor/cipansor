@@ -67,9 +67,6 @@ describe('CalendarService.findAll unit scoping', () => {
       roleCode: RoleCode.SMPIT_ADMIN,
       unitId: 'smp-it',
     });
-    expect(lastWhere().OR).toEqual([
-      { unitId: 'smp-it' },
-      { unitId: null, isPublic: true },
-    ]);
+    expect(lastWhere().OR).toEqual([{ unitId: 'smp-it' }, { unitId: null, isPublic: true }]);
   });
 });

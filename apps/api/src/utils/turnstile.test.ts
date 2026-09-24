@@ -206,7 +206,10 @@ describe('verifyTurnstileToken', () => {
       reason: 'unreachable',
     });
 
-    const logged = vi.mocked(logger.error).mock.calls.map((c) => String(c[0])).join('\n');
+    const logged = vi
+      .mocked(logger.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join('\n');
     expect(logged).toContain('TURNSTILE_SECRET_KEY');
   });
 

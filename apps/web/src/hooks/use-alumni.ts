@@ -4,19 +4,9 @@ import api from "@/lib/api";
 // Types
 export type AlumniStatus = "REGISTERED" | "VERIFIED" | "ACTIVE" | "INACTIVE";
 export type EducationLevel =
-  | "SMP"
-  | "SMA"
-  | "D3"
-  | "S1"
-  | "S2"
-  | "S3"
-  | "OTHER";
+  "SMP" | "SMA" | "D3" | "S1" | "S2" | "S3" | "OTHER";
 export type EmploymentStatus =
-  | "EMPLOYED"
-  | "SELF_EMPLOYED"
-  | "STUDENT"
-  | "UNEMPLOYED"
-  | "OTHER";
+  "EMPLOYED" | "SELF_EMPLOYED" | "STUDENT" | "UNEMPLOYED" | "OTHER";
 
 export const ALUMNI_STATUSES: AlumniStatus[] = [
   "REGISTERED",

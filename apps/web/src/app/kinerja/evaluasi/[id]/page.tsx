@@ -55,7 +55,13 @@ function PeriodicEvaluationDetailPageContent() {
   const canApprove =
     user?.id === evaluation?.pk?.supervisorId ||
     user?.role === "SUPER_ADMIN" ||
-    ["SUPER_ADMIN", "TKQ_ADMIN", "SDIT_ADMIN", "SMPIT_ADMIN", "SMAQ_ADMIN"].includes(primaryRoleCode);
+    [
+      "SUPER_ADMIN",
+      "TKQ_ADMIN",
+      "SDIT_ADMIN",
+      "SMPIT_ADMIN",
+      "SMAQ_ADMIN",
+    ].includes(primaryRoleCode);
   const { data: saftiMaster } = useBehavioralValues();
 
   const updateRealization = useUpdateIndicatorRealization();
@@ -63,8 +69,12 @@ function PeriodicEvaluationDetailPageContent() {
   const approveEvaluation = useApproveEvaluation();
 
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [realizationInputs, setRealizationInputs] = useState<Record<string, { realization: number; activities: string }>>({});
-  const [behaviorInputs, setBehaviorInputs] = useState<Record<string, { score: number; notes: string }>>({});
+  const [realizationInputs, setRealizationInputs] = useState<
+    Record<string, { realization: number; activities: string }>
+  >({});
+  const [behaviorInputs, setBehaviorInputs] = useState<
+    Record<string, { score: number; notes: string }>
+  >({});
 
   if (isLoading) {
     return (
@@ -77,7 +87,9 @@ function PeriodicEvaluationDetailPageContent() {
   if (!evaluation) {
     return (
       <div className="container mx-auto p-6 text-center space-y-4">
-        <div className="text-red-500 font-semibold">Data evaluasi tidak ditemukan.</div>
+        <div className="text-red-500 font-semibold">
+          Data evaluasi tidak ditemukan.
+        </div>
         <Link href="/kinerja/evaluasi">
           <Button variant="outline">Kembali ke Daftar Evaluasi</Button>
         </Link>
@@ -86,8 +98,18 @@ function PeriodicEvaluationDetailPageContent() {
   }
 
   const monthNames = [
-    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
   ];
 
   const handleSaveRealization = async (indicatorId: string) => {
@@ -142,44 +164,43 @@ function PeriodicEvaluationDetailPageContent() {
 
     await approveEvaluation.mutateAsync({
       evaluationId: evaluation.id,
-      feedback: feedback !== null ? feedback : (evaluation.feedback || ""),
+      feedback: feedback !== null ? feedback : evaluation.feedback || "",
     });
   };
 
   // Warna predikat menyampaikan arti, bukan sekadar hiasan: "Butuh Perbaikan"
   // yang tampil hijau seperti "Sangat Baik" menghapus seluruh gunanya kuadran.
-  const predikatStyle =
-    {
-      SANGAT_BAIK: {
-        card: "border-emerald-200 bg-emerald-50/40",
-        title: "text-emerald-900",
-        value: "text-emerald-700",
-      },
-      BAIK: {
-        card: "border-teal-200 bg-teal-50/40",
-        title: "text-teal-900",
-        value: "text-teal-700",
-      },
-      BUTUH_PERBAIKAN: {
-        card: "border-amber-200 bg-amber-50/40",
-        title: "text-amber-900",
-        value: "text-amber-700",
-      },
-      KURANG: {
-        card: "border-orange-200 bg-orange-50/40",
-        title: "text-orange-900",
-        value: "text-orange-700",
-      },
-      SANGAT_KURANG: {
-        card: "border-rose-200 bg-rose-50/40",
-        title: "text-rose-900",
-        value: "text-rose-700",
-      },
-    }[evaluation.predikat?.predikat ?? "BAIK"] ?? {
-      card: "border-slate-200 bg-slate-50/40",
-      title: "text-slate-900",
-      value: "text-slate-700",
-    };
+  const predikatStyle = {
+    SANGAT_BAIK: {
+      card: "border-emerald-200 bg-emerald-50/40",
+      title: "text-emerald-900",
+      value: "text-emerald-700",
+    },
+    BAIK: {
+      card: "border-teal-200 bg-teal-50/40",
+      title: "text-teal-900",
+      value: "text-teal-700",
+    },
+    BUTUH_PERBAIKAN: {
+      card: "border-amber-200 bg-amber-50/40",
+      title: "text-amber-900",
+      value: "text-amber-700",
+    },
+    KURANG: {
+      card: "border-orange-200 bg-orange-50/40",
+      title: "text-orange-900",
+      value: "text-orange-700",
+    },
+    SANGAT_KURANG: {
+      card: "border-rose-200 bg-rose-50/40",
+      title: "text-rose-900",
+      value: "text-rose-700",
+    },
+  }[evaluation.predikat?.predikat ?? "BAIK"] ?? {
+    card: "border-slate-200 bg-slate-50/40",
+    title: "text-slate-900",
+    value: "text-slate-700",
+  };
 
   const ekspektasiLabel: Record<string, string> = {
     DI_ATAS: "di atas ekspektasi",
@@ -200,16 +221,23 @@ function PeriodicEvaluationDetailPageContent() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight">
-                Evaluasi Periode: {monthNames[evaluation.month - 1]} {evaluation.year}
+                Evaluasi Periode: {monthNames[evaluation.month - 1]}{" "}
+                {evaluation.year}
               </h1>
-              <Badge className={evaluation.status === "APPROVED" ? "bg-emerald-500" : "bg-amber-500"}>
+              <Badge
+                className={
+                  evaluation.status === "APPROVED"
+                    ? "bg-emerald-500"
+                    : "bg-amber-500"
+                }
+              >
                 {evaluation.status}
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Hasil Kerja {evaluation.performanceScore.toFixed(1)}% &middot; Perilaku SAFTI{" "}
-              {evaluation.behaviorScore.toFixed(1)} &middot; Indeks gabungan{" "}
-              {evaluation.overallScore.toFixed(1)}%
+              Hasil Kerja {evaluation.performanceScore.toFixed(1)}% &middot;
+              Perilaku SAFTI {evaluation.behaviorScore.toFixed(1)} &middot;
+              Indeks gabungan {evaluation.overallScore.toFixed(1)}%
             </p>
           </div>
         </div>
@@ -220,7 +248,8 @@ function PeriodicEvaluationDetailPageContent() {
             disabled={approveEvaluation.isPending}
             onClick={handleApprove}
           >
-            <CheckCircle2 className="w-4 h-4 mr-2" /> Finalisasi & Setujui Evaluasi
+            <CheckCircle2 className="w-4 h-4 mr-2" /> Finalisasi & Setujui
+            Evaluasi
           </Button>
         )}
       </div>
@@ -229,21 +258,33 @@ function PeriodicEvaluationDetailPageContent() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="border-blue-200 bg-blue-50/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-blue-900">Capaian Hasil Kerja (60%)</CardTitle>
+            <CardTitle className="text-xs font-medium text-blue-900">
+              Capaian Hasil Kerja (60%)
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-blue-600">{evaluation.performanceScore.toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground mt-1">Realisasi target indikator IKU/KPI</p>
+            <div className="text-3xl font-bold text-blue-600">
+              {evaluation.performanceScore.toFixed(1)}%
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Realisasi target indikator IKU/KPI
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-purple-200 bg-purple-50/40">
           <CardHeader className="pb-2">
-            <CardTitle className="text-xs font-medium text-purple-900">Skor Perilaku SAFTI (40%)</CardTitle>
+            <CardTitle className="text-xs font-medium text-purple-900">
+              Skor Perilaku SAFTI (40%)
+            </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-purple-600">{evaluation.behaviorScore.toFixed(1)}</div>
-            <p className="text-xs text-muted-foreground mt-1">Siddiq, Amanah, Fathonah, Tabligh, Istiqomah</p>
+            <div className="text-3xl font-bold text-purple-600">
+              {evaluation.behaviorScore.toFixed(1)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Siddiq, Amanah, Fathonah, Tabligh, Istiqomah
+            </p>
           </CardContent>
         </Card>
 
@@ -278,7 +319,8 @@ function PeriodicEvaluationDetailPageContent() {
       <Tabs defaultValue="indicators" className="space-y-4">
         <TabsList>
           <TabsTrigger value="indicators" className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4" /> 1. Realisasi Indikator Hasil Kerja
+            <TrendingUp className="w-4 h-4" /> 1. Realisasi Indikator Hasil
+            Kerja
           </TabsTrigger>
           <TabsTrigger value="safti" className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4" /> 2. Evaluasi Perilaku SAFTI
@@ -292,9 +334,12 @@ function PeriodicEvaluationDetailPageContent() {
         <TabsContent value="indicators">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Realisasi Bulanan Target Indikator</CardTitle>
+              <CardTitle className="text-lg">
+                Realisasi Bulanan Target Indikator
+              </CardTitle>
               <CardDescription>
-                Input jumlah realisasi yang dicapai pada bulan ini beserta uraian kegiatan pendukungnya
+                Input jumlah realisasi yang dicapai pada bulan ini beserta
+                uraian kegiatan pendukungnya
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -312,17 +357,27 @@ function PeriodicEvaluationDetailPageContent() {
                   </TableHeader>
                   <TableBody>
                     {evaluation.indicatorDetails?.map((item) => {
-                      const currentRealization = realizationInputs[item.indicatorId]?.realization ?? item.realization;
-                      const currentActivities = realizationInputs[item.indicatorId]?.activities ?? (item.activities || "");
+                      const currentRealization =
+                        realizationInputs[item.indicatorId]?.realization ??
+                        item.realization;
+                      const currentActivities =
+                        realizationInputs[item.indicatorId]?.activities ??
+                        (item.activities || "");
 
                       return (
                         <TableRow key={item.id}>
                           <TableCell className="font-semibold">
                             {item.indicator?.title}
-                            <div className="text-xs text-muted-foreground">Kategori: {item.indicator?.category}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Kategori: {item.indicator?.category}
+                            </div>
                           </TableCell>
-                          <TableCell>{item.indicator?.target} {item.indicator?.unit}</TableCell>
-                          <TableCell className="font-semibold text-emerald-600">{item.indicator?.weight}%</TableCell>
+                          <TableCell>
+                            {item.indicator?.target} {item.indicator?.unit}
+                          </TableCell>
+                          <TableCell className="font-semibold text-emerald-600">
+                            {item.indicator?.weight}%
+                          </TableCell>
                           <TableCell className="w-36">
                             <Input
                               type="number"
@@ -360,7 +415,9 @@ function PeriodicEvaluationDetailPageContent() {
                               <Button
                                 size="sm"
                                 className="bg-emerald-600 hover:bg-emerald-700"
-                                onClick={() => handleSaveRealization(item.indicatorId)}
+                                onClick={() =>
+                                  handleSaveRealization(item.indicatorId)
+                                }
                                 disabled={updateRealization.isPending}
                               >
                                 <Save className="w-3.5 h-3.5 mr-1" /> Simpan
@@ -382,10 +439,12 @@ function PeriodicEvaluationDetailPageContent() {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-purple-600" /> Penilaian Perilaku SAFTI (Nilai 0 - 100)
+                <ShieldCheck className="w-5 h-5 text-purple-600" /> Penilaian
+                Perilaku SAFTI (Nilai 0 - 100)
               </CardTitle>
               <CardDescription>
-                Penilaian integritas dan kepribadian Islami berdasarkan lima pilar akhlak mulia
+                Penilaian integritas dan kepribadian Islami berdasarkan lima
+                pilar akhlak mulia
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -393,28 +452,47 @@ function PeriodicEvaluationDetailPageContent() {
                 {evaluation.behaviorDetails?.map((item) => {
                   const val = item.behaviorValue;
                   if (!val) return null;
-                  const currentScore = behaviorInputs[val.id]?.score ?? item.score;
-                  const currentNotes = behaviorInputs[val.id]?.notes ?? (item.notes || "");
+                  const currentScore =
+                    behaviorInputs[val.id]?.score ?? item.score;
+                  const currentNotes =
+                    behaviorInputs[val.id]?.notes ?? (item.notes || "");
 
                   return (
-                    <div key={val.id} className="p-4 rounded-lg border bg-card space-y-3">
+                    <div
+                      key={val.id}
+                      className="p-4 rounded-lg border bg-card space-y-3"
+                    >
                       <div className="flex justify-between items-start">
                         <div>
-                          <h4 className="font-semibold text-base text-purple-900 dark:text-purple-300">{val.name}</h4>
-                          <p className="text-xs text-muted-foreground">{val.description || "Indikator standar perilaku Islami Cipansor"}</p>
+                          <h4 className="font-semibold text-base text-purple-900 dark:text-purple-300">
+                            {val.name}
+                          </h4>
+                          <p className="text-xs text-muted-foreground">
+                            {val.description ||
+                              "Indikator standar perilaku Islami Cipansor"}
+                          </p>
                         </div>
-                        <Badge variant="outline" className="border-purple-300 text-purple-700">Bobot: {val.weight}</Badge>
+                        <Badge
+                          variant="outline"
+                          className="border-purple-300 text-purple-700"
+                        >
+                          Bobot: {val.weight}
+                        </Badge>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 items-center">
                         <div className="space-y-1">
-                          <Label className="text-xs">Skor Perilaku (0 - 100)</Label>
+                          <Label className="text-xs">
+                            Skor Perilaku (0 - 100)
+                          </Label>
                           <Input
                             type="number"
                             min={0}
                             max={100}
                             value={currentScore}
-                            disabled={evaluation.status === "APPROVED" || !canApprove}
+                            disabled={
+                              evaluation.status === "APPROVED" || !canApprove
+                            }
                             onChange={(e) =>
                               setBehaviorInputs({
                                 ...behaviorInputs,
@@ -428,12 +506,16 @@ function PeriodicEvaluationDetailPageContent() {
                         </div>
 
                         <div className="space-y-1 md:col-span-2">
-                          <Label className="text-xs">Catatan & Bukti Perilaku</Label>
+                          <Label className="text-xs">
+                            Catatan & Bukti Perilaku
+                          </Label>
                           <div className="flex gap-2">
                             <Input
                               placeholder="Misal: Selalu disiplin waktu ibadah dan tepat waktu hadir..."
                               value={currentNotes}
-                              disabled={evaluation.status === "APPROVED" || !canApprove}
+                              disabled={
+                                evaluation.status === "APPROVED" || !canApprove
+                              }
                               onChange={(e) =>
                                 setBehaviorInputs({
                                   ...behaviorInputs,
@@ -469,21 +551,27 @@ function PeriodicEvaluationDetailPageContent() {
         <TabsContent value="feedback">
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Catatan & Feedback Atasan Penilai</CardTitle>
+              <CardTitle className="text-lg">
+                Catatan & Feedback Atasan Penilai
+              </CardTitle>
               <CardDescription>
-                Bimbingan serta apresiasi terhadap pencapaian kinerja pegawai pada periode ini
+                Bimbingan serta apresiasi terhadap pencapaian kinerja pegawai
+                pada periode ini
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
                 rows={4}
                 placeholder="Berikan masukan, apresiasi, atau area pengembangan..."
-                value={feedback !== null ? feedback : (evaluation.feedback || "")}
+                value={feedback !== null ? feedback : evaluation.feedback || ""}
                 disabled={evaluation.status === "APPROVED"}
                 onChange={(e) => setFeedback(e.target.value)}
               />
               {evaluation.status !== "APPROVED" && canApprove && (
-                <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleApprove}>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  onClick={handleApprove}
+                >
                   Simpan Catatan & Approve Evaluasi
                 </Button>
               )}

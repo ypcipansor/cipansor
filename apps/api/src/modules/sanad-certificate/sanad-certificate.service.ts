@@ -295,9 +295,7 @@ export async function bulkCreateSanadRecords(
   }
 
   if (input.records.length < MIN_BULK_CREATE_RECORDS) {
-    throw Errors.badRequest(
-      `At least ${MIN_BULK_CREATE_RECORDS} record is required`
-    );
+    throw Errors.badRequest(`At least ${MIN_BULK_CREATE_RECORDS} record is required`);
   }
 
   if (input.records.length > MAX_BULK_CREATE_RECORDS) {
@@ -811,11 +809,7 @@ export async function getSanadTree(): Promise<SanadTreeNode[]> {
     }
   }
 
-  const buildNode = (
-    userId: string,
-    visited: Set<string>,
-    edge?: Edge
-  ): SanadTreeNode => {
+  const buildNode = (userId: string, visited: Set<string>, edge?: Edge): SanadTreeNode => {
     const childEdges = edges.get(userId);
     const children: SanadTreeNode[] = [];
     if (childEdges && !visited.has(userId)) {

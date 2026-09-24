@@ -1,24 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockShariaCompliance, mockShariaAudit, mockInternalAudit, mockAuditFinding } = vi.hoisted(() => ({
-  mockShariaCompliance: {
-    findMany: vi.fn(),
-    findUnique: vi.fn(),
-    create: vi.fn(),
-    update: vi.fn(),
-    delete: vi.fn(),
-  },
-  mockShariaAudit: {
-    create: vi.fn(),
-  },
-  mockInternalAudit: {
-    findFirst: vi.fn(),
-    create: vi.fn(),
-  },
-  mockAuditFinding: {
-    create: vi.fn(),
-  }
-}));
+const { mockShariaCompliance, mockShariaAudit, mockInternalAudit, mockAuditFinding } = vi.hoisted(
+  () => ({
+    mockShariaCompliance: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+    },
+    mockShariaAudit: {
+      create: vi.fn(),
+    },
+    mockInternalAudit: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
+    },
+    mockAuditFinding: {
+      create: vi.fn(),
+    },
+  })
+);
 
 vi.mock('@/lib/prisma', () => {
   const mockPrisma = {
@@ -72,7 +74,10 @@ describe('SyariahService', () => {
         { id: 'comp-1', category: 'IBADAH', status: 'COMPLIANT' },
       ]);
 
-      const result = await service.getCompliances('unit-1', { category: 'IBADAH', status: 'COMPLIANT' });
+      const result = await service.getCompliances('unit-1', {
+        category: 'IBADAH',
+        status: 'COMPLIANT',
+      });
 
       expect(result).toHaveLength(1);
       expect(mockShariaCompliance.findMany).toHaveBeenCalledWith(
@@ -89,7 +94,7 @@ describe('SyariahService', () => {
         id: 'audit-1',
         score: 85,
         auditor: { id: 'user-1', name: 'Auditor' },
-        compliance: { unitId: 'unit-1', title: 'Test' }
+        compliance: { unitId: 'unit-1', title: 'Test' },
       };
 
       mockShariaAudit.create.mockResolvedValue(mockAudit);
@@ -118,7 +123,7 @@ describe('SyariahService', () => {
       mockShariaAudit.create.mockResolvedValue({
         id: 'audit-2',
         score: 65,
-        compliance: { unitId: 'unit-1', title: 'Test' }
+        compliance: { unitId: 'unit-1', title: 'Test' },
       });
       mockShariaCompliance.update.mockResolvedValue({});
       mockInternalAudit.findFirst.mockResolvedValue({ id: 'ia-1' });
@@ -143,7 +148,7 @@ describe('SyariahService', () => {
       mockShariaAudit.create.mockResolvedValue({
         id: 'audit-3',
         score: 30,
-        compliance: { unitId: 'unit-1', title: 'Test' }
+        compliance: { unitId: 'unit-1', title: 'Test' },
       });
       mockShariaCompliance.update.mockResolvedValue({});
       mockInternalAudit.findFirst.mockResolvedValue({ id: 'ia-1' });

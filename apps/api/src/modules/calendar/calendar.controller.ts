@@ -18,7 +18,12 @@ export class CalendarController {
         page: parseInt(req.query.page as string) || 1,
         limit: parseInt(req.query.limit as string) || 50,
       };
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await calendarService.findAll(query, user);
       res.json(result);
     } catch (error) {
@@ -29,7 +34,12 @@ export class CalendarController {
   async getEventById(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const event = await calendarService.findById(id, user);
       res.json({ data: event });
     } catch (error) {
@@ -39,7 +49,12 @@ export class CalendarController {
 
   async createEvent(req: Request, res: Response, next: NextFunction) {
     try {
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const event = await calendarService.create(req.body, user);
       res.status(201).json({ data: event });
     } catch (error) {
@@ -50,7 +65,12 @@ export class CalendarController {
   async updateEvent(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const event = await calendarService.update(id, req.body, user);
       res.json({ data: event });
     } catch (error) {
@@ -61,7 +81,12 @@ export class CalendarController {
   async deleteEvent(req: Request, res: Response, next: NextFunction) {
     try {
       const { id } = req.params;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       await calendarService.delete(id, user);
       res.json({ success: true, message: 'Event deleted successfully' });
     } catch (error) {
@@ -105,7 +130,12 @@ export class CalendarController {
   async bulkCreateEvents(req: Request, res: Response, next: NextFunction) {
     try {
       const { events } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await calendarService.bulkCreate(events, user);
       res.json({ data: result });
     } catch (error) {
@@ -116,7 +146,12 @@ export class CalendarController {
   async importAcademicCalendar(req: Request, res: Response, next: NextFunction) {
     try {
       const { events } = req.body;
-      const user = { sub: req.user!.sub, role: req.user!.role, roleCode: req.user!.roleCode, unitId: req.user!.unitId };
+      const user = {
+        sub: req.user!.sub,
+        role: req.user!.role,
+        roleCode: req.user!.roleCode,
+        unitId: req.user!.unitId,
+      };
       const result = await calendarService.bulkCreate(events, user);
       res.json({ data: result });
     } catch (error) {

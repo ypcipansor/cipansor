@@ -48,7 +48,6 @@ import {
   QrCode,
 } from "lucide-react";
 
-
 interface Permit {
   id: string;
   code?: string;
@@ -95,9 +94,8 @@ export default function PermitsPage() {
 
         if (childrenData.length > 0) {
           const defaultChild = selectedStudentId
-            ? childrenData.find(
-                (c: ParentChild) => c.id === selectedStudentId,
-              )?.id
+            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
+                ?.id
             : childrenData[0].id;
           setSelectedChild(defaultChild || childrenData[0].id);
         }
@@ -206,9 +204,7 @@ export default function PermitsPage() {
     return labels[type] || type;
   };
 
-  const selectedChildData = children.find(
-    (c) => c.id === selectedChild,
-  );
+  const selectedChildData = children.find((c) => c.id === selectedChild);
 
   return (
     <div className="space-y-6">

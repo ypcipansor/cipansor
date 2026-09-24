@@ -563,9 +563,7 @@ function HomeroomDashboardPageContent() {
                         {/* Note: Individual stats would require N+1 queries or complex join, for now we list students */}
                         <td className="py-3 px-2 text-center">
                           <div className="flex items-center justify-center gap-1">
-                            <Link
-                              href={`/homeroom/students/${student.id}`}
-                            >
+                            <Link href={`/homeroom/students/${student.id}`}>
                               <Button
                                 variant="ghost"
                                 size="icon"

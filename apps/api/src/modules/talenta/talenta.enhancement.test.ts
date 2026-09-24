@@ -22,13 +22,59 @@ describe('Talenta Service Enhancement', () => {
   describe('Talent Analytics', () => {
     it('should calculate correct distribution and percentages', async () => {
       const mockProfiles = [
-        { id: '1', category: 'HIGH_POTENTIAL', currentRole: 'Teacher', user: { id: 'u1', name: 'User 1' }, assessments: [{ performanceRating: 'OUTSTANDING', potentialRating: 'OUTSTANDING', overallScore: 100 }] },
-        { id: '2', category: 'HIGH_POTENTIAL', currentRole: 'Teacher', user: { id: 'u2', name: 'User 2' }, assessments: [{ performanceRating: 'EXCEEDS', potentialRating: 'EXCEEDS', overallScore: 80 }] },
-        { id: '3', category: 'KEY_TALENT', currentRole: 'Staff', user: { id: 'u3', name: 'User 3' }, assessments: [] },
-        { id: '4', category: 'EMERGING', currentRole: 'Staff', user: { id: 'u4', name: 'User 4' }, assessments: [] },
-        { id: '5', category: 'SOLID_PERFORMER', currentRole: 'Admin', user: { id: 'u5', name: 'User 5' }, assessments: [] },
-        { id: '6', category: 'NEEDS_DEVELOPMENT', currentRole: 'Admin', user: { id: 'u6', name: 'User 6' }, assessments: [] },
-        { id: '7', category: 'INVALID', currentRole: 'Other', user: { id: 'u7', name: 'User 7' }, assessments: [] }, // Should be ignored
+        {
+          id: '1',
+          category: 'HIGH_POTENTIAL',
+          currentRole: 'Teacher',
+          user: { id: 'u1', name: 'User 1' },
+          assessments: [
+            { performanceRating: 'OUTSTANDING', potentialRating: 'OUTSTANDING', overallScore: 100 },
+          ],
+        },
+        {
+          id: '2',
+          category: 'HIGH_POTENTIAL',
+          currentRole: 'Teacher',
+          user: { id: 'u2', name: 'User 2' },
+          assessments: [
+            { performanceRating: 'EXCEEDS', potentialRating: 'EXCEEDS', overallScore: 80 },
+          ],
+        },
+        {
+          id: '3',
+          category: 'KEY_TALENT',
+          currentRole: 'Staff',
+          user: { id: 'u3', name: 'User 3' },
+          assessments: [],
+        },
+        {
+          id: '4',
+          category: 'EMERGING',
+          currentRole: 'Staff',
+          user: { id: 'u4', name: 'User 4' },
+          assessments: [],
+        },
+        {
+          id: '5',
+          category: 'SOLID_PERFORMER',
+          currentRole: 'Admin',
+          user: { id: 'u5', name: 'User 5' },
+          assessments: [],
+        },
+        {
+          id: '6',
+          category: 'NEEDS_DEVELOPMENT',
+          currentRole: 'Admin',
+          user: { id: 'u6', name: 'User 6' },
+          assessments: [],
+        },
+        {
+          id: '7',
+          category: 'INVALID',
+          currentRole: 'Other',
+          user: { id: 'u7', name: 'User 7' },
+          assessments: [],
+        }, // Should be ignored
       ];
 
       vi.mocked(prisma.talentProfile.findMany).mockResolvedValue(mockProfiles as any);
@@ -49,7 +95,7 @@ describe('Talenta Service Enhancement', () => {
       const user1 = result.profiles.find((p: any) => p.id === '1')!;
       expect(user1.name).toBe('User 1');
       expect(user1.performanceScore).toBe(100); // OUTSTANDING
-      expect(user1.potentialScore).toBe(100);   // OUTSTANDING
+      expect(user1.potentialScore).toBe(100); // OUTSTANDING
 
       // Verify profiles without assessments default to 0
       const user3 = result.profiles.find((p: any) => p.id === '3')!;

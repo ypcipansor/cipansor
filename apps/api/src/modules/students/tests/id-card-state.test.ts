@@ -76,11 +76,7 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — state persistence (
       aCardDetail('CARD-S1', validUntil) as never
     );
 
-    await StudentIdCardService.bulkRegenerateActiveCards(
-      undefined,
-      undefined,
-      superAdmin()
-    );
+    await StudentIdCardService.bulkRegenerateActiveCards(undefined, undefined, superAdmin());
 
     expect(prisma.studentCardState.create).toHaveBeenCalledWith({
       data: {
@@ -99,11 +95,7 @@ describe('StudentIdCardService.bulkRegenerateActiveCards — state persistence (
   it('revokes any previous ACTIVE card when regenerating', async () => {
     (prisma.student.findMany as any).mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
 
-    await StudentIdCardService.bulkRegenerateActiveCards(
-      undefined,
-      undefined,
-      superAdmin()
-    );
+    await StudentIdCardService.bulkRegenerateActiveCards(undefined, undefined, superAdmin());
 
     for (const studentId of ['s1', 's2']) {
       expect(prisma.studentCardState.updateMany).toHaveBeenCalledWith({

@@ -4,7 +4,13 @@ import { Prisma } from '@prisma/client';
 vi.mock('../../lib/prisma', () => {
   const mockPrisma = {
     invoice: { findUnique: vi.fn(), update: vi.fn() },
-    payment: { create: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), count: vi.fn(), update: vi.fn() },
+    payment: {
+      create: vi.fn(),
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
+      update: vi.fn(),
+    },
     studentParent: { findUnique: vi.fn() },
     journalEntry: { create: vi.fn() },
     $transaction: vi.fn(),
@@ -242,7 +248,9 @@ describe('verifyPayment state machine', () => {
       paymentInStatus('PENDING_VERIFICATION', { invoice: tagihanLama })
     );
 
-    await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(/another unit/);
+    await expect(verifyPayment('pay-1', 'TU_APPROVE', otherUnitAdmin)).rejects.toThrow(
+      /another unit/
+    );
     expect(mocked.payment.update).not.toHaveBeenCalled();
   });
 
@@ -257,7 +265,9 @@ describe('verifyPayment state machine', () => {
     });
 
     expect(mocked.payment.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ verificationStatus: 'TU_APPROVED' }) })
+      expect.objectContaining({
+        data: expect.objectContaining({ verificationStatus: 'TU_APPROVED' }),
+      })
     );
   });
 

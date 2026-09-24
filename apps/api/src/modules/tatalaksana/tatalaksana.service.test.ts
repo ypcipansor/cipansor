@@ -36,7 +36,10 @@ describe('Tata Laksana Service', () => {
         createdById: 'user-1',
       };
 
-      vi.mocked(prisma.standardOperatingProcedure.create).mockResolvedValue({ id: 'sop-1', ...dto } as any);
+      vi.mocked(prisma.standardOperatingProcedure.create).mockResolvedValue({
+        id: 'sop-1',
+        ...dto,
+      } as any);
 
       const result = await tataLaksanaService.createSOP(dto);
 
@@ -47,17 +50,16 @@ describe('Tata Laksana Service', () => {
     });
 
     it('should get SOPs with search filter', async () => {
-      vi.mocked(prisma.standardOperatingProcedure.findMany).mockResolvedValue([{ id: 'sop-1' }] as any);
+      vi.mocked(prisma.standardOperatingProcedure.findMany).mockResolvedValue([
+        { id: 'sop-1' },
+      ] as any);
 
       await tataLaksanaService.getSOPs({ unitId: 'unit-1', search: 'Internet' });
 
       expect(prisma.standardOperatingProcedure.findMany).toHaveBeenCalledWith({
         where: {
           unitId: 'unit-1',
-          OR: [
-            { title: { contains: 'Internet' } },
-            { documentNumber: { contains: 'Internet' } },
-          ],
+          OR: [{ title: { contains: 'Internet' } }, { documentNumber: { contains: 'Internet' } }],
         },
         include: expect.any(Object),
         orderBy: { updatedAt: 'desc' },
@@ -65,7 +67,10 @@ describe('Tata Laksana Service', () => {
     });
 
     it('should approve an SOP', async () => {
-      vi.mocked(prisma.standardOperatingProcedure.update).mockResolvedValue({ id: 'sop-1', status: 'APPROVED' } as any);
+      vi.mocked(prisma.standardOperatingProcedure.update).mockResolvedValue({
+        id: 'sop-1',
+        status: 'APPROVED',
+      } as any);
 
       await tataLaksanaService.approveSOP('sop-1', 'user-2');
 
@@ -80,9 +85,9 @@ describe('Tata Laksana Service', () => {
 
     it('should calculate SOP summary correctly', async () => {
       vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(10); // total
-      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(6);  // active
-      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(3);  // draft
-      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(1);  // deprecated
+      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(6); // active
+      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(3); // draft
+      vi.mocked(prisma.standardOperatingProcedure.count).mockResolvedValueOnce(1); // deprecated
 
       vi.mocked(prisma.standardOperatingProcedure.groupBy).mockResolvedValue([
         { category: 'IT', _count: 4 },
@@ -103,8 +108,10 @@ describe('Tata Laksana Service', () => {
   describe('SOP Revision', () => {
     it('should create revision and increment version', async () => {
       const existingSop = { id: 'sop-1', version: 1, content: 'Old content' };
-      
-      vi.mocked(prisma.standardOperatingProcedure.findUniqueOrThrow).mockResolvedValue(existingSop as any);
+
+      vi.mocked(prisma.standardOperatingProcedure.findUniqueOrThrow).mockResolvedValue(
+        existingSop as any
+      );
       vi.mocked(prisma.sOPRevision.create).mockResolvedValue({ id: 'rev-1' } as any);
       vi.mocked(prisma.standardOperatingProcedure.update).mockResolvedValue({} as any);
 

@@ -1,17 +1,10 @@
 import { Student } from "./models";
 
 export type TahfidzActivityType =
-  | "ZIYADAH"
-  | "MUROJAAH"
-  | "TASMI"
-  | "ASSESSMENT";
+  "ZIYADAH" | "MUROJAAH" | "TASMI" | "ASSESSMENT";
 
 export type TahfidzGrade =
-  | "MUMTAZ"
-  | "JAYYID_JIDDAN"
-  | "JAYYID"
-  | "MAQBUL"
-  | "RASIB";
+  "MUMTAZ" | "JAYYID_JIDDAN" | "JAYYID" | "MAQBUL" | "RASIB";
 
 export interface TahfidzRecord {
   id: string;

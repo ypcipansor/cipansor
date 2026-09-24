@@ -34,7 +34,12 @@ export interface HomeContent {
   about: {
     eyebrow: string;
     heading: string;
-    body: (markaz: string, legalName: string, year: string, visi: string) => string;
+    body: (
+      markaz: string,
+      legalName: string,
+      year: string,
+      visi: string,
+    ) => string;
     commitments: string[];
     moreLink: string;
     /** Under the documentation photographs, to the full album. */
@@ -65,7 +70,12 @@ export interface HomeContent {
     donate: { title: string; body: string; button: string };
   };
   footer: {
-    blurb: (markaz: string, legalName: string, year: string, visi: string) => string;
+    blurb: (
+      markaz: string,
+      legalName: string,
+      year: string,
+      visi: string,
+    ) => string;
     linksHeading: string;
     unitsHeading: string;
     contactHeading: string;
@@ -108,7 +118,10 @@ const ID: HomeContent = {
       label: "Berdiri Sejak",
       description: (years) => `Lebih dari ${years} tahun mengabdi`,
     },
-    units: { label: "Unit Pendidikan", description: "Jenjang TKQ hingga Takhosus" },
+    units: {
+      label: "Unit Pendidikan",
+      description: "Jenjang TKQ hingga Takhosus",
+    },
     programs: {
       label: "Program Unggulan",
       description: "Tahfidz, kitab, hingga kepemimpinan",
@@ -194,7 +207,8 @@ const EN: HomeContent = {
   hero: {
     registerCta: "Register (SPMB)",
     profileCta: "About the Pesantren",
-    imageAlt: "The grounds of Pesantren Cipansor and santri at their activities",
+    imageAlt:
+      "The grounds of Pesantren Cipansor and santri at their activities",
   },
   stats: {
     srHeading: "Pesantren Cipansor at a glance",
@@ -217,7 +231,8 @@ const EN: HomeContent = {
   },
   about: {
     eyebrow: "About the Pesantren",
-    heading: "Holding Religious Learning, Academic Study, and Technology in Balance",
+    heading:
+      "Holding Religious Learning, Academic Study, and Technology in Balance",
     body: (markaz, legalName, year, visi) =>
       `${markaz} ${legalName} is an Islamic educational institution, established in ${year}, with the vision of “${visi}”. Santri are formed in a boarding environment that builds independence, discipline, and adab (right conduct), while being prepared to hold their own in a global age.`,
     commitments: [

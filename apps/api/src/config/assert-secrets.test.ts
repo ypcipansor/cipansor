@@ -13,14 +13,13 @@ const SHIPPED = 'your-super-secret-key-change-this-in-production-min-32-chars';
  * deliberate-looking, which is why the length and placeholder checks alone
  * would let it through.
  */
-const LEAKED_SEQUENTIAL_HEX =
-  '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
+const LEAKED_SEQUENTIAL_HEX = '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f';
 
 describe('production secret guard', () => {
   it('refuses the exact value that was live in production', () => {
-    expect(() =>
-      assertProductionSecrets({ env: 'production', jwtSecret: SHIPPED })
-    ).toThrow(/JWT_SECRET/);
+    expect(() => assertProductionSecrets({ env: 'production', jwtSecret: SHIPPED })).toThrow(
+      /JWT_SECRET/
+    );
   });
 
   // It is long enough and looks deliberate, which is why it survived review.
@@ -171,16 +170,12 @@ describe('production secret guard', () => {
     expect(SHIPPED.length).toBeGreaterThanOrEqual(32);
     expect(SHIPPED).not.toBe('change-this-secret-in-production');
 
-    expect(() => resolveJwtSecret(SHIPPED, 'production')).toThrow(
-      /example value/
-    );
+    expect(() => resolveJwtSecret(SHIPPED, 'production')).toThrow(/example value/);
   });
 
   it('leaves development and test alone', () => {
     for (const env of ['development', 'test', undefined]) {
-      expect(() =>
-        assertProductionSecrets({ env, jwtSecret: SHIPPED })
-      ).not.toThrow();
+      expect(() => assertProductionSecrets({ env, jwtSecret: SHIPPED })).not.toThrow();
     }
   });
 

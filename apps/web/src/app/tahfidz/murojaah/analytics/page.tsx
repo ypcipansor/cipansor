@@ -3,10 +3,7 @@
 import { useState, useMemo } from "react";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
-import {
-  useMurojaahRecords,
-  MurojaahRecord,
-} from "@/hooks/use-murojaah";
+import { useMurojaahRecords, MurojaahRecord } from "@/hooks/use-murojaah";
 import { useClasses } from "@/hooks/use-classes";
 import {
   Card,
@@ -115,11 +112,18 @@ export default function MurojaahAnalyticsPage() {
       };
 
     const totalRecords = records.length;
-    const passedRecords = records.filter((r: MurojaahRecord) => r.status === "PASSED").length;
-    const pendingRecords = records.filter((r: MurojaahRecord) => r.status === "PENDING").length;
+    const passedRecords = records.filter(
+      (r: MurojaahRecord) => r.status === "PASSED",
+    ).length;
+    const pendingRecords = records.filter(
+      (r: MurojaahRecord) => r.status === "PENDING",
+    ).length;
 
     // Average grade
-    const gradesSum = records.reduce((sum: number, r: MurojaahRecord) => sum + (r.grade || 0), 0);
+    const gradesSum = records.reduce(
+      (sum: number, r: MurojaahRecord) => sum + (r.grade || 0),
+      0,
+    );
     const averageGrade =
       totalRecords > 0 ? Math.round(gradesSum / totalRecords) : 0;
 

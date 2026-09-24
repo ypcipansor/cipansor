@@ -25,7 +25,7 @@ const financeAdmin = () =>
     RoleCode.SDIT_ADMIN,
     RoleCode.SMPIT_ADMIN,
     RoleCode.SMAQ_ADMIN,
-    'UNIT_ADMIN', // Legacy pre-migration token value
+    'UNIT_ADMIN' // Legacy pre-migration token value
   );
 
 // Minimal schemas for new endpoints (should be moved to schema.ts properly)
@@ -83,11 +83,7 @@ router.put(
 
 // ==================== JOURNAL ENTRIES ====================
 
-router.get(
-  '/journal-entries',
-  financeAdmin(),
-  financeEnhancementController.getJournalEntries
-);
+router.get('/journal-entries', financeAdmin(), financeEnhancementController.getJournalEntries);
 
 router.post(
   '/journal-entries',
@@ -147,11 +143,7 @@ router.post(
 
 // ==================== REPORTS ====================
 
-router.get(
-  '/reports/trial-balance',
-  financeAdmin(),
-  financeEnhancementController.getTrialBalance
-);
+router.get('/reports/trial-balance', financeAdmin(), financeEnhancementController.getTrialBalance);
 
 router.get(
   '/reports/income-expense',
@@ -171,11 +163,7 @@ router.get(
   financeEnhancementController.getIncomeExpenseReport
 );
 
-router.get(
-  '/reports/cash-flow',
-  financeAdmin(),
-  financeEnhancementController.getCashFlowStatement
-);
+router.get('/reports/cash-flow', financeAdmin(), financeEnhancementController.getCashFlowStatement);
 
 router.get(
   '/reports/budget-realization',
@@ -184,11 +172,7 @@ router.get(
 );
 // ==================== BUDGETS ====================
 
-router.get(
-  '/budgets',
-  financeAdmin(),
-  financeEnhancementController.getBudgets
-);
+router.get('/budgets', financeAdmin(), financeEnhancementController.getBudgets);
 
 router.post(
   '/budgets',
@@ -204,11 +188,7 @@ router.put(
   financeEnhancementController.updateBudget
 );
 
-router.delete(
-  '/budgets/:id',
-  financeAdmin(),
-  financeEnhancementController.deleteBudget
-);
+router.delete('/budgets/:id', financeAdmin(), financeEnhancementController.deleteBudget);
 
 router.post(
   '/budgets/recalculate',
@@ -224,11 +204,7 @@ router.get(
 
 // ==================== FINANCIAL PERIODS ====================
 
-router.get(
-  '/financial-periods',
-  financeAdmin(),
-  financeEnhancementController.getFinancialPeriods
-);
+router.get('/financial-periods', financeAdmin(), financeEnhancementController.getFinancialPeriods);
 
 router.post(
   '/financial-periods',
@@ -245,11 +221,7 @@ router.patch(
 
 // ==================== NEW REPORTS ====================
 
-router.get(
-  '/reports/balance-sheet',
-  financeAdmin(),
-  financeEnhancementController.getBalanceSheet
-);
+router.get('/reports/balance-sheet', financeAdmin(), financeEnhancementController.getBalanceSheet);
 
 router.get(
   '/reports/cash-flow-forecast',

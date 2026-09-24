@@ -45,18 +45,13 @@ describe('jenis dan sifat naskah', () => {
   });
 
   it('surat tugas mengikuti aturan yang sama dengan surat keputusan', () => {
-    expect(naturesFor(LetterType.SURAT_TUGAS)).toEqual([
-      LetterNature.PUBLIC,
-      LetterNature.LIMITED,
-    ]);
+    expect(naturesFor(LetterType.SURAT_TUGAS)).toEqual([LetterNature.PUBLIC, LetterNature.LIMITED]);
   });
 
   it('naskah yang berlaku umum hanya boleh Biasa', () => {
     for (const type of [LetterType.SURAT_EDARAN, LetterType.PENGUMUMAN]) {
       expect(naturesFor(type)).toEqual([LetterNature.PUBLIC]);
-      expect(() => assertNatureAllowed(type, LetterNature.LIMITED)).toThrow(
-        NaskahError
-      );
+      expect(() => assertNatureAllowed(type, LetterNature.LIMITED)).toThrow(NaskahError);
     }
   });
 

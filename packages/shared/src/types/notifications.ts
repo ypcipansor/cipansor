@@ -11,11 +11,7 @@ export type NotificationType =
 
 export type NotificationPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
 export type NotificationChannel =
-  | "IN_APP"
-  | "EMAIL"
-  | "SMS"
-  | "PUSH"
-  | "WHATSAPP";
+  "IN_APP" | "EMAIL" | "SMS" | "PUSH" | "WHATSAPP";
 export type RecipientType = "ALL" | "UNIT" | "CLASS" | "ROLE" | "INDIVIDUAL";
 
 export interface AppNotification {

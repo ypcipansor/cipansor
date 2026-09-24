@@ -17,7 +17,9 @@ import { reportingService } from './reporting.service';
  */
 describe('laporan Daftar Santri — penyaring status', () => {
   beforeEach(() => {
-    vi.mocked(prisma.student.findMany).mockReset().mockResolvedValue([] as never);
+    vi.mocked(prisma.student.findMany)
+      .mockReset()
+      .mockResolvedValue([] as never);
   });
 
   it('meneruskan status yang ada di kolomnya', async () => {
@@ -26,7 +28,9 @@ describe('laporan Daftar Santri — penyaring status', () => {
       format: 'JSON' as never,
       filters: { status: 'active' },
     });
-    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as { where: { status?: string } };
+    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as {
+      where: { status?: string };
+    };
     expect(arg.where.status).toBe('active');
   });
 
@@ -50,7 +54,9 @@ describe('laporan Daftar Santri — penyaring status', () => {
       format: 'JSON' as never,
       filters: {},
     });
-    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as { where: { status?: string } };
+    const arg = vi.mocked(prisma.student.findMany).mock.calls[0][0] as {
+      where: { status?: string };
+    };
     expect(arg.where.status).toBeUndefined();
   });
 });

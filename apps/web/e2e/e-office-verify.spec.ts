@@ -2,18 +2,28 @@ import { test, expect } from "@playwright/test";
 import { loginAs } from "./helpers/auth-api";
 
 test.describe("E-Office & Public Letter Verification E2E", () => {
-  test("Public Letter Verification page loads and displays PDF upload form", async ({ page }) => {
+  test("Public Letter Verification page loads and displays PDF upload form", async ({
+    page,
+  }) => {
     await page.goto("/public/verify-letter");
 
-    await expect(page.locator("h1")).toContainText("Verifikasi Tanda Tangan Elektronik");
+    await expect(page.locator("h1")).toContainText(
+      "Verifikasi Tanda Tangan Elektronik",
+    );
     await expect(page.locator("input[type='file']")).toBeVisible();
-    await expect(page.getByRole("button", { name: /verifikasi dokumen/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /verifikasi dokumen/i }),
+    ).toBeVisible();
 
     // Verify button is disabled when no PDF file is selected
-    await expect(page.getByRole("button", { name: /verifikasi dokumen/i })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: /verifikasi dokumen/i }),
+    ).toBeDisabled();
   });
 
-  test("E-Office main page renders and displays stats for authenticated users", async ({ page }) => {
+  test("E-Office main page renders and displays stats for authenticated users", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
 
     // Navigate to e-office page
@@ -21,13 +31,19 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
 
     // Expect E-Office header
     await expect(page.locator("h1")).toContainText("E-Office");
-    await expect(page.getByRole("button", { name: /buat surat baru/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /buat surat baru/i }),
+    ).toBeVisible();
   });
 
-  test("Integration test against real backend /api/esign/verify-pdf endpoint", async ({ page }) => {
+  test("Integration test against real backend /api/esign/verify-pdf endpoint", async ({
+    page,
+  }) => {
     await page.goto("/public/verify-letter");
 
-    const buffer = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF");
+    const buffer = Buffer.from(
+      "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF",
+    );
     await page.setInputFiles("input[type='file']", {
       name: "sample-document.pdf",
       mimeType: "application/pdf",
@@ -42,10 +58,14 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
     await page.getByRole("button", { name: /verifikasi dokumen/i }).click();
 
     // With real backend, uploading random PDF buffer should return DOKUMEN TIDAK VALID or result
-    await expect(page.locator("text=/DOKUMEN TIDAK VALID|DOKUMEN SAH & TERVERIFIKASI/")).toBeVisible();
+    await expect(
+      page.locator("text=/DOKUMEN TIDAK VALID|DOKUMEN SAH & TERVERIFIKASI/"),
+    ).toBeVisible();
   });
 
-  test("Valid public PDF verification displays success status and TTE signer details", async ({ page }) => {
+  test("Valid public PDF verification displays success status and TTE signer details", async ({
+    page,
+  }) => {
     await page.route("**/api/esign/verify-pdf", async (route) => {
       await route.fulfill({
         status: 200,
@@ -55,7 +75,11 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
           data: {
             isValid: true,
             isRevoked: false,
-            signer: { name: "Dr. H. Ahmad", nip: "19800101", position: "Kepala Sekolah" },
+            signer: {
+              name: "Dr. H. Ahmad",
+              nip: "19800101",
+              position: "Kepala Sekolah",
+            },
             letter: {
               letterNumber: "001/SK/Y-CPS/VIII/2026",
               subject: "Pengumuman Resmi",
@@ -64,7 +88,8 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
               unitName: "SMA Al-Qur'an",
             },
             signedAt: "2026-08-01T16:40:31Z",
-            digest: "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890",
+            digest:
+              "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890",
           },
         }),
       });
@@ -72,7 +97,9 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
 
     await page.goto("/public/verify-letter");
 
-    const buffer = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF");
+    const buffer = Buffer.from(
+      "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF",
+    );
     await page.setInputFiles("input[type='file']", {
       name: "surat-resmi.pdf",
       mimeType: "application/pdf",
@@ -114,7 +141,11 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
             isRevoked: true,
             revokedAt: "2026-08-02T10:00:00Z",
             revokedReason: "Dibatalkan oleh pimpinan",
-            signer: { name: "H. Ustadz Abdullah", nip: "19750202", position: "Sekretaris" },
+            signer: {
+              name: "H. Ustadz Abdullah",
+              nip: "19750202",
+              position: "Sekretaris",
+            },
             letter: {
               letterNumber: "002/SK/Y-CPS/VIII/2026",
               subject: "SK Pengangkatan",
@@ -130,7 +161,9 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
 
     await page.goto("/public/verify-letter");
 
-    const buffer = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF");
+    const buffer = Buffer.from(
+      "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF",
+    );
     await page.setInputFiles("input[type='file']", {
       name: "surat-revoked.pdf",
       mimeType: "application/pdf",
@@ -158,7 +191,8 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
           data: {
             isValid: false,
             isRevoked: false,
-            reason: "Dokumen PDF ini tidak terdaftar dalam sistem resmi Yayasan Pesantren Cipansor.",
+            reason:
+              "Dokumen PDF ini tidak terdaftar dalam sistem resmi Yayasan Pesantren Cipansor.",
           },
         }),
       });
@@ -166,7 +200,9 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
 
     await page.goto("/public/verify-letter");
 
-    const buffer = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF");
+    const buffer = Buffer.from(
+      "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF",
+    );
     await page.setInputFiles("input[type='file']", {
       name: "surat-invalid.pdf",
       mimeType: "application/pdf",
@@ -181,10 +217,14 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
     await page.getByRole("button", { name: /verifikasi dokumen/i }).click();
 
     await expect(page.getByText(/DOKUMEN TIDAK VALID/i)).toBeVisible();
-    await expect(page.getByText(/tidak terdaftar dalam sistem resmi/i)).toBeVisible();
+    await expect(
+      page.getByText(/tidak terdaftar dalam sistem resmi/i),
+    ).toBeVisible();
   });
 
-  test("Authenticated user can navigate to Create Letter and search participants in real flow", async ({ page }) => {
+  test("Authenticated user can navigate to Create Letter and search participants in real flow", async ({
+    page,
+  }) => {
     await loginAs(page, "superAdmin");
 
     await page.goto("/e-office/create");

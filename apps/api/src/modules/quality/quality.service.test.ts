@@ -38,9 +38,7 @@ describe('Quality Service', () => {
 
   describe('getAllStandards', () => {
     it('should return all standards with indicators', async () => {
-      const mockStandards = [
-        { id: 'std-1', name: 'Standard 1', indicators: [] },
-      ];
+      const mockStandards = [{ id: 'std-1', name: 'Standard 1', indicators: [] }];
       vi.mocked(prisma.qualityStandard.findMany).mockResolvedValue(mockStandards as any);
 
       const result = await qualityService.getAllStandards();
@@ -152,7 +150,9 @@ describe('Quality Service', () => {
         endDate: '2026-01-31T00:00:00.000Z',
       };
 
-      await expect(qualityService.createAudit(dto, 'UNIT_ADMIN', 'unit-1')).rejects.toThrow(ApiError);
+      await expect(qualityService.createAudit(dto, 'UNIT_ADMIN', 'unit-1')).rejects.toThrow(
+        ApiError
+      );
     });
   });
 });

@@ -377,8 +377,8 @@ export function TurnstileWidget({
             Verifikasi keamanan tidak dapat dimuat, jadi formulir ini belum bisa
             dikirim. Penyebabnya hampir selalu ada di sisi Anda: pemblokir iklan
             atau jaringan yang menyaring{" "}
-            <span className="font-mono text-xs">challenges.cloudflare.com</span>.
-            Izinkan alamat itu, atau coba jaringan lain.
+            <span className="font-mono text-xs">challenges.cloudflare.com</span>
+            . Izinkan alamat itu, atau coba jaringan lain.
           </p>
           <button
             type="button"

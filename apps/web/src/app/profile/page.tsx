@@ -185,7 +185,12 @@ function ProfilePageContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">{user.name}</h1>
           <div className="flex items-center gap-2 mt-1">
-            <Badge className={ROLE_COLORS[getEffectiveRole(user) ?? user.role] || "bg-gray-100"}>
+            <Badge
+              className={
+                ROLE_COLORS[getEffectiveRole(user) ?? user.role] ||
+                "bg-gray-100"
+              }
+            >
               {ROLE_LABELS[getEffectiveRole(user) ?? user.role] || user.role}
             </Badge>
             {user.unit && (
@@ -234,7 +239,8 @@ function ProfilePageContent() {
                     Role
                   </Label>
                   <p className="font-medium">
-                    {ROLE_LABELS[getEffectiveRole(user) ?? user.role] || user.role}
+                    {ROLE_LABELS[getEffectiveRole(user) ?? user.role] ||
+                      user.role}
                   </p>
                 </div>
                 <div className="space-y-2">

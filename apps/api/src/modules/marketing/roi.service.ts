@@ -21,7 +21,7 @@ export async function calculateCampaignROI(unitId?: string) {
 
   if (campaigns.length === 0) return [];
 
-  const campaignIds = campaigns.map(c => c.id);
+  const campaignIds = campaigns.map((c) => c.id);
 
   // 1. Get converted counts in one query
   const conversions = await prisma.registrant.groupBy({
@@ -33,9 +33,7 @@ export async function calculateCampaignROI(unitId?: string) {
     _count: { _all: true },
   });
 
-  const conversionMap = new Map(
-    conversions.map(c => [c.campaignId, c._count._all])
-  );
+  const conversionMap = new Map(conversions.map((c) => [c.campaignId, c._count._all]));
 
   // 2. Get revenue in one query
   // Support both Registrant -> Student -> Invoice AND Registrant -> Invoice directly
@@ -62,34 +60,36 @@ export async function calculateCampaignROI(unitId?: string) {
               where: { campaignId: { in: campaignIds } },
               orderBy: { createdAt: 'asc' },
               take: 1,
-              select: { campaignId: true }
-            }
-          }
-        }
-      }
+              select: { campaignId: true },
+            },
+          },
+        },
+      },
     }),
     // Path: Registrant -> Invoice (for registration fees paid before promotion to student)
     // Note: This requires an optional registrantId on the Invoice model
-    (prisma.invoice as any).findMany({
-      where: {
-        registrant: {
-          campaignId: { in: campaignIds },
+    (prisma.invoice as any)
+      .findMany({
+        where: {
+          registrant: {
+            campaignId: { in: campaignIds },
+          },
+          status: 'PAID',
         },
-        status: 'PAID',
-      },
-      select: {
-        paidAmount: true,
-        registrant: {
-          select: { campaignId: true }
-        }
-      }
-    }).catch(() => []) // Gracefully handle if registrantId isn't on Invoice yet
+        select: {
+          paidAmount: true,
+          registrant: {
+            select: { campaignId: true },
+          },
+        },
+      })
+      .catch(() => []), // Gracefully handle if registrantId isn't on Invoice yet
   ]);
 
   const revenueMap = new Map<string, number>();
 
   // Add revenue from students
-  studentRevenueData.forEach(inv => {
+  studentRevenueData.forEach((inv) => {
     const cid = inv.student?.registrants?.[0]?.campaignId;
     if (cid) {
       revenueMap.set(cid, (revenueMap.get(cid) || 0) + Number(inv.paidAmount));
@@ -110,9 +110,8 @@ export async function calculateCampaignROI(unitId?: string) {
     const cost = Number(campaign.budget || 0);
 
     const roi = cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
-    const conversionRate = campaign._count.registrants > 0
-      ? (convertedCount / campaign._count.registrants) * 100
-      : 0;
+    const conversionRate =
+      campaign._count.registrants > 0 ? (convertedCount / campaign._count.registrants) * 100 : 0;
 
     return {
       campaignId: campaign.id,
@@ -127,13 +126,12 @@ export async function calculateCampaignROI(unitId?: string) {
         roi: Math.round(roi * 100) / 100,
         costPerLead: campaign._count.registrants > 0 ? cost / campaign._count.registrants : 0,
         costPerAcquisition: convertedCount > 0 ? cost / convertedCount : 0,
-      }
+      },
     };
   });
 
   return results.sort((a, b) => b.metrics.roi - a.metrics.roi);
 }
-
 
 /**
  * Admission funnel: how far registrants progress through the pipeline.
@@ -225,9 +223,10 @@ export async function getMonthlyAttributedRevenue(unitId?: string, months = 6) {
     });
   }
   for (const payment of payments) {
-    const key = `${payment.paidAt.getFullYear()}-${String(
-      payment.paidAt.getMonth() + 1
-    ).padStart(2, '0')}`;
+    const key = `${payment.paidAt.getFullYear()}-${String(payment.paidAt.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}`;
     const bucket = buckets.get(key);
     if (bucket) {
       bucket.revenue += Number(payment.amount);

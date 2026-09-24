@@ -107,8 +107,8 @@ function VerifySanadContent() {
           Verifikasi Sertifikat Sanad
         </h1>
         <p className="text-muted-foreground mt-2 text-pretty">
-          Periksa keaslian sertifikat Sanad dan Tahfidz yang diterbitkan
-          Yayasan Pesantren Cipansor.
+          Periksa keaslian sertifikat Sanad dan Tahfidz yang diterbitkan Yayasan
+          Pesantren Cipansor.
         </p>
       </div>
 
@@ -145,25 +145,25 @@ function VerifySanadContent() {
         <CardContent>
           <form onSubmit={handleVerify} className="space-y-3">
             <div className="flex gap-2">
-            <Input
-              placeholder="Contoh: SANAD-202601-A1B2C3D4"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              className="flex-1"
-            />
-            <Button
-              type="submit"
-              disabled={isLoading || !code.trim() || !turnstile.ready}
-            >
-              {isLoading ? (
-                "Mengecek..."
-              ) : (
-                <>
-                  <Search className="h-4 w-4 mr-2" />
-                  Verifikasi
-                </>
-              )}
-            </Button>
+              <Input
+                placeholder="Contoh: SANAD-202601-A1B2C3D4"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                className="flex-1"
+              />
+              <Button
+                type="submit"
+                disabled={isLoading || !code.trim() || !turnstile.ready}
+              >
+                {isLoading ? (
+                  "Mengecek..."
+                ) : (
+                  <>
+                    <Search className="h-4 w-4 mr-2" />
+                    Verifikasi
+                  </>
+                )}
+              </Button>
             </div>
 
             <TurnstileWidget action="verify-sanad" {...turnstile.widgetProps} />
@@ -236,9 +236,13 @@ function VerifySanadContent() {
                         Tanggal Terbit
                       </p>
                       <p className="font-medium">
-                        {format(new Date(result.data.issueDate), "dd MMMM yyyy", {
-                          locale: localeId,
-                        })}
+                        {format(
+                          new Date(result.data.issueDate),
+                          "dd MMMM yyyy",
+                          {
+                            locale: localeId,
+                          },
+                        )}
                       </p>
                     </div>
                   </div>

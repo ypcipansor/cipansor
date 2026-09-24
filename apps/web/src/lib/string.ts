@@ -119,11 +119,20 @@ export function isEmpty(str: string | null | undefined): boolean {
 }
 
 /**
+ * An e-mail address: one "@", no whitespace, and a domain of non-empty labels
+ * joined by dots. The labels cannot contain "." themselves, so any input
+ * matches in exactly one way, in linear time. The pattern this replaces,
+ * /^[^\s@]+@[^\s@]+\.[^\s@]+$/, let both sides of the "\." take dots too.
+ * On "!@!" followed by many "!." and no valid end, that backtracked
+ * polynomially and froze the tab (CodeQL js/polynomial-redos, alert #18).
+ */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
+
+/**
  * Check if string is valid email
  */
 export function isEmail(str: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(str);
+  return EMAIL_PATTERN.test(str);
 }
 
 /**

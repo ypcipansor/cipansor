@@ -33,7 +33,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
-
 interface HealthRecord {
   id: string;
   type: string;
@@ -86,9 +85,8 @@ export default function HealthPage() {
 
         if (childrenData.length > 0) {
           const defaultChild = selectedStudentId
-            ? childrenData.find(
-                (c: ParentChild) => c.id === selectedStudentId,
-              )?.id
+            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
+                ?.id
             : childrenData[0].id;
           setSelectedChild(defaultChild || childrenData[0].id);
         }

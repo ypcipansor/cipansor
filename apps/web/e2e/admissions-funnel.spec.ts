@@ -23,10 +23,14 @@ test.describe("Unified Admissions Funnel", () => {
     // Deliberately not recomputing the expected name from the seed's own
     // helper: a test that derives its expectation the same way the code does
     // passes happily when both are wrong.
-    await expect(page.getByText(/SPMB \d{4}\/\d{4} Gelombang 1/).first()).toBeVisible({
+    await expect(
+      page.getByText(/SPMB \d{4}\/\d{4} Gelombang 1/).first(),
+    ).toBeVisible({
       timeout: 15000,
     });
     // Registrants render by registration number in the "Pendaftar Terbaru" list
-    await expect(page.getByText(/REG-\d{4}-\d{4}/).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(/REG-\d{4}-\d{4}/).first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 });

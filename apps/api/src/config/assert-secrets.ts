@@ -110,8 +110,7 @@ function inspect(variable: string, value: string | undefined, issues: SecretIssu
     issues.push({
       variable,
       reason:
-        'is still a leaked/default value from this public repository — that ' +
-        'key is public',
+        'is still a leaked/default value from this public repository — that ' + 'key is public',
     });
     return;
   }

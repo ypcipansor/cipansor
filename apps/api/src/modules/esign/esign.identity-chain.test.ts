@@ -130,8 +130,8 @@ describe('dari mengisi identitas sampai kunci disetujui', () => {
       kind: 'ENROLLMENT',
     } as any);
 
-    await expect(
-      EsignService.decideRequest('req-1', 'superadmin', true, 365)
-    ).rejects.toThrow(/belum diverifikasi/);
+    await expect(EsignService.decideRequest('req-1', 'superadmin', true, 365)).rejects.toThrow(
+      /belum diverifikasi/
+    );
   });
 });

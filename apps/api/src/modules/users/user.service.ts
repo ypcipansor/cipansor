@@ -9,10 +9,7 @@ export class UserService {
   /**
    * Get all users with pagination and filters
    */
-  async findAll(
-    query: ListUsersQuery,
-    currentUser: { roleCode: string; unitId: string | null }
-  ) {
+  async findAll(query: ListUsersQuery, currentUser: { roleCode: string; unitId: string | null }) {
     const { page, limit, search, role, unitId } = query;
     const skip = (page - 1) * limit;
 
@@ -164,10 +161,7 @@ export class UserService {
 
     // Unit admins operate inside exactly one unit: they may only create
     // users for their own unit. Only SUPER_ADMIN is foundation-scoped.
-    if (
-      creator.roleCode !== 'SUPER_ADMIN' &&
-      input.unitId !== creator.unitId
-    ) {
+    if (creator.roleCode !== 'SUPER_ADMIN' && input.unitId !== creator.unitId) {
       throw Errors.forbidden('Unit admins can only create users in their own unit');
     }
 

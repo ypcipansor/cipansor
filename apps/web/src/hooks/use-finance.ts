@@ -49,11 +49,7 @@ export const BILL_TYPES: { value: BillType; label: string }[] = [
 ];
 
 export type BillStatus =
-  | "PENDING"
-  | "PARTIAL"
-  | "PAID"
-  | "OVERDUE"
-  | "CANCELLED";
+  "PENDING" | "PARTIAL" | "PAID" | "OVERDUE" | "CANCELLED";
 
 export const BILL_STATUSES: {
   value: BillStatus;
@@ -96,11 +92,7 @@ export interface Payment {
 }
 
 export type PaymentMethod =
-  | "CASH"
-  | "TRANSFER"
-  | "QRIS"
-  | "VIRTUAL_ACCOUNT"
-  | "DEBIT_CARD";
+  "CASH" | "TRANSFER" | "QRIS" | "VIRTUAL_ACCOUNT" | "DEBIT_CARD";
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CASH", label: "Tunai" },
@@ -124,9 +116,12 @@ export function useBills(params: BillParams = {}) {
   return useQuery({
     queryKey: ["bills", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Bill>>("/finance/invoices", {
-        params,
-      });
+      const response = await api.get<PaginatedResponse<Bill>>(
+        "/finance/invoices",
+        {
+          params,
+        },
+      );
       return response.data;
     },
   });
@@ -136,7 +131,9 @@ export function useBill(id: string) {
   return useQuery({
     queryKey: ["bills", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Bill>>(`/finance/invoices/${id}`);
+      const response = await api.get<ApiResponse<Bill>>(
+        `/finance/invoices/${id}`,
+      );
       return response.data.data;
     },
     enabled: !!id,
@@ -170,7 +167,10 @@ export function useCreateBill() {
 
   return useMutation({
     mutationFn: async (data: CreateBillData) => {
-      const response = await api.post<ApiResponse<Bill>>("/finance/invoices", data);
+      const response = await api.post<ApiResponse<Bill>>(
+        "/finance/invoices",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
@@ -194,7 +194,10 @@ export function useCreateBulkBills() {
       dueDate: string;
       description?: string;
     }) => {
-      const response = await api.post<ApiResponse<Bill[]>>("/finance/invoices/bulk", data);
+      const response = await api.post<ApiResponse<Bill[]>>(
+        "/finance/invoices/bulk",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: () => {
@@ -214,7 +217,10 @@ export function useUpdateBill() {
       id: string;
       data: Partial<CreateBillData>;
     }) => {
-      const response = await api.patch<ApiResponse<Bill>>(`/finance/invoices/${id}`, data);
+      const response = await api.patch<ApiResponse<Bill>>(
+        `/finance/invoices/${id}`,
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
@@ -251,9 +257,12 @@ export function usePayments(params: PaymentParams = {}) {
   return useQuery({
     queryKey: ["payments", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Payment>>("/finance/payments", {
-        params,
-      });
+      const response = await api.get<PaginatedResponse<Payment>>(
+        "/finance/payments",
+        {
+          params,
+        },
+      );
       return response.data;
     },
   });
@@ -263,7 +272,9 @@ export function usePayment(id: string) {
   return useQuery({
     queryKey: ["payments", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Payment>>(`/finance/payments/${id}`);
+      const response = await api.get<ApiResponse<Payment>>(
+        `/finance/payments/${id}`,
+      );
       return response.data.data;
     },
     enabled: !!id,
@@ -296,7 +307,10 @@ export function useCreatePayment() {
 
   return useMutation({
     mutationFn: async (data: CreatePaymentData) => {
-      const response = await api.post<ApiResponse<Payment>>("/finance/payments", data);
+      const response = await api.post<ApiResponse<Payment>>(
+        "/finance/payments",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {

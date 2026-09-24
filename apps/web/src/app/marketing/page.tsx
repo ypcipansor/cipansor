@@ -868,7 +868,9 @@ export default function MarketingDashboard() {
                                 Edit
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => copyTrackingLink(campaign.code, campaign.id)}
+                                onClick={() =>
+                                  copyTrackingLink(campaign.code, campaign.id)
+                                }
                               >
                                 <Copy className="mr-2 h-4 w-4" />
                                 Salin Link

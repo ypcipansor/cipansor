@@ -105,7 +105,9 @@ function CreateLetterForm() {
   const [searchQuery, setSearchQuery] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
   const [uploadingAttachment, setUploadingAttachment] = React.useState(false);
-  const [submitMode, setSubmitMode] = React.useState<"DRAFT" | "SUBMIT">("DRAFT");
+  const [submitMode, setSubmitMode] = React.useState<"DRAFT" | "SUBMIT">(
+    "DRAFT",
+  );
 
   const form = useForm<z.infer<typeof letterSchema>>({
     resolver: zodResolver(letterSchema),
@@ -235,9 +237,15 @@ function CreateLetterForm() {
     }
 
     const targetStatus =
-      submitMode === "SUBMIT" ? LetterStatus.PENDING_REVIEW : LetterStatus.DRAFT;
+      submitMode === "SUBMIT"
+        ? LetterStatus.PENDING_REVIEW
+        : LetterStatus.DRAFT;
 
-    if (submitMode === "SUBMIT" && values.direction === LetterDirection.OUTGOING && (!values.reviewerIds || values.reviewerIds.length === 0)) {
+    if (
+      submitMode === "SUBMIT" &&
+      values.direction === LetterDirection.OUTGOING &&
+      (!values.reviewerIds || values.reviewerIds.length === 0)
+    ) {
       toast.error("Pemeriksa pertama wajib dipilih saat mengajukan review.");
       return;
     }
@@ -251,7 +259,7 @@ function CreateLetterForm() {
       toast.success(
         targetStatus === LetterStatus.PENDING_REVIEW
           ? "Surat berhasil diajukan untuk ditinjau"
-          : "Draft surat berhasil disimpan"
+          : "Draft surat berhasil disimpan",
       );
       router.push("/e-office/inbox");
     } catch (error) {
@@ -277,35 +285,39 @@ function CreateLetterForm() {
             </CardHeader>
             <CardContent className="space-y-4">
               {/* B5: Display unit selector ONLY when user is authorized to issue cross-unit letters */}
-              {user && (getPrimaryRoleCode(user) === "YAYASAN_KETUA" || getPrimaryRoleCode(user) === "YAYASAN_SEKRETARIS" || getPrimaryRoleCode(user) === "SUPER_ADMIN" || !user.unitId) && (
-                <FormField
-                  control={form.control}
-                  name="unitId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Unit Penerbit / Pembuat Surat</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value || user?.unitId || ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih unit penerbit..." />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {units.map((u) => (
-                            <SelectItem key={u.id} value={u.id}>
-                              {u.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
+              {user &&
+                (getPrimaryRoleCode(user) === "YAYASAN_KETUA" ||
+                  getPrimaryRoleCode(user) === "YAYASAN_SEKRETARIS" ||
+                  getPrimaryRoleCode(user) === "SUPER_ADMIN" ||
+                  !user.unitId) && (
+                  <FormField
+                    control={form.control}
+                    name="unitId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Unit Penerbit / Pembuat Surat</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || user?.unitId || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Pilih unit penerbit..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {units.map((u) => (
+                              <SelectItem key={u.id} value={u.id}>
+                                {u.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -492,7 +504,10 @@ function CreateLetterForm() {
                           </FormControl>
                           <SelectContent>
                             {staffOptions.map((option: any) => (
-                              <SelectItem key={option.value} value={option.value}>
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
                                 {option.label}
                               </SelectItem>
                             ))}
@@ -500,7 +515,9 @@ function CreateLetterForm() {
                         </Select>
                       </div>
                       <FormDescription>
-                        Pilih pejabat/atasan pertama yang akan mengulas konsep surat ini. Pemeriksa pertama dapat meneruskan secara fleksibel ke pejabat berikutnya.
+                        Pilih pejabat/atasan pertama yang akan mengulas konsep
+                        surat ini. Pemeriksa pertama dapat meneruskan secara
+                        fleksibel ke pejabat berikutnya.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -533,8 +550,8 @@ function CreateLetterForm() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Tembusan internal terkirim sendiri lewat sistem; tembusan
-                        pihak luar hanya tercetak pada naskah, dan
+                        Tembusan internal terkirim sendiri lewat sistem;
+                        tembusan pihak luar hanya tercetak pada naskah, dan
                         pengantarannya di luar sistem.
                       </FormDescription>
                       <FormMessage />
@@ -549,7 +566,9 @@ function CreateLetterForm() {
                   name="recipientIds"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Teruskan Surat Masuk Kepada (Dapat memilih lebih dari 1)</FormLabel>
+                      <FormLabel>
+                        Teruskan Surat Masuk Kepada (Dapat memilih lebih dari 1)
+                      </FormLabel>
                       <FormControl>
                         <div className="space-y-2 border rounded-md p-3">
                           <Input
@@ -574,7 +593,10 @@ function CreateLetterForm() {
                                     const checked = e.target.checked;
                                     const current = field.value || [];
                                     if (checked) {
-                                      field.onChange([...current, option.value]);
+                                      field.onChange([
+                                        ...current,
+                                        option.value,
+                                      ]);
                                     } else {
                                       field.onChange(
                                         current.filter(
@@ -585,14 +607,17 @@ function CreateLetterForm() {
                                   }}
                                   className="h-4 w-4 rounded border-gray-300"
                                 />
-                                <label className="text-sm cursor-pointer">{option.label}</label>
+                                <label className="text-sm cursor-pointer">
+                                  {option.label}
+                                </label>
                               </div>
                             ))}
                           </div>
                         </div>
                       </FormControl>
                       <FormDescription>
-                        Pilih pejabat/staf yang akan menerima terusan awal surat masuk ini.
+                        Pilih pejabat/staf yang akan menerima terusan awal surat
+                        masuk ini.
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -702,7 +727,8 @@ function CreateLetterForm() {
                     </FormControl>
                     {field.value && (
                       <FormDescription className="text-green-600 flex items-center gap-1">
-                        <Upload className="h-3 w-3" /> Berkas naskah siap dikirim
+                        <Upload className="h-3 w-3" /> Berkas naskah siap
+                        dikirim
                       </FormDescription>
                     )}
                     <FormMessage />
@@ -772,9 +798,9 @@ function CreateLetterForm() {
                       </div>
                     </FormControl>
                     <FormDescription>
-                      Jumlahnya diumumkan pada kepala surat. Surat yang menyatakan
-                      dua lampiran dan sampai tanpa keduanya adalah surat yang
-                      kekurangannya dapat dibuktikan.
+                      Jumlahnya diumumkan pada kepala surat. Surat yang
+                      menyatakan dua lampiran dan sampai tanpa keduanya adalah
+                      surat yang kekurangannya dapat dibuktikan.
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -881,7 +907,9 @@ function CreateLetterForm() {
 export default function CreateLetterPage() {
   return (
     <React.Suspense
-      fallback={<div className="p-6 text-muted-foreground">Memuat formulir…</div>}
+      fallback={
+        <div className="p-6 text-muted-foreground">Memuat formulir…</div>
+      }
     >
       <CreateLetterForm />
     </React.Suspense>

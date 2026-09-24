@@ -12,7 +12,7 @@ export const leaveBalanceController = {
       if (!academicYearId) {
         // Fallback to finding active academic year could be done in service
         // For now, require it
-      if (!academicYearId) throw Errors.badRequest('Academic Year ID is required');
+        if (!academicYearId) throw Errors.badRequest('Academic Year ID is required');
       }
 
       const result = await leaveBalanceService.getAllBalances(userId, academicYearId as string);

@@ -139,10 +139,7 @@ const LINE_HEIGHT = 14;
  * ordering would still be wrong), plus a build change to ship the font. That is
  * tracked separately — see `docs/EOFFICE_ESIGN_PLAN.md`.
  */
-const WINANSI_EXTRA = new Set(
-  '€‚ƒ„…†‡ˆ‰Š‹ŒŽ' +
-    '‘’“”•–—˜™š›œžŸ'
-);
+const WINANSI_EXTRA = new Set('€‚ƒ„…†‡ˆ‰Š‹ŒŽ' + '‘’“”•–—˜™š›œžŸ');
 
 function isEncodable(ch: string): boolean {
   const code = ch.codePointAt(0)!;
@@ -206,8 +203,18 @@ function copyRecipients(letter: LetterPdfInput): string[] {
  * sampai 99 — sebuah surat dengan seratus lampiran punya masalah lain.
  */
 const SATUAN = [
-  'nol', 'satu', 'dua', 'tiga', 'empat', 'lima', 'enam', 'tujuh', 'delapan',
-  'sembilan', 'sepuluh', 'sebelas',
+  'nol',
+  'satu',
+  'dua',
+  'tiga',
+  'empat',
+  'lima',
+  'enam',
+  'tujuh',
+  'delapan',
+  'sembilan',
+  'sepuluh',
+  'sebelas',
 ];
 
 function spellOut(n: number): string {
@@ -230,9 +237,7 @@ function assertRenderable(letter: LetterPdfInput): void {
     // Nama tembusan ikut tercetak, jadi ia ikut diperiksa. Menolak di sini
     // menyebut bagian mana yang bermasalah; membiarkannya lolos berarti
     // pdf-lib yang melempar dari kedalaman, tanpa menyebut apa pun.
-    ...copyRecipients(letter).map(
-      (name, i) => [`Tembusan ${i + 1}`, name] as [string, string]
-    ),
+    ...copyRecipients(letter).map((name, i) => [`Tembusan ${i + 1}`, name] as [string, string]),
   ];
 
   const offenders = new Set<string>();
@@ -390,8 +395,7 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
    * telepon `0265-123456` yang lama adalah contoh, bukan nomor yayasan.
    */
   const legalBasis = LETTERHEAD.legalBasis;
-  const address =
-    letter.unit?.address ?? `${LETTERHEAD.addressLine1}, ${LETTERHEAD.addressLine2}`;
+  const address = letter.unit?.address ?? `${LETTERHEAD.addressLine1}, ${LETTERHEAD.addressLine2}`;
   const contact = `Website: ${LETTERHEAD.website} | ${LETTERHEAD.phone} | Email: ${letter.unit?.email || 'halo@cipansor.or.id'}`;
 
   if (unitName) {

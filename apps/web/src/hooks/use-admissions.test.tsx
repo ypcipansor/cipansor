@@ -19,7 +19,9 @@ function makeClient() {
 
 function wrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
   };
 }
 
@@ -37,18 +39,25 @@ describe("useOnboardRegistrant", () => {
       wrapper: wrapper(client),
     });
 
-    await result.current.mutateAsync({ registrantId: "reg-1", unitId: "unit-1" } as any);
+    await result.current.mutateAsync({
+      registrantId: "reg-1",
+      unitId: "unit-1",
+    } as any);
 
-    expect(post).toHaveBeenCalledWith(
-      "/admissions/waves/onboard-registrant",
-      { registrantId: "reg-1", unitId: "unit-1" },
-    );
+    expect(post).toHaveBeenCalledWith("/admissions/waves/onboard-registrant", {
+      registrantId: "reg-1",
+      unitId: "unit-1",
+    });
 
     // The detail query feeds the onboarding button's enabled/disabled state.
     // Without invalidating it, the button stays visible after onboarding and a
     // second click fails with an "already enrolled" conflict.
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admission-registrants"] });
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["admission-registrant", "reg-1"] });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["admission-registrants"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["admission-registrant", "reg-1"],
+    });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["students"] });
   });
 });
@@ -57,7 +66,11 @@ describe("useInternalCandidates", () => {
   it("menanyakan kandidat santri lama ke rute yang dijaga sama dengan onboarding", async () => {
     // Pasangannya di API: apps/api/src/modules/admissions/internal-candidates.test.ts
     get.mockResolvedValue({
-      data: { data: [{ studentId: "stud-1", nama: "Fulan", unitAsal: "SD IT Cipansor" }] },
+      data: {
+        data: [
+          { studentId: "stud-1", nama: "Fulan", unitAsal: "SD IT Cipansor" },
+        ],
+      },
     });
     const client = makeClient();
     const { result } = renderHook(() => useInternalCandidates("reg-1"), {
@@ -65,13 +78,17 @@ describe("useInternalCandidates", () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(get).toHaveBeenCalledWith("/admissions/waves/internal-candidates/reg-1");
+    expect(get).toHaveBeenCalledWith(
+      "/admissions/waves/internal-candidates/reg-1",
+    );
     expect(result.current.data?.[0]?.studentId).toBe("stud-1");
   });
 
   it("tidak dipanggil untuk pendaftar yang belum diterima", async () => {
     const client = makeClient();
-    renderHook(() => useInternalCandidates("reg-1", false), { wrapper: wrapper(client) });
+    renderHook(() => useInternalCandidates("reg-1", false), {
+      wrapper: wrapper(client),
+    });
 
     expect(get).not.toHaveBeenCalled();
   });
@@ -80,7 +97,9 @@ describe("useInternalCandidates", () => {
 describe("useOnboardRegistrant — progresi internal", () => {
   it("meneruskan existingStudentId supaya orkestrator memakai santri yang sudah ada", async () => {
     const client = makeClient();
-    const { result } = renderHook(() => useOnboardRegistrant(), { wrapper: wrapper(client) });
+    const { result } = renderHook(() => useOnboardRegistrant(), {
+      wrapper: wrapper(client),
+    });
 
     await result.current.mutateAsync({
       registrantId: "reg-1",

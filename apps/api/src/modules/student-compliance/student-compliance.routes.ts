@@ -1,10 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '@/middleware/auth';
 import { UserRole } from '@prisma/client';
-import {
-  bulkUpdateStudentComplianceSchema,
-  updateStudentComplianceSchema,
-} from '@cipansor/shared';
+import { bulkUpdateStudentComplianceSchema, updateStudentComplianceSchema } from '@cipansor/shared';
 import { validate } from '@/middleware/validate';
 import * as controller from './student-compliance.controller';
 

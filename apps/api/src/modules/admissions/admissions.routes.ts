@@ -80,11 +80,7 @@ router.post(
   validate(createPublicRegistrantDocumentSchema),
   controller.createPublicRegistrantDocument
 );
-router.get(
-  '/public/track',
-  publicRegistrantLimiter,
-  controller.trackPublicRegistrantStatus
-);
+router.get('/public/track', publicRegistrantLimiter, controller.trackPublicRegistrantStatus);
 // DOCUMENT-OCR GATING (assumption review 2026-09-09):
 // `parse-document` is OPEN (no Turnstile) because OCR is currently LOCAL ONLY:
 // `parseAndVerifyDocument` (document-ocr.service.ts) never calls a paid/third-party
@@ -114,11 +110,7 @@ router.use(authenticate);
 // exempted below sees 403s instead of the intended cross-unit view.
 router.get(
   '/leads/priority',
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    'UNIT_ADMIN',
-    'STAFF'
-  ),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   controller.getPriorityLeads
 );
 
@@ -337,11 +329,7 @@ router.delete(
  */
 router.get(
   '/registrants',
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    'UNIT_ADMIN',
-    'STAFF'
-  ),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   validateQuery(queryRegistrantSchema),
   controller.getRegistrants
 );
@@ -412,11 +400,7 @@ router.post(
  */
 router.get(
   '/registrants/:id',
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    'UNIT_ADMIN',
-    'STAFF'
-  ),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   controller.getRegistrantById
 );
 
@@ -615,11 +599,7 @@ router.delete(
  */
 router.get(
   '/registrants/:registrantId/documents',
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    'UNIT_ADMIN',
-    'STAFF'
-  ),
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   controller.getRegistrantDocuments
 );
 

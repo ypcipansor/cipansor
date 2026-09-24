@@ -15,12 +15,7 @@ export interface CreateUserData {
   password: string;
   name: string;
   role:
-    | "SUPER_ADMIN"
-    | "UNIT_ADMIN"
-    | "TEACHER"
-    | "STUDENT"
-    | "STAFF"
-    | "PARENT";
+    "SUPER_ADMIN" | "UNIT_ADMIN" | "TEACHER" | "STUDENT" | "STAFF" | "PARENT";
   unitId?: string;
 }
 

@@ -430,7 +430,9 @@ function EditSubjectPageContent({
   );
 }
 
-export default function EditSubjectPage(props: Parameters<typeof EditSubjectPageContent>[0]) {
+export default function EditSubjectPage(
+  props: Parameters<typeof EditSubjectPageContent>[0],
+) {
   return (
     <MainLayout>
       <EditSubjectPageContent {...props} />
