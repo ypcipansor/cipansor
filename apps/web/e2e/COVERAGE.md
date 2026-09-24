@@ -236,8 +236,6 @@ History of the stabilization (all root-caused, no suppressions):
 | Route | Specs | Nav | CRUD | Buttons | Fields | RBAC |
 |---|---|---|---|---|---|---|
 | `/dashboard` | auth, authenticated-smoke, dashboard-realtime | ✅ | 🟡 | 🟡 | 🟡 | 🟡 |
-| `/dashboard/comparison` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/dashboard/executive` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### `/donation`
 
@@ -334,7 +332,6 @@ History of the stabilization (all root-caused, no suppressions):
 | `/foundation/accreditation/readiness` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/foundation/board/[id]/edit` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/foundation/board/new` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `/foundation/dashboard` | business-unit-flow | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 |
 | `/foundation/documents/[id]/edit` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/foundation/documents/new` | — | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `/foundation/finance/consolidation` | — | ❌ | ❌ | ❌ | ❌ | ❌ |

@@ -56,15 +56,15 @@ Diperbaiki sesudahnya (2026-09-24):
   403), padahal keduanya memegang `ADMISSION_VIEW`. Rute baca kini menerima
   daftar lama ATAU izin itu; Ketua/pengurus yayasan membaca semua unit, Kepala
   unitnya sendiri; menulis tetap milik TU/admin unit.
+- **Tiga dasbor pimpinan yang salah DIHAPUS** (izin pengguna 2026-09-24):
+  `/dashboard/executive` ("164 siswa · 0 AKTIF", "Kehadiran 0%"),
+  `/dashboard/comparison` (seluruh angka ditulis mati: 1.400 santri, padahal
+  datanya 164) dan `/foundation/dashboard` ("Net Income Rp 0", dua API galat,
+  legenda "value"). Tak satu pun ada di menu. Dasbor pimpinan = `/dashboard`
+  (halaman awal Ketua/Kepala, data nyata) dan `/analytics`.
 
 Yang masih terbuka:
 
-- **`/dashboard/executive`**: nama bidang tidak cocok dengan API ("0 AKTIF",
-  Kehadiran 0%). Tren pendaftaran membaca `unit.realm`, nama unit kosong, dan
-  sesekali 504. Untuk presentasi, pakai `/dashboard` dengan akun Ketua.
-- **`/foundation/dashboard`**: Net Income Rp 0 karena akuntansi belum
-  tersambung (akun bersifat global, sedangkan pencarian dilakukan per unit).
-  Legenda grafik talenta menampilkan "value".
 - **Layar TULIS Tagihan & SPP** masih memakai kontrak khayalan yang sama:
   "Buat Tagihan" mengirim `billType` (API menolak — butuh `paymentTypeId`),
   "Tagihan Massal" memanggil `POST /finance/invoices/bulk` (tidak ada), "Catat

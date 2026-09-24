@@ -9,19 +9,11 @@
 
 ### ✅ Ready to Use Today
 
-1. **Real-time Dashboard Hook**
-   - Location: `/apps/web/src/hooks/use-realtime-dashboard.ts`
-   - Status: ✅ Complete, needs backend WebSocket server
-
-2. **Murojaah Analytics Dashboard**
+1. **Murojaah Analytics Dashboard**
    - Route: `/tahfidz/murojaah/analytics`
    - Status: ✅ Complete with mock data, needs API integration
 
-3. **Executive Dashboard**
-   - Route: `/dashboard/executive`
-   - Status: ✅ Complete, needs WebSocket backend + live API
-
-4. **PAUD Radar Chart Component**
+2. **PAUD Radar Chart Component**
    - Location: `/apps/web/src/components/paud/RadarChart.tsx`
    - Status: ✅ Complete, ready to integrate into student dashboard
 
@@ -108,24 +100,7 @@ http://localhost:3000/tahfidz/murojaah/analytics
 
 **Expected:** Page loads with mock data, all charts render correctly
 
-### 2. Test Executive Dashboard
-
-```bash
-# Navigate to:
-http://localhost:3000/dashboard/executive
-
-# What to test:
-✓ Connection status (will show "Terputus" until WebSocket implemented)
-✓ KPI cards display
-✓ Enrollment trend chart
-✓ Attendance by unit chart
-✓ Unit comparison panel
-✓ Alerts panel
-```
-
-**Expected:** Page loads, shows connection error (normal - backend WebSocket not yet implemented)
-
-### 3. Test PAUD Radar Chart
+### 2. Test PAUD Radar Chart
 
 ```bash
 # Navigate to any student progress page:
@@ -350,9 +325,7 @@ const { data: qualityData } = useMurojaahQualityDistribution({
 
 ### Week 1-2 (Sprint 1)
 
-- [x] Real-time dashboard hook
 - [x] Murojaah analytics dashboard (frontend)
-- [x] Executive dashboard (frontend)
 - [x] PAUD radar chart component
 - [ ] WebSocket backend server
 - [ ] Radar chart integration
@@ -370,21 +343,14 @@ const { data: qualityData } = useMurojaahQualityDistribution({
 
 ## 🐛 Known Issues & Workarounds
 
-### Issue 1: WebSocket Connection Failed
-
-**Symptom:** Executive dashboard shows "Terputus" (disconnected)  
-**Cause:** Backend WebSocket server not implemented yet  
-**Workaround:** Normal behavior, ignore for now  
-**Fix:** Implement Priority 1 task above
-
-### Issue 2: Murojaah Charts Empty
+### Issue 1: Murojaah Charts Empty
 
 **Symptom:** Charts show but with mock data  
 **Cause:** API endpoints not connected  
 **Workaround:** Mock data displays correctly  
 **Fix:** Implement Priority 3 task above
 
-### Issue 3: Radar Chart Not Visible
+### Issue 2: Radar Chart Not Visible
 
 **Symptom:** Student dashboard doesn't show radar chart  
 **Cause:** Component not yet integrated  
@@ -469,7 +435,6 @@ pnpm test                       # Test all
 - ✅ 1 reusable component created
 - ✅ 1 custom hook created
 - ⏳ WebSocket server implemented
-- ⏳ Real-time dashboard connected
 - ⏳ Radar chart integrated
 
 ### Quality Gates
