@@ -51,6 +51,11 @@ Diperbaiki sesudahnya (2026-09-24):
   Siswa" dan di API memegang `STUDENT_VIEW/CREATE/UPDATE`) tadinya dilempar ke
   `/unauthorized` oleh gerbang halaman itu sendiri; tombol Tambah/Edit/Hapus
   kini mengikuti izin API (guru tidak lagi melihat tombol yang pasti ditolak).
+- **Ringkasan SPMB 0 untuk Ketua dan Kepala** (#542): Kepala Sekolah ditolak di
+  rute (TEACHER tak ada di daftar), Ketua ditolak di layanan (tanpa `unitId` →
+  403), padahal keduanya memegang `ADMISSION_VIEW`. Rute baca kini menerima
+  daftar lama ATAU izin itu; Ketua/pengurus yayasan membaca semua unit, Kepala
+  unitnya sendiri; menulis tetap milik TU/admin unit.
 
 Yang masih terbuka:
 
@@ -75,10 +80,12 @@ Yang masih terbuka:
   beberapa perlu ditinjau: `/homeroom/performance` dan
   `/rapor-pesantren/config` untuk TEACHER (wali kelas),
   `/analytics/parent-engagement` untuk TEACHER/STAFF.
+- **`STAFF` membaca data pendaftar SPMB**: perawat, pustakawan, keamanan, dan
+  peran usaha bisa membaca pendaftar unitnya (data anak dan orang tua) lewat
+  daftar lama `STAFF`, tanpa `ADMISSION_VIEW`. Menutupnya perlu keputusan: siapa
+  mencatat biaya pendaftaran (bendahara kini masuk lewat `STAFF`).
 - **Kop raport merdeka** (`assessment/raport-merdeka`) tertulis mati "SMP
   Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" untuk semua unit.
-- **Ringkasan SPMB**: 0 untuk Ketua dan Kepala karena API hanya mengizinkan
-  TU/admin unit. Pakai `smpit.tu@` atau `smpit.admin@`.
 - **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
   2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
   SMA.
