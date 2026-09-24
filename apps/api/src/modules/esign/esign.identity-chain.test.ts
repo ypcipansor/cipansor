@@ -21,7 +21,14 @@ import { EsignService } from './esign.service';
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
-    signingKeyRequest: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
+    signingKeyRequest: {
+      findFirst: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
     userSigningKey: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     userIdentity: { findUnique: vi.fn(), update: vi.fn() },
     auditLog: { create: vi.fn() },
@@ -61,6 +68,12 @@ beforeEach(() => {
   vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(
     freshlyDocumentedIdentity() as any
   );
+  // Finding A4: the guarded `updateMany` + re-read in `decideRequest`.
+  vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+  vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockResolvedValue({
+    id: 'req-1',
+    status: 'APPROVED',
+  } as any);
 });
 
 describe('dari mengisi identitas sampai kunci disetujui', () => {

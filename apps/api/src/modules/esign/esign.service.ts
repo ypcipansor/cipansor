@@ -622,23 +622,47 @@ export const EsignService = {
       // keperluan adalah kewajiban tanpa manfaat.
       await discardIdentityDocument(request.userId);
 
-      const rejected = await prisma.signingKeyRequest.update({
-        where: { id: requestId },
-        data: {
-          status: SigningKeyRequestStatus.REJECTED,
-          decidedById: deciderId,
-          decidedAt: new Date(),
-          decisionNote: note,
-        },
+      /**
+       * Finding A4 — status PENDING diperiksa ULANG di dalam lock transisi
+       * kunci, dan UPDATE tidak memakai guard `status` sendiri.
+       *
+       * Sebelumnya keputusan ini membaca status di luar transaksi lalu
+       * memperbarui tanpa syarat: dua Super Admin (setuju + tolak) yang
+       * berjalan bersamaan sama-sama lolos pemeriksaan awal dan sama-sama
+       * menulis, sehingga hasil akhirnya ditentukan urutan commit, bukan
+       * keputusan yang lebih dulu. `lockSigningKeyTransition` adalah protokol
+       * yang SAMA dengan `decideRequest` approval, `activateKey`, `revokeKey`,
+       * dan `castVote` foundation — sehingga keempatnya linier per pengguna.
+       * Status dibaca di bawah lock, dan `updateMany` dengan guard `status`
+       * menjadi jaring kedua bila lock ini kelak dilepas.
+       */
+      return prisma.$transaction(async (tx) => {
+        await lockSigningKeyTransition(tx, request.userId);
+        const current = await tx.signingKeyRequest.findUnique({ where: { id: requestId } });
+        if (!current || current.status !== SigningKeyRequestStatus.PENDING) {
+          throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+        }
+        const rejected = await tx.signingKeyRequest.updateMany({
+          where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
+          data: {
+            status: SigningKeyRequestStatus.REJECTED,
+            decidedById: deciderId,
+            decidedAt: new Date(),
+            decisionNote: note,
+          },
+        });
+        if (rejected.count !== 1) {
+          throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+        }
+        eventBus.emit('notification:send', {
+          userId: request.userId,
+          type: 'WARNING',
+          title: 'Pengajuan Tanda Tangan Ditolak',
+          message: note ? `Pengajuan ditolak: ${note}` : 'Pengajuan tanda tangan Anda ditolak.',
+          data: { requestId },
+        });
+        return tx.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
       });
-      eventBus.emit('notification:send', {
-        userId: request.userId,
-        type: 'WARNING',
-        title: 'Pengajuan Tanda Tangan Ditolak',
-        message: note ? `Pengajuan ditolak: ${note}` : 'Pengajuan tanda tangan Anda ditolak.',
-        data: { requestId },
-      });
-      return rejected;
     }
 
     const days = grantedDays ?? DEFAULT_VALIDITY_DAYS;
@@ -718,8 +742,8 @@ export const EsignService = {
         data: { ktpRetainUntil: identityDocumentRetainUntil(keyExpiry) },
       });
 
-      const approved = await tx.signingKeyRequest.update({
-        where: { id: requestId },
+      const approvedCount = await tx.signingKeyRequest.updateMany({
+        where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
         data: {
           status: SigningKeyRequestStatus.APPROVED,
           decidedById: deciderId,
@@ -727,6 +751,15 @@ export const EsignService = {
           decisionNote: note,
           grantedDays: days,
         },
+      });
+      // Jaring kedua terhadap keputusan ganda (setuju+setuju atau tolak+setuju):
+      // lock per-pengguna menyerialkan `decideRequest`/`revokeKey`/`castVote`,
+      // dan guard `status` di sini menjamin hanya SATU yang benar-benar menulis.
+      if (approvedCount.count !== 1) {
+        throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+      }
+      const approved = await tx.signingKeyRequest.findUniqueOrThrow({
+        where: { id: requestId },
       });
 
       if (request.kind === SigningKeyRequestKind.RENEWAL) {
@@ -846,6 +879,18 @@ export const EsignService = {
    *
    * Kuncinya tidak diganti, hanya disegel ulang, sehingga surat-surat lama
    * tetap terverifikasi.
+   *
+   * **Finding C6.** Baca-lalu-tulis atas material kunci kini berjalan di bawah
+   * advisory lock per-pengguna yang SAMA dengan `activateKey`, `revokeKey`,
+   * `decideRequest`, dan `castVote`. Sebelumnya jalur ini tidak mengambil lock,
+   * sehingga dapat bersinggungan dengan penerbitan/pencabutan kunci pengguna
+   * yang sama: `rewrapKeyMaterial` membaca material LAMA lalu menulis hasilnya
+   * kembali, dan bila `activateKey` menggantinya di sela, pembaruan itu mengenai
+   * kunci yang sudah bukan miliknya (atau gagal P2025 yang membingungkan).
+   *
+   * Pencatatan percobaan gagal tetap di LUAR transaksi: `recordFailedAttempt`
+   * tidak boleh ikut ter-rollback oleh `throw` yang menyusul, atau penghitung
+   * lockout brute-force akan hilang justru saat paling dibutuhkan.
    */
   async changePassphrase(
     userId: string,
@@ -861,34 +906,47 @@ export const EsignService = {
       throw Errors.unauthorized('Password akun salah.');
     }
 
-    const key = await prisma.userSigningKey.findUnique({ where: { userId } });
-    if (!key) throw Errors.badRequest('Anda belum memiliki kunci tanda tangan.');
-    assertCanSign(key);
-
-    let rewrapped;
+    let failedKeyId: string | null = null;
+    let failedCount = 0;
     try {
-      rewrapped = rewrapKeyMaterial(toMaterial(key), currentPassphrase, newPassphrase);
+      return await prisma.$transaction(async (tx) => {
+        await lockSigningKeyTransition(tx, userId);
+        const key = await tx.userSigningKey.findUnique({ where: { userId } });
+        if (!key) throw Errors.badRequest('Anda belum memiliki kunci tanda tangan.');
+        assertCanSign(key);
+
+        let rewrapped;
+        try {
+          rewrapped = rewrapKeyMaterial(toMaterial(key), currentPassphrase, newPassphrase);
+        } catch (error) {
+          if (error instanceof EsignError) {
+            failedKeyId = key.id;
+            failedCount = key.failedAttempts;
+          }
+          throw error;
+        }
+
+        await tx.userSigningKey.update({
+          where: { id: key.id },
+          data: {
+            encryptedPrivateKey: rewrapped.encryptedPrivateKey,
+            kdfSalt: rewrapped.kdfSalt,
+            kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
+            iv: rewrapped.iv,
+            authTag: rewrapped.authTag,
+            failedAttempts: 0,
+            lockedUntil: null,
+          },
+        });
+
+        return { success: true };
+      });
     } catch (error) {
-      if (error instanceof EsignError) {
-        await recordFailedAttempt(key.id, key.failedAttempts);
+      if (failedKeyId) {
+        await recordFailedAttempt(failedKeyId, failedCount);
       }
       throw error;
     }
-
-    await prisma.userSigningKey.update({
-      where: { id: key.id },
-      data: {
-        encryptedPrivateKey: rewrapped.encryptedPrivateKey,
-        kdfSalt: rewrapped.kdfSalt,
-        kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: rewrapped.iv,
-        authTag: rewrapped.authTag,
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
-    });
-
-    return { success: true };
   },
 
   /**

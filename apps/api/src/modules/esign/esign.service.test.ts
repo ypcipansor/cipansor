@@ -37,6 +37,11 @@ vi.mock('../../lib/prisma', () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      // Finding A4: the reject/approve paths now claim the request with a
+      // status-guarded `updateMany` and re-read the row, under the per-user
+      // signing-key advisory lock.
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
     },
     letter: { findUnique: vi.fn(), update: vi.fn() },
     letterReviewer: { update: vi.fn() },
@@ -116,6 +121,14 @@ beforeEach(() => {
   // Transisi pencabutan memakai UPDATE bersyarat; bawaan "berhasil" (count 1)
   // supaya uji jalur bahagia tetap fokus pada perilaku yang diuji.
   vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValue({ count: 1 } as any);
+  // Finding A4: `decideRequest` now claims the request with a status-guarded
+  // `updateMany` (count 1 = this caller won the race) and re-reads it. Default
+  // to the happy path; the concurrency regression overrides these.
+  vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+  vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockResolvedValue({
+    id: 'req-1',
+    status: 'APPROVED',
+  } as any);
 });
 
 /**
@@ -557,6 +570,79 @@ describe('putusan Super Admin', () => {
   });
 
   /**
+   * Finding A4 — keputusan yang BERSINGGUNGAN tidak boleh saling menimpa.
+   *
+   * Pre-check status di luar transaksi hanya melihat snapshot. Bila keputusan
+   * lain menang antara pre-check dan penulisan, jalur LAMA tetap menulis
+   * (guard-nya tidak ada) dan hasil akhir ditentukan urutan commit.
+   *
+   * Dua jalur diuji terpisah karena keduanya mengklaim status dengan cara yang
+   * berbeda: persetujuan memakai UPDATE bersyarat (`updateMany`, count harus 1),
+   * penolakan memakai pembacaan ULANG di bawah advisory lock per-pengguna.
+   *
+   * Gagal sebelum perbaikan (menulis dan resolve), lulus sesudah (throw).
+   */
+  it('menolak klaim ganda ketika UPDATE bersyarat kalah balapan (regresi A4)', async () => {
+    // Persetujuan dengan pre-check PENDING; pesaing menyelesaikan pengajuan di
+    // sela, sehingga UPDATE bersyarat tidak menemukan baris PENDING lagi.
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'PENDING',
+    } as any);
+    vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', true, 365)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+  });
+
+  it('menolak penolakan yang bersinggungan dengan persetujuan di dalam lock (regresi A4)', async () => {
+    // Pre-check PENDING, lalu pembacaan ULANG di dalam lock melihat APPROVED
+    // (pesaing menang). Penolakan harus melempar dan TIDAK menulis status.
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'PENDING',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'APPROVED',
+      } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', false)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+    expect(prisma.signingKeyRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('menolak penolakan kedua setelah status berubah di dalam lock (regresi A4)', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'PENDING',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'REJECTED',
+      } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', false)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+    expect(prisma.signingKeyRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
    * Regresi Flags–Investigation — penerbitan ulang harus menandai rekaman
    * riwayat kunci LAMA sebagai `supersededAt` SEBELUM kuncinya dihapus.
    *
@@ -621,6 +707,31 @@ describe('ganti passphrase', () => {
       where: { id: 'key-1' },
       data: expect.objectContaining({ failedAttempts: 1 }),
     });
+  });
+
+  /**
+   * Finding C6 — baca-lalu-tulis material kunci berjalan di bawah advisory
+   * lock per-pengguna yang SAMA dengan penerbitan/pencabutan/decideRequest.
+   *
+   * Sebelum perbaikan jalur ini tidak mengambil lock apa pun, sehingga
+   * `rewrapKeyMaterial` dapat menulis hasil penyegelan ulang atas kunci yang
+   * sudah digantikan `activateKey` di sela. Regresi ini memaku bahwa
+   * `pg_advisory_xact_lock(hashtextextended(userId))` dieksekusi — jalur yang
+   * tanpanya akan langsung merah.
+   */
+  it('mengambil advisory lock per-pengguna sebelum menulis (regresi C6)', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ passwordHash: 'h' } as any);
+    compareMock.mockResolvedValue(true);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await EsignService.changePassphrase('ketua', PASS, 'pw', 'passphrase-baru-2026');
+
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    const sql = (prisma.$executeRaw as any).mock.calls
+      .map((c: unknown[]) => (c[0] as TemplateStringsArray).join?.('') ?? String(c[0]))
+      .join('\n');
+    expect(sql).toMatch(/pg_advisory_xact_lock/);
+    expect(sql).toMatch(/hashtextextended/);
   });
 });
 

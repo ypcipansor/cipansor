@@ -8,6 +8,14 @@ export interface JwtPayload {
   email: string;
   roleId: string; // Active Role ID from UserRoleAssignment
   roleCode: string; // RoleCode string for quick checks (e.g. 'SUPER_ADMIN')
+  /**
+   * SELURUH peran aktif pengguna, diisi ulang dari basis data pada permintaan
+   * tata kelola foundation-decisions (Finding B3). `roleCode` adalah peran
+   * PRIMARY; kolom ini memuat peran lain yang juga aktif sehingga cek bacaan
+   * global tidak salah menolak pemegang peran sekunder. Opsional agar token
+   * lama (yang hanya punya `roleCode`) tetap valid.
+   */
+  roleCodes?: string[];
   unitId: string | null;
   permissions: string[]; // Permissions array from the Role record
   type: 'access' | 'refresh';

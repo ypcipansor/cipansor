@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   useVerifyFoundationDecision,
@@ -73,15 +73,29 @@ function VerifyContent() {
   const turnstile = useTurnstile();
   const verifyPdf = useVerifyFoundationDecisionPdf();
 
+  /**
+   * Identitas request verifikasi berjalan.
+   *
+   * Verifikasi adalah perjalanan bolak-balik yang mahal dan dapat selesai
+   * SETELAH pengguna memilih berkas lain. Tanpa penjaga ini, respons untuk
+   * berkas LAMA menimpa state saat berkas BARU sudah terpilih, sehingga layar
+   * menyatakan "Dokumen Sah" untuk berkas yang sudah tidak dipilih lagi —
+   * sementara berkas baru belum pernah diperiksa. Setiap perubahan berkas
+   * menaikkan generasi; hanya respons yang generasinya masih terkini boleh
+   * menulis hasil/error.
+   */
+  const verifyGeneration = useRef(0);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Hasil lama untuk berkas LAIN harus dibuang. Tanpa ini, memilih berkas
-    // kedua tepat setelah berkas pertama dinyatakan "sah" meninggalkan judul
-    // "Dokumen Sah & Terverifikasi" di layar — padahal yang dinyatakan sah
-    // adalah berkas yang sudah tidak dipilih lagi, dan berkas kedua belum
-    // diperiksa sama sekali. Judul keabsahan yang menempel pada berkas yang
-    // salah adalah persis klaim palsu yang halaman ini ada untuk mencegahnya.
+    // Hasil lama untuk berkas LAIN harus dibuang, dan request yang masih
+    // berjalan untuk berkas itu tidak boleh lagi menulis ke UI saat nanti
+    // selesai. Tanpa ini, memilih berkas kedua tepat setelah berkas pertama
+    // dinyatakan "sah" meninggalkan judul "Dokumen Sah & Terverifikasi" di
+    // layar — padahal yang dinyatakan sah adalah berkas yang sudah tidak
+    // dipilih lagi, dan berkas kedua belum diperiksa sama sekali.
+    verifyGeneration.current += 1;
     setUploadResult(null);
     if (file.type !== "application/pdf") {
       setUploadError("Format berkas harus PDF.");
@@ -107,13 +121,18 @@ function VerifyContent() {
     }
     setUploadError(null);
     setUploadResult(null);
+    // Generasi request ini: bila berkas diganti sebelum respons tiba,
+    // `verifyGeneration.current` bergerak dan hasilnya diabaikan.
+    const generation = verifyGeneration.current;
     try {
       const data = await verifyPdf.mutateAsync({
         file: selectedFile,
         turnstileToken: turnstile.token,
       });
+      if (generation !== verifyGeneration.current) return;
       setUploadResult(data);
     } catch (err: unknown) {
+      if (generation !== verifyGeneration.current) return;
       const e = err as {
         response?: { status?: number; data?: { error?: { message?: string } } };
       };

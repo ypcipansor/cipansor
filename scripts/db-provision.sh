@@ -40,22 +40,34 @@ pnpm --filter api db:generate
 echo "Applying migrations..."
 pnpm --filter api db:deploy
 
-# Seed ONLY when the database has no users — `prisma/seed.ts` TRUNCATEs every
-# table, so re-seeding over real data destroys it. An unknown user count skips
-# seeding rather than guessing.
-USERS=""
+# Seed ONLY when the database has NO application data at all — not merely no
+# users. `prisma/seed.ts` TRUNCATEs every table, so re-seeding over real data
+# destroys it. Checking `users` alone was wrong: a database whose `users` table
+# is empty while any other table holds rows (a partial restore, an interrupted
+# seed, a wiped admin table) would be re-seeded and every one of those rows
+# TRUNCATEd. The probe therefore sums the row count across every application
+# table; only a total of zero — an actually fresh database — seeds. An unknown
+# count (psql missing, connection error, empty output) skips seeding rather
+# than guessing: fail closed.
+#
+# `query_to_xml` runs one `SELECT count(*)` per table inside the database, so
+# the script needs no per-table knowledge and cannot drift from the schema. It
+# is scoped to `public` and excludes `_prisma_migrations` so the migration
+# ledger itself never counts as application data.
+APPTABLES=""
 if command -v "$PSQL" >/dev/null 2>&1; then
-  USERS="$("$PSQL" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB_NAME" -tc 'SELECT count(*) FROM users;' 2>/dev/null | tr -d '[:space:]' || true)"
+  APPTABLES="$("$PSQL" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$DB_NAME" -tAc "SELECT COALESCE(sum((xpath('/row/cnt/text()', query_to_xml(format('SELECT count(*) AS cnt FROM %I.%I', schemaname, tablename), false, true, '')))[1]::text::bigint), 0) FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations';" 2>/dev/null | tr -d '[:space:]' || true)"
 fi
 
-if [ -z "$USERS" ]; then
-  echo "Cannot determine user count; skipping seed."
-elif [ "$USERS" -eq 0 ] 2>/dev/null; then
-  echo "Seeding DB..."
+if [ -z "$APPTABLES" ]; then
+  echo "Cannot determine application row count; skipping seed."
+elif [ "$APPTABLES" -eq 0 ] 2>/dev/null; then
+  echo "Seeding DB (no application data)..."
   # `prisma/seed.ts` TRUNCATEs every table, so it demands an explicit opt-in.
-  # This branch only runs when the database is empty, and this script is
-  # local-dev/CI only, so the opt-in is correct here — never in production.
+  # This branch only runs when the database has no application rows at all, and
+  # this script is local-dev/CI only, so the opt-in is correct here — never in
+  # production.
   E2E_FIXED_2FA=1 ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed
 else
-  echo "DB already has $USERS users"
+  echo "DB already has $APPTABLES application rows; skipping seed"
 fi

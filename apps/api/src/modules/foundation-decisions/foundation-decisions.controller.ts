@@ -4,6 +4,18 @@ import { ApiResponse } from '@/utils/response';
 import { Errors } from '@/middleware/error';
 import { FoundationDecisionService } from './foundation-decisions.service';
 
+/**
+ * Penanda awal setiap PDF: `%PDF-` (ISO 32000 §7.5.2). Dipakai untuk menolak
+ * berkas yang hanya MENGAKU PDF lewat MIME/nama. Empat byte pertama saja —
+ * nomor versinya (`1.7`, `2.0`) tidak dipatok.
+ */
+const PDF_MAGIC = Buffer.from('%PDF-');
+
+/** Benarkah byte ini dibuka dengan penanda PDF? */
+function looksLikePdf(buffer: Buffer): boolean {
+  return buffer.length >= PDF_MAGIC.length && buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC);
+}
+
 /** Semua peran yang boleh membaca daftar/detail keputusan (halaman internal). */
 export const FoundationDecisionController = {
   /** Buat draf keputusan (buka voting). */
@@ -127,11 +139,23 @@ export const FoundationDecisionController = {
    * e-seal. Jalur token hanya memeriksa arsip server, sehingga PDF berisi token
    * asli yang isinya diganti tetap lolos. Turnstile sudah dipasang di rute,
    * sebelum handler ini.
+   *
+   * **Finding B4.** `fileFilter` multer hanya melihat `mimetype` yang DIKIRIM
+   * klien dan akhiran `.pdf` pada namanya — keduanya dapat dipalsukan dengan
+   * `curl -F 'file=@payload.exe;type=application/pdf;filename=x.pdf'`. Isi
+   * diperiksa di sini lewat MAGIC BYTES (`%PDF-` di awal berkas), tepat sebelum
+   * byte-nya di-hash; PDF yang sah tidak terpengaruh karena risalah kita sendiri
+   * selalu dibuka dengan penanda itu.
    */
   async verifyPdf(req: Request, res: Response) {
     const file = (req as Request & { file?: { buffer?: Buffer } }).file;
     if (!file || !file.buffer) {
       throw Errors.badRequest('Berkas PDF wajib diunggah.');
+    }
+    if (!looksLikePdf(file.buffer)) {
+      throw Errors.badRequest(
+        'Isi berkas bukan PDF yang sah. Unggah berkas risalah asli (byte-identik), bukan hasil pindai atau berkas lain yang dinamai .pdf.'
+      );
     }
     const result = await FoundationDecisionService.verifyByPdfBuffer(file.buffer);
     return res.json(ApiResponse.success(result));

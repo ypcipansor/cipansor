@@ -2221,13 +2221,25 @@ describe('FoundationDecisionService.verifyByToken', () => {
 
 describe('FoundationDecisionService.getFinalDocument', () => {
   const reader = { id: 'u-reader', roleCode: 'YAYASAN_KETUA' };
+  // Arsip dengan digest yang benar-benar cocok, seperti baris nyata: kolom
+  // `sha256` arsip dan `finalPdfDigest` keputusan sama-sama disetel ke hash
+  // byte tersebut. Finding A3 menambahkan pemeriksaan integritas ini, jadi
+  // setiap baris uji harus konsisten atau ia sengaja mewakili arsip rusak.
+  const ARCHIVE = Buffer.from('%PDF');
+  const ARCHIVE_DIGEST = sha256bytes(ARCHIVE);
+  const archiveDoc = () => ({
+    id: 'doc-1',
+    bytes: new Uint8Array(ARCHIVE),
+    sha256: ARCHIVE_DIGEST,
+    decision: {
+      status: 'APPROVED',
+      finalPdfDigest: ARCHIVE_DIGEST,
+      members: [{ userId: reader.id }],
+    },
+  });
 
   it('mengembalikan dokumen untuk keputusan APPROVED', async () => {
-    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
-      id: 'doc-1',
-      bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'APPROVED', members: [{ userId: reader.id }] },
-    });
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue(archiveDoc());
     const doc = await FoundationDecisionService.getFinalDocument(reader, 'dec-1');
     expect(doc.id).toBe('doc-1');
   });
@@ -2239,9 +2251,12 @@ describe('FoundationDecisionService.getFinalDocument', () => {
    */
   it('mengizinkan anggota snapshot yang rolenya di luar READ untuk mengunduh', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue({
-      id: 'doc-1',
-      bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'APPROVED', members: [{ userId: 'u-alumni' }] },
+      ...archiveDoc(),
+      decision: {
+        status: 'APPROVED',
+        finalPdfDigest: ARCHIVE_DIGEST,
+        members: [{ userId: 'u-alumni' }],
+      },
     });
     const doc = await FoundationDecisionService.getFinalDocument(
       { id: 'u-alumni', roleCode: 'GURU' },
@@ -2252,20 +2267,66 @@ describe('FoundationDecisionService.getFinalDocument', () => {
 
   it('menolak pihak luar tanpa hubungan dari mengunduh dokumen', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue({
-      id: 'doc-1',
-      bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'APPROVED', members: [{ userId: 'u-member' }] },
+      ...archiveDoc(),
+      decision: {
+        status: 'APPROVED',
+        finalPdfDigest: ARCHIVE_DIGEST,
+        members: [{ userId: 'u-member' }],
+      },
     });
     await expect(
       FoundationDecisionService.getFinalDocument({ id: 'u-outsider', roleCode: 'GURU' }, 'dec-1')
     ).rejects.toThrow(/tidak berhak/);
   });
 
+  /**
+   * Finding A3 — byte arsip yang tidak cocok dengan digest yang ditandatangani
+   * TIDAK boleh terunduh sebagai PDF resmi.
+   *
+   * Skenario nyata: arsip tersimpan diubah di luar aplikasi (korupsi, atau
+   * penulisan langsung ke basis data). Versi sebelumnya mengembalikan
+   * `doc.bytes` apa adanya, sehingga pengunduh menerima berkas "resmi" yang
+   * justru ditolak oleh verifikasi unggahan. Gagal sebelum perbaikan (dokumen
+   * kembali tanpa galat), lulus sesudah (409), dan BUKAN 404 — dokumennya ada,
+   * integritasnya yang gagal.
+   */
+  it('menolak arsip yang byte-nya tidak cocok dengan finalPdfDigest (regresi A3)', async () => {
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
+      ...archiveDoc(),
+      // Byte arsip diubah, tetapi digest tersimpan masih milik byte asli.
+      bytes: new Uint8Array(Buffer.from('%PDF-putra-tampered')),
+    });
+    await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toMatchObject(
+      { code: 'CONFLICT' }
+    );
+  });
+
+  it('menolak arsip yang kolom sha256-nya menyimpang dari finalPdfDigest (regresi A3)', async () => {
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
+      ...archiveDoc(),
+      sha256: 'f'.repeat(64),
+    });
+    await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toMatchObject(
+      { code: 'CONFLICT' }
+    );
+  });
+
+  it('menolak unduhan ketika keputusan tidak menyimpan finalPdfDigest (regresi A3)', async () => {
+    dm.foundationDecisionDocument.findUnique.mockResolvedValue({
+      ...archiveDoc(),
+      decision: { status: 'APPROVED', finalPdfDigest: null, members: [{ userId: reader.id }] },
+    });
+    await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toMatchObject(
+      { code: 'CONFLICT' }
+    );
+  });
+
   it('melempar 404 bila dokumen belum final', async () => {
     dm.foundationDecisionDocument.findUnique.mockResolvedValue({
       id: 'doc-1',
       bytes: new Uint8Array(Buffer.from('%PDF')),
-      decision: { status: 'VOTING', members: [] },
+      sha256: ARCHIVE_DIGEST,
+      decision: { status: 'VOTING', finalPdfDigest: ARCHIVE_DIGEST, members: [] },
     });
     await expect(FoundationDecisionService.getFinalDocument(reader, 'dec-1')).rejects.toThrow(
       /belum final/

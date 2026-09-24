@@ -36,7 +36,7 @@ function writeExec(file: string, contents: string): void {
 /**
  * A `PATH` with stubs for the external tools the scripts call. `pnpm` records
  * every invocation to $STUB_LOG; it fails `db:deploy` when FAIL_DEPLOY=1.
- * `psql` reports $STUB_USERS as the user count.
+ * `psql` reports $STUB_ROWS as the total application row count.
  */
 function stubPath(): NodeJS.ProcessEnv {
   return {
@@ -76,8 +76,20 @@ exit 0
   writeExec(
     path.join(binDir, 'psql'),
     `#!/usr/bin/env bash
-echo "\${STUB_USERS:-0}"
-`
+  # Two different shapes of probe must be distinguishable so a regression is
+  # provable: the OLD probe asked the users table only, the NEW probe sums
+  # every table (mentions pg_tables). Emit STUB_USERS_ONLY for the former and
+  # STUB_ROWS for the latter, so "users empty but other tables full" can be
+  # represented as STUB_USERS_ONLY=0, STUB_ROWS=12.
+  if printf '%s' "$*" | grep -qi 'FROM users'; then
+    echo "\${STUB_USERS_ONLY:-0}"
+  elif [ -n "\${STUB_ROWS_UNKNOWN:-}" ]; then
+    # probe present but produced no output — the fail-closed case.
+    exit 0
+  else
+    echo "\${STUB_ROWS:-0}"
+  fi
+  `
   );
   writeExec(path.join(binDir, 'curl'), '#!/usr/bin/env bash\nexit 1\n');
 });
@@ -98,7 +110,7 @@ function run(script: string, env: NodeJS.ProcessEnv): { status: number; out: str
 
 describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong', () => {
   it('menjalankan db:deploy walaupun database SUDAH berisi user (regresi B)', () => {
-    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '5' });
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '5' });
     expect(status).toBe(0);
     const calls = readCalls();
     expect(calls).toMatch(/--filter api db:deploy/);
@@ -120,7 +132,7 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
    * sebelum API memakainya).
    */
   it('menjalankan db:generate SEBELUM db:deploy (regresi finding 4)', () => {
-    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '5' });
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '5' });
     expect(status).toBe(0);
     const calls = readCalls();
     const generateAt = calls.indexOf('db:generate');
@@ -142,7 +154,7 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
   });
 
   it('menjalankan db:deploy lalu db:seed pada database kosong', () => {
-    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '0' });
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '0' });
     expect(status).toBe(0);
     const calls = readCalls();
     const deployAt = calls.indexOf('db:deploy');
@@ -152,13 +164,60 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
   });
 
   /**
+   * Finding A1 — "database kosong" must mean NO application data, not just no
+   * users.
+   *
+   * The probe used to `SELECT count(*) FROM users`. A database whose `users`
+   * table is empty while any other table holds rows — an interrupted seed, a
+   * partial restore, a wiped admin table — read as "empty" and was re-seeded,
+   * and `prisma/seed.ts` TRUNCATEs every table, destroying those rows. The
+   * probe now sums rows across every application table (`STUB_ROWS` here).
+   * These cases fail before the fix (the old script would seed whenever the
+   * user count was 0) and pass after.
+   */
+  it('TIDAK menyeed ketika users kosong tetapi tabel lain berisi data (regresi A1)', () => {
+    // users = 0 yet 12 rows live elsewhere: ambiguous, must fail closed.
+    // STUB_USERS_ONLY=0 is what the OLD users-only probe would have read (and
+    // seeded on); the new probe reads STUB_ROWS=12 and must skip.
+    const { status } = run(DB_PROVISION, {
+      ...stubPath(),
+      STUB_USERS_ONLY: '0',
+      STUB_ROWS: '12',
+    });
+    expect(status).toBe(0);
+    expect(readCalls()).not.toMatch(/db:seed/);
+  });
+
+  it('TIDAK menyeed pada database normal yang berisi user (regresi A1)', () => {
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '4096' });
+    expect(status).toBe(0);
+    expect(readCalls()).not.toMatch(/db:seed/);
+  });
+
+  it('fail closed — tidak menyeed ketika jumlah baris TIDAK dapat ditentukan (A1)', () => {
+    // psql present but the probe returns nothing (connection/version issue):
+    // an unknown count must skip seeding, never guess.
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS_UNKNOWN: '1' });
+    expect(status).toBe(0);
+    expect(readCalls()).not.toMatch(/db:seed/);
+  });
+
+  it('migrasi tetap SELALU dijalankan apa pun keputusan seed (A1)', () => {
+    for (const rows of ['0', '12', '4096']) {
+      const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: rows });
+      expect(status, `rows=${rows}`).toBe(0);
+      expect(readCalls(), `rows=${rows}`).toMatch(/--filter api db:deploy/);
+    }
+  });
+
+  /**
    * `prisma/seed.ts` (main) now refuses to run without
    * `ALLOW_DESTRUCTIVE_SEED=1` because it TRUNCATEs every table. `db-provision.sh`
    * seeds only when the database is empty, so it must pass that opt-in — without
    * it a fresh local/CI database never seeds and every e2e login fails.
    */
   it('meneruskan ALLOW_DESTRUCTIVE_SEED=1 saat seed (kebijakan seed main)', () => {
-    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '0' });
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '0' });
     expect(status).toBe(0);
     const seedLine = readCalls()
       .split('\n')
@@ -167,7 +226,7 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
   });
 
   it('mengembalikan exit non-zero ketika migrasi gagal (regresi D)', () => {
-    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_USERS: '5', FAIL_DEPLOY: '1' });
+    const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS: '5', FAIL_DEPLOY: '1' });
     expect(status).not.toBe(0);
   });
 });

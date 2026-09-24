@@ -81,6 +81,9 @@ beforeEach(() => {
   tokenState.data = null;
   tokenState.isLoading = false;
   tokenState.error = null;
+  // `mutateAsync` is re-stubbed per test; reset so a `mockImplementation`
+  // from a stale-response case cannot leak into the next one.
+  pdfState.mutateAsync.mockReset();
 });
 
 describe("halaman verifikasi keputusan publik", () => {
@@ -196,6 +199,91 @@ describe("halaman verifikasi keputusan publik", () => {
       expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull()
     );
     expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy();
+  });
+
+  /**
+   * Finding A2 — respons yang sudah basi tidak boleh menulis ke layar.
+   *
+   * Skenario yang benar-benar terjadi di jaringan lambat: berkas A diunggah
+   * untuk diperiksa, lalu pengguna memilih berkas B sebelum respons A tiba.
+   * Versi sebelumnya membuang `uploadResult` saat berkas diganti, tetapi
+   * `mutateAsync` berkas A tetap berjalan dan, ketika selesai, menulis hasilnya
+   * lewat `setUploadResult` — judul "Dokumen Sah" untuk berkas A menempel pada
+   * berkas B yang belum pernah diperiksa. Penjaga generasi menolak penulisan
+   * dari request yang berkasnya sudah tidak dipilih lagi.
+   *
+   * Gagal sebelum perbaikan (respons A menulis hasil), lulus sesudah.
+   */
+  it("mengabaikan respons verifikasi yang basi setelah berkas diganti (A2)", async () => {
+    let resolveA: (v: FoundationDecisionVerificationDTO) => void = () => {};
+    pdfState.mutateAsync.mockImplementation(
+      () =>
+        new Promise<FoundationDecisionVerificationDTO>((res) => {
+          resolveA = res;
+        }),
+    );
+
+    const { container } = render(<PublicVerifyDecisionPage />);
+    const input = container.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["a"], "risalah-a.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+
+    // Berkas B dipilih SEBELUM respons berkas A tiba.
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["b"], "risalah-b.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    // Respons berkas A akhirnya tiba — ia harus DIABAIKAN.
+    resolveA(dto({ isValid: true }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy()
+    );
+    expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull();
+  });
+
+  it("mengabaikan galat verifikasi yang basi setelah berkas diganti (A2)", async () => {
+    let rejectA: (e: unknown) => void = () => {};
+    pdfState.mutateAsync.mockImplementation(
+      () =>
+        new Promise<FoundationDecisionVerificationDTO>((_res, rej) => {
+          rejectA = rej;
+        }),
+    );
+
+    const { container } = render(<PublicVerifyDecisionPage />);
+    const input = container.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["a"], "risalah-a.pdf", { type: "application/pdf" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
+    fireEvent.change(input, {
+      target: {
+        files: [new File(["b"], "risalah-b.pdf", { type: "application/pdf" })],
+      },
+    });
+
+    // Galat untuk berkas A tiba setelah berkas B dipilih: tidak boleh muncul.
+    rejectA({ response: { status: 500, data: {} } });
+
+    await waitFor(() =>
+      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy()
+    );
+    expect(screen.queryByText(/Terjadi kesalahan saat memverifikasi/)).toBeNull();
   });
 
   it("memilih berkas non-PDF juga membuang hasil lama dan menampilkan galat", async () => {

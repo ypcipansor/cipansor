@@ -44,6 +44,7 @@ import {
 import {
   canReadFoundationDecision,
   foundationDecisionListWhere,
+  type FoundationActorLike,
 } from '@/utils/foundation-decision-access';
 import {
   EsignError,
@@ -180,14 +181,12 @@ export const SIGNING_KEY_CONTENDED =
  * menandatangani masih kunci yang berlaku bagi pemiliknya.
  *
  * TOCTOU: antara pembacaan kunci oleh `castVote` dan `INSERT` suara, jalur lain
- * dapat merotasi/mencabut kunci (di transaksi terpisah). Bila rotasi menang,
- * suara yang terlanjur ditulis ditolak `isVoteAuthentic` — ia tidak masuk rekap
- * tetapi barisnya tetap ada, dan percobaan ulang ditolak "sudah memberikan
- * suara". Ini cukup tanpa lock baru karena segmen kritis rotasi/pencabutan
- * masing-masing satu transaksi, sehingga pembacaan ulang melihat keadaan SEBELUM
- * atau SESUDAH, bukan di tengah. `signedAt` ditetapkan sebelum penandatanganan
- * agar cap rotasi yang datang kemudian tidak mendahuluinya. Lihat §7.2 dokumen
- * review untuk rationale lengkap.
+ * dapat merotasi/mencabut kunci. Bila rotasi menang, suara yang terlanjur
+ * ditulis ditolak `isVoteAuthentic` — ia tidak masuk rekap tetapi barisnya tetap
+ * ada, dan percobaan ulang ditolak "sudah memberikan suara". Pemeriksaan ini
+ * adalah jaring KEDUA: `castVote` dan seluruh transisi kunci esign memakai
+ * advisory lock per-pengguna yang sama (`lockSigningKeyTransition`, langkah
+ * pertama transaksi), sehingga rotasi konkuren terserialkan. §7.2 dokumen review.
  */
 async function assertSigningKeyStillCurrent(
   tx: DbClient,
@@ -540,9 +539,45 @@ const decisionInclude = {
   document: { select: { id: true } },
 } satisfies Prisma.FoundationDecisionInclude;
 
-type Actor = { id: string; roleCode: string };
+type Actor = FoundationActorLike;
 /** Klien Prisma di dalam transaksi interaktif (atau prisma itu sendiri). */
 type DbClient = Prisma.TransactionClient;
+
+/**
+ * Resolusi peran AKTUAL dari basis data (Finding B3).
+ *
+ * `req.user.roleCode` berasal dari token akses yang stateless dan TIDAK
+ * dicabut saat peran dicabut/dinonaktifkan/kedaluwarsa; selama masa hidupnya
+ * mantan Pejabat Yayasan masih lolos `authorize(...)`/cek READ. Fungsi ini
+ * memberi middleware `refreshActorRoles` sumber yang segar. `roleCodes` memuat
+ * SELURUH peran aktif (bukan hanya primary); `primary` mengisi `roleCode` agar
+ * `authorize` menilai peran utama sebenarnya.
+ */
+async function currentActiveRolesInDb(
+  userId: string
+): Promise<{ primary: string; all: string[] } | null> {
+  const user = await prisma.user.findFirst({
+    where: { id: userId, isActive: true, deletedAt: null },
+    select: { id: true },
+  });
+  // `null` HANYA bila akunnya yang mati/terhapus. Akun yang hidup tetapi tidak
+  // memegang peran aktif mana pun mengembalikan himpunan KOSONG — bukan null —
+  // supaya hak baca jalur SNAPSHOT (mantan anggota) tetap dapat dinilai, bukan
+  // ditolak lebih dulu oleh middleware.
+  if (!user) return null;
+  const rows = await prisma.userRoleAssignment.findMany({
+    where: {
+      userId,
+      isActive: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      role: { isActive: true },
+    },
+    select: { isPrimary: true, role: { select: { code: true } } },
+    orderBy: { isPrimary: 'desc' },
+  });
+  if (rows.length === 0) return { primary: '', all: [] };
+  return { primary: rows[0].role.code, all: rows.map((r) => r.role.code) };
+}
 
 /**
  * Peran yang boleh MEM-FINALISASI keputusan organ MANA PUN hidup di
@@ -1060,6 +1095,16 @@ function normalizeRuleInput(input: UpsertFoundationRuleInput): UpsertFoundationR
  * melewati eventBus adalah notifikasi/pemberitahuan ke modul lain.
  */
 export const FoundationDecisionService = {
+  /**
+   * Peran AKTIF terkini dari basis data (Finding B2/B3), atau `null` bila akun
+   * tidak aktif/dihapus/tanpa peran aktif. Dipakai `refreshActorRoles`.
+   */
+  async currentActiveRoleCodes(
+    userId: string
+  ): Promise<{ primary: string; all: string[] } | null> {
+    return currentActiveRolesInDb(userId);
+  },
+
   /** Buat keputusan: snapshot anggota organ & kuorum, lalu buka voting. */
   async create(actor: Actor, input: CreateFoundationDecisionInput) {
     // Kewenangan organ diperiksa lebih dulu: membuka voting atas keputusan
@@ -2569,7 +2614,16 @@ export const FoundationDecisionService = {
     );
   },
 
-  /** Ambil dokumen PDF final untuk diunduh, atau 404 bila belum final. */
+  /**
+   * Ambil dokumen PDF final untuk diunduh, atau 404 bila belum final.
+   *
+   * **Finding A3.** Unduhan diperiksa SEBELUM dikirim: `sha256` baris arsip
+   * harus sama dengan `finalPdfDigest` yang diikat e-seal. Tanpa ini arsip yang
+   * byte-nya telah berubah (korupsi/penulisan langsung ke basis data) terunduh
+   * sebagai PDF yang lahiriah sah, padahal verifikasi unggahan berikutnya
+   * menolaknya — kontradiksi yang sama, terbalik. Ketidakcocokan BUKAN "tidak
+   * ditemukan": dokumennya ada, integritasnya yang gagal, jadi 409.
+   */
   async getFinalDocument(actor: Actor, decisionId: string) {
     const doc = await prisma.foundationDecisionDocument.findUnique({
       where: { decisionId },
@@ -2577,6 +2631,7 @@ export const FoundationDecisionService = {
         decision: {
           select: {
             status: true,
+            finalPdfDigest: true,
             // Keanggotaan snapshot perlu ikut dibaca: unduhan diperlakukan sama
             // dengan pembacaan detail, dan anggota snapshot yang rolenya sudah
             // berubah tetap berhak mengunduh dokumen yang boleh ia tanda tangani.
@@ -2590,6 +2645,17 @@ export const FoundationDecisionService = {
     }
     if (!canReadFoundationDecision(actor, doc.decision.members)) {
       throw Errors.forbidden('Anda tidak berhak mengunduh dokumen keputusan ini.');
+    }
+    // Integritas byte arsip diperiksa terhadap digest yang ditandatangani
+    // e-seal (dan terhadap `sha256` yang disimpan bersama arsip). `Buffer.from`
+    // menormalkan kolom `Bytes` (`Uint8Array`) sebelum di-hash.
+    const archiveDigest = sha256bytes(Buffer.from(doc.bytes));
+    const expected = doc.decision.finalPdfDigest;
+    if (!expected || archiveDigest !== expected || doc.sha256 !== expected) {
+      throw Errors.conflict(
+        'Byte arsip keputusan ini tidak cocok dengan digest yang ditandatangani e-seal; ' +
+          'dokumen tidak dapat diunduh karena integritasnya gagal diverifikasi.'
+      );
     }
     return doc;
   },

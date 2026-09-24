@@ -24,7 +24,17 @@ vi.hoisted(() => {
   process.env.PUBLIC_VERIFY_RATE_LIMIT_MAX = '3';
 });
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/prisma', () => ({
+  // Finding B2/B3: `refreshActorRoles` reads the actor's CURRENT roles from the
+  // database before every governance route, so route-level tests need these two
+  // models. They return an active Pembina — enough to pass the refresh gate.
+  prisma: {
+    user: { findFirst: async () => ({ id: 'u1' }) },
+    userRoleAssignment: {
+      findMany: async () => [{ isPrimary: true, role: { code: 'YAYASAN_PEMBINA' } }],
+    },
+  },
+}));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 vi.mock('@/lib/logger', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },

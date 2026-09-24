@@ -1,6 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/prisma', () => ({
+  // Finding B2/B3: `refreshActorRoles` reads the actor's CURRENT roles from the
+  // database before every governance route, so route-level tests need these two
+  // models. They return an active Pembina — enough to pass the refresh gate.
+  prisma: {
+    user: { findFirst: async () => ({ id: 'u1' }) },
+    userRoleAssignment: {
+      findMany: async () => [{ isPrimary: true, role: { code: 'YAYASAN_PEMBINA' } }],
+    },
+  },
+}));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
 import express from 'express';
@@ -65,6 +75,47 @@ describe('foundation-decisions POST /verify-pdf — pemetaan galat unggahan', ()
     const res = await request(buildApp()).post('/verify-pdf').field('turnstileToken', 'x');
     expect(res.status).toBe(400);
     expect(res.body?.error?.code).toBe('BAD_REQUEST');
+  });
+
+  /**
+   * Finding B4 — nama `.pdf`/MIME `application/pdf` yang DIKIRIM klien tidak
+   * membuktikan isi berkas. `fileFilter` multer mempercayai keduanya, sehingga
+   * `curl -F 'file=@payload;type=application/pdf;filename=x.pdf'` lolos ke
+   * service. Penjaga magic-byte di controller menolaknya sebelum byte
+   * di-hash; regresi ini gagal sebelum penjaga itu ada (service dipanggil).
+   */
+  it('MIME PDF + nama .pdf tetapi byte BUKAN PDF → 400, service TIDAK dipanggil (regresi B4)', async () => {
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
+      .mockResolvedValue({ found: false } as never);
+
+    const res = await request(buildApp()).post('/verify-pdf').attach('file', Buffer.from('MZ\x90\x00 bukan pdf'), {
+      filename: 'menyamar.pdf',
+      contentType: 'application/pdf',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error?.code).toBe('BAD_REQUEST');
+    expect(res.body?.error?.message).toMatch(/PDF/i);
+    expect(spy).not.toHaveBeenCalled();
+    // Tidak boleh membocorkan detail internal (stack/Path/query).
+    expect(JSON.stringify(res.body)).not.toMatch(/at Object\.|node_modules|\/workspace/);
+  });
+
+  it('berkas .pdf terpotong (magic bytes tidak lengkap) → 400 (regresi B4)', async () => {
+    const spy = vi
+      .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
+      .mockResolvedValue({ found: false } as never);
+
+    const res = await request(buildApp())
+      .post('/verify-pdf')
+      .attach('file', Buffer.from('%PD'), {
+        filename: 'terpotong.pdf',
+        contentType: 'application/pdf',
+      });
+
+    expect(res.status).toBe(400);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('PDF yang sah tetap diterima dan diteruskan ke service', async () => {

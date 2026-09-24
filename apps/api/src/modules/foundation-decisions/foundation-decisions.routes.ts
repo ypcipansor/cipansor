@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { RoleCode } from '@prisma/client';
 import { FoundationDecisionController as c } from './foundation-decisions.controller';
+import { FoundationDecisionService } from './foundation-decisions.service';
 import { authenticate, authorize } from '@/middleware/auth';
 import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
 import { Errors, asyncHandler, validate, validateQuery } from '@/middleware/error';
@@ -149,6 +150,45 @@ const CREATE = [
 const FINALIZE = [...FOUNDATION_FINALIZE_ROUTE_ROLES];
 
 /**
+ * Finding B2/B3 — `authorize(...)` hanya memercayai klaim token.
+ *
+ * `req.user.roleCode` disematkan di token AKSES saat login/refresh dan TIDAK
+ * dicabut saat peran orang dicabut, dinonaktifkan, atau kedaluwarsa. Token
+ * akses hidup 15 menit (produksi), jadi selama jendela itu mantan Ketua
+ * Yayasan masih lolos `authorize(YAYASAN_KETUA)` di rute tulis, dan mantan
+ * Pembina masih lolos cek peran READ global di service — tanpa menyentuh basis
+ * data lagi.
+ *
+ * Middleware ini menyegarkan peran dari basis data pada SETIAP permintaan tulis
+ * dan MENGGANTI `req.user.roleCode`/`roleCodes` dengan keadaan terkini. Bila
+ * akun telah dinonaktifkan/dihapus, atau tak lagi memegang peran aktif mana
+ * pun, ia menolak lebih dulu. Dengan begitu seluruh gerbang di bawahnya —
+ * `authorize` di rute maupun `canFinalizeDecision`/`canReadFoundationDecision`
+ * di service — menilai peran HARI INI, bukan peran yang dibekukan di token.
+ *
+ * Dipasang pada rute TULIS (create, vote, finalize, cancel, publication,
+ * rules). Rute BACA sengaja tidak memakainya: hak baca memakai jalur SNAPSHOT
+ * yang memang harus tetap berlaku bagi mantan anggota (lihat komentar rute
+ * detail), dan jalur peran READ di sana membaca peran aktual lewat
+ * `roleCodes` yang juga diisi middleware ini ketika ada.
+ */
+async function refreshActorRoles(req: Request, _res: Response, next: NextFunction) {
+  try {
+    const fresh = await FoundationDecisionService.currentActiveRoleCodes(req.user!.id);
+    if (fresh === null) {
+      throw Errors.forbidden(
+        'Akun Anda tidak aktif, telah dihapus, atau tidak lagi memegang peran aktif, sehingga tidak dapat melakukan tindakan tata kelola ini.'
+      );
+    }
+    req.user!.roleCode = fresh.primary;
+    req.user!.roleCodes = fresh.all;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
  * Daftar keputusan HANYA `authenticate`, tanpa `authorize(...READ)`.
  *
  * Aksesnya diperiksa di service lewat `foundationDecisionListWhere`, dan itu
@@ -160,7 +200,12 @@ const FINALIZE = [...FOUNDATION_FINALIZE_ROUTE_ROLES];
  * memuat dirinya sebagai anggota snapshot; peran READ tetap melihat seluruh
  * daftar.
  */
-router.get('/decisions', validateQuery(listFoundationDecisionsQuerySchema), asyncHandler(c.list));
+router.get(
+  '/decisions',
+  refreshActorRoles,
+  validateQuery(listFoundationDecisionsQuerySchema),
+  asyncHandler(c.list)
+);
 /**
  * Organ & jenis keputusan yang boleh dibuat aktor â€” gerbang form create.
  *
@@ -170,11 +215,13 @@ router.get('/decisions', validateQuery(listFoundationDecisionsQuerySchema), asyn
  */
 router.get(
   '/decisions/create-options',
+  refreshActorRoles,
   authorize(...CREATE),
   asyncHandler(c.createOptions)
 );
 router.post(
   '/decisions',
+  refreshActorRoles,
   authorize(...CREATE),
   validate(createFoundationDecisionSchema),
   asyncHandler(c.create)
@@ -190,8 +237,8 @@ router.post(
  * `authorize`), jadi menolaknya membaca/mengunduh dokumen yang sama adalah
  * kontradiksi. Service menerima peran READ ATAU keanggotaan snapshot.
  */
-router.get('/decisions/:id', asyncHandler(c.detail));
-router.get('/decisions/:id/document', asyncHandler(c.download));
+router.get('/decisions/:id', refreshActorRoles, asyncHandler(c.detail));
+router.get('/decisions/:id/document', refreshActorRoles, asyncHandler(c.download));
 /**
  * Route vote HANYA `authenticate`, tanpa `authorize`.
  *
@@ -214,11 +261,13 @@ router.post(
   '/decisions/:id/vote',
   passphraseLimiter,
   authenticate,
+  refreshActorRoles,
   validate(castFoundationVoteSchema),
   asyncHandler(c.castVote)
 );
 router.post(
   '/decisions/:id/finalize',
+  refreshActorRoles,
   authorize(...FINALIZE),
   validate(finalizeFoundationDecisionSchema),
   asyncHandler(c.finalize)
@@ -234,7 +283,12 @@ router.post(
  * akhir — satu-satunya "jalan keluar" adalah menandainya REJECTED, yang
  * menyatakan materi ditolak padahal rapat tidak memutus apa pun.
  */
-router.post('/decisions/:id/cancel', authorize(...FINALIZE), asyncHandler(c.cancel));
+router.post(
+  '/decisions/:id/cancel',
+  refreshActorRoles,
+  authorize(...FINALIZE),
+  asyncHandler(c.cancel)
+);
 
 /**
  * Publikasi metadata â€” HANYA Super Admin.
@@ -246,14 +300,16 @@ router.post('/decisions/:id/cancel', authorize(...FINALIZE), asyncHandler(c.canc
  */
 router.post(
   '/decisions/:id/publication',
+  refreshActorRoles,
   authorize(RoleCode.SUPER_ADMIN),
   validate(setFoundationDecisionPublicationSchema),
   asyncHandler(c.setPublication)
 );
 
-router.get('/rules', authorize(RoleCode.SUPER_ADMIN), asyncHandler(c.listRules));
+router.get('/rules', refreshActorRoles, authorize(RoleCode.SUPER_ADMIN), asyncHandler(c.listRules));
 router.put(
   '/rules',
+  refreshActorRoles,
   authorize(RoleCode.SUPER_ADMIN),
   validate(upsertFoundationRuleSchema),
   asyncHandler(c.upsertRule)
