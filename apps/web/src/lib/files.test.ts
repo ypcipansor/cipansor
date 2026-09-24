@@ -55,6 +55,20 @@ describe("objectUrlForFile", () => {
     expect(objectUrlForFile({} as File)).toBe("blob:http://localhost/abc-123");
   });
 
+  it("returns an IPv6-origin blob URL byte-for-byte", () => {
+    // A blob URL embeds the page origin. On an IPv6 host the serialized host
+    // has square brackets; the browser registered `blob:http://[::1]:3000/abc`
+    // and any re-encoding (`%5B`) names a different, unregistered URL, so the
+    // preview 404s. The exact string must come back.
+    const ipv6Url = "blob:http://[::1]:3000/abc-123";
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(ipv6Url);
+
+    const result = objectUrlForFile({} as File);
+
+    expect(result).toBe(ipv6Url);
+    expect(result).not.toContain("%5B");
+  });
+
   it("drops anything that is not a blob: URL", () => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("javascript:alert(1)");
     expect(objectUrlForFile({} as File)).toBe("");

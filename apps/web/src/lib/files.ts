@@ -27,13 +27,18 @@ export function authFileUrl(url: string | null | undefined): string {
  * `URL.createObjectURL` is modelled as a taint step into an `<img src>` sink
  * (CodeQL js/xss-through-dom). Its result is always a `blob:` URL, so the value
  * is used as a URL and never as markup; the `blob:` check keeps it that way even
- * if that ever stops being true, and `encodeURI` is the sanitizer CodeQL's
- * query recognises for this sink (a no-op on a URL that only uses the
- * unreserved/safe characters a blob URL contains).
+ * if that ever stops being true — CodeQL's `PrefixStringSanitizer` recognises
+ * the guard, so the accepted value can be handed back unmodified.
+ *
+ * Do not re-encode the URL. A blob URL embeds the page origin; on an IPv6 host
+ * the serialized host carries square brackets, and `encodeURI` would turn
+ * `blob:http://[::1]:3000/abc` into `blob:http://%5B::1%5D:3000/abc`. The
+ * browser registered the original spelling, so the altered one no longer names
+ * the blob and the preview fails to resolve.
  */
 export function objectUrlForFile(file: File): string {
   const url = URL.createObjectURL(file);
-  return url.startsWith("blob:") ? encodeURI(url) : "";
+  return url.startsWith("blob:") ? url : "";
 }
 
 /**

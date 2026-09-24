@@ -34,10 +34,12 @@ export function useFilePreviews() {
   }, []);
 
   const addFiles = useCallback((files: File[]) => {
-    setItems((prev) => [
-      ...prev,
-      ...files.map((file) => ({ file, url: objectUrlForFile(file) })),
-    ]);
+    // Build the URLs once, outside the state updater. React Strict Mode
+    // double-invokes updaters; creating an object URL inside one registered two
+    // blobs per file and only ever kept (and revoked) one of them. `addFiles`
+    // runs from an event handler, so this is not part of a render.
+    const next = files.map((file) => ({ file, url: objectUrlForFile(file) }));
+    setItems((prev) => [...prev, ...next]);
   }, []);
 
   const removeAt = useCallback((index: number) => {
