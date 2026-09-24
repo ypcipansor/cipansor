@@ -1150,9 +1150,7 @@ export const FoundationDecisionService = {
    * Peran AKTIF terkini dari basis data (Finding B2/B3), atau `null` bila akun
    * tidak aktif/dihapus/tanpa peran aktif. Dipakai `refreshActorRoles`.
    */
-  async currentActiveRoleCodes(
-    userId: string
-  ): Promise<{ primary: string; all: string[] } | null> {
+  async currentActiveRoleCodes(userId: string): Promise<{ primary: string; all: string[] } | null> {
     return currentActiveRolesInDb(userId);
   },
 
@@ -2076,7 +2074,8 @@ export const FoundationDecisionService = {
         await assertActorAuthorizedInTx(
           tx,
           actor.id,
-          (roles) => canFinalizeDecision({ id: actor.id, roleCode: '', roleCodes: roles }, locked.members),
+          (roles) =>
+            canFinalizeDecision({ id: actor.id, roleCode: '', roleCodes: roles }, locked.members),
           'Anda tidak berhak memfinalisasi keputusan organ ini.'
         );
         const evaluation = evaluateQuorum(
@@ -2481,8 +2480,7 @@ export const FoundationDecisionService = {
       const cancelled = emptyVerification(
         'Rapat ini dibatalkan karena kuorum hadir tidak tercapai, sehingga tidak ada keputusan yang disahkan maupun ditolak.'
       );
-      const cancelledPublic =
-        d.publication === FoundationDecisionPublication.PUBLIC;
+      const cancelledPublic = d.publication === FoundationDecisionPublication.PUBLIC;
       return {
         ...cancelled,
         found: true,

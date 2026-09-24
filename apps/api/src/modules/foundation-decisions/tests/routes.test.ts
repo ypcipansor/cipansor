@@ -258,9 +258,7 @@ describe('foundation-decisions.routes — izin tulis Pengawas', () => {
 
   it('/decisions/create-options terdaftar sebelum /decisions/:id', () => {
     const stack = router.stack as unknown as RouteLayer[];
-    const literal = stack.findIndex(
-      (l) => l.route && l.route.path === '/decisions/create-options'
-    );
+    const literal = stack.findIndex((l) => l.route && l.route.path === '/decisions/create-options');
     const wildcard = stack.findIndex((l) => l.route && l.route.path === '/decisions/:id');
     expect(literal).toBeGreaterThanOrEqual(0);
     expect(wildcard).toBeGreaterThanOrEqual(0);

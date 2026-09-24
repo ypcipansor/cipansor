@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  certificateVerificationUrl,
-  decisionVerificationUrl,
-} from './verification-url';
+import { certificateVerificationUrl, decisionVerificationUrl } from './verification-url';
 import { config } from '../config';
 
 /**

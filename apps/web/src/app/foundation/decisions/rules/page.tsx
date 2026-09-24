@@ -87,7 +87,9 @@ export default function FoundationRulesPage() {
 
   // Tahan query sampai status auth siap DAN peran terbukti SUPER_ADMIN, agar
   // permintaan yang pasti gagal tidak pernah dikirim.
-  const { data: rules, isLoading } = useFoundationRules({ enabled: isSuperAdmin });
+  const { data: rules, isLoading } = useFoundationRules({
+    enabled: isSuperAdmin,
+  });
   const upsert = useUpsertFoundationRule();
 
   const [organType, setOrganType] = useState<FoundationOrganType>("PEMBINA");
@@ -184,223 +186,229 @@ export default function FoundationRulesPage() {
         ) : (
           <>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <SlidersHorizontal className="h-4 w-4" /> Pilih Organ & Cara
-              </CardTitle>
-              <CardDescription>
-                Aturan disimpan per pasangan organ × cara keputusan.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-1.5">
-                <Label>Organ</Label>
-                <Select
-                  value={organType}
-                  onValueChange={(v) => setOrganType(v as FoundationOrganType)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FOUNDATION_ORGAN_TYPES.map((o) => (
-                      <SelectItem key={o} value={o}>
-                        {FOUNDATION_ORGAN_LABEL[o]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Cara Keputusan</Label>
-                <Select
-                  value={kind}
-                  onValueChange={(v) => setKind(v as FoundationDecisionKind)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FOUNDATION_DECISION_KINDS.map((k) => (
-                      <SelectItem key={k} value={k}>
-                        {FOUNDATION_KIND_LABEL[k]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                {FOUNDATION_ORGAN_LABEL[organType]} ·{" "}
-                {FOUNDATION_KIND_LABEL[kind]}
-              </CardTitle>
-              <CardDescription>
-                {stored
-                  ? "Menggunakan aturan tersimpan."
-                  : "Belum ada aturan tersimpan — menampilkan default Anggaran Dasar."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={onSubmit} className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <SlidersHorizontal className="h-4 w-4" /> Pilih Organ & Cara
+                  </CardTitle>
+                  <CardDescription>
+                    Aturan disimpan per pasangan organ × cara keputusan.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label>Mode Kuorum Hadir</Label>
+                    <Label>Organ</Label>
                     <Select
-                      value={form.quorumPresentMode}
-                      disabled={circularLocked}
-                      onValueChange={(v) => {
-                        const mode = v as FoundationQuorumMode;
-                        setForm((f) => ({
-                          ...f,
-                          quorumPresentMode: mode,
-                          // Nilai DITURUNKAN dari mode, bukan diketik bebas.
-                          // Nilai bebas pernah dapat bertentangan dengan
-                          // labelnya (TWO_THIRDS dengan 0.5), sehingga ambang
-                          // yang benar-benar berlaku tak dapat diketahui dari
-                          // nama modenya.
-                          quorumPresentValue: quorumValueForMode(mode),
-                        }));
-                      }}
+                      value={organType}
+                      onValueChange={(v) =>
+                        setOrganType(v as FoundationOrganType)
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {selectableModes.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {QUORUM_MODE_LABEL[m]}
+                        {FOUNDATION_ORGAN_TYPES.map((o) => (
+                          <SelectItem key={o} value={o}>
+                            {FOUNDATION_ORGAN_LABEL[o]}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Ambang Kuorum Hadir</Label>
-                    <Input
-                      readOnly
-                      value={`${form.quorumPresentMode} · ${form.quorumPresentValue.toFixed(2)}`}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Mode Kuorum Sah</Label>
+                    <Label>Cara Keputusan</Label>
                     <Select
-                      value={form.quorumDecisionMode}
-                      disabled={circularLocked}
-                      onValueChange={(v) => {
-                        const mode = v as FoundationQuorumMode;
-                        setForm((f) => ({
-                          ...f,
-                          quorumDecisionMode: mode,
-                          quorumDecisionValue: quorumValueForMode(mode),
-                        }));
-                      }}
+                      value={kind}
+                      onValueChange={(v) =>
+                        setKind(v as FoundationDecisionKind)
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {selectableModes.map((m) => (
-                          <SelectItem key={m} value={m}>
-                            {QUORUM_MODE_LABEL[m]}
+                        {FOUNDATION_DECISION_KINDS.map((k) => (
+                          <SelectItem key={k} value={k}>
+                            {FOUNDATION_KIND_LABEL[k]}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label>Ambang Kuorum Sah</Label>
-                    <Input
-                      readOnly
-                      value={`${form.quorumDecisionMode} · ${form.quorumDecisionValue.toFixed(2)}`}
-                    />
-                  </div>
-                </div>
-                {circularLocked && (
-                  <p className="text-xs text-muted-foreground">
-                    Keputusan sirkuler hanya sah bila diambil dengan mufakat
-                    (mutlak): cara lain dikunci oleh sistem.
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button type="submit" disabled={upsert.isPending}>
-                    <Save className="mr-2 h-4 w-4" /> Simpan Aturan
-                  </Button>
-                  {saved && (
-                    <span className="text-sm text-emerald-600">
-                      Aturan tersimpan.
-                    </span>
-                  )}
-                  {upsert.isError && (
-                    <span className="text-sm text-destructive">
-                      Gagal menyimpan aturan.
-                    </span>
-                  )}
-                </div>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+                </CardContent>
+              </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Aturan Tersimpan</CardTitle>
-            <CardDescription>
-              Hanya pasangan organ × cara yang sudah dikonfigurasi.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Organ</TableHead>
-                  <TableHead>Cara</TableHead>
-                  <TableHead>Kuorum Hadir</TableHead>
-                  <TableHead>Kuorum Sah</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center">
-                      Memuat…
-                    </TableCell>
-                  </TableRow>
-                ) : (rules?.length ?? 0) === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={4}
-                      className="text-center text-muted-foreground"
-                    >
-                      Belum ada aturan tersimpan.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rules?.map((r) => (
-                    <TableRow key={r.id ?? `${r.organType}-${r.decisionKind}`}>
-                      <TableCell>
-                        {FOUNDATION_ORGAN_LABEL[r.organType]}
-                      </TableCell>
-                      <TableCell>
-                        {FOUNDATION_KIND_LABEL[r.decisionKind]}
-                      </TableCell>
-                      <TableCell>
-                        {r.quorumPresentMode} · {r.quorumPresentValue}
-                      </TableCell>
-                      <TableCell>
-                        {r.quorumDecisionMode} · {r.quorumDecisionValue}
-                      </TableCell>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {FOUNDATION_ORGAN_LABEL[organType]} ·{" "}
+                    {FOUNDATION_KIND_LABEL[kind]}
+                  </CardTitle>
+                  <CardDescription>
+                    {stored
+                      ? "Menggunakan aturan tersimpan."
+                      : "Belum ada aturan tersimpan — menampilkan default Anggaran Dasar."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={onSubmit} className="space-y-4">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label>Mode Kuorum Hadir</Label>
+                        <Select
+                          value={form.quorumPresentMode}
+                          disabled={circularLocked}
+                          onValueChange={(v) => {
+                            const mode = v as FoundationQuorumMode;
+                            setForm((f) => ({
+                              ...f,
+                              quorumPresentMode: mode,
+                              // Nilai DITURUNKAN dari mode, bukan diketik bebas.
+                              // Nilai bebas pernah dapat bertentangan dengan
+                              // labelnya (TWO_THIRDS dengan 0.5), sehingga ambang
+                              // yang benar-benar berlaku tak dapat diketahui dari
+                              // nama modenya.
+                              quorumPresentValue: quorumValueForMode(mode),
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectableModes.map((m) => (
+                              <SelectItem key={m} value={m}>
+                                {QUORUM_MODE_LABEL[m]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Ambang Kuorum Hadir</Label>
+                        <Input
+                          readOnly
+                          value={`${form.quorumPresentMode} · ${form.quorumPresentValue.toFixed(2)}`}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Mode Kuorum Sah</Label>
+                        <Select
+                          value={form.quorumDecisionMode}
+                          disabled={circularLocked}
+                          onValueChange={(v) => {
+                            const mode = v as FoundationQuorumMode;
+                            setForm((f) => ({
+                              ...f,
+                              quorumDecisionMode: mode,
+                              quorumDecisionValue: quorumValueForMode(mode),
+                            }));
+                          }}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {selectableModes.map((m) => (
+                              <SelectItem key={m} value={m}>
+                                {QUORUM_MODE_LABEL[m]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>Ambang Kuorum Sah</Label>
+                        <Input
+                          readOnly
+                          value={`${form.quorumDecisionMode} · ${form.quorumDecisionValue.toFixed(2)}`}
+                        />
+                      </div>
+                    </div>
+                    {circularLocked && (
+                      <p className="text-xs text-muted-foreground">
+                        Keputusan sirkuler hanya sah bila diambil dengan mufakat
+                        (mutlak): cara lain dikunci oleh sistem.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button type="submit" disabled={upsert.isPending}>
+                        <Save className="mr-2 h-4 w-4" /> Simpan Aturan
+                      </Button>
+                      {saved && (
+                        <span className="text-sm text-emerald-600">
+                          Aturan tersimpan.
+                        </span>
+                      )}
+                      {upsert.isError && (
+                        <span className="text-sm text-destructive">
+                          Gagal menyimpan aturan.
+                        </span>
+                      )}
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Aturan Tersimpan</CardTitle>
+                <CardDescription>
+                  Hanya pasangan organ × cara yang sudah dikonfigurasi.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Organ</TableHead>
+                      <TableHead>Cara</TableHead>
+                      <TableHead>Kuorum Hadir</TableHead>
+                      <TableHead>Kuorum Sah</TableHead>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center">
+                          Memuat…
+                        </TableCell>
+                      </TableRow>
+                    ) : (rules?.length ?? 0) === 0 ? (
+                      <TableRow>
+                        <TableCell
+                          colSpan={4}
+                          className="text-center text-muted-foreground"
+                        >
+                          Belum ada aturan tersimpan.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      rules?.map((r) => (
+                        <TableRow
+                          key={r.id ?? `${r.organType}-${r.decisionKind}`}
+                        >
+                          <TableCell>
+                            {FOUNDATION_ORGAN_LABEL[r.organType]}
+                          </TableCell>
+                          <TableCell>
+                            {FOUNDATION_KIND_LABEL[r.decisionKind]}
+                          </TableCell>
+                          <TableCell>
+                            {r.quorumPresentMode} · {r.quorumPresentValue}
+                          </TableCell>
+                          <TableCell>
+                            {r.quorumDecisionMode} · {r.quorumDecisionValue}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </>
         )}
       </div>

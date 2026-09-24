@@ -77,8 +77,7 @@ export function organMayDecide(
   roleOrRoles: string | readonly string[],
   opts: { allowSuperAdmin?: boolean } = {}
 ): boolean {
-  const roles: readonly string[] =
-    typeof roleOrRoles === 'string' ? [roleOrRoles] : roleOrRoles;
+  const roles: readonly string[] = typeof roleOrRoles === 'string' ? [roleOrRoles] : roleOrRoles;
   // Matriks kewenangan organ×jenis diperiksa LEBIH DULU dan TIDAK PERNAH
   // dilewati siapa pun — termasuk Super Admin. Cabang `allowSuperAdmin` dulu
   // mengembalikan `true` sebelum pemeriksaan ini, sehingga Super Admin dapat

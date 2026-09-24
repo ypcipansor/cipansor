@@ -37,7 +37,9 @@ vi.mock("@/stores/auth", () => ({
 }));
 
 vi.mock("@/components/layout", () => ({
-  MainLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  MainLayout: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@/components/shared", () => ({
@@ -69,9 +71,13 @@ vi.mock("@/components/ui/select", () => ({
   SelectContent: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
-  SelectItem: ({ value, children }: { value: string; children: React.ReactNode }) => (
-    <option value={value}>{children}</option>
-  ),
+  SelectItem: ({
+    value,
+    children,
+  }: {
+    value: string;
+    children: React.ReactNode;
+  }) => <option value={value}>{children}</option>,
 }));
 
 import FoundationRulesPage from "./page";
@@ -81,7 +87,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={qc}>
       <FoundationRulesPage />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -114,7 +120,9 @@ describe("halaman aturan kuorum — suntingan tidak bocor antar organ", () => {
 
     // Tunggu query selesai (tabel "Belum ada aturan tersimpan").
     await waitFor(() =>
-      expect(screen.getAllByText(/Belum ada aturan tersimpan/).length).toBeGreaterThan(0)
+      expect(
+        screen.getAllByText(/Belum ada aturan tersimpan/).length,
+      ).toBeGreaterThan(0),
     );
 
     // Pakai cara MEETING agar mode kuorum dapat diubah (CIRCULAR dikunci MUTLAK).
@@ -132,8 +140,10 @@ describe("halaman aturan kuorum — suntingan tidak bocor antar organ", () => {
     fireEvent.change(organSelect(), { target: { value: "PENGURUS" } });
 
     await waitFor(() =>
-      expect((presentModeSelect() as HTMLSelectElement).value).toBe(before)
+      expect((presentModeSelect() as HTMLSelectElement).value).toBe(before),
     );
-    expect((presentModeSelect() as HTMLSelectElement).value).not.toBe(notDefault);
+    expect((presentModeSelect() as HTMLSelectElement).value).not.toBe(
+      notDefault,
+    );
   });
 });

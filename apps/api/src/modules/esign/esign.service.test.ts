@@ -553,9 +553,9 @@ describe('aktivasi kunci tidak balapan', () => {
     } as any);
     vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
 
-    await expect(EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang')).rejects.toThrow(
-      /sudah memiliki kunci tanda tangan yang aktif/i
-    );
+    await expect(
+      EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang')
+    ).rejects.toThrow(/sudah memiliki kunci tanda tangan yang aktif/i);
   });
 });
 

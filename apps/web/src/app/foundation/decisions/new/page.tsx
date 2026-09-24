@@ -68,9 +68,10 @@ export default function NewFoundationDecisionPage() {
   // pasti 403 — kebijakan "siapa boleh membuat organ apa" hidup di service.
   // Query ditahan sampai auth siap DAN peran terbukti boleh membuat; peran
   // read-only yang mengetik URL langsung tak pernah mengirim permintaan 403.
-  const { data: options, isLoading: optionsLoading } = useFoundationCreateOptions({
-    enabled: canCreate,
-  });
+  const { data: options, isLoading: optionsLoading } =
+    useFoundationCreateOptions({
+      enabled: canCreate,
+    });
   const allowed = options?.allowedOrgans ?? [];
 
   const {
@@ -107,7 +108,10 @@ export default function NewFoundationDecisionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options]);
 
-  const allowedOrgans = useMemo(() => allowed.map((o) => o.organType), [allowed]);
+  const allowedOrgans = useMemo(
+    () => allowed.map((o) => o.organType),
+    [allowed],
+  );
   const decisionTypes = useMemo(
     () => decisionTypesForOrgan(watch("organType")),
     // `watch` returns a new function identity each render; depend on the value.
@@ -120,7 +124,9 @@ export default function NewFoundationDecisionPage() {
     // Guard klien: matriks kewenangan yang SAMA dengan API. Server tetap
     // memeriksanya lagi (jangan pernah mempercayai UI), tetapi kombinasi yang
     // salah tidak boleh pernah dikirim dan baru ditolak setelah submit.
-    if (!decisionTypesForOrgan(values.organType).includes(values.decisionType)) {
+    if (
+      !decisionTypesForOrgan(values.organType).includes(values.decisionType)
+    ) {
       setError(
         `Organ yang dipilih tidak berwenang memutus "${values.decisionType}". Pilih organ lain atau jenis keputusan yang sesuai.`,
       );

@@ -49,7 +49,7 @@ function renderPage() {
   return render(
     <QueryClientProvider client={qc}>
       <FoundationDecisionDetailPage />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 }
 
@@ -71,17 +71,15 @@ describe("halaman detail keputusan — pembedaan kegagalan", () => {
 
   it("404 → 'Keputusan tidak ditemukan.'", async () => {
     get.mockRejectedValue(
-      axiosError(404, { success: false, message: "tidak ada" })
+      axiosError(404, { success: false, message: "tidak ada" }),
     );
     renderPage();
-    expect(
-      await screen.findByText(/Keputusan tidak ditemukan\./)
-    ).toBeTruthy();
+    expect(await screen.findByText(/Keputusan tidak ditemukan\./)).toBeTruthy();
   });
 
   it("403 → 'Akses ditolak', bukan not-found", async () => {
     get.mockRejectedValue(
-      axiosError(403, { success: false, message: "dilarang" })
+      axiosError(403, { success: false, message: "dilarang" }),
     );
     renderPage();
     expect(await screen.findByText("Akses ditolak")).toBeTruthy();
@@ -90,11 +88,11 @@ describe("halaman detail keputusan — pembedaan kegagalan", () => {
 
   it("500 → galat server dengan tombol 'Coba lagi', bukan not-found", async () => {
     get.mockRejectedValue(
-      axiosError(500, { success: false, message: "server" })
+      axiosError(500, { success: false, message: "server" }),
     );
     renderPage();
     expect(
-      await screen.findByRole("button", { name: /Coba lagi/ })
+      await screen.findByRole("button", { name: /Coba lagi/ }),
     ).toBeTruthy();
     expect(screen.queryByText(/Keputusan tidak ditemukan\./)).toBeNull();
   });
@@ -109,7 +107,7 @@ describe("halaman detail keputusan — pembedaan kegagalan", () => {
     get.mockRejectedValue(netErr);
     renderPage();
     expect(
-      await screen.findByRole("button", { name: /Coba lagi/ })
+      await screen.findByRole("button", { name: /Coba lagi/ }),
     ).toBeTruthy();
     expect(screen.queryByText(/Keputusan tidak ditemukan\./)).toBeNull();
   });
@@ -166,7 +164,7 @@ async function openVoteAndSubmit() {
   get.mockResolvedValue({ data: { data: votingDecision() } });
   renderPage();
   fireEvent.click(
-    await screen.findByRole("button", { name: /Tandatangani & Suara/ })
+    await screen.findByRole("button", { name: /Tandatangani & Suara/ }),
   );
   fireEvent.change(await screen.findByPlaceholderText(/Passphrase pribadi/), {
     target: { value: "rahasia" },
@@ -185,11 +183,13 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
       axiosError(401, {
         success: false,
         message: "Passphrase tanda tangan salah. Sisa percobaan: 2.",
-      })
+      }),
     );
     await openVoteAndSubmit();
     expect(
-      await screen.findByText(/Passphrase tanda tangan salah\. Sisa percobaan: 2\./)
+      await screen.findByText(
+        /Passphrase tanda tangan salah\. Sisa percobaan: 2\./,
+      ),
     ).toBeTruthy();
   });
 
@@ -198,12 +198,10 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
       axiosError(403, {
         success: false,
         message: "Anda bukan anggota organ yang berhak memutus keputusan ini.",
-      })
+      }),
     );
     await openVoteAndSubmit();
-    expect(
-      await screen.findByText(/bukan anggota organ/)
-    ).toBeTruthy();
+    expect(await screen.findByText(/bukan anggota organ/)).toBeTruthy();
     expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
   });
 
@@ -213,23 +211,21 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
         success: false,
         message:
           "Ada baris suara lama yang tidak sah untuk akun ini pada keputusan tersebut.",
-      })
+      }),
     );
     await openVoteAndSubmit();
     expect(
-      await screen.findByText(/baris suara lama yang tidak sah/)
+      await screen.findByText(/baris suara lama yang tidak sah/),
     ).toBeTruthy();
     expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
   });
 
   it("500 → pesan server, BUKAN passphrase salah", async () => {
     post.mockRejectedValue(
-      axiosError(500, { success: false, message: "Terjadi kesalahan server." })
+      axiosError(500, { success: false, message: "Terjadi kesalahan server." }),
     );
     await openVoteAndSubmit();
-    expect(
-      await screen.findByText(/Terjadi kesalahan server\./)
-    ).toBeTruthy();
+    expect(await screen.findByText(/Terjadi kesalahan server\./)).toBeTruthy();
     expect(screen.queryByText(/Passphrase salah atau kunci/)).toBeNull();
   });
 
@@ -241,7 +237,7 @@ describe("halaman detail keputusan — pesan galat pemberian suara", () => {
     });
     await openVoteAndSubmit();
     await waitFor(() =>
-      expect(screen.queryByPlaceholderText(/Passphrase pribadi/)).toBeNull()
+      expect(screen.queryByPlaceholderText(/Passphrase pribadi/)).toBeNull(),
     );
   });
 });

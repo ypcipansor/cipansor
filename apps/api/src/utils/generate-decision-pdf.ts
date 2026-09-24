@@ -119,16 +119,14 @@ export function unencodableDecisionPdfFields(
     ['organType', data.organType],
     ['kind', data.kind],
     ['status', data.status],
-    ...data.members.map(
-      (m, i): [string, string] => [`members[${i}].name`, m.name]
-    ),
-    ...data.votes.map(
-      (v, i): [string, string] => [`votes[${i}].name`, v.name]
-    ),
+    ...data.members.map((m, i): [string, string] => [`members[${i}].name`, m.name]),
+    ...data.votes.map((v, i): [string, string] => [`votes[${i}].name`, v.name]),
     ...data.votes
       .filter((v) => !!v.note)
       .map((v, i): [string, string] => [`votes[${i}].note`, v.note as string]),
-    ...(data.verificationUrl ? [['verificationUrl', data.verificationUrl] as [string, string]] : []),
+    ...(data.verificationUrl
+      ? [['verificationUrl', data.verificationUrl] as [string, string]]
+      : []),
     ...(data.verificationToken
       ? [['verificationToken', data.verificationToken] as [string, string]]
       : []),
@@ -168,7 +166,9 @@ export function unicodeFontPath(): string | null {
  * daripada saat rapat yayasan menutup keputusan. Non-produksi dibiarkan jalan
  * supaya pengembangan & tes tidak terhalang aset yang belum disalin.
  */
-export function assertDecisionPdfFontAvailable(env: string | undefined = process.env.NODE_ENV): void {
+export function assertDecisionPdfFontAvailable(
+  env: string | undefined = process.env.NODE_ENV
+): void {
   if (env !== 'production') return;
   if (unicodeFontPath()) return;
   throw new Error(
@@ -178,7 +178,6 @@ export function assertDecisionPdfFontAvailable(env: string | undefined = process
       'dan e-seal tidak boleh dibubuhkan. Salin assets/fonts/Amiri-Regular.ttf ke image produksi.'
   );
 }
-
 
 /** Byte TTF font Unicode, dibaca sekali. Instance PDFFont terikat ke satu
  * dokumen, jadi hanya BYTE-nya yang di-cache (pola generate-raport-merdeka-pdf). */
@@ -388,9 +387,7 @@ export async function generateDecisionPdf(data: DecisionPdfData): Promise<Buffer
   if (!keepUnicode) {
     const offenders = unencodableDecisionPdfFields(data);
     if (offenders.length > 0) {
-      const detail = offenders
-        .map((o) => `${o.field} (${o.chars.join(' ')})`)
-        .join(', ');
+      const detail = offenders.map((o) => `${o.field} (${o.chars.join(' ')})`).join(', ');
       throw new Error(
         `Font Unicode untuk risalah tidak tersedia, dan naskah memuat aksara yang tidak dapat dicetak ` +
           `tanpa kehilangan karakter: ${detail}. Pasang assets/fonts/Amiri-Regular.ttf lalu finalisasi ulang; ` +

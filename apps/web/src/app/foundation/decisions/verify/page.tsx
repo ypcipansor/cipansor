@@ -24,7 +24,10 @@ function RedirectToPublic() {
   }, [router, token]);
 
   return (
-    <main id="main-content" className="p-8 text-center text-sm text-muted-foreground">
+    <main
+      id="main-content"
+      className="p-8 text-center text-sm text-muted-foreground"
+    >
       Mengalihkan ke halaman verifikasi publik…
     </main>
   );

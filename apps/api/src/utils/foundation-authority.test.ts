@@ -296,12 +296,9 @@ describe('canFinalizeDecision — definisi tunggal eligibility finalisasi', () =
   });
 
   it('Pengawas yang anggota snapshot boleh menutup rapat organnya', () => {
-    expect(
-      canFinalizeDecision(
-        { id: 'u1', roleCode: RoleCode.YAYASAN_PENGAWAS },
-        members
-      )
-    ).toBe(true);
+    expect(canFinalizeDecision({ id: 'u1', roleCode: RoleCode.YAYASAN_PENGAWAS }, members)).toBe(
+      true
+    );
   });
 
   /**
@@ -367,9 +364,9 @@ describe('allowedCreateOrgansForRole — organ yang boleh dibuat aktor', () => {
     expect(
       allowedCreateOrgansForRole(RoleCode.SUPER_ADMIN, { allowSuperAdmin: true }).sort()
     ).toEqual([...FOUNDATION_ORGAN_TYPES].sort());
-    expect(
-      allowedCreateOrgansForRole(RoleCode.SUPER_ADMIN, { allowSuperAdmin: true })
-    ).toContain('GABUNGAN');
+    expect(allowedCreateOrgansForRole(RoleCode.SUPER_ADMIN, { allowSuperAdmin: true })).toContain(
+      'GABUNGAN'
+    );
   });
 
   it('peran di luar yayasan tidak mendapat organ apa pun', () => {
@@ -383,9 +380,7 @@ describe('allowedCreateOrgansForRole — organ yang boleh dibuat aktor', () => {
         const type = FOUNDATION_DECISION_TYPES.find((t) =>
           FOUNDATION_DECISION_AUTHORITY[t].includes(organ)
         )!;
-        expect(
-          organMayDecide(organ, type, roleCode, { allowSuperAdmin: true })
-        ).toBe(true);
+        expect(organMayDecide(organ, type, roleCode, { allowSuperAdmin: true })).toBe(true);
       }
     }
   });
@@ -414,7 +409,10 @@ describe('organMayDecide — himpunan peran (Finding 2)', () => {
    */
   it('menerima seluruh peran: GURU utama + YAYASAN_KETUA sekunder ≠ ditolak', () => {
     expect(
-      organMayDecide('PENGURUS', 'keputusan-operasional', [RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA])
+      organMayDecide('PENGURUS', 'keputusan-operasional', [
+        RoleCode.SDIT_GURU,
+        RoleCode.YAYASAN_KETUA,
+      ])
     ).toBe(true);
   });
 
@@ -426,9 +424,14 @@ describe('organMayDecide — himpunan peran (Finding 2)', () => {
 
   it('Super Admin via peran sekunder tetap lolos bila allowSuperAdmin', () => {
     expect(
-      organMayDecide('PENGURUS', 'keputusan-operasional', [RoleCode.SDIT_GURU, RoleCode.SUPER_ADMIN], {
-        allowSuperAdmin: true,
-      })
+      organMayDecide(
+        'PENGURUS',
+        'keputusan-operasional',
+        [RoleCode.SDIT_GURU, RoleCode.SUPER_ADMIN],
+        {
+          allowSuperAdmin: true,
+        }
+      )
     ).toBe(true);
   });
 });
@@ -437,7 +440,11 @@ describe('canFinalizeDecision — himpunan peran (Finding 2)', () => {
   it('Ketua sebagai peran SEKUNDER boleh memfinalisasi', () => {
     expect(
       canFinalizeDecision(
-        { id: 'u1', roleCode: RoleCode.SDIT_GURU, roleCodes: [RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA] },
+        {
+          id: 'u1',
+          roleCode: RoleCode.SDIT_GURU,
+          roleCodes: [RoleCode.SDIT_GURU, RoleCode.YAYASAN_KETUA],
+        },
         []
       )
     ).toBe(true);

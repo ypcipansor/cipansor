@@ -344,9 +344,10 @@ describe("rbac — navigation and route access stay in sync", () => {
     ]) {
       // Menu unit/kepala sekolah/guru TIDAK memuat keputusan yayasan —
       // hanya SUPER_ADMIN (dan peran Yayasan lewat menu Yayasan biasa).
-      expect(navHrefs(role), `${role} tidak boleh punya daftar keputusan`).not.toContain(
-        "/foundation/decisions",
-      );
+      expect(
+        navHrefs(role),
+        `${role} tidak boleh punya daftar keputusan`,
+      ).not.toContain("/foundation/decisions");
     }
   });
 });

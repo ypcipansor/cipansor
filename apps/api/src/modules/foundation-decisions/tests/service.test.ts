@@ -3842,9 +3842,7 @@ describe('FoundationDecisionService — otorisasi peran ulang di dalam transaksi
    */
   it('create tetap lolos bila peran organ masih aktif di dalam transaksi', async () => {
     dm.userRoleAssignment.findMany.mockImplementation(async (args: any) =>
-      args?.where?.userId
-        ? [{ role: { code: 'YAYASAN_PEMBINA' } }]
-        : memberAssignments(3)
+      args?.where?.userId ? [{ role: { code: 'YAYASAN_PEMBINA' } }] : memberAssignments(3)
     );
     dm.foundationDecisionRule.findUnique.mockResolvedValue(null);
     dm.foundationDecision.create.mockResolvedValue({ id: 'dec-new' });

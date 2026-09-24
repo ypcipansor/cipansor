@@ -50,7 +50,9 @@ function apiRoles(name: string): string[] {
   );
   if (!block)
     throw new Error(`${name} not found in foundation-decisions.routes.ts`);
-  const direct = [...block[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map((m) => m[1]);
+  const direct = [...block[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map(
+    (m) => m[1],
+  );
   if (direct.length > 0) return direct.sort();
   // `FINALIZE` derives from `FOUNDATION_FINALIZE_ROUTE_ROLES` in
   // `utils/foundation-authority.ts` (route + service + DTO share one set).
@@ -61,8 +63,11 @@ function apiRoles(name: string): string[] {
   const utilBlock = util.match(
     new RegExp(`const ${referenced}\\b[^=]*=\\s*\\[([\\s\\S]*?)\\];`),
   );
-  if (!utilBlock) throw new Error(`${referenced} not found in foundation-authority.ts`);
-  return [...utilBlock[1].matchAll(/RoleCode\.([A-Z_]+)/g)].map((m) => m[1]).sort();
+  if (!utilBlock)
+    throw new Error(`${referenced} not found in foundation-authority.ts`);
+  return [...utilBlock[1].matchAll(/RoleCode\.([A-Z_]+)/g)]
+    .map((m) => m[1])
+    .sort();
 }
 
 describe("foundation decisions — write gate cermin dari API", () => {

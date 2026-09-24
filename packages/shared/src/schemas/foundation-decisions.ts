@@ -111,7 +111,8 @@ export const upsertFoundationRuleSchema = upsertFoundationRuleBaseSchema
    */
   .transform((rule) => ({
     ...rule,
-    quorumPresentValue: rule.quorumPresentValue ?? quorumValueForMode(rule.quorumPresentMode),
+    quorumPresentValue:
+      rule.quorumPresentValue ?? quorumValueForMode(rule.quorumPresentMode),
     quorumDecisionValue:
       rule.quorumDecisionValue ?? quorumValueForMode(rule.quorumDecisionMode),
   }))
@@ -195,7 +196,9 @@ export type UpsertFoundationRuleInput = z.infer<
 /** Query list keputusan (paginated). */
 export const listFoundationDecisionsQuerySchema = z.object({
   organType: z.enum(FOUNDATION_ORGAN_TYPES).optional(),
-  status: z.enum(["DRAFT", "VOTING", "APPROVED", "REJECTED", "CANCELLED"]).optional(),
+  status: z
+    .enum(["DRAFT", "VOTING", "APPROVED", "REJECTED", "CANCELLED"])
+    .optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce
     .number()

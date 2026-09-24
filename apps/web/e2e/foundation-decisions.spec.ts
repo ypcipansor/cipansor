@@ -1306,7 +1306,9 @@ test.describe("rapat gagal kuorum ditutup sebagai CANCELLED", () => {
 
     await signIn(page, "superAdmin");
     await page.goto(`/foundation/decisions/${id}`);
-    await expect(page.getByText("Rapat Dibatalkan", { exact: true })).toBeVisible({
+    await expect(
+      page.getByText("Rapat Dibatalkan", { exact: true }),
+    ).toBeVisible({
       timeout: 20000,
     });
     await expect(
@@ -1362,10 +1364,13 @@ test.describe("rapat gagal kuorum ditutup sebagai CANCELLED", () => {
     // Kuorum hadir terpenuhi → tombol pembatalan tidak ditawarkan.
     expect(before.data.canCancel).toBe(false);
 
-    const cancelRes = await fetch(`${API_URL}/foundation/decisions/${id}/cancel`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${admin.accessToken}` },
-    });
+    const cancelRes = await fetch(
+      `${API_URL}/foundation/decisions/${id}/cancel`,
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${admin.accessToken}` },
+      },
+    );
     expect(cancelRes.status).toBe(400);
   });
 });

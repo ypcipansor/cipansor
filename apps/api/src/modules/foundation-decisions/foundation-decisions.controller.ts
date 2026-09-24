@@ -13,7 +13,9 @@ const PDF_MAGIC = Buffer.from('%PDF-');
 
 /** Benarkah byte ini dibuka dengan penanda PDF? */
 function looksLikePdf(buffer: Buffer): boolean {
-  return buffer.length >= PDF_MAGIC.length && buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC);
+  return (
+    buffer.length >= PDF_MAGIC.length && buffer.subarray(0, PDF_MAGIC.length).equals(PDF_MAGIC)
+  );
 }
 
 /**
@@ -34,10 +36,7 @@ function actorFrom(req: Request) {
 export const FoundationDecisionController = {
   /** Buat draf keputusan (buka voting). */
   async create(req: Request, res: Response) {
-    const decisionId = await FoundationDecisionService.create(
-      actorFrom(req),
-      req.body
-    );
+    const decisionId = await FoundationDecisionService.create(actorFrom(req), req.body);
     return res
       .status(201)
       .json(ApiResponse.success({ decisionId }, 'Keputusan dibuat dan voting dibuka.'));
@@ -46,10 +45,7 @@ export const FoundationDecisionController = {
   /** Daftar keputusan (paginated). */
   async list(req: Request, res: Response) {
     const query = (res.locals.validatedQuery || req.query) as ListFoundationDecisionsQuery;
-    const result = await FoundationDecisionService.list(
-      actorFrom(req),
-      query
-    );
+    const result = await FoundationDecisionService.list(actorFrom(req), query);
     return res.json(
       ApiResponse.success(result.items, 'Daftar keputusan diterima.', {
         page: result.page,
@@ -68,10 +64,7 @@ export const FoundationDecisionController = {
 
   /** Detail keputusan. */
   async detail(req: Request, res: Response) {
-    const result = await FoundationDecisionService.detail(
-      actorFrom(req),
-      req.params.id
-    );
+    const result = await FoundationDecisionService.detail(actorFrom(req), req.params.id);
     return res.json(ApiResponse.success(result));
   },
 
@@ -87,19 +80,13 @@ export const FoundationDecisionController = {
 
   /** Finalisasi manual bila kuorum sudah tercapai. */
   async finalize(req: Request, res: Response) {
-    const result = await FoundationDecisionService.finalize(
-      actorFrom(req),
-      req.params.id
-    );
+    const result = await FoundationDecisionService.finalize(actorFrom(req), req.params.id);
     return res.json(ApiResponse.success(result, 'Keputusan difinalisasi.'));
   },
 
   /** Batalkan rapat yang kuorum hadirnya tak pernah tercapai. */
   async cancel(req: Request, res: Response) {
-    const result = await FoundationDecisionService.cancel(
-      actorFrom(req),
-      req.params.id
-    );
+    const result = await FoundationDecisionService.cancel(actorFrom(req), req.params.id);
     return res.json(ApiResponse.success(result, 'Rapat dibatalkan karena kuorum tidak tercapai.'));
   },
 
@@ -127,10 +114,7 @@ export const FoundationDecisionController = {
 
   /** Ubah aturan kuorum (SUPER_ADMIN). */
   async upsertRule(req: Request, res: Response) {
-    const result = await FoundationDecisionService.upsertRule(
-      actorFrom(req),
-      req.body
-    );
+    const result = await FoundationDecisionService.upsertRule(actorFrom(req), req.body);
     return res.json(ApiResponse.success(result, 'Aturan kuorum disimpan.'));
   },
 
@@ -174,10 +158,7 @@ export const FoundationDecisionController = {
 
   /** Unduh PDF risalah final (keputusan sah). */
   async download(req: Request, res: Response) {
-    const doc = await FoundationDecisionService.getFinalDocument(
-      actorFrom(req),
-      req.params.id
-    );
+    const doc = await FoundationDecisionService.getFinalDocument(actorFrom(req), req.params.id);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',

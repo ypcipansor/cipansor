@@ -731,114 +731,125 @@ describe.skipIf(!RUN)('migrasi CANCELLED + normalisasi sirkuler', () => {
  * HILANG, dan label TAMBAHAN yang bukan milik rangkaian ini. Keduanya diuji di
  * bawah supaya pelonggaran ini tidak berubah menjadi "terima apa pun".
  */
-describe.skipIf(!RUN)('Finding 1 — basis data skema final (bentuk db push) mengadopsi migrasi', () => {
-  const databases: string[] = [];
+describe.skipIf(!RUN)(
+  'Finding 1 — basis data skema final (bentuk db push) mengadopsi migrasi',
+  () => {
+    const databases: string[] = [];
 
-  afterAll(async () => {
-    for (const db of databases) {
-      await dropDatabase(db);
+    afterAll(async () => {
+      for (const db of databases) {
+        await dropDatabase(db);
+      }
+    });
+
+    /** DDL setara `db push` dari skema final (Prisma sendiri memblokir db push). */
+    function finalSchemaDdl(targetUrl: string): string {
+      const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: targetUrl };
+      delete env.SHADOW_DATABASE_URL;
+      env.DOTENV_CONFIG_PATH = '/dev/null';
+      const prismaBin = path.resolve(API_DIR, 'node_modules/.bin/prisma');
+      return execFileSync(
+        prismaBin,
+        [
+          'migrate',
+          'diff',
+          '--from-empty',
+          '--to-schema',
+          'prisma/schema.prisma',
+          '--script',
+          '--config',
+          'prisma/prisma.config.ts',
+        ],
+        { cwd: API_DIR, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      );
     }
-  });
 
-  /** DDL setara `db push` dari skema final (Prisma sendiri memblokir db push). */
-  function finalSchemaDdl(targetUrl: string): string {
-    const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: targetUrl };
-    delete env.SHADOW_DATABASE_URL;
-    env.DOTENV_CONFIG_PATH = '/dev/null';
-    const prismaBin = path.resolve(API_DIR, 'node_modules/.bin/prisma');
-    return execFileSync(
-      prismaBin,
-      ['migrate', 'diff', '--from-empty', '--to-schema', 'prisma/schema.prisma', '--script', '--config', 'prisma/prisma.config.ts'],
-      { cwd: API_DIR, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
-    );
-  }
-
-  async function applySql(url: string, sql: string): Promise<void> {
-    const client = new Client({ connectionString: url });
-    await client.connect();
-    try {
-      await client.query(sql);
-    } finally {
-      await client.end();
+    async function applySql(url: string, sql: string): Promise<void> {
+      const client = new Client({ connectionString: url });
+      await client.connect();
+      try {
+        await client.query(sql);
+      } finally {
+        await client.end();
+      }
     }
-  }
 
-  async function baselinePreFoundation(url: string): Promise<void> {
-    const src = path.resolve(API_DIR, 'prisma/migrations');
-    const pre = fs
-      .readdirSync(src)
-      .filter((e) => fs.statSync(path.join(src, e)).isDirectory())
-      .filter((n) => n < '20260916000000_foundation_decisions')
-      .sort();
-    for (const m of pre) {
-      migrateResolveApplied(url, m);
+    async function baselinePreFoundation(url: string): Promise<void> {
+      const src = path.resolve(API_DIR, 'prisma/migrations');
+      const pre = fs
+        .readdirSync(src)
+        .filter((e) => fs.statSync(path.join(src, e)).isDirectory())
+        .filter((n) => n < '20260916000000_foundation_decisions')
+        .sort();
+      for (const m of pre) {
+        migrateResolveApplied(url, m);
+      }
     }
-  }
 
-  async function provisionFinalSchemaDb(prefix: string): Promise<{ name: string; url: string }> {
-    const name = `cipansor_mig_final_${prefix}_${randomBytes(4).toString('hex')}`;
-    databases.push(name);
-    await createDatabase(name);
-    const url = urlForDatabase(name);
-    await applySql(url, finalSchemaDdl(url));
-    await baselinePreFoundation(url);
-    return { name, url };
-  }
+    async function provisionFinalSchemaDb(prefix: string): Promise<{ name: string; url: string }> {
+      const name = `cipansor_mig_final_${prefix}_${randomBytes(4).toString('hex')}`;
+      databases.push(name);
+      await createDatabase(name);
+      const url = urlForDatabase(name);
+      await applySql(url, finalSchemaDdl(url));
+      await baselinePreFoundation(url);
+      return { name, url };
+    }
 
-  it('migrate deploy hijau pada basis data skema-akhir (label CANCELLED sudah ada)', async () => {
-    const { url } = await provisionFinalSchemaDb('ok');
+    it('migrate deploy hijau pada basis data skema-akhir (label CANCELLED sudah ada)', async () => {
+      const { url } = await provisionFinalSchemaDb('ok');
 
-    // Prasyarat: basis data memang sudah memuat label lanjutan itu.
-    const client = new Client({ connectionString: url });
-    await client.connect();
-    let labels: string[];
-    try {
-      const { rows } = await client.query<{ label: string }>(
-        `SELECT enumlabel AS label FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+      // Prasyarat: basis data memang sudah memuat label lanjutan itu.
+      const client = new Client({ connectionString: url });
+      await client.connect();
+      let labels: string[];
+      try {
+        const { rows } = await client.query<{ label: string }>(
+          `SELECT enumlabel AS label FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
           WHERE t.typname = 'FoundationDecisionStatus' ORDER BY enumlabel`
-      );
-      labels = rows.map((r) => r.label);
-    } finally {
-      await client.end();
-    }
-    expect(labels).toContain('CANCELLED');
-    expect(labels).toContain('DRAFT');
+        );
+        labels = rows.map((r) => r.label);
+      } finally {
+        await client.end();
+      }
+      expect(labels).toContain('CANCELLED');
+      expect(labels).toContain('DRAFT');
 
-    // Regresi inti: sebelum perbaikan ini `migrate deploy` mati P3018 di sini.
-    const output = migrateDeploy(url);
-    expect(output).toMatch(/All migrations have been successfully applied/);
+      // Regresi inti: sebelum perbaikan ini `migrate deploy` mati P3018 di sini.
+      const output = migrateDeploy(url);
+      expect(output).toMatch(/All migrations have been successfully applied/);
 
-    // Seluruh rangkaian benar-benar mendarat, tak ada yang tertinggal.
-    const c2 = new Client({ connectionString: url });
-    await c2.connect();
-    try {
-      const { rows } = await c2.query<{ unfinished: string }>(
-        `SELECT count(*) FILTER (WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL)::text AS unfinished
+      // Seluruh rangkaian benar-benar mendarat, tak ada yang tertinggal.
+      const c2 = new Client({ connectionString: url });
+      await c2.connect();
+      try {
+        const { rows } = await c2.query<{ unfinished: string }>(
+          `SELECT count(*) FILTER (WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL)::text AS unfinished
            FROM "_prisma_migrations"`
-      );
-      expect(rows[0].unfinished).toBe('0');
-    } finally {
-      await c2.end();
-    }
-  }, 180000);
+        );
+        expect(rows[0].unfinished).toBe('0');
+      } finally {
+        await c2.end();
+      }
+    }, 180000);
 
-  it('tetap MENOLAK label dasar yang hilang (skema berbeda)', async () => {
-    const { url } = await provisionFinalSchemaDb('missing');
-    await applySql(
-      url,
-      `ALTER TABLE "foundation_decisions" ALTER COLUMN "status" DROP DEFAULT;
+    it('tetap MENOLAK label dasar yang hilang (skema berbeda)', async () => {
+      const { url } = await provisionFinalSchemaDb('missing');
+      await applySql(
+        url,
+        `ALTER TABLE "foundation_decisions" ALTER COLUMN "status" DROP DEFAULT;
        ALTER TABLE "foundation_decisions" ALTER COLUMN "status" TYPE text USING "status"::text;
        DROP TYPE "FoundationDecisionStatus";
        CREATE TYPE "FoundationDecisionStatus" AS ENUM ('DRAFT','APPROVED','REJECTED','CANCELLED');
        ALTER TABLE "foundation_decisions" ALTER COLUMN "status" TYPE "FoundationDecisionStatus" USING "status"::"FoundationDecisionStatus";`
-    );
-    expect(() => migrateDeploy(url)).toThrow(/tidak memuat label dasar/);
-  }, 180000);
+      );
+      expect(() => migrateDeploy(url)).toThrow(/tidak memuat label dasar/);
+    }, 180000);
 
-  it('tetap MENOLAK label tambahan yang tidak dikenal (skema menyimpang)', async () => {
-    const { url } = await provisionFinalSchemaDb('unknown');
-    await applySql(url, `ALTER TYPE "FoundationDecisionStatus" ADD VALUE 'BOGUS';`);
-    expect(() => migrateDeploy(url)).toThrow(/memuat label tidak dikenal/);
-  }, 180000);
-});
-
+    it('tetap MENOLAK label tambahan yang tidak dikenal (skema menyimpang)', async () => {
+      const { url } = await provisionFinalSchemaDb('unknown');
+      await applySql(url, `ALTER TYPE "FoundationDecisionStatus" ADD VALUE 'BOGUS';`);
+      expect(() => migrateDeploy(url)).toThrow(/memuat label tidak dikenal/);
+    }, 180000);
+  }
+);

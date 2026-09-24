@@ -154,8 +154,7 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
   const issues = findSecretIssues({
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
-    studentCardHmacSecret:
-      input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
     foundationEsealPassphrase:
       input.foundationEsealPassphrase ?? process.env.FOUNDATION_ESEAL_PASSPHRASE,
   });

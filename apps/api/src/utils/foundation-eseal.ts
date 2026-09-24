@@ -81,10 +81,7 @@ export function verifySeal(
  * cara mengetahui passphrase cocok adalah mencoba membuka kunci privatnya —
  * persis seperti alasan `unsealPrivateKey` tidak menyimpan hash passphrase.
  */
-export function sealCanSign(
-  material: EncryptedKeyMaterial,
-  serverPassphrase: string
-): boolean {
+export function sealCanSign(material: EncryptedKeyMaterial, serverPassphrase: string): boolean {
   try {
     signSeal(material, serverPassphrase, 'foundation-eseal-capability-probe');
     return true;

@@ -100,86 +100,78 @@ describe.skipIf(!RUN)('esign activateKey — balapan aktivasi (PostgreSQL nyata)
    * Balapan sesungguhnya: table lock menahan kedua permintaan SEBELUM salah
    * satunya sempat membuat kunci, sehingga keduanya benar-benar overlap.
    */
-  it(
-    'hanya satu aktivasi konkuren yang sukses; kunci pemenang tetap menjadi kunci aktif',
-    async () => {
-      const userId = await approvedUser('race');
+  it('hanya satu aktivasi konkuren yang sukses; kunci pemenang tetap menjadi kunci aktif', async () => {
+    const userId = await approvedUser('race');
 
-      // Koneksi kontrol menahan seluruh tabel `signing_key_requests`; kedua
-      // permintaan aktivasi membacanya lebih dahulu, jadi keduanya MEMBLOKIR —
-      // benar-benar overlap, bukan berurutan.
-      const control = new pg.Client({ connectionString: process.env.DATABASE_URL });
-      await control.connect();
-      await control.query('BEGIN');
-      await control.query('LOCK TABLE "signing_key_requests" IN ACCESS EXCLUSIVE MODE');
+    // Koneksi kontrol menahan seluruh tabel `signing_key_requests`; kedua
+    // permintaan aktivasi membacanya lebih dahulu, jadi keduanya MEMBLOKIR —
+    // benar-benar overlap, bukan berurutan.
+    const control = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await control.connect();
+    await control.query('BEGIN');
+    await control.query('LOCK TABLE "signing_key_requests" IN ACCESS EXCLUSIVE MODE');
 
-      const first = EsignService.activateKey(userId, 'passphrase-first');
-      expect(await waitForBlocked(prisma, 1, 8000)).toBe(true);
-      const second = EsignService.activateKey(userId, 'passphrase-second');
-      // Keduanya terparkir: bukti overlap.
-      expect(await waitForBlocked(prisma, 2, 8000)).toBe(true);
+    const first = EsignService.activateKey(userId, 'passphrase-first');
+    expect(await waitForBlocked(prisma, 1, 8000)).toBe(true);
+    const second = EsignService.activateKey(userId, 'passphrase-second');
+    // Keduanya terparkir: bukti overlap.
+    expect(await waitForBlocked(prisma, 2, 8000)).toBe(true);
 
-      // Lepaskan latch: kedua permintaan lanjut dan saling berbaris.
-      await control.query('COMMIT');
-      await control.end().catch(() => {});
+    // Lepaskan latch: kedua permintaan lanjut dan saling berbaris.
+    await control.query('COMMIT');
+    await control.end().catch(() => {});
 
-      const results = await Promise.allSettled([first, second]);
-      const ok = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{
-        id: string;
-      }>[];
-      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
+    const results = await Promise.allSettled([first, second]);
+    const ok = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{
+      id: string;
+    }>[];
+    const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
 
-      // Tepat satu pemenang; yang kalah mendapat konflik yang jelas.
-      expect(ok).toHaveLength(1);
-      expect(failed).toHaveLength(1);
-      const loserMessage = String(failed[0].reason?.message ?? failed[0].reason);
-      expect(loserMessage).toMatch(/sudah memiliki kunci tanda tangan yang aktif/i);
+    // Tepat satu pemenang; yang kalah mendapat konflik yang jelas.
+    expect(ok).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+    const loserMessage = String(failed[0].reason?.message ?? failed[0].reason);
+    expect(loserMessage).toMatch(/sudah memiliki kunci tanda tangan yang aktif/i);
 
-      const winnerId = ok[0].value.id;
-      // Kunci pemenang HARUS masih menjadi kunci aktif — tidak dihapus oleh
-      // yang kalah sebelum respons pemenang diterima.
-      const active = await prisma.userSigningKey.findUnique({ where: { userId } });
-      expect(active?.id).toBe(winnerId);
-      expect(active?.userId).toBe(userId);
+    const winnerId = ok[0].value.id;
+    // Kunci pemenang HARUS masih menjadi kunci aktif — tidak dihapus oleh
+    // yang kalah sebelum respons pemenang diterima.
+    const active = await prisma.userSigningKey.findUnique({ where: { userId } });
+    expect(active?.id).toBe(winnerId);
+    expect(active?.userId).toBe(userId);
 
-      // Hanya satu kunci per pengguna, dan tidak ada riwayat kunci yang
-      // tertandai digantikan (kunci ini belum pernah menerbitkan/menandatangani
-      // apa pun, sehingga riwayatnya memang belum ada).
-      const superseded = await prisma.userSigningKeyHistory.count({
-        where: { userId, supersededAt: { not: null } },
-      });
-      expect(superseded).toBe(0);
-    },
-    30000
-  );
+    // Hanya satu kunci per pengguna, dan tidak ada riwayat kunci yang
+    // tertandai digantikan (kunci ini belum pernah menerbitkan/menandatangani
+    // apa pun, sehingga riwayatnya memang belum ada).
+    const superseded = await prisma.userSigningKeyHistory.count({
+      where: { userId, supersededAt: { not: null } },
+    });
+    expect(superseded).toBe(0);
+  }, 30000);
 
   /**
    * Tanpa latch eksternal: N permintaan bersamaan tetap harus menyisakan satu
    * kunci aktif, yang `id`-nya sama dengan kunci yang dikembalikan pemenang.
    */
-  it(
-    'delapan aktivasi paralel tetap menyisakan satu kunci aktif milik pemenang',
-    async () => {
-      const userId = await approvedUser('storm');
-      const calls = Array.from({ length: 8 }, (_, i) =>
-        EsignService.activateKey(userId, `passphrase-${i}`)
-      );
-      const results = await Promise.allSettled(calls);
-      const ok = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{
-        id: string;
-      }>[];
-      expect(ok).toHaveLength(1);
+  it('delapan aktivasi paralel tetap menyisakan satu kunci aktif milik pemenang', async () => {
+    const userId = await approvedUser('storm');
+    const calls = Array.from({ length: 8 }, (_, i) =>
+      EsignService.activateKey(userId, `passphrase-${i}`)
+    );
+    const results = await Promise.allSettled(calls);
+    const ok = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{
+      id: string;
+    }>[];
+    expect(ok).toHaveLength(1);
 
-      const active = await prisma.userSigningKey.findUnique({ where: { userId } });
-      expect(active?.id).toBe(ok[0].value.id);
+    const active = await prisma.userSigningKey.findUnique({ where: { userId } });
+    expect(active?.id).toBe(ok[0].value.id);
 
-      const superseded = await prisma.userSigningKeyHistory.count({
-        where: { userId, supersededAt: { not: null } },
-      });
-      expect(superseded).toBe(0);
-    },
-    30000
-  );
+    const superseded = await prisma.userSigningKeyHistory.count({
+      where: { userId, supersededAt: { not: null } },
+    });
+    expect(superseded).toBe(0);
+  }, 30000);
 });
 
 /**
@@ -209,7 +201,12 @@ describe.skipIf(!RUN)('esign decideRequest — balapan setuju vs tolak (PostgreS
     // Penyetus keputusan harus pengguna nyata (FK decided_by_id).
     deciderId = `itest-decider-${Date.now()}`;
     await prisma.user.create({
-      data: { id: deciderId, email: `${deciderId}@example.test`, name: 'Decider', passwordHash: 'x' },
+      data: {
+        id: deciderId,
+        email: `${deciderId}@example.test`,
+        name: 'Decider',
+        passwordHash: 'x',
+      },
     });
   });
 
@@ -230,11 +227,18 @@ describe.skipIf(!RUN)('esign decideRequest — balapan setuju vs tolak (PostgreS
   });
 
   /** Pengguna dengan identitas terverifikasi + berkas KTP nyata di disk. */
-  async function pendingUserWithKtp(prefix: string): Promise<{ userId: string; requestId: string; fileName: string }> {
+  async function pendingUserWithKtp(
+    prefix: string
+  ): Promise<{ userId: string; requestId: string; fileName: string }> {
     const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const userId = `itest-${prefix}-${suffix}`;
     await prisma.user.create({
-      data: { id: userId, email: `${userId}@example.test`, name: `KTP ${prefix}`, passwordHash: 'x' },
+      data: {
+        id: userId,
+        email: `${userId}@example.test`,
+        name: `KTP ${prefix}`,
+        passwordHash: 'x',
+      },
     });
     const stored = await storeIdentityDocument(
       Buffer.from('%PDF-1.4 fake identity document for test'),
@@ -268,63 +272,57 @@ describe.skipIf(!RUN)('esign decideRequest — balapan setuju vs tolak (PostgreS
     return { userId, requestId: request.id, fileName: stored.fileName };
   }
 
-  it(
-    'persetujuan yang menang meninggalkan berkas KTP utuh meski penolakan overlap',
-    async () => {
-      const { requestId, fileName } = await pendingUserWithKtp('race-ktp');
-      const dir = path.join(process.cwd(), IDENTITY_STORE_RELATIVE_DIR);
-      const filePath = path.join(dir, fileName);
-      expect(fs.existsSync(filePath)).toBe(true);
+  it('persetujuan yang menang meninggalkan berkas KTP utuh meski penolakan overlap', async () => {
+    const { requestId, fileName } = await pendingUserWithKtp('race-ktp');
+    const dir = path.join(process.cwd(), IDENTITY_STORE_RELATIVE_DIR);
+    const filePath = path.join(dir, fileName);
+    expect(fs.existsSync(filePath)).toBe(true);
 
-      /**
-       * Urutan ditentukan oleh advisory lock `lockSigningKeyTransition` yang
-       * dipegang koneksi kontrol. Persetujuan diantrekan LEBIH DULU di kunci
-       * itu; penolakan menyusul di belakangnya. Ketika kunci dilepas,
-       * PostgreSQL melayani pengantre secara FIFO, sehingga persetujuan
-       * menyelesaikan pengajuan dan penolakan membaca ulang status APPROVED.
-       *
-       * Inilah balapan yang sesungguhnya: keduanya benar-benar terparkir pada
-       * lock yang sama sebelum salah satunya berjalan. Yang membedakan
-       * implementasi lama hanyalah bahwa penolakan sudah menghapus berkas
-       * SEBELUM sempat mengantre.
-       */
-      const control = new pg.Client({ connectionString: process.env.DATABASE_URL });
-      await control.connect();
-      await control.query('BEGIN');
-      await control.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
-        (
-          await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } })
-        ).userId,
-      ]);
+    /**
+     * Urutan ditentukan oleh advisory lock `lockSigningKeyTransition` yang
+     * dipegang koneksi kontrol. Persetujuan diantrekan LEBIH DULU di kunci
+     * itu; penolakan menyusul di belakangnya. Ketika kunci dilepas,
+     * PostgreSQL melayani pengantre secara FIFO, sehingga persetujuan
+     * menyelesaikan pengajuan dan penolakan membaca ulang status APPROVED.
+     *
+     * Inilah balapan yang sesungguhnya: keduanya benar-benar terparkir pada
+     * lock yang sama sebelum salah satunya berjalan. Yang membedakan
+     * implementasi lama hanyalah bahwa penolakan sudah menghapus berkas
+     * SEBELUM sempat mengantre.
+     */
+    const control = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await control.connect();
+    await control.query('BEGIN');
+    await control.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+      (await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } })).userId,
+    ]);
 
-      const approving = EsignService.decideRequest(requestId, deciderId, true, 30);
-      expect(await waitForBlocked(prisma, 1, 8000)).toBe(true);
-      const rejecting = EsignService.decideRequest(requestId, deciderId, false, undefined, 'tidak');
-      expect(await waitForBlocked(prisma, 2, 8000)).toBe(true);
+    const approving = EsignService.decideRequest(requestId, deciderId, true, 30);
+    expect(await waitForBlocked(prisma, 1, 8000)).toBe(true);
+    const rejecting = EsignService.decideRequest(requestId, deciderId, false, undefined, 'tidak');
+    expect(await waitForBlocked(prisma, 2, 8000)).toBe(true);
 
-      await control.query('COMMIT');
-      await control.end().catch(() => {});
+    await control.query('COMMIT');
+    await control.end().catch(() => {});
 
-      const results = await Promise.allSettled([approving, rejecting]);
-      const ok = results.filter((r) => r.status === 'fulfilled');
-      // Persis satu yang menang, dan arahnya deterministik: persetujuan.
-      const dbg = JSON.stringify(
-        results.map((r) => (r.status === 'rejected' ? String(r.reason?.message ?? r.reason) : 'OK'))
-      );
-      expect(ok.length, dbg).toBe(1);
+    const results = await Promise.allSettled([approving, rejecting]);
+    const ok = results.filter((r) => r.status === 'fulfilled');
+    // Persis satu yang menang, dan arahnya deterministik: persetujuan.
+    const dbg = JSON.stringify(
+      results.map((r) => (r.status === 'rejected' ? String(r.reason?.message ?? r.reason) : 'OK'))
+    );
+    expect(ok.length, dbg).toBe(1);
 
-      const finalReq = await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
-      // Arah harus deterministik; kalau tidak, uji ini bisa lulus secara palsu
-      // lewat cabang penolakan.
-      expect(finalReq.status).toBe(SigningKeyRequestStatus.APPROVED);
+    const finalReq = await prisma.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } });
+    // Arah harus deterministik; kalau tidak, uji ini bisa lulus secara palsu
+    // lewat cabang penolakan.
+    expect(finalReq.status).toBe(SigningKeyRequestStatus.APPROVED);
 
-      const identity = await prisma.userIdentity.findUniqueOrThrow({
-        where: { userId: finalReq.userId },
-      });
-      // Persetujuan menang: berkas dan nama berkasnya HARUS tetap ada.
-      expect(identity.ktpFileName).toBe(fileName);
-      expect(fs.existsSync(filePath)).toBe(true);
-    },
-    30000
-  );
+    const identity = await prisma.userIdentity.findUniqueOrThrow({
+      where: { userId: finalReq.userId },
+    });
+    // Persetujuan menang: berkas dan nama berkasnya HARUS tetap ada.
+    expect(identity.ktpFileName).toBe(fileName);
+    expect(fs.existsSync(filePath)).toBe(true);
+  }, 30000);
 });

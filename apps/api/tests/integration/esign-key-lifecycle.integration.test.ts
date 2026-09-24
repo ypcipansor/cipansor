@@ -158,7 +158,9 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
 
     const afterKey = await prisma.userSigningKey.findUnique({ where: { id: key.id } });
     expect(afterKey?.revokedAt).toBeNull();
-    const afterHistory = await prisma.userSigningKeyHistory.findUnique({ where: { id: history.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
     expect(afterHistory?.revokedAt).toBeNull();
     expect(await prisma.auditLog.count({ where: { entityId: key.id, action: 'REVOKE' } })).toBe(0);
 
@@ -186,7 +188,9 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
 
     const afterKey = await prisma.userSigningKey.findUnique({ where: { id: key.id } });
     expect(afterKey?.revokedAt).toBeNull();
-    const afterHistory = await prisma.userSigningKeyHistory.findUnique({ where: { id: history.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
     expect(afterHistory?.revokedAt).toBeNull();
 
     await cleanupOwner();
@@ -195,10 +199,16 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
   it('revokeKey commits key, history, and audit together on success', async () => {
     const { key, history } = await seedKey();
 
-    const result = await EsignService.revokeKey(owner.id, actor.id, 'Alasan pencabutan yang panjang');
+    const result = await EsignService.revokeKey(
+      owner.id,
+      actor.id,
+      'Alasan pencabutan yang panjang'
+    );
 
     const afterKey = await prisma.userSigningKey.findUnique({ where: { id: key.id } });
-    const afterHistory = await prisma.userSigningKeyHistory.findUnique({ where: { id: history.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
     const audit = await prisma.auditLog.findFirst({
       where: { entityId: key.id, action: 'REVOKE' },
     });
@@ -234,9 +244,7 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
     ]);
 
     const fulfilled = results.filter((r) => r.status === 'fulfilled');
-    const rejected = results.filter(
-      (r): r is PromiseRejectedResult => r.status === 'rejected'
-    );
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
     expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     // The loser is a client conflict, not a 500 and not a silent success.
@@ -288,7 +296,9 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
     const afterKey = await prisma.userSigningKey.findUnique({ where: { id: key.id } });
     expect(afterKey).not.toBeNull();
     expect(afterKey?.publicKey).toBe(key.publicKey);
-    const afterHistory = await prisma.userSigningKeyHistory.findUnique({ where: { id: history.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
     expect(afterHistory?.supersededAt).toBeNull();
 
     await cleanupOwner();
@@ -318,7 +328,9 @@ describeDb('esign key lifecycle — atomicity on real PostgreSQL', () => {
     expect(keys[0].id).toBe(activated.id);
     expect(keys[0].id).not.toBe(key.id);
 
-    const afterHistory = await prisma.userSigningKeyHistory.findUnique({ where: { id: history.id } });
+    const afterHistory = await prisma.userSigningKeyHistory.findUnique({
+      where: { id: history.id },
+    });
     expect(afterHistory?.supersededAt).not.toBeNull();
 
     await cleanupOwner();

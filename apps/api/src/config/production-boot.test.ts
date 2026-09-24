@@ -184,10 +184,9 @@ describe('bootstrap wiring', () => {
       STUDENT_CARD_HMAC_SECRET: GOOD_SECRET,
     });
 
-    expect(
-      result.ok,
-      `production booted without an e-seal passphrase:\n${result.output}`
-    ).toBe(false);
+    expect(result.ok, `production booted without an e-seal passphrase:\n${result.output}`).toBe(
+      false
+    );
     expect(result.output).toContain('BOOT_REFUSED');
     expect(result.output).toMatch(/FOUNDATION_ESEAL_PASSPHRASE/);
   }, 90_000);
@@ -212,10 +211,7 @@ describe('bootstrap wiring', () => {
       FOUNDATION_ESEAL_PASSPHRASE: GOOD_SECRET,
     });
 
-    expect(
-      result.ok,
-      `production refused a valid e-seal passphrase:\n${result.output}`
-    ).toBe(true);
+    expect(result.ok, `production refused a valid e-seal passphrase:\n${result.output}`).toBe(true);
   }, 90_000);
 
   it('calls assertProductionSecrets before the server starts listening', () => {
@@ -248,10 +244,9 @@ describe('bootstrap wiring', () => {
     const callIndex = source.indexOf('assertDecisionPdfFontAvailable(');
     const listenIndex = source.indexOf('.listen(');
 
-    expect(
-      callIndex,
-      'main.ts no longer calls assertDecisionPdfFontAvailable().'
-    ).toBeGreaterThan(-1);
+    expect(callIndex, 'main.ts no longer calls assertDecisionPdfFontAvailable().').toBeGreaterThan(
+      -1
+    );
     expect(
       listenIndex === -1 || callIndex < listenIndex,
       'assertDecisionPdfFontAvailable() must run before the port opens.'

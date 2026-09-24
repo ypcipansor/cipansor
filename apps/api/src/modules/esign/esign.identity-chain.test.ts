@@ -65,9 +65,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.signingKeyRequest.findFirst).mockResolvedValue(null as any);
   vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(null as any);
-  vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(
-    freshlyDocumentedIdentity() as any
-  );
+  vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(freshlyDocumentedIdentity() as any);
   // Finding A4: the guarded `updateMany` + re-read in `decideRequest`.
   vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
   vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockResolvedValue({

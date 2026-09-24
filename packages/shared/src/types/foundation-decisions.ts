@@ -117,7 +117,9 @@ export const FOUNDATION_DECISION_AUTHORITY: Record<
 export function organsForDecisionType(
   decisionType: string,
 ): readonly FoundationOrganType[] {
-  return FOUNDATION_DECISION_AUTHORITY[decisionType as FoundationDecisionType] ?? [];
+  return (
+    FOUNDATION_DECISION_AUTHORITY[decisionType as FoundationDecisionType] ?? []
+  );
 }
 
 /**
@@ -227,7 +229,6 @@ export function decisionTypesForOrgan(
     FOUNDATION_DECISION_AUTHORITY[t].includes(organType),
   );
 }
-
 
 /**
  * Klasifikasi publikasi metadata keputusan.

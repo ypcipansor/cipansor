@@ -125,7 +125,9 @@ export default function FoundationDecisionsPage() {
               <SelectValue placeholder="Semua status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={FOUNDATION_FILTER_ALL}>Semua status</SelectItem>
+              <SelectItem value={FOUNDATION_FILTER_ALL}>
+                Semua status
+              </SelectItem>
               {Object.entries(FOUNDATION_STATUS_LABEL).map(([k, v]) => (
                 <SelectItem key={k} value={k}>
                   {v}

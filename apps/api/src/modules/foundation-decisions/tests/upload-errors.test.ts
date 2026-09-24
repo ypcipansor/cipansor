@@ -89,10 +89,12 @@ describe('foundation-decisions POST /verify-pdf — pemetaan galat unggahan', ()
       .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
       .mockResolvedValue({ found: false } as never);
 
-    const res = await request(buildApp()).post('/verify-pdf').attach('file', Buffer.from('MZ\x90\x00 bukan pdf'), {
-      filename: 'menyamar.pdf',
-      contentType: 'application/pdf',
-    });
+    const res = await request(buildApp())
+      .post('/verify-pdf')
+      .attach('file', Buffer.from('MZ\x90\x00 bukan pdf'), {
+        filename: 'menyamar.pdf',
+        contentType: 'application/pdf',
+      });
 
     expect(res.status).toBe(400);
     expect(res.body?.error?.code).toBe('BAD_REQUEST');
@@ -107,12 +109,10 @@ describe('foundation-decisions POST /verify-pdf — pemetaan galat unggahan', ()
       .spyOn(FoundationDecisionService, 'verifyByPdfBuffer')
       .mockResolvedValue({ found: false } as never);
 
-    const res = await request(buildApp())
-      .post('/verify-pdf')
-      .attach('file', Buffer.from('%PD'), {
-        filename: 'terpotong.pdf',
-        contentType: 'application/pdf',
-      });
+    const res = await request(buildApp()).post('/verify-pdf').attach('file', Buffer.from('%PD'), {
+      filename: 'terpotong.pdf',
+      contentType: 'application/pdf',
+    });
 
     expect(res.status).toBe(400);
     expect(spy).not.toHaveBeenCalled();

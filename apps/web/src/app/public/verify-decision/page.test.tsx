@@ -209,7 +209,7 @@ describe("halaman verifikasi keputusan publik", () => {
     const { container } = render(<PublicVerifyDecisionPage />);
 
     const input = container.querySelector(
-      'input[type="file"]'
+      'input[type="file"]',
     ) as HTMLInputElement;
 
     const fileA = new File(["a"], "risalah-a.pdf", {
@@ -219,9 +219,7 @@ describe("halaman verifikasi keputusan publik", () => {
     fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
 
     // Berkas pertama dinyatakan sah.
-    expect(
-      await screen.findByText(/Dokumen Sah & Terverifikasi/)
-    ).toBeTruthy();
+    expect(await screen.findByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
 
     // Pilih berkas KEDUA yang belum diverifikasi: hasil lama wajib hilang.
     const fileB = new File(["b"], "risalah-b.pdf", {
@@ -230,7 +228,7 @@ describe("halaman verifikasi keputusan publik", () => {
     fireEvent.change(input, { target: { files: [fileB] } });
 
     await waitFor(() =>
-      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull()
+      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull(),
     );
     expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy();
   });
@@ -259,7 +257,7 @@ describe("halaman verifikasi keputusan publik", () => {
 
     const { container } = render(<PublicVerifyDecisionPage />);
     const input = container.querySelector(
-      'input[type="file"]'
+      'input[type="file"]',
     ) as HTMLInputElement;
 
     fireEvent.change(input, {
@@ -280,7 +278,7 @@ describe("halaman verifikasi keputusan publik", () => {
     resolveA(dto({ isValid: true }));
 
     await waitFor(() =>
-      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy()
+      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy(),
     );
     expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull();
   });
@@ -296,7 +294,7 @@ describe("halaman verifikasi keputusan publik", () => {
 
     const { container } = render(<PublicVerifyDecisionPage />);
     const input = container.querySelector(
-      'input[type="file"]'
+      'input[type="file"]',
     ) as HTMLInputElement;
 
     fireEvent.change(input, {
@@ -315,9 +313,11 @@ describe("halaman verifikasi keputusan publik", () => {
     rejectA({ response: { status: 500, data: {} } });
 
     await waitFor(() =>
-      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy()
+      expect(screen.getByText(/risalah-b\.pdf/)).toBeTruthy(),
     );
-    expect(screen.queryByText(/Terjadi kesalahan saat memverifikasi/)).toBeNull();
+    expect(
+      screen.queryByText(/Terjadi kesalahan saat memverifikasi/),
+    ).toBeNull();
   });
 
   it("memilih berkas non-PDF juga membuang hasil lama dan menampilkan galat", async () => {
@@ -325,7 +325,7 @@ describe("halaman verifikasi keputusan publik", () => {
     const { container } = render(<PublicVerifyDecisionPage />);
 
     const input = container.querySelector(
-      'input[type="file"]'
+      'input[type="file"]',
     ) as HTMLInputElement;
     fireEvent.change(input, {
       target: {
@@ -333,9 +333,7 @@ describe("halaman verifikasi keputusan publik", () => {
       },
     });
     fireEvent.click(screen.getByRole("button", { name: /Verifikasi Berkas/ }));
-    expect(
-      await screen.findByText(/Dokumen Sah & Terverifikasi/)
-    ).toBeTruthy();
+    expect(await screen.findByText(/Dokumen Sah & Terverifikasi/)).toBeTruthy();
 
     fireEvent.change(input, {
       target: {
@@ -344,7 +342,7 @@ describe("halaman verifikasi keputusan publik", () => {
     });
 
     await waitFor(() =>
-      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull()
+      expect(screen.queryByText(/Dokumen Sah & Terverifikasi/)).toBeNull(),
     );
     expect(screen.getByText(/Format berkas harus PDF\./)).toBeTruthy();
   });

@@ -44,10 +44,14 @@ vi.mock("@/stores/auth", () => ({
  * diregresikan adalah kontrak yang halaman berikan ke komponen.
  */
 const paginationProps = vi.hoisted(() => ({
-  last: null as null | { pageSizeOptions?: number[]; onPageSizeChange?: (n: number) => void },
+  last: null as null | {
+    pageSizeOptions?: number[];
+    onPageSizeChange?: (n: number) => void;
+  },
 }));
 vi.mock("@/components/shared/pagination", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/components/shared/pagination")>();
+  const actual =
+    await importOriginal<typeof import("@/components/shared/pagination")>();
   return {
     Pagination: (props: Parameters<typeof actual.Pagination>[0]) => {
       paginationProps.last = props;
@@ -93,7 +97,14 @@ function row(page: number, i: number) {
       decisionMode: "MUTLAK",
       decisionValue: 1,
     },
-    voteSummary: { approve: 0, reject: 0, abstain: 0, present: 0, active: 1, totalVotes: 0 },
+    voteSummary: {
+      approve: 0,
+      reject: 0,
+      abstain: 0,
+      present: 0,
+      active: 1,
+      totalVotes: 0,
+    },
     finalPdfDigest: null,
     decidedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -107,18 +118,20 @@ function row(page: number, i: number) {
  * diminta — persis seperti endpoint nyata.
  */
 function mockApi() {
-  get.mockImplementation((_url: string, config?: { params?: Record<string, number> }) => {
-    const page = config?.params?.page ?? 1;
-    const limit = config?.params?.limit ?? 10;
-    const all = Array.from({ length: 20 }, (_, i) => row(1, i + 1));
-    const start = (page - 1) * limit;
-    return Promise.resolve({
-      data: {
-        data: all.slice(start, start + limit),
-        pagination: { page, limit, total: all.length },
-      },
-    });
-  });
+  get.mockImplementation(
+    (_url: string, config?: { params?: Record<string, number> }) => {
+      const page = config?.params?.page ?? 1;
+      const limit = config?.params?.limit ?? 10;
+      const all = Array.from({ length: 20 }, (_, i) => row(1, i + 1));
+      const start = (page - 1) * limit;
+      return Promise.resolve({
+        data: {
+          data: all.slice(start, start + limit),
+          pagination: { page, limit, total: all.length },
+        },
+      });
+    },
+  );
 }
 
 beforeEach(() => {

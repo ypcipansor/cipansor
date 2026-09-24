@@ -190,10 +190,7 @@ describe('fingerprint kunci publik', () => {
     // basis data (`publicKey`, base64), sehingga baris yang fingerprint-nya
     // tidak cocok dengan kuncinya tertangkap. Nilai harap di bawah adalah
     // SHA-256 standar — bukan hasil fungsi itu sendiri.
-    const expected = crypto
-      .createHash('sha256')
-      .update(m.publicKey, 'utf8')
-      .digest('hex');
+    const expected = crypto.createHash('sha256').update(m.publicKey, 'utf8').digest('hex');
     expect(publicKeyFingerprint(m.publicKey)).toBe(expected);
     expect(publicKeyFingerprint(m.publicKey)).toMatch(/^[0-9a-f]{64}$/);
   });
