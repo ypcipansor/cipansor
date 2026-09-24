@@ -978,6 +978,78 @@ describe('WbsService Unit Tests', () => {
       expect(commentData.message).not.toContain('Alasan:');
     });
 
+    it('refuses to route a unitless report to the unit-level queue', async () => {
+      // Finding 2: a unitless report forwarded to UNIT_ADMIN (no assignee) is
+      // invisible to every unit handler — `buildScopeWhere`'s unit branch
+      // requires the report's unit to match the handler's, and NULL matches
+      // none. The forward used to report success while the case sat under an
+      // owner who could not read it. The role-level destination must be refused
+      // for a unitless report, and nothing may be written.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue({
+        id: 'report-1',
+        ticketCode: 'WBS-1',
+        primaryHandlerRole: 'YAYASAN_PENGAWAS',
+        unitId: null,
+      });
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+      expect(prisma.wbsReport.update).not.toHaveBeenCalled();
+    });
+
+    it('still routes a report with a unit to the unit-level queue', async () => {
+      // The mirror: with a unit, the unit queue is a real destination and the
+      // forward must succeed.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.findUnique as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.update as any).mockResolvedValue({
+        ...reportInScope('unit-sdit'),
+        primaryHandlerRole: 'UNIT_ADMIN',
+        assignedUserId: null,
+      });
+
+      await wbsService.forwardReport(
+        'report-1',
+        { toRole: 'UNIT_ADMIN', reason: 'alasan panjang' },
+        actor
+      );
+
+      expect(prisma.wbsForwardLog.create).toHaveBeenCalled();
+      expect(prisma.wbsReport.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ primaryHandlerRole: 'UNIT_ADMIN' }),
+        })
+      );
+    });
+
+    it('refuses the unit-level destination inside the transaction when the unit is cleared in the gap', async () => {
+      // Pre-flight sees a unit; by commit the unit is gone. The in-transaction
+      // check on the locked row must catch it rather than route the case to a
+      // queue no unit handler can read.
+      (prisma.wbsReport.findFirst as any).mockResolvedValue(reportInScope('unit-sdit'));
+      (prisma.wbsReport.findUnique as any).mockResolvedValue({
+        ...reportInScope('unit-sdit'),
+        unitId: null,
+      });
+
+      await expect(
+        wbsService.forwardReport(
+          'report-1',
+          { toRole: 'UNIT_ADMIN', reason: 'alasan panjang' },
+          actor
+        )
+      ).rejects.toMatchObject({ statusCode: 400 });
+
+      expect(prisma.wbsForwardLog.create).not.toHaveBeenCalled();
+    });
+
     it('re-validates the recipient under the transaction and aborts when it was deactivated in the gap', async () => {
       // Pre-flight sees a live recipient; by the time the transaction runs, the
       // account has been switched off. Acting on the pre-flight snapshot would

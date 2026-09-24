@@ -997,6 +997,13 @@ function PengawasanPageContent() {
                                 className="h-8 text-xs gap-1"
                                 onClick={() => {
                                   setSelectedWbs(report);
+                                  // A unitless report cannot be routed to the
+                                  // unit queue (the API refuses it). Keep the
+                                  // form from opening on a destination that is
+                                  // disabled for this report.
+                                  if (!report.unitId && forwardRole === "UNIT_ADMIN") {
+                                    setForwardRole("YAYASAN_KETUA");
+                                  }
                                   setForwardRoleDialogOpen(true);
                                 }}
                               >
@@ -1532,8 +1539,13 @@ function PengawasanPageContent() {
                   <SelectItem value="YAYASAN_KETUA">
                     Pengurus Yayasan (Ketua)
                   </SelectItem>
-                  <SelectItem value="UNIT_ADMIN">
+                  {/* A unit-level destination is only readable by a unit
+                      handler when the report carries a unit; the API refuses
+                      it otherwise, so the option is disabled rather than
+                      offered and then rejected. */}
+                  <SelectItem value="UNIT_ADMIN" disabled={!selectedWbs?.unitId}>
                     Kepala Unit Organisasi
+                    {!selectedWbs?.unitId ? " (laporan tanpa unit)" : ""}
                   </SelectItem>
                 </SelectContent>
               </Select>

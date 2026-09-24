@@ -745,6 +745,30 @@ export class WbsService {
   }
 
   /**
+   * A unit-scoped destination is only meaningful when the report has a unit.
+   *
+   * `forwardReport` accepted `toRole: 'UNIT_ADMIN'` for a report with
+   * `unitId: null` and no recipient. `buildScopeWhere`'s unit branch requires the
+   * report's unit to equal the handler's, and a NULL unit matches no handler's
+   * unit, so the forward reported success and moved the routing into a queue no
+   * unit administrator can read — the case sat under an owner who could not see
+   * it while the sender believed it had been handed on. A *named* recipient is
+   * refused by `assertForwardRecipientEligible`, but the role-level destination
+   * with no assignee had no such guard.
+   *
+   * Called before the transaction for a prompt refusal and again inside it on the
+   * locked report, so a concurrent write that clears the unit cannot slip past
+   * the pre-flight read.
+   */
+  private assertForwardDestinationReadable(toRole: string, reportUnitId: string | null): void {
+    if (toRole === 'UNIT_ADMIN' && !reportUnitId) {
+      throw Errors.badRequest(
+        'Laporan tanpa unit tidak dapat diteruskan ke peran tingkat unit karena tidak ada pengelola unit yang dapat melihatnya. Teruskan ke peran tingkat yayasan.'
+      );
+    }
+  }
+
+  /**
    * Forward / Refer report to another role e.g. from Pengawas to Pengurus or vice versa.
    */
   async forwardReport(id: string, data: ForwardWbsReportInput, actor: WbsActor) {
@@ -775,6 +799,11 @@ export class WbsService {
         data,
         report.unitId ?? null
       );
+    } else {
+      // No recipient named: the destination bucket itself must be one whose
+      // scope can match this report. A unitless report sent to UNIT_ADMIN lands
+      // in a queue nobody can read.
+      this.assertForwardDestinationReadable(data.toRole, report.unitId ?? null);
     }
 
     return prisma.$transaction(async (tx) => {
@@ -867,6 +896,11 @@ export class WbsService {
           },
         });
         this.assertForwardRecipientEligible(recipient, data, lockedReport.unitId ?? null);
+      } else {
+        // Same destination check as the pre-flight, but on the locked row: a
+        // concurrent write that cleared the unit between the two would otherwise
+        // still route the case to a unit queue that cannot read it.
+        this.assertForwardDestinationReadable(data.toRole, lockedReport.unitId ?? null);
       }
 
       await tx.wbsForwardLog.create({
