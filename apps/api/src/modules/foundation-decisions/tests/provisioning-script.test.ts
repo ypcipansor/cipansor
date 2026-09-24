@@ -86,6 +86,9 @@ exit 0
   elif [ -n "\${STUB_ROWS_UNKNOWN:-}" ]; then
     # probe present but produced no output — the fail-closed case.
     exit 0
+  elif [ -n "\${STUB_ROWS_NONINT:-}" ]; then
+    # probe produced something that is not a plain integer — must fail closed.
+    echo "\${STUB_ROWS_NONINT}"
   else
     echo "\${STUB_ROWS:-0}"
   fi
@@ -200,6 +203,25 @@ describe('db-provision.sh — generate, migrasi selalu, seed hanya bila kosong',
     const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS_UNKNOWN: '1' });
     expect(status).toBe(0);
     expect(readCalls()).not.toMatch(/db:seed/);
+  });
+
+  /**
+   * Finding 3 — a probe result that is NOT a plain integer must fail closed.
+   *
+   * The old guard was `[ "$APPTABLES" -eq 0 ] 2>/dev/null`, which treats any
+   * non-integer as... whatever `test` decides; here we lock the conservative
+   * policy: a malformed count is never read as "0 rows" and never seeds.
+   */
+  it('fail closed — jumlah baris non-integer tidak memicu seed (finding 3)', () => {
+    // `-00` and `+00` are not plain decimals yet the OLD guard
+    // `[ "$APPTABLES" -eq 0 ]` evaluates them equal to 0 and SEEDS; `abc`/`3.5`
+    // already fail closed under bash. The explicit `^[0-9]+$` guard makes the
+    // policy uniform: only a plain non-negative integer can mean "0 rows".
+    for (const bad of ['-00', '+00', 'abc', '3.5', '12x']) {
+      const { status } = run(DB_PROVISION, { ...stubPath(), STUB_ROWS_NONINT: bad });
+      expect(status, `bad=${bad}`).toBe(0);
+      expect(readCalls(), `bad=${bad}`).not.toMatch(/db:seed/);
+    }
   });
 
   it('migrasi tetap SELALU dijalankan apa pun keputusan seed (A1)', () => {

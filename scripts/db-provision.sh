@@ -61,7 +61,13 @@ fi
 
 if [ -z "$APPTABLES" ]; then
   echo "Cannot determine application row count; skipping seed."
-elif [ "$APPTABLES" -eq 0 ] 2>/dev/null; then
+elif ! [[ "$APPTABLES" =~ ^[0-9]+$ ]]; then
+  # Fail closed: a probe that returns something other than a plain
+  # non-negative integer (a wrapped/truncated value, a locale-formatted
+  # number, a stray psql notice) is NOT taken as "0 rows". Guessing here would
+  # run the destructive seed over real data; skipping only costs a manual seed.
+  echo "Application row count is not an integer ('$APPTABLES'); skipping seed."
+elif [ "$APPTABLES" -eq 0 ]; then
   echo "Seeding DB (no application data)..."
   # `prisma/seed.ts` TRUNCATEs every table, so it demands an explicit opt-in.
   # This branch only runs when the database has no application rows at all, and
