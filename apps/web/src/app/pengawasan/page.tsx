@@ -44,6 +44,7 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -88,6 +89,7 @@ import {
   createBoardSuspensionSchema,
   draftPeriodicReportSchema,
   isClosedWbsStatus,
+  isFoundationWideRoleCode,
   pengawasanAccessOf,
 } from "@cipansor/shared";
 import type {
@@ -103,6 +105,7 @@ import type {
 } from "@cipansor/shared";
 import { useAuthStore } from "@/stores/auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
+import { useUnits } from "@/hooks/use-units";
 import {
   boardSuspensionFormDefaults,
   plhSelectionPatch,
@@ -116,6 +119,11 @@ const auditFormSchema = z.object({
   plannedDate: z.string().min(1, "Tanggal wajib"),
   scope: z.string().optional(),
   methodology: z.string().optional(),
+  // The unit the audit is filed against. Required at the edge for a
+  // foundation-wide actor (the API rejects an absent target), but a unit-scoped
+  // actor never sees or sends it — the API pins the record to their own unit
+  // regardless. Blank is sent as `undefined`.
+  unitId: z.string().optional(),
 });
 
 const findingFormSchema = z.object({
@@ -185,12 +193,21 @@ const wbsStatusBadges: Record<string, { label: string; color: string }> = {
 function AuditFormDialog({
   editData,
   onClose,
+  allowUnitChoice,
 }: {
   editData?: InternalAuditDto | null;
   onClose: () => void;
+  /**
+   * A foundation-wide actor filing an audit must name the unit it covers, and
+   * the API rejects an absent target. A unit-scoped actor has no choice — the
+   * API pins the record to their own unit — so the picker is hidden rather than
+   * shown and ignored.
+   */
+  allowUnitChoice: boolean;
 }) {
   const createAudit = useCreateAudit();
   const updateAudit = useUpdateAudit();
+  const { data: units } = useUnits({ limit: 100 });
   const isEdit = !!editData;
 
   const form = useForm<AuditFormValues>({
@@ -204,6 +221,7 @@ function AuditFormDialog({
         : "",
       scope: editData?.scope || "",
       methodology: editData?.methodology || "",
+      unitId: editData?.unitId || "",
     },
   });
 
@@ -211,6 +229,10 @@ function AuditFormDialog({
     const payload = {
       ...values,
       plannedDate: new Date(values.plannedDate).toISOString(),
+      // Blank must not travel as `""`: the API treats an empty string as an
+      // invalid UUID for a foundation-wide actor and as a stray field for a
+      // unit-scoped one.
+      unitId: values.unitId || undefined,
     };
     if (isEdit) {
       await updateAudit.mutateAsync({ id: editData.id, ...payload });
@@ -308,6 +330,39 @@ function AuditFormDialog({
               </FormItem>
             )}
           />
+          {allowUnitChoice && (
+            <FormField
+              control={form.control}
+              name="unitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Unit Pelaksana</FormLabel>
+                  <Select
+                    onValueChange={field.onChange}
+                    value={field.value || ""}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Pilih unit" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {(units ?? []).map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Audit disimpan atas unit ini; wajib untuk peran tingkat
+                    yayasan.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>
               Batal
@@ -980,37 +1035,48 @@ function PengawasanPageContent() {
                           </CardTitle>
                         </div>
                         <div className="flex items-center gap-2">
-                          {access.canHandleWbs && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-xs gap-1"
-                                onClick={() => openStatusDialog(report)}
-                              >
-                                Ubah Status
-                              </Button>
+                          {/* A terminal case is immutable: the API refuses both
+                              a status change and a forward once SELESAI /
+                              TIDAK_DAPAT_DITINDAKLANJUTI (under its row lock).
+                              Offering the controls the API will reject is a
+                              dead end the user only discovers after clicking, so
+                              they follow the same shared predicate as the reply
+                              control and the API guards. */}
+                          {access.canHandleWbs &&
+                            !isClosedWbsStatus(report.status) && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs gap-1"
+                                  onClick={() => openStatusDialog(report)}
+                                >
+                                  Ubah Status
+                                </Button>
 
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="h-8 text-xs gap-1"
-                                onClick={() => {
-                                  setSelectedWbs(report);
-                                  // A unitless report cannot be routed to the
-                                  // unit queue (the API refuses it). Keep the
-                                  // form from opening on a destination that is
-                                  // disabled for this report.
-                                  if (!report.unitId && forwardRole === "UNIT_ADMIN") {
-                                    setForwardRole("YAYASAN_KETUA");
-                                  }
-                                  setForwardRoleDialogOpen(true);
-                                }}
-                              >
-                                Teruskan
-                              </Button>
-                            </>
-                          )}
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 text-xs gap-1"
+                                  onClick={() => {
+                                    setSelectedWbs(report);
+                                    // A unitless report cannot be routed to the
+                                    // unit queue (the API refuses it). Keep the
+                                    // form from opening on a destination that is
+                                    // disabled for this report.
+                                    if (
+                                      !report.unitId &&
+                                      forwardRole === "UNIT_ADMIN"
+                                    ) {
+                                      setForwardRole("YAYASAN_KETUA");
+                                    }
+                                    setForwardRoleDialogOpen(true);
+                                  }}
+                                >
+                                  Teruskan
+                                </Button>
+                              </>
+                            )}
                         </div>
                       </div>
                     </CardHeader>
@@ -1408,7 +1474,13 @@ function PengawasanPageContent() {
 
       {/* Dialogs */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <AuditFormDialog editData={editItem} onClose={handleDialogClose} />
+        <AuditFormDialog
+          editData={editItem}
+          onClose={handleDialogClose}
+          allowUnitChoice={isFoundationWideRoleCode(
+            getPrimaryRoleCode(authUser),
+          )}
+        />
       </Dialog>
 
       <Dialog
@@ -1543,7 +1615,10 @@ function PengawasanPageContent() {
                       handler when the report carries a unit; the API refuses
                       it otherwise, so the option is disabled rather than
                       offered and then rejected. */}
-                  <SelectItem value="UNIT_ADMIN" disabled={!selectedWbs?.unitId}>
+                  <SelectItem
+                    value="UNIT_ADMIN"
+                    disabled={!selectedWbs?.unitId}
+                  >
                     Kepala Unit Organisasi
                     {!selectedWbs?.unitId ? " (laporan tanpa unit)" : ""}
                   </SelectItem>

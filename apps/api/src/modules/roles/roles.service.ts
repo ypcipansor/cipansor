@@ -1,14 +1,16 @@
 import { prisma } from '@/lib/prisma';
 import { redis } from '@/lib/redis';
 import { Errors } from '@/middleware/error';
-import { BoardSuspensionStatus, Realm } from '@prisma/client';
+import { BoardSuspensionStatus, Realm, RoleCode } from '@prisma/client';
 import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
 import { findOrganConflict } from '@/utils/role-eligibility';
 import { isParentRole } from '@/utils/parent-scope';
+import { isAdminRoleCode, isGovernanceRoleCode } from '@/middleware/auth';
 import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { lockUserAndAssignments, lockUserRows } from '@/utils/role-assignment-lock';
+import { disconnectUserSockets } from '@/lib/realtime';
 
 export class RolesService {
   /**
@@ -154,7 +156,13 @@ export class RolesService {
   /**
    * Assign role to user
    */
-  async assignRoleToUser(userId: string, roleId: string, unitId?: string, isPrimary = false) {
+  async assignRoleToUser(
+    userId: string,
+    roleId: string,
+    unitId?: string,
+    isPrimary = false,
+    actorRoleCode?: string
+  ) {
     // Check if user exists
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
@@ -165,6 +173,26 @@ export class RolesService {
     const role = await prisma.role.findUnique({ where: { id: roleId } });
     if (!role) {
       throw Errors.notFound('Role');
+    }
+
+    // Privilege-escalation guard, mirroring `AuthService.createUser`.
+    //
+    // `POST /roles/assign` is guarded by `authorize(SUPER_ADMIN, UNIT_ADMIN)`,
+    // so a unit admin can reach it — and without this check the only rule was
+    // `findOrganConflict`, which stops a person holding two yayasan organs but
+    // says nothing about *who may grant which role*. A unit admin could
+    // therefore mint SUPER_ADMIN, another unit's admin, or a governance role
+    // (PEMBINA, PENGAWAS, …) for any account, which is the same escalation the
+    // create-account path already refuses. The two doors must agree: only a
+    // Super Admin may grant an admin-level or governance-level role.
+    if (
+      actorRoleCode !== undefined &&
+      actorRoleCode !== RoleCode.SUPER_ADMIN &&
+      (isAdminRoleCode(role.code) || isGovernanceRoleCode(role.code))
+    ) {
+      throw Errors.forbidden(
+        'Hanya Super Admin yang dapat memberikan peran admin atau governance.'
+      );
     }
 
     // A guardian role without a child at that unit produces an account with an
@@ -275,43 +303,55 @@ export class RolesService {
     // protocol's locks makes the two writers serialise. The `deleteMany` is
     // conditional on the row still existing so a concurrent revoke reports a
     // clean 404 rather than a Prisma P2025 that would surface as a 500.
-    return prisma.$transaction(async (tx) => {
-      await lockUserAndAssignments(tx, assignment.userId);
+    return prisma
+      .$transaction(async (tx) => {
+        await lockUserAndAssignments(tx, assignment.userId);
 
-      // Refuse to delete a delegation an ACTIVE suspension still depends on.
-      //
-      // `board_suspension_plh_assignments.assignment_id` cascades on delete, so
-      // revoking a Plh row that a live suspension is relying on would take the
-      // dependency row with it — and with it the `created`/`restore` provenance
-      // the eventual lift needs to decide whether to remove or restore the
-      // assignment. The suspension would then lift against a missing
-      // dependency, leaving the delegation active forever (or deleted when it
-      // should have been restored). The row must outlive the suspension, so the
-      // delete is refused while one is ACTIVE. The suspension's own release
-      // path removes it at lift time, which is the one place that holds the
-      // provenance.
-      const activeDependency = await tx.boardSuspensionPlhAssignment.findFirst({
-        where: {
-          assignmentId,
-          suspension: { status: BoardSuspensionStatus.ACTIVE },
-        },
-        select: { id: true },
-      });
-      if (activeDependency) {
-        throw Errors.conflict(
-          'Peran ini sedang dipakai sebagai delegasi Plh/Plt pada pembekuan pengurus yang masih aktif. ' +
-            'Cabut pembekuannya terlebih dahulu sebelum menghapus penugasan ini.'
-        );
-      }
+        // Refuse to delete a delegation an ACTIVE suspension still depends on.
+        //
+        // `board_suspension_plh_assignments.assignment_id` cascades on delete, so
+        // revoking a Plh row that a live suspension is relying on would take the
+        // dependency row with it — and with it the `created`/`restore` provenance
+        // the eventual lift needs to decide whether to remove or restore the
+        // assignment. The suspension would then lift against a missing
+        // dependency, leaving the delegation active forever (or deleted when it
+        // should have been restored). The row must outlive the suspension, so the
+        // delete is refused while one is ACTIVE. The suspension's own release
+        // path removes it at lift time, which is the one place that holds the
+        // provenance.
+        const activeDependency = await tx.boardSuspensionPlhAssignment.findFirst({
+          where: {
+            assignmentId,
+            suspension: { status: BoardSuspensionStatus.ACTIVE },
+          },
+          select: { id: true },
+        });
+        if (activeDependency) {
+          throw Errors.conflict(
+            'Peran ini sedang dipakai sebagai delegasi Plh/Plt pada pembekuan pengurus yang masih aktif. ' +
+              'Cabut pembekuannya terlebih dahulu sebelum menghapus penugasan ini.'
+          );
+        }
 
-      const deleted = await tx.userRoleAssignment.deleteMany({
-        where: { id: assignmentId },
+        const deleted = await tx.userRoleAssignment.deleteMany({
+          where: { id: assignmentId },
+        });
+        if (deleted.count !== 1) {
+          throw Errors.notFound('Role assignment');
+        }
+        return assignment;
+      })
+      .then((assignment) => {
+        // The revocation changed this user's realtime scope (role rooms, unit
+        // rooms, dashboard). A socket opened before it still holds those rooms and
+        // would keep receiving their broadcasts; disconnect it across every
+        // replica so the cut-off is immediate rather than waiting for the next
+        // `join-*`. Published after the transaction commits, so a rollback cannot
+        // disconnect a user whose assignment survived. The per-event scope
+        // revalidation in `realtime.ts` is the backstop if Redis is down.
+        disconnectUserSockets(assignment.userId);
+        return assignment;
       });
-      if (deleted.count !== 1) {
-        throw Errors.notFound('Role assignment');
-      }
-      return assignment;
-    });
   }
 
   /**
@@ -409,6 +449,23 @@ export class RolesService {
 
       if (!assignment) {
         throw Errors.notFound('Role assignment');
+      }
+
+      // An admin session must not be obtainable without the second factor.
+      //
+      // Login forces an admin account through 2FA setup before it will issue a
+      // session-at-rest (`AuthService.login` → `requiresTwoFactorSetup`). Switch
+      // is a second door to the same session and did not enforce it: an account
+      // whose *primary* role is non-admin (so login never challenged it) could
+      // hold an admin assignment and switch straight into it, minting an admin
+      // access+refresh pair with 2FA never enabled — the very state login
+      // refuses to produce. The check is the same set login enforces
+      // (`isAdminRoleCode`); governance roles are not forced through 2FA at
+      // login either, so switch stays consistent with login on that point.
+      if (isAdminRoleCode(assignment.role.code) && !assignment.user.isTwoFactorEnabled) {
+        throw Errors.forbidden(
+          'Aktifkan autentikasi dua faktor (2FA) sebelum beralih ke peran admin.'
+        );
       }
 
       // Update primary role

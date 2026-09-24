@@ -327,12 +327,13 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     // so a user holding roles in several units can reach all of them while a
     // role the administration has since disabled grants nothing.
     const effectiveAccess = await effectiveAccessOf(user.sub);
-    const identity: SocketIdentity = {
+    let identity: SocketIdentity = {
       userId: user.sub,
       roleCode: user.roleCode,
       unitId: user.unitId,
       effectiveUnitIds: effectiveAccess.unitIds,
       activeRoleCodes: effectiveAccess.roleCodes,
+      assignmentsLoaded: true,
     };
 
     // Attach user context to socket
@@ -376,6 +377,87 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       return true;
     };
 
+    /**
+     * Re-read the account's current scope and reconcile the socket's rooms.
+     *
+     * The room membership a socket holds is a data grant, and it is fixed at
+     * handshake time — but the assignments behind it can change while the socket
+     * is open. A role revoked (or expired) after connect leaves the socket in
+     * `role:<code>` and `unit:<id>` receiving every broadcast those rooms carry,
+     * because nothing else re-reads the assignment set. This re-derives the
+     * allowed rooms from the live assignments and:
+     *
+     * - **leaves** any room the current scope no longer covers (a revoked unit
+     *   or role), so already-joined broadcasts stop; and
+     * - **joins** any auto-room the current scope now covers (a newly-granted
+     *   unit), so a grant takes effect without a reconnect.
+     *
+     * Called before every room join and dashboard subscription, so a widening is
+     * always decided against current state. Returns the refreshed identity so a
+     * caller that has just changed scope can use it to decide the *current*
+     * request, not the handshake snapshot.
+     */
+    const refreshScope = async (): Promise<SocketIdentity> => {
+      const access = await effectiveAccessOf(user.sub);
+      const next: SocketIdentity = {
+        ...identity,
+        effectiveUnitIds: access.unitIds,
+        activeRoleCodes: access.roleCodes,
+        assignmentsLoaded: true,
+      };
+
+      const allowedUnits = allowedUnitIds(next);
+      // Drop unit rooms no longer covered.
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('unit:')) continue;
+        const unitId = room.slice('unit:'.length);
+        if (!allowedUnits.has(unitId)) {
+          socket.leave(room);
+          logger.info('Socket left unit room after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      // Drop a role room the current role no longer matches.
+      const activeRole = effectiveRoleCode(next);
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('role:')) continue;
+        if (room !== `role:${activeRole}`) {
+          socket.leave(room);
+          logger.info('Socket left role room after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      // A socket that just lost its foundation-wide role must not keep the
+      // global dashboard room; drop it so it stops receiving every unit's feed.
+      if (!canSubscribeGlobalDashboard(next) && socket.rooms.has('dashboard')) {
+        socket.leave('dashboard');
+        logger.info('Socket left global dashboard after scope change', {
+          socketId: socket.id,
+          userId: user.sub,
+        });
+      }
+      // Explicitly-named unit dashboard rooms are dropped the same way.
+      for (const room of socket.rooms) {
+        if (typeof room !== 'string' || !room.startsWith('dashboard:unit:')) continue;
+        const unitId = room.slice('dashboard:unit:'.length);
+        if (!canJoinUnitRoom(next, unitId)) {
+          socket.leave(room);
+          logger.info('Socket left unit dashboard after scope change', {
+            socketId: socket.id,
+            userId: user.sub,
+            room,
+          });
+        }
+      }
+      return next;
+    };
+
     // Auto-join user-specific room. This is the user's own room — a private
     // channel addressed by their own id — so no cross-user grant is possible.
     socket.join(`user:${user.sub}`);
@@ -406,7 +488,10 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     // the verified identity, never the client's argument.
     socket.on('join-unit', async (unitId: string) => {
       if (await refuseIfUnusable()) return;
-      if (!canJoinUnitRoom(identity, unitId)) {
+      // Re-derive the live scope first; a grant revoked since handshake is
+      // dropped from `identity`, so the check below is against current state.
+      const current = await refreshScope();
+      if (!canJoinUnitRoom(current, unitId)) {
         logger.warn('Refused cross-unit socket room join', {
           socketId: socket.id,
           userId: user.sub,
@@ -425,7 +510,8 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     // Join an additional role room — only the caller's own active role.
     socket.on('join-role', async (role: string) => {
       if (await refuseIfUnusable()) return;
-      if (!canJoinRoleRoom(identity, role)) {
+      const current = await refreshScope();
+      if (!canJoinRoleRoom(current, role)) {
         logger.warn('Refused cross-role socket room join', {
           socketId: socket.id,
           userId: user.sub,
@@ -452,16 +538,19 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     // any unit's figures.
     socket.on('subscribe:dashboard', async (options?: { unitId?: string }) => {
       if (await refuseIfUnusable()) return;
+      // Live scope: a foundation role revoked since handshake must not be able
+      // to subscribe now, and a stale unit must not be honoured.
+      const current = await refreshScope();
 
       const requestedUnit =
         options?.unitId && options.unitId !== 'all' ? options.unitId : undefined;
 
       if (!requestedUnit) {
-        if (!canSubscribeGlobalDashboard(identity)) {
+        if (!canSubscribeGlobalDashboard(current)) {
           logger.warn('Refused global dashboard subscription for unit-scoped socket', {
             socketId: socket.id,
             userId: user.sub,
-            roleCode: user.roleCode,
+            roleCode: current.roleCode,
           });
           socket.emit('error', {
             code: 'FORBIDDEN',
@@ -479,7 +568,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
         return;
       }
 
-      const scoped = resolveDashboardUnit(identity, requestedUnit);
+      const scoped = resolveDashboardUnit(current, requestedUnit);
       if (!scoped) {
         logger.warn('Refused cross-unit dashboard subscription', {
           socketId: socket.id,
@@ -505,6 +594,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
     // Subscribe to unit-specific dashboard updates
     socket.on('subscribe:unit-dashboard', async (unitId: string) => {
       if (await refuseIfUnusable()) return;
+      const current = await refreshScope();
 
       if (!unitId) {
         socket.emit('error', {
@@ -517,7 +607,7 @@ export function initializeSocketIO(httpServer: HTTPServer): SocketIOServer {
       // A unit-scoped caller is pinned to a unit it belongs to; only a
       // foundation-wide role may name any unit. A unitless non-foundation
       // actor is refused rather than defaulted to the whole foundation.
-      const scoped = resolveDashboardUnit(identity, unitId);
+      const scoped = resolveDashboardUnit(current, unitId);
 
       if (!scoped) {
         logger.warn('Refused cross-unit dashboard subscription', {
@@ -604,14 +694,12 @@ export function disconnectUserSockets(userId: string): void {
   // own subscriber callback (Redis does not deliver to the publishing
   // connection) and the local pass above is not duplicated.
   if (redisPublisher) {
-    redisPublisher
-      .publish(SOCKET_DISCONNECT_CHANNEL, userId)
-      .catch((error) =>
-        logger.error('Failed to publish socket disconnect to replicas', {
-          userId,
-          error: error instanceof Error ? error.message : String(error),
-        })
-      );
+    redisPublisher.publish(SOCKET_DISCONNECT_CHANNEL, userId).catch((error) =>
+      logger.error('Failed to publish socket disconnect to replicas', {
+        userId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    );
   }
 }
 

@@ -583,6 +583,7 @@ export class PengawasanService {
         studentId: string;
         studentName: string;
         nis: string;
+        unitId: string;
         unitName: string;
         totalUnpaid: number;
         invoiceCount: number;
@@ -611,12 +612,22 @@ export class PengawasanService {
       unitMap[uId].count += 1;
       if (isOverdue) unitMap[uId].overdueCount += 1;
 
-      const sId = inv.studentId;
+      // Aggregate by student **and invoice unit**, not by student alone.
+      //
+      // A pupil can hold unpaid invoices from more than one unit (attended one,
+      // transferred, still owes the old one). Keying only on `studentId` summed
+      // both units' balances into a single row and stamped it with whichever
+      // invoice happened to come first — so the row claimed a unit that owed
+      // only part of the total, and the other unit's arrears vanished from the
+      // by-unit view. One row per (student, unit-of-record) keeps every rupiah
+      // attributed to the unit that actually raised it.
+      const sId = `${inv.studentId}::${uId}`;
       if (!studentMap[sId]) {
         studentMap[sId] = {
-          studentId: sId,
+          studentId: inv.studentId,
           studentName: inv.student.user?.name ?? '-',
           nis: inv.student.nis || '-',
+          unitId: uId,
           unitName: uName,
           totalUnpaid: 0,
           invoiceCount: 0,
@@ -700,7 +711,7 @@ export class PengawasanService {
           some: {
             isActive: true,
             OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
-            role: { code: RoleCode.SUPER_ADMIN },
+            role: { code: RoleCode.SUPER_ADMIN, isActive: true },
           },
         },
       },
@@ -709,8 +720,24 @@ export class PengawasanService {
     });
     if (byAssignment) return byAssignment;
 
+    // Legacy fallback — ONLY for an account that has no role-assignment row at
+    // all.
+    //
+    // The legacy `User.role` column is not kept in step with assignments, so a
+    // bare `role: 'SUPER_ADMIN'` match can select a *former* Super Admin: an
+    // account whose Super Admin assignment was revoked while it kept some other
+    // active role. `User.role` still says `SUPER_ADMIN` because nothing rewrites
+    // the column on revocation, and the report would then be filed — and its
+    // recipient grant handed out — to someone who is no longer an administrator.
+    // Restricting the fallback to accounts with zero assignments keeps its only
+    // legitimate purpose (an un-migrated account) and removes the false match.
     return prisma.user.findFirst({
-      where: { isActive: true, deletedAt: null, role: 'SUPER_ADMIN' },
+      where: {
+        isActive: true,
+        deletedAt: null,
+        role: 'SUPER_ADMIN',
+        userRoles: { none: {} },
+      },
       select: { id: true, unitId: true },
       orderBy: { createdAt: 'asc' },
     });
@@ -815,6 +842,11 @@ ${data.recommendations || 'Diharapkan Pengurus Yayasan dan Kepala Unit terus men
         nature: 'LIMITED',
         classificationId: defaultClassification?.id ?? null,
         note: `Laporan Pengawasan Periodik: ${data.title} (${data.period})`,
+        // The draft exists to reach the Pembina; a Super Admin is the only
+        // acceptable substitute. Re-asserted under the recipient lock inside the
+        // primitive, so a revocation that commits between the recipient query
+        // above and the letter insert cannot file it to a former officer.
+        requiredRecipientRoleCodes: ['YAYASAN_PEMBINA', 'SUPER_ADMIN'],
       },
       userId
     );

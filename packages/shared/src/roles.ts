@@ -43,6 +43,26 @@ export const GOVERNANCE_ROLE_CODES: readonly string[] = [
 ];
 
 /**
+ * Roles whose remit is the whole foundation, so a unit is optional for them.
+ *
+ * A governance role or a Super Admin may act across every unit and may file a
+ * record addressed to the foundation as a whole; a unit admin is pinned to its
+ * own unit. This is the shared predicate the web uses to decide whether to
+ * offer a unit chooser and the API uses to decide whether a caller-supplied
+ * unit is a choice or must be overridden with the caller's own.
+ *
+ * Mirrors `FOUNDATION_WIDE_ROLES` in `apps/api/src/modules/pengawasan/…`.
+ */
+export const FOUNDATION_WIDE_ROLE_CODES: readonly string[] = [
+  "SUPER_ADMIN",
+  ...GOVERNANCE_ROLE_CODES,
+];
+
+export function isFoundationWideRoleCode(roleCode?: string | null): boolean {
+  return roleCode ? FOUNDATION_WIDE_ROLE_CODES.includes(roleCode) : false;
+}
+
+/**
  * Pengurus — the organ that RUNS the yayasan (UU 16/2001 Pasal 31 ayat 1), and
  * so the only one that drafts its plans. Pembina ratifies the work programme
  * and annual budget (Pasal 28 ayat 2 huruf d); Pengawas supervises and advises

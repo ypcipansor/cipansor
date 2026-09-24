@@ -604,6 +604,17 @@ export const CorrespondenceService = {
       urgency?: 'NORMAL' | 'IMMEDIATE' | 'URGENT';
       classificationId?: string | null;
       note?: string | null;
+      /**
+       * Effective roles every recipient must still hold for the draft to be
+       * filed. Omit to accept any internal role (the default for a module that
+       * simply names participants); supply it when the *purpose* of the letter
+       * requires a specific office — e.g. a periodic oversight report must reach
+       * the Pembina (or a Super Admin), not merely any account that was once
+       * something. Re-checked under the recipient row locks below, so a
+       * revocation that commits mid-flight cannot leave the draft addressed to
+       * someone who no longer holds the office it targets.
+       */
+      requiredRecipientRoleCodes?: string[];
     },
     userId: string
   ) {
@@ -666,6 +677,39 @@ export const CorrespondenceService = {
       // effective (active, unexpired, non-excluded) role fails the whole
       // transaction and no letter is written.
       await this.validateParticipantEligibility(uniqueRecipients, undefined, tx);
+
+      // An office-specific draft re-asserts the office on the locked rows.
+      //
+      // `validateParticipantEligibility` only proves a recipient holds *some*
+      // internal role. A letter whose whole purpose is to reach a particular
+      // office — the Pembina who must verify it — needs that office to still be
+      // held at the commit point, or it is filed addressed to an account that
+      // stopped being the Pembina a moment ago. Checked here, not at the
+      // pre-flight read, so a revocation that lands between the read and the
+      // insert is seen.
+      if (input.requiredRecipientRoleCodes && input.requiredRecipientRoleCodes.length > 0) {
+        const qualified = await tx.userRoleAssignment.findMany({
+          where: {
+            userId: { in: uniqueRecipients },
+            isActive: true,
+            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+            role: {
+              isActive: true,
+              code: { in: input.requiredRecipientRoleCodes as unknown as RoleCode[] },
+            },
+          },
+          select: { userId: true },
+        });
+        const qualifiedIds = new Set(qualified.map((q) => q.userId));
+        const unqualified = uniqueRecipients.filter((id) => !qualifiedIds.has(id));
+        if (unqualified.length > 0) {
+          throw Errors.badRequest(
+            `Penerima surat tidak lagi menjabat peran yang disyaratkan (${input.requiredRecipientRoleCodes.join(
+              ', '
+            )}). Periksa kembali penugasan penerima sebelum membuat surat.`
+          );
+        }
+      }
 
       const letter = await tx.letter.create({
         data: {

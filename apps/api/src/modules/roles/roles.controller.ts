@@ -98,7 +98,8 @@ export class RolesController {
         input.userId,
         input.roleId,
         input.unitId,
-        input.isPrimary
+        input.isPrimary,
+        req.user?.roleCode
       );
       res.status(201).json({ success: true, data: assignment });
     } catch (error) {

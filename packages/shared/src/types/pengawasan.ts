@@ -433,6 +433,9 @@ export interface FinancialArrearsStudentDto {
   studentId: string;
   studentName: string;
   nis: string;
+  /** The invoice unit this row aggregates. A pupil with unpaid invoices from
+   *  several units has one row per unit, never a single conflated row. */
+  unitId: string;
   unitName: string;
   totalUnpaid: number;
   invoiceCount: number;

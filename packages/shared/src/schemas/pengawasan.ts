@@ -177,6 +177,28 @@ export const WBS_MAX = {
   forwardReason: 2_000,
 } as const;
 
+/**
+ * Domain maxima for the authenticated governance surface (board suspension and
+ * the periodic oversight report).
+ *
+ * Same reasoning as {@link WBS_MAX}: `express.json({ limit: '10mb' })` bounds
+ * the *transport*, not the *domain*. Every field below is rendered on a
+ * register, in a letter body, or in an audit trail, so an unbounded string is a
+ * stored payload that is re-read and re-rendered for every viewer. A minimum
+ * alone ("at least 10 characters") says nothing about the maximum, which is why
+ * a 9 MB `auditReason` was a legal request.
+ */
+export const GOVERNANCE_MAX = {
+  skNumber: 100,
+  auditReason: 2_000,
+  liftReason: 2_000,
+  reportTitle: 300,
+  reportPeriod: 100,
+  executiveSummary: 10_000,
+  findingsSummary: 10_000,
+  recommendations: 10_000,
+} as const;
+
 export const createPublicWbsSchema = z.object({
   unitId: z.string().uuid().optional().nullable(),
   category: z.enum(WBS_CATEGORIES),
@@ -281,8 +303,8 @@ export type AddWbsHandlerCommentInput = z.infer<
 export const createBoardSuspensionSchema = z
   .object({
     userId: z.string().uuid(),
-    skNumber: z.string().min(3),
-    auditReason: z.string().min(10),
+    skNumber: z.string().min(3).max(GOVERNANCE_MAX.skNumber),
+    auditReason: z.string().min(10).max(GOVERNANCE_MAX.auditReason),
     documentUrl: documentUrlSchema,
     startDate: optionalDateSchema,
     projectedEndDate: optionalDateSchema,
@@ -377,7 +399,7 @@ export type CreateBoardSuspensionInput = z.infer<
 >;
 
 export const liftBoardSuspensionSchema = z.object({
-  liftReason: z.string().min(5),
+  liftReason: z.string().min(5).max(GOVERNANCE_MAX.liftReason),
 });
 
 // ---------------------------------------------------------------------------
@@ -394,11 +416,11 @@ export const liftBoardSuspensionSchema = z.object({
  * "diajukan/dikirim ke Pembina" described a step the code never took.
  */
 export const draftPeriodicReportSchema = z.object({
-  title: z.string().min(3),
-  period: z.string().min(2),
-  executiveSummary: z.string().min(10),
-  findingsSummary: z.string().optional(),
-  recommendations: z.string().optional(),
+  title: z.string().min(3).max(GOVERNANCE_MAX.reportTitle),
+  period: z.string().min(2).max(GOVERNANCE_MAX.reportPeriod),
+  executiveSummary: z.string().min(10).max(GOVERNANCE_MAX.executiveSummary),
+  findingsSummary: z.string().max(GOVERNANCE_MAX.findingsSummary).optional(),
+  recommendations: z.string().max(GOVERNANCE_MAX.recommendations).optional(),
 });
 
 export type DraftPeriodicReportInput = z.infer<

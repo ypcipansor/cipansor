@@ -9,6 +9,11 @@ vi.mock('@/lib/prisma', () => ({
     letter: { create: vi.fn() },
     letterFlowEvent: { create: vi.fn() },
     filingClassification: { findFirst: vi.fn() },
+    // `createGeneratedDraftLetter` re-asserts the required office on the locked
+    // recipient rows, so it queries `userRoleAssignment` with the required
+    // codes. The eligibility mock above already names a Pembina, so the default
+    // resolves the same recipient here.
+    userRoleAssignment: { findMany: vi.fn() },
     // `createGeneratedDraftLetter` locks the recipient and assignment rows
     // inside its transaction (`SELECT ... FOR UPDATE`). The mock is a
     // pass-through — the real locking invariant is proven against PostgreSQL in
@@ -34,6 +39,8 @@ describe('PengawasanService periodic oversight report', () => {
         userRoles: [{ unitId: null, role: { code: 'YAYASAN_PEMBINA' } }],
       },
     ]);
+    // The locked office re-assertion sees the same Pembina.
+    (prisma.userRoleAssignment.findMany as any).mockResolvedValue([{ userId: 'pembina-1' }]);
   });
 
   it('delegates to the correspondence draft primitive instead of writing the letter tables itself', async () => {
@@ -204,6 +211,11 @@ describe('PengawasanService periodic oversight report', () => {
     });
     (prisma.filingClassification.findFirst as any).mockResolvedValue({ id: 'cls-1' });
     (prisma.letter.create as any).mockResolvedValue({ id: 'letter-1', status: 'DRAFT' });
+    // The locked office re-assertion must see the Super Admin, not the
+    // (absent) Pembina.
+    (prisma.userRoleAssignment.findMany as any).mockResolvedValue([
+      { userId: 'superadmin-assignment' },
+    ]);
 
     const result = await pengawasanService.draftPeriodicReportToEOffice(
       { title: 'Audit Q1', period: '2026-Q1', executiveSummary: 'Ringkasan eksekutif.' },

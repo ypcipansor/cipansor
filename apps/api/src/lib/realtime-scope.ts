@@ -52,10 +52,28 @@ export interface SocketIdentity {
    * database at handshake, rather than the token's point-in-time `roleCode`.
    */
   activeRoleCodes?: string[];
+  /**
+   * Set when `effectiveUnitIds` / `activeRoleCodes` were actually read from the
+   * live assignments. Only then are those lists authoritative: the token's own
+   * `unitId` is a point-in-time snapshot that survives a revocation, so a token
+   * minted before an assignment was removed must not keep granting that unit. A
+   * pure-function caller (or a test) that leaves this unset gets the legacy
+   * "token unit also counts" behaviour, which is what makes these predicates
+   * usable without a database.
+   */
+  assignmentsLoaded?: boolean;
 }
 
-/** All units an identity may act on: the token unit plus every active assignment. */
+/** All units an identity may act on, derived from live assignments when known. */
 export function allowedUnitIds(identity: SocketIdentity): Set<string> {
+  // Live assignments are the source of truth. The token's `unitId` is a
+  // snapshot: when an assignment is revoked the token still names its unit for
+  // the rest of its TTL, so re-adding it here would re-grant the very unit the
+  // revocation took away. Trust only the active assignment set when it was
+  // actually loaded.
+  if (identity.assignmentsLoaded) {
+    return new Set((identity.effectiveUnitIds ?? []).filter(Boolean));
+  }
   const units = new Set<string>();
   if (identity.unitId) units.add(identity.unitId);
   for (const unitId of identity.effectiveUnitIds ?? []) {

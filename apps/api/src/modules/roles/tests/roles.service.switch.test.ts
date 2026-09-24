@@ -67,7 +67,13 @@ const liveAssignment = {
   isPrimary: false,
   role: { code: 'SMPIT_ADMIN', permissions: ['PERM_1'] },
   unit: { id: 'unit-smp', name: 'SMP IT' },
-  user: { id: 'u-1', email: 'u@cipansor.or.id', role: 'ADMIN', unitId: 'unit-smp' },
+  user: {
+    id: 'u-1',
+    email: 'u@cipansor.or.id',
+    role: 'ADMIN',
+    unitId: 'unit-smp',
+    isTwoFactorEnabled: true,
+  },
 };
 
 describe('RolesService.switchRoleAndIssueSession', () => {
@@ -147,5 +153,23 @@ describe('RolesService.switchRoleAndIssueSession', () => {
       userId: 'u-1',
       isActive: true,
     });
+  });
+
+  it('refuses to switch into an admin role without 2FA enabled', async () => {
+    // Login forces an admin account through 2FA setup before it will issue a
+    // session. Switch is a second door to the same session: an account whose
+    // primary role is non-admin (so login never challenged it) could hold an
+    // admin assignment and switch straight into it, minting an admin session
+    // with 2FA never enabled.
+    prismaMock.userRoleAssignment.findFirst.mockResolvedValue({
+      ...liveAssignment,
+      user: { ...liveAssignment.user, isTwoFactorEnabled: false },
+    });
+
+    await expect(service.switchRoleAndIssueSession('u-1', 'assign-1')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+
+    expect(prismaMock.refreshToken.create).not.toHaveBeenCalled();
   });
 });

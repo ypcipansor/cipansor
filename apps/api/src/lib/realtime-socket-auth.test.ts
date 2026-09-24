@@ -168,10 +168,7 @@ describe('Socket.IO authorization boundary', () => {
     // A temp 2FA token is minted with `type: 'access'` too, so the type check
     // alone admitted it. It is a half-authenticated challenge token and must
     // not open a realtime session.
-    const { socket, connected } = await connectionOutcome(
-      port,
-      accessToken({ isTemp: true })
-    );
+    const { socket, connected } = await connectionOutcome(port, accessToken({ isTemp: true }));
     expect(connected).toBe(false);
     socket.disconnect();
   });
@@ -211,6 +208,11 @@ describe('Socket.IO authorization boundary', () => {
   });
 
   it('accepts a join for the actor own unit', async () => {
+    // A live assignment must back the unit. The token's `unitId` is a snapshot;
+    // an assignment revoked after the token was minted leaves the token naming
+    // the unit for the rest of its TTL, so the live assignment set — not the
+    // token — is what grants the room.
+    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }]);
     const socket = await connect(port, accessToken());
     let refused = false;
     socket.on('error', () => {
@@ -222,6 +224,20 @@ describe('Socket.IO authorization boundary', () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     expect(refused).toBe(false);
+    socket.disconnect();
+  });
+
+  it('refuses the token unit once its assignment has been revoked', async () => {
+    // The token still says `unit-sdit`, but the live assignment set is empty —
+    // the unit admin role was revoked after the token was issued. The stale
+    // token must not keep granting the unit room.
+    assignmentFindMany.mockResolvedValue([]);
+    const socket = await connect(port, accessToken({ unitId: 'unit-sdit' }));
+    const forbidden = nextEvent<{ code: string }>(socket, 'error');
+
+    socket.emit('join-unit', 'unit-sdit');
+
+    expect((await forbidden).code).toBe('FORBIDDEN');
     socket.disconnect();
   });
 
@@ -259,9 +275,7 @@ describe('Socket.IO authorization boundary', () => {
     // A live, active assignment must back the token's role: the handshake
     // resolves the role set from the database, not from the point-in-time
     // token alone.
-    assignmentFindMany.mockResolvedValue([
-      { unitId: null, role: { code: 'YAYASAN_PENGAWAS' } },
-    ]);
+    assignmentFindMany.mockResolvedValue([{ unitId: null, role: { code: 'YAYASAN_PENGAWAS' } }]);
     const socket = await connect(port, accessToken({ roleCode: 'YAYASAN_PENGAWAS', unitId: null }));
     let refused = false;
     socket.on('error', () => {
@@ -359,6 +373,74 @@ describe('Socket.IO authorization boundary', () => {
         where: expect.objectContaining({ student: { unitId: { in: ['unit-sdit'] } } }),
       })
     );
+    socket.disconnect();
+  });
+
+  it('re-scopes an open socket when a new unit assignment appears', async () => {
+    // Regression: room membership was decided at handshake and never revisited.
+    // A unit admin granted a second unit after connect could not join it
+    // without reconnecting — `refreshScope` now joins the auto-rooms the live
+    // scope covers, so the grant takes effect immediately.
+    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }]);
+    const socket = await connect(port, accessToken({ unitId: 'unit-sdit' }));
+
+    // The grant lands while the socket is open.
+    assignmentFindMany.mockResolvedValue([
+      { unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } },
+      { unitId: 'unit-smpit', role: { code: 'SMPIT_ADMIN' } },
+    ]);
+
+    const forbidden = nextEvent<{ code: string }>(socket, 'error');
+    let refused = false;
+    socket.on('error', () => {
+      refused = true;
+    });
+    forbidden.then(() => {
+      refused = true;
+    });
+
+    socket.emit('join-unit', 'unit-smpit');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(refused).toBe(false);
+    socket.disconnect();
+  });
+
+  it('removes an open socket from a unit room whose assignment was revoked', async () => {
+    // A revocation must not leave the socket receiving the room's broadcasts.
+    // `refreshScope` leaves rooms the live scope no longer covers; the next
+    // join-* event triggers that reconciliation.
+    assignmentFindMany.mockResolvedValue([
+      { unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } },
+      { unitId: 'unit-smpit', role: { code: 'SMPIT_ADMIN' } },
+    ]);
+    const socket = await connect(port, accessToken({ unitId: 'unit-sdit' }));
+    socket.emit('join-unit', 'unit-smpit');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // The SMPIT assignment is revoked.
+    assignmentFindMany.mockResolvedValue([{ unitId: 'unit-sdit', role: { code: 'SDIT_ADMIN' } }]);
+
+    // Trigger the reconciliation.
+    socket.emit('join-unit', 'unit-sdit');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // A broadcast to the revoked unit room must no longer reach this socket.
+    const received: unknown[] = [];
+    socket.on('live-event', (e) => received.push(e));
+    const { broadcastAttendance } = await import('./realtime');
+    broadcastAttendance({
+      studentId: 's-1',
+      studentName: 'X',
+      status: 'present',
+      unitId: 'unit-smpit',
+      unitName: 'SMP IT',
+      className: '',
+      time: new Date().toISOString(),
+    } as never);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    expect(received).toHaveLength(0);
     socket.disconnect();
   });
 });
