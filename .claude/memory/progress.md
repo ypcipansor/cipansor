@@ -22,14 +22,10 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
-- **Eight naming decisions from the architecture audit (2026-09-25)** — the
-  learner's name on screen (Santri everywhere, or Murid/Siswa in the schools),
-  the transliteration of pesantren terms (Takhosus / Takhassus …), keeping the
-  2026-07-21 URL-language rule, Indonesian-only UI vs full i18n, renaming
-  tables vs `@@map`, `/api/v1` now, no laboratory module, and "Donasi & ZIS"
-  until wakaf is modelled. Each has a recommendation in the audit report
-  (<https://claude.ai/artifact/CqSKU3Zh7tYtDC5LSFvQL9>). Phases 2–7 of the
-  plan wait on them; phases 0–1 do not.
+- **Two facts for the ZIS and wakaf build:** the yayasan's zakat status (UPZ
+  of which BAZNAS, a licensed LAZ, or none) and whether it is a registered
+  nazhir. The law decides what the app may offer on each
+  (`decisions/istilah-dan-penamaan.md` §7).
 
 ## In flight
 
@@ -46,6 +42,12 @@ backlog to [`roadmap.md`](roadmap.md).
   guards → reconnect the broken contract → glossary → consolidate duplicates →
   API by context under `/api/v1` with a Zod → OpenAPI contract → web → harden
   → docs. The glossary still comes before Model A's permission keys.
+  **The user decided the eight naming questions the same day and said
+  "laksanakan"** — recorded in `decisions/istilah-dan-penamaan.md`: murid in
+  the schools, santri in Takhosus; the yayasan's spellings (Takhosus, Tahfidz);
+  portal Indonesian only, public site in three languages; tables renamed with
+  their models; `/api/v1`; no laboratory module; donations, ZIS and wakaf built
+  to the law. Phases run in order from 0.
 - **Skipped tests** — asked by the user on 2026-09-25, to take in priority
   order: make every skipped API, web and Playwright test run, or say why it
   cannot. Known so far: 92 of the 94 skipped API tests are two opt-in suites

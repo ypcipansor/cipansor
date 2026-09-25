@@ -13,8 +13,8 @@ items before 2026-09-25 is in the history of this file and of
 ## 1. Now — in this order (decided 2026-09-23 → 25)
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
-   where it sits against items 1–4 is for the user to confirm). Phases, each
-   releasable alone:
+   decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
+   on 2026-09-25, so it runs first). Phases, each releasable alone:
    0. guards — a ratchet that fails on any new web call to a path the router
       does not serve, factual fixes to `AGENTS.md` and `docs/ARCHITECTURE.md`;
    1. reconnect the 109 broken calls page by page, delete the 84 dead ones,
@@ -28,6 +28,10 @@ items before 2026-09-25 is in the history of this file and of
       style for actions (`POST /{id}/{verb}`), updates (`PATCH`), aggregates
       (`/summary`) and self (`/me`); Prisma models renamed; multi-file schema;
    5. web route groups, URLs that follow the API, 308s, Indonesian labels;
+      the portal becomes Indonesian-only and every public page gets complete
+      Indonesian, English and Arabic;
+   5b. donations, zakat and wakaf rebuilt to UU 23/2011, UU 41/2004, PSAK 409
+      and PSAK 412 — after the yayasan answers the two facts in `progress.md`;
    6. module boundaries enforced by lint, Zod on every mutation, one test
       location, a cron lock, dead models dropped once proven dead;
    7. `docs/ARCHITECTURE.md` rewritten from the result.

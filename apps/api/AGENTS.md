@@ -55,6 +55,8 @@ Mount new modules in `src/app.ts`.
   present only in `.env` never reaches the container, and the feature stays
   silently inert. Give it a default that degrades to *correct* rather than to
   localhost. Verify with `docker exec cipansor-api sh -c 'env | grep ^NAME='`.
+  On Azure App Service the same applies to the app settings of each container
+  (`docs/deploy-azure.md` → "Settings the CLI insists on").
 - Cross-module side effects: emit via `eventBus` (typed `AppEvents`), don't reach
   into other modules' services.
 - **Contracts: `@cipansor/shared`.** A user-facing endpoint's request/response
@@ -91,7 +93,10 @@ Mount new modules in `src/app.ts`.
   business logic and every branch of an endpoint get a covering test; a bug fix
   gets a regression test that fails before the fix. Barrels, type-only files, and
   pure Zod `schema.ts` are exempt (they're exercised via the service/route).
-- `vitest run`. Unit tests mock Prisma (see existing `tests/unit/**` patterns).
+- `vitest run`. Unit tests mock Prisma. **New tests go in the module's
+  `tests/`.** Two older layouts still exist — `apps/api/tests/unit/modules/<name>/`
+  and a `*.test.ts` beside the source — and move to `tests/` when their module
+  is next touched; don't add to them.
 - Test setup: `tests/setup.ts`. Keep services pure enough to unit-test.
 - Cover the RBAC/privilege-escalation guards (e.g. `auth.service.ts`) explicitly —
   both the allowed and the forbidden path.

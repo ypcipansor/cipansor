@@ -19,7 +19,7 @@ monorepo**:
 ## Golden rules
 
 1. **Never clobber `apps/api/prisma/schema.prisma`.** It is very large —
-   ~9,400 lines, hundreds of models and enums. (Exact counts drift; don't
+   ~10,000 lines, hundreds of models and enums. (Exact counts drift; don't
    hard-code them here.) It was once accidentally truncated to a stub, which
    broke the entire backend. Edit surgically; run `pnpm --filter api db:generate`
    after changes. A committed PreToolUse hook (`.claude/hooks/guard.sh`) blocks a
@@ -124,34 +124,67 @@ pnpm lint                             # eslint (api + web)
 
 ## Architecture standard (API module)
 
-Every module under `apps/api/src/modules/<name>/` follows:
+The module layout, file naming (`<name>.routes.ts`, `<name>.controller.ts`,
+`<name>.service.ts`, `<name>.schema.ts`, `index.ts`, `tests/`) and the shared
+primitives to reuse are in [`apps/api/AGENTS.md`](apps/api/AGENTS.md) — one
+home, because a second copy here said `routes.ts` for years while every module
+used `<name>.routes.ts`. The rules that hold across the codebase:
 
-```
-<name>/
-  routes.ts        # express.Router(); auth + validate middleware; delegates to controller
-  controller.ts    # thin handlers wrapped in asyncHandler; shape responses via ApiResponse
-  service.ts       # business logic + Prisma access
-  schema.ts        # Zod request schemas; types via z.infer
-  index.ts         # barrel: export { <name>Routes }
-  tests/           # vitest unit tests (Prisma mocked)
-```
+- **Layering:** routes → thin controller → service (the only layer that touches
+  Prisma) → Zod schema. Measured 2026-09-25, 22 of 93 modules follow it fully
+  and 12 call Prisma from a route or controller (`known-issues.md`); new and
+  touched code follows it.
+- **Modules talk through the typed `eventBus`** (`src/lib/event-bus.ts`, add the
+  event to `AppEvents`) or through another module's `index.ts` — never by
+  importing its service file.
+- **One concept, one module.** Before adding a module, a model or a page, look
+  for the existing one (`.claude/memory/decisions/istilah-dan-penamaan.md` has
+  the target names). Five modules over the tahfidz tables and five places for
+  report cards are what this rule exists to stop.
 
-Reuse the shared primitives — do not reinvent them:
-- `src/utils/response.ts` — `ApiResponse.success/error/paginated`
-- `src/middleware/error.ts` — `ApiError`, `Errors.*`, `asyncHandler`, `validate`, `validateQuery`
-- `src/middleware/auth.ts` — `authenticate`, `authorize(...RoleCode)`, `hasPermission`, `isAdmin`, `isSuperAdmin`, `isTeacherOrAbove`
-- `src/lib/{prisma,event-bus,realtime,jwt,redis,logger}.ts`
+## Naming and API conventions
 
-Cross-module communication goes through the typed `eventBus` (`src/lib/event-bus.ts`);
-add new events to the `AppEvents` interface with a payload type.
+Decided 2026-07-21 and 2026-09-25 — the reasons, the glossary and the target
+name of every module are in
+[`decisions/istilah-dan-penamaan.md`](.claude/memory/decisions/istilah-dan-penamaan.md).
+
+- **Language.** URL paths, API paths and identifiers are **English** for general
+  concepts; **pesantren and regulatory terms are never translated** (`tahfidz`,
+  `takhosus`, `muhadhoroh`, `spmb`, `emis`, `dapodik`); **every label a person
+  reads is Indonesian**. Learners are *murid* in the school units, *santri* in
+  Takhosus, *peserta didik* where both appear; the code says `student`.
+- **Names say what the thing is**, never its history: no `-enhancement`,
+  `-v2`, `new-`, `unified-`. A module is named after its content
+  (`practicum` holding Amaliyah Tadris is the example not to repeat).
+- **Resources:** plural, kebab-case nouns (`/permits`, `/report-cards`).
+  Partial update is `PATCH /{id}`; a state change is `POST /{id}/{verb}`
+  (`/permits/{id}/approve`); an aggregate is `GET …/summary`; the caller's own
+  data is under `/me`. Register static routes before parameter routes —
+  `apps/api/src/utils/route-shadowing.guard.test.ts` fails otherwise.
+- **The web calls only routes the API serves.** Every call goes through a hook
+  in `apps/web/src/hooks/*` with a path the router answers; a string typed on
+  one side and imagined on the other is how 213 calls came to point at nothing
+  (measured 2026-09-25).
+- **Versions:** the API moves under `/api/v1` (phase 4 of the audit plan in
+  `roadmap.md`); a breaking change after the first external client ships gets
+  a new major version, never an in-place break.
+- **Renames** move the table with the model (a migration, replayed on a copy of
+  production first) and give every changed **web** path a permanent 308. Paths
+  printed on paper (`/public/verify-card`, `/verifikasi`) never change.
 
 ## Web standard
 
 - Data layer: Axios instance in `src/lib/api.ts` (+ `lib/api-error.ts`), consumed
-  through React Query hooks in `src/hooks/*`. **No mock/placeholder data in
-  pages** — wire to the API.
+  through React Query hooks in `src/hooks/*` — not from pages, not from the
+  legacy `src/services/*` or the `lib/api-client.ts` alias (both are being
+  removed). **No mock/placeholder data in pages** — wire to the API.
 - Share request/response types from `@cipansor/shared`; don't redefine `any`.
 - Route protection / nav visibility must reflect real `RoleCode` + permissions.
+- **Language:** the portal is **Indonesian only**. The public site
+  (`cipansor.or.id`) is **Indonesian, English and Arabic** on every page,
+  switchable, Arabic right-to-left; `config/i18n-coverage.test.ts` fails when a
+  string exists in one language only.
+- New pages: `…/new` for create, `…/[id]/edit` for edit.
 
 ## Per-area guides
 
