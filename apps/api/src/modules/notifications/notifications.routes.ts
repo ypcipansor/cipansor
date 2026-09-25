@@ -200,48 +200,6 @@ router.delete(
   controller.deleteTemplate
 );
 
-router.post(
-  '/:id/send',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.sendNotification
-);
-
-/**
- * @swagger
- * /api/notifications/{id}/schedule:
- *   post:
- *     summary: Schedule a notification
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - scheduledAt
- *             properties:
- *               scheduledAt:
- *                 type: string
- *                 format: date-time
- *     responses:
- *       200:
- *         description: Notification scheduled
- */
-router.post(
-  '/:id/schedule',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.scheduleNotification
-);
-
 router.post('/read-all', controller.markAllAsRead);
 
 // ==================== ANNOUNCEMENTS ====================
@@ -293,6 +251,50 @@ router.get(
 router.post('/scheduler/trigger', authorize(UserRole.SUPER_ADMIN), controller.triggerScheduledTask);
 
 // ==================== GENERIC ID ROUTES (MUST BE LAST) ====================
+
+// `/:id/send` sat above `/whatsapp/send` and answered it with id = "whatsapp"
+// (utils/route-shadowing.guard.test.ts keeps every param route below its static siblings).
+router.post(
+  '/:id/send',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.sendNotification
+);
+
+/**
+ * @swagger
+ * /api/notifications/{id}/schedule:
+ *   post:
+ *     summary: Schedule a notification
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - scheduledAt
+ *             properties:
+ *               scheduledAt:
+ *                 type: string
+ *                 format: date-time
+ *     responses:
+ *       200:
+ *         description: Notification scheduled
+ */
+router.post(
+  '/:id/schedule',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  controller.scheduleNotification
+);
 
 router.post('/:id/read', controller.markAsRead);
 // Removed RBAC from delete to allow users to delete their own notifications.

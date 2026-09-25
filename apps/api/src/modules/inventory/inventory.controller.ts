@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from './inventory.service';
-import * as depreciationService from './depreciation.service';
 import {
   createInventoryCategorySchema,
   updateInventoryCategorySchema,
@@ -214,25 +213,6 @@ export async function createItem(req: Request, res: Response, next: NextFunction
     const userId = requireUser(req).id;
     const item = await service.createItem(data, userId);
     res.status(201).json({ success: true, data: item });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function runDepreciation(req: Request, res: Response, next: NextFunction) {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const user = requireUser(req);
-    const unitId = req.body.unitId || user.unitId;
-
-    if (!unitId) {
-      res.status(400).json({ success: false, message: 'Unit ID is required' });
-      return;
-    }
-
-    const date = req.body.date ? new Date(req.body.date) : new Date();
-    const result = await depreciationService.runMonthlyDepreciation(unitId, date, user.id);
-    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
