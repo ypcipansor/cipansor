@@ -479,7 +479,11 @@ class NotificationService {
     }
 
     let subject = title;
-    let htmlContent = options.message;
+    // A notification's message is plain text somebody typed — a rejection
+    // reason, a reminder. As the body of an e-mail it becomes HTML, so it is
+    // escaped: unescaped, a `<a href>` in a reason arrived as a live link in a
+    // wali's inbox. The templates below escape their own fields.
+    let htmlContent = escapeHtml(options.message).replace(/\n/g, '<br>');
 
     // Build email content from template
     if (templateKey && templateData && templates[templateKey]) {

@@ -104,6 +104,25 @@ describe('NotificationService email dispatch', () => {
     ]);
   });
 
+  it('sends a plain message as escaped HTML, keeping its line breaks', async () => {
+    // A reason typed into a form reached the e-mail body as live markup.
+    deliverEmailMock.mockResolvedValue({ kind: 'log', delivered: false, messageId: 'log_2' });
+
+    await notificationService.send({
+      userId: 'user-1',
+      channel: 'EMAIL',
+      type: 'GENERAL',
+      recipientEmail: 'wali@cipansor.or.id',
+      title: 'Izin ditolak',
+      message: 'Alasan: <a href="https://contoh.test">klik</a>\nBaris kedua',
+    });
+
+    const sent = deliverEmailMock.mock.calls.at(-1)?.[0] as { html: string };
+    expect(sent.html).not.toContain('<a href');
+    expect(sent.html).toContain('&lt;a href=&quot;https://contoh.test&quot;&gt;klik&lt;/a&gt;');
+    expect(sent.html).toContain('<br>Baris kedua');
+  });
+
   it('reports delivered:false when the transport only logged the message', async () => {
     // The defect this pins: with nothing configured the service returned a
     // plain success, so a discarded e-mail was indistinguishable from a sent
