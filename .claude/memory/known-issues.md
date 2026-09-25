@@ -16,9 +16,10 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **The web calls API paths that do not exist — 213 call sites, 109 reachable
-  from pages** (measured 2026-09-25 by matching every `api.*`/`fetch` call in
-  `apps/web/src` against the router; staging answers them "Route … not found").
+- **The web calls API paths that do not exist — 212 distinct calls, about 109
+  reachable from pages** (measured 2026-09-25; the list is
+  `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
+  keeps honest — it only shrinks; staging answers them "Route … not found").
   Worst felt: Perizinan's Setujui/Tolak (`POST /permits/:id/approve|reject`;
   the API has `PUT /permits/:id/status`), the Kurikulum list
   (`/curriculum/curriculums`), HR employees (`/hr/employees`), every
