@@ -154,3 +154,49 @@ export const sensitiveOperationLimiter: RateLimitRequestHandler = rateLimit({
     },
   },
 });
+
+/**
+ * Limiter passphrase tanda tangan elektronik — dipakai BERSAMA oleh modul
+ * esign (suntingan surat/kunci) dan foundation-decisions (suara anggota).
+ *
+ * Keduanya menjalankan operasi yang sama mahalnya: membuka kunci privat
+ * tersegel dengan scrypt. Sebelum ini hanya esign yang membatasinya, sehingga
+ * rute suara menjadi jalur termurah untuk menebak passphrase dan menghabiskan
+ * CPU lintas akun/sesi — lockout per kunci hanya membatasi satu kunci, bukan
+ * percobaan paralel dari banyak akun. Satu definisi di sini membuat kedua
+ * konsumen tidak dapat menyimpang, dan ceiling-nya tetap dapat dinaikkan
+ * lewat env saat CI/e2e (default produksi tetap ketat).
+ */
+export const passphraseLimiter: RateLimitRequestHandler = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.ESIGN_RATE_LIMIT_MAX) || 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Terlalu banyak percobaan tanda tangan elektronik. Coba lagi beberapa saat lagi.',
+    },
+  },
+});
+
+/**
+ * Limiter publik verifikasi dokumen — dipakai bersama esign dan
+ * foundation-decisions. Keduanya melayani pemindaian/unggahan anonim yang
+ * menempuh operasi mahal (lookup baris, baca arsip PDF, hashing, verifikasi
+ * tanda tangan e-seal), jadi keduanya perlu pembatas yang sama persis.
+ */
+export const publicVerifyLimiter: RateLimitRequestHandler = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.PUBLIC_VERIFY_RATE_LIMIT_MAX) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Terlalu banyak permintaan verifikasi dokumen. Coba lagi beberapa saat lagi.',
+    },
+  },
+});

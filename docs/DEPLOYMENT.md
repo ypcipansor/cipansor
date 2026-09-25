@@ -157,11 +157,38 @@ CHATBOT_MODEL=DeepSeek-V4-Flash
 
 ### Database Migration dengan Docker
 
-```bash
-# Masuk ke container API
-docker compose exec api sh
+Migrations run as a **one-shot `migrate` service**. The runtime image also keeps
+the Prisma CLI (since 2026-09-23 its strip step removes only the CLI's dev-only
+weight — `@electric-sql/pglite` and `typescript` — and `prisma` is a production
+`dependency`), so `MIGRATE_ON_START=true` applies migrations from inside the
+running container; that is the Azure path, where the database is on a private
+network CI cannot reach. Compose instead uses this one-shot service so the
+migration is a discrete step that `api` waits on.
 
-# Jalankan migration
+```bash
+# Apply migrations (manual re-run / entry point).
+# `make db-migrate` wraps exactly this command.
+docker compose run --rm --no-deps --entrypoint sh migrate \
+  -c "cd /app/apps/api && ./node_modules/.bin/prisma migrate deploy --config prisma/prisma.config.ts"
+
+# Normal deployment: `migrate` is a one-shot service and `api` waits on it with
+# `depends_on: migrate: condition: service_completed_successfully`, so
+# `docker compose up -d` applies migrations first and a failed migration keeps
+# the API stopped. `make deploy` / `make quick-start` build the images and run
+# the same path.
+
+# Seed (untuk data awal) — needs the dev install (tsx + seed), run from the host
+pnpm --filter api db:seed
+```
+
+> Do **not** provision this database with `prisma db push`. `schema.prisma`
+> cannot express the partial unique index
+> `foundation_eseals_single_active_key … WHERE revoked_at IS NULL` that enforces
+> "at most one active e-seal"; a `db push` database silently lacks it. Use
+> `prisma migrate deploy` (deployment) or `prisma migrate dev` (authoring).
+
+```bash
+# Jalankan migration (dari host, saat mengarang migrasi baru)
 npx prisma migrate deploy
 ```
 
@@ -260,13 +287,16 @@ pg_restore --list cipansor_$(date +%Y%m%d_%H%M).dump | head
 cd apps/api && npx prisma migrate deploy
 ```
 
-This gate is an operator decision, not an automated one: no CI/CD or `Makefile`
-deploy target runs `prisma migrate deploy` (the `CI` workflow has no deploy
-stage; `Makefile deploy` uses `prisma db push`, and the API image starts with
-`node dist/main.js`). Nothing in this repository can therefore _enforce_ that a
-backup exists — the backup and its restorability check above are manual steps
-the deploying operator must complete and confirm. If that ever needs to be
-enforced, it belongs in whatever pipeline runs `migrate deploy`, not here.
+This gate is an operator decision, not an automated one: no CI/CD targets run
+`prisma migrate deploy` automatically (the `CI` workflow has no deploy stage, and
+the API image starts with `node dist/main.js`). The `Makefile` deploy path
+(`make deploy` / `make quick-start` / `make db-reset`) runs migrations too — its
+`db-migrate` target calls `prisma migrate deploy`, never `prisma db push`, so it
+cannot drop the partial unique index that enforces "at most one active e-seal".
+Nothing in this repository can therefore _enforce_ that a backup exists — the
+backup and its restorability check above are manual steps the deploying operator
+must complete and confirm. If that ever needs to be enforced, it belongs in
+whatever pipeline runs `migrate deploy`, not here.
 Note: the decommission migration also ends the sessions of users left without any
 role by the purge (their refresh tokens are revoked). That covers a user who
 still holds a `PT_*` assignment at deploy time, a user attached to a PT role with

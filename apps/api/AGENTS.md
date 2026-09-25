@@ -74,6 +74,15 @@ Mount new modules in `src/app.ts`.
 - Import DB enums and `Prisma` namespace from `@prisma/client`.
 - Always add the matching `include`/`select` for any relation/field you access on
   a query result, or TypeScript will (correctly) reject the access.
+- **`OR: [{}]` matches NOTHING, not everything.** An empty object inside `OR`
+  becomes a clause with no conditions that Prisma 7 resolves to zero rows, so a
+  "match all" branch written that way silently returns an empty result set. Write
+  the match-all case as `{}` with no `OR` clause at all (`AND: [{}]` and `{}` do
+  match everything). This shipped once as a list ACL: Super Admin — a READ role
+  that should see every row — saw an empty list, and nothing failed because the
+  predicate still looked correct as an object. Unit tests with a mocked Prisma
+  cannot catch it; only running the predicate against real PostgreSQL
+  (`tests/integration.db.test.ts`) can.
 
 ## Auth & roles
 
@@ -95,6 +104,24 @@ Mount new modules in `src/app.ts`.
 - Test setup: `tests/setup.ts`. Keep services pure enough to unit-test.
 - Cover the RBAC/privilege-escalation guards (e.g. `auth.service.ts`) explicitly —
   both the allowed and the forbidden path.
+
+## Static analysis (CodeQL)
+
+CodeQL runs via GitHub's **default code-scanning setup** and gates PRs: an alert
+with `security-severity >= 8` fails the `CodeQL` check. Two things that cost a
+day each:
+
+- **In-source suppression comments do not work here.** `// codeql[query-id]`
+  is recorded as SARIF `suppressions` metadata, but the `@kind
+  alert-suppression` queries are *not* part of the default code-scanning suite,
+  so the alert keeps failing CI. Fix the flow structurally, or dismiss the alert
+  in the Security tab / via the API — do not rely on the comment.
+- **`js/insufficient-password-hash` fires on `createHash().update()` even for a
+  public key.** The query treats a `createKeyMaterial()` return value as a
+  password source (its bundle is secret), and any `.publicKey` read off it stays
+  tainted. It models `crypto.createHash(...).update(...)` as a sink but *not*
+  the one-shot `crypto.hash(algo, data, enc)` — which produces the identical
+  digest. `publicKeyFingerprint` uses the one-shot form for this reason.
 
 ## Build
 

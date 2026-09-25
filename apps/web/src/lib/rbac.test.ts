@@ -309,6 +309,47 @@ describe("rbac — navigation and route access stay in sync", () => {
     });
     expect(forgotten).toEqual([]);
   });
+
+  /**
+   * Super Admin harus punya TAUTAN ke daftar keputusan, bukan hanya Aturan
+   * Kuorum.
+   *
+   * `getNavigationForRoleCode("SUPER_ADMIN")` mengembalikan `adminNavigation`,
+   * bukan `yayasanNavigation` — dan grup "Yayasan" di menu admin dulu hanya
+   * memuat "Units" + "Aturan Kuorum". Akibatnya Super Admin tak punya jalan ke
+   * `/foundation/decisions` dari sidebar sama sekali; ia harus mengetik URL
+   * untuk membaca/menandatangani keputusan. Penjaga page→menu tidak
+   * menangkapnya karena halaman itu memang ada di suatu menu (menu Yayasan
+   * biasa) — hanya bukan menu yang SUPER_ADMIN pakai.
+   *
+   * Uji ini mengunci tautannya ADA dan REACHABLE, sekaligus bahwa menambahnya
+   * tidak menyeretnya ke peran non-Super-Admin.
+   */
+  it("SUPER_ADMIN dapat membuka /foundation/decisions dari sidebar", () => {
+    const hrefs = navHrefs("SUPER_ADMIN");
+    expect(hrefs).toContain("/foundation");
+    expect(hrefs).toContain("/foundation/decisions");
+    expect(hrefs).toContain("/foundation/decisions/rules");
+    expect(canAccessRoute("SUPER_ADMIN", "/foundation/decisions")).toBe(true);
+  });
+
+  it("tautan daftar keputusan tidak diberikan ke peran non-Super-Admin", () => {
+    for (const role of [
+      "SDIT_ADMIN",
+      "SMPIT_ADMIN",
+      "SMAQ_ADMIN",
+      "TKQ_ADMIN",
+      "SMPIT_KEPALA_SEKOLAH",
+      "SMPIT_GURU",
+    ]) {
+      // Menu unit/kepala sekolah/guru TIDAK memuat keputusan yayasan —
+      // hanya SUPER_ADMIN (dan peran Yayasan lewat menu Yayasan biasa).
+      expect(
+        navHrefs(role),
+        `${role} tidak boleh punya daftar keputusan`,
+      ).not.toContain("/foundation/decisions");
+    }
+  });
 });
 
 describe("navigation — every menu link points at a page that exists", () => {

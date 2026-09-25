@@ -74,6 +74,13 @@ const publicPrefixes = [
    * lists in agreement (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Verifikasi keputusan organ yayasan, dipindah keluar dari tembok sesi.
+   * Seperti `/public/verify-card`, matcher di bawah sudah mengecualikan
+   * `/public/*`; pencantuman di sini membuat niat boleh-dibaca-tanpa-sesi
+   * eksplisit dan menjaga dua daftar kanonis tetap sejajar (Flag 11).
+   */
+  "/public/verify-decision",
 ];
 
 // Helper function to get auth state from cookie

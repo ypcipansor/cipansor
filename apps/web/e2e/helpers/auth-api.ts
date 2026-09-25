@@ -52,6 +52,16 @@ export const SEED_USERS = {
     email: "yayasan.pembina@cipansor.or.id",
     password: "Cipansor123!",
   },
+  // Read-only organ seats (WRITE excludes them). Used to pin that the web
+  // hides write actions they would only get a 403 for.
+  bendahara: {
+    email: "yayasan.bendahara@cipansor.or.id",
+    password: "Cipansor123!",
+  },
+  anggota: {
+    email: "yayasan.anggota@cipansor.or.id",
+    password: "Cipansor123!",
+  },
 } satisfies Record<string, SeedUser>;
 
 export type SeedRole = keyof typeof SEED_USERS;

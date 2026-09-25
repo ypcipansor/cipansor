@@ -58,7 +58,7 @@ const LEGACY_ROLE_EXPANSION: Record<string, string[]> = SHARED_LEGACY_ROLE_EXPAN
  * expanded to their RoleCode lists; native RoleCodes pass through unchanged.
  * Tokens always carry a real RoleCode, so no reverse expansion exists.
  */
-function expandRoleCodes(codes: string[]): string[] {
+export function expandRoleCodes(codes: string[]): string[] {
   const expanded = new Set<string>();
   for (const code of codes) {
     const mapping = LEGACY_ROLE_EXPANSION[code];

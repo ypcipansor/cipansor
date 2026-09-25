@@ -448,3 +448,42 @@ export function getPrimaryRoleCode(
     assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
   return primary?.role?.code ?? undefined;
 }
+
+/**
+ * EVERY active RoleCode a user holds — primary AND secondary.
+ *
+ * The API gate (`authorizeAnyRole` in
+ * `apps/api/src/modules/foundation-decisions/foundation-decisions.routes.ts`)
+ * accepts a write when ANY role the actor currently holds is allowed, because
+ * an organ role is a membership, not the person's single "primary" post. A
+ * yayasan officer whose sign-in role is `GURU` but who also holds
+ * `YAYASAN_PENGAWAS` is still a Pengawas and must see the controls the API
+ * will honour.
+ *
+ * UI gates that read only `getPrimaryRoleCode` therefore hid those controls
+ * from exactly the people the server admits — the reverse of a 403, but the
+ * same mismatch. Falls back to the primary code when the assignment list is
+ * absent (legacy persisted users), mirroring the API fallback.
+ */
+export function getActiveRoleCodes(
+  user: RbacUser | null | undefined,
+): string[] {
+  const codes = (user?.userRoles ?? [])
+    .map((a) => a?.role?.code)
+    .filter((c): c is string => !!c);
+  if (codes.length > 0) return [...new Set(codes)];
+  const primary = getPrimaryRoleCode(user);
+  return primary ? [primary] : [];
+}
+
+/**
+ * True when the user holds ANY of `allowedRoleCodes` (primary or secondary).
+ * Thin wrapper so a page does not repeat the set logic.
+ */
+export function userHasAnyRoleCode(
+  user: RbacUser | null | undefined,
+  allowedRoleCodes: readonly string[],
+): boolean {
+  const allowed = new Set(allowedRoleCodes);
+  return getActiveRoleCodes(user).some((c) => allowed.has(c));
+}

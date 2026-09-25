@@ -32,6 +32,14 @@ set -u
 is_code() {
   case "$1" in
     docs/DEPLOYMENT.md) return 0 ;; # decommissioned-modules.guard.test.ts pins its numbers
+    # Markdown that a test READS must be code, or a change to it skips the very
+    # CI that would have re-run the assertion. `change-scope.guard.test.ts`
+    # matches by basename, so every file sharing one of those names is pulled
+    # in: the foundation tests read AGENTS.md/README.md/.claude/skills/stack
+    # plus the review doc, and the dev-provisioning guards assert on them.
+    AGENTS.md | */AGENTS.md | README.md | */README.md \
+      | .claude/skills/*/SKILL.md \
+      | docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md) return 0 ;;
     *.md | docs/* | .claude/* | .github/ISSUE_TEMPLATE/* | LICENSE | LICENSE.*) return 1 ;;
     *) return 0 ;;
   esac

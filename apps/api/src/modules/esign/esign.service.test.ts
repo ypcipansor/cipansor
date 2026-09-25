@@ -10,10 +10,21 @@ import {
 } from '@/utils/esign';
 import crypto from 'crypto';
 
-const { emitMock, compareMock } = vi.hoisted(() => ({
+const { emitMock, compareMock, deleteDocMock } = vi.hoisted(() => ({
   emitMock: vi.fn(),
   compareMock: vi.fn(),
+  deleteDocMock: vi.fn(),
 }));
+
+// Finding 2 regression hinges on the FILE side effect, not just the column
+// write: the old cleanup read the CURRENT ktpFileName at cleanup time and
+// unlinked it unconditionally. Asserting only on `updateMany`'s arguments (as
+// the weaker version of this test did) passes even when the compare-and-delete
+// guard is removed, so it proved nothing. Mock the store and assert the unlink.
+vi.mock('@/utils/identity-document-store', async (importActual) => {
+  const actual = await importActual<typeof import('@/utils/identity-document-store')>();
+  return { ...actual, deleteIdentityDocument: deleteDocMock };
+});
 
 vi.mock('../../lib/prisma', () => ({
   prisma: {
@@ -22,7 +33,14 @@ vi.mock('../../lib/prisma', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      updateMany: vi.fn(),
       deleteMany: vi.fn(),
+    },
+    userSigningKeyHistory: {
+      upsert: vi.fn(),
+      updateMany: vi.fn(),
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
     },
     signingKeyRequest: {
       findFirst: vi.fn(),
@@ -30,6 +48,11 @@ vi.mock('../../lib/prisma', () => ({
       findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
+      // Finding A4: the reject/approve paths now claim the request with a
+      // status-guarded `updateMany` and re-read the row, under the per-user
+      // signing-key advisory lock.
+      updateMany: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
     },
     letter: { findUnique: vi.fn(), update: vi.fn() },
     letterReviewer: { update: vi.fn() },
@@ -44,7 +67,15 @@ vi.mock('../../lib/prisma', () => ({
     letterSignedDocument: { create: vi.fn(), findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
     user: { findUnique: vi.fn() },
-    userIdentity: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), update: vi.fn() },
+    userIdentity: {
+      findUnique: vi.fn(),
+      findFirst: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      // Finding 2: rejection cleanup is now a guarded compare-and-delete
+      // (`updateMany where ktpFileName = <bound name>`), not read-then-update.
+      updateMany: vi.fn(),
+    },
     $transaction: vi.fn((cb: any) => cb(prisma)),
   },
 }));
@@ -54,6 +85,23 @@ vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
 
 const PASS = 'passphrase-tanda-tangan-2026';
 const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * SQL kenaikan penghitung percobaan gagal yang BENAR-BENAR dijalankan.
+ *
+ * Regresi finding 5: `recordFailedAttempt` dulu `update({ failedAttempts:
+ * current + 1 })` dari nilai yang dibaca sebelum menulis — dua percobaan gagal
+ * paralel membaca nilai yang sama dan menulis nilai yang sama, sehingga lockout
+ * tertunda tanpa batas (atau `lockedUntil` ditimpa `null`). Sekarang kenaikan
+ * dihitung DI basis data dalam satu pernyataan. Membaca SQL-nya membuat uji
+ * gagal bila seseorang mengembalikan ke bentuk baca-lalu-tulis.
+ */
+function incrementSql(): string {
+  return (prisma.$executeRaw as unknown as { mock: { calls: unknown[][] } }).mock.calls
+    .map((c) => (c[0] as TemplateStringsArray).join?.('') ?? String(c[0]))
+    .filter((sql: string) => sql.includes('"failed_attempts" = "failed_attempts" + 1'))
+    .join('\n');
+}
 
 /**
  * Identitas yang lengkap dan sudah diverifikasi.
@@ -106,6 +154,20 @@ beforeEach(() => {
   // tersendiri di bawah, dan menuntut setiap uji lain menyiapkannya hanya
   // membuat semuanya menguji dua hal sekaligus.
   vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+  // Transisi pencabutan memakai UPDATE bersyarat; bawaan "berhasil" (count 1)
+  // supaya uji jalur bahagia tetap fokus pada perilaku yang diuji.
+  vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValue({ count: 1 } as any);
+  // Finding A4: `decideRequest` now claims the request with a status-guarded
+  // `updateMany` (count 1 = this caller won the race) and re-reads it. Default
+  // to the happy path; the concurrency regression overrides these.
+  vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+  vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockResolvedValue({
+    id: 'req-1',
+    status: 'APPROVED',
+  } as any);
+  // Finding 2: the guarded delete claims the row (count 1) only when the
+  // current file name still matches the one bound to the rejected request.
+  vi.mocked(prisma.userIdentity.updateMany).mockResolvedValue({ count: 1 } as any);
 });
 
 /**
@@ -367,15 +429,126 @@ describe('persetujuan menyatakan siapa orangnya', () => {
   it('menghapus foto KTP setelah pengajuan ditolak', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
     vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
-    vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'req-1' } as any);
 
     await EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.');
 
-    expect(prisma.userIdentity.update).toHaveBeenCalledWith(
+    // Compare-and-delete: klaim baris dengan guard nama berkas yang terikat.
+    expect(prisma.userIdentity.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { userId: 'ketua', ktpFileName: 'ktp-abc.jpg' },
         data: expect.objectContaining({ ktpFileName: null }),
       })
     );
+  });
+
+  /**
+   * Finding 2 (regresi) — cleanup penolakan TIDAK boleh menghapus scan KTP
+   * pengganti.
+   *
+   * Dulu `discardIdentityDocument` membaca `ktpFileName` saat cleanup berjalan
+   * lalu menghapus APA PUN yang dirujuk kolom. Bila pemohon sudah mengunggah
+   * scan baru di sela antara commit penolakan dan cleanup, berkas baru yang
+   * sah itu ikut terhapus dan kolomnya dinolkan.
+   *
+   * Gagal sebelum perbaikan: `updateMany` (atau `update`) menghapus nama baru.
+   * Lulus sesudah: guard nama berkas lama tidak cocok → count 0 → tak ada
+   * `deleteIdentityDocument`/penghapusan.
+   *
+   * Di sini `updateMany` mengembalikan count 0 karena nama saat ini sudah
+   * berbeda dari nama yang terikat pada penolakan.
+   */
+  it('tidak menghapus scan KTP pengganti yang diunggah setelah penolakan', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
+    // Saat keputusan diambil, yang terikat adalah berkas LAMA.
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(
+      verifiedIdentity({ ktpFileName: 'ktp-lama.jpg' }) as any
+    );
+    // Namun cleanup berjalan setelah pemohon mengganti berkasnya: guard nama
+    // lama tidak cocok dengan kolom saat ini → count 0.
+    vi.mocked(prisma.userIdentity.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.');
+
+    // Guard memakai nama yang TERIKAT (lama), bukan nama apa pun yang kebetulan
+    // ada sekarang — inilah yang mencegah scan baru ikut terhapus.
+    expect(prisma.userIdentity.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'ketua', ktpFileName: 'ktp-lama.jpg' } })
+    );
+    expect(prisma.userIdentity.update).not.toHaveBeenCalled();
+    // Bukti akibat (bukan sekadar bentuk panggilan): count 0 → berkas TIDAK
+    // di-unlink. Sebelum perbaikan (tanpa guard `cleared.count`) nama berkas
+    // tetap dihapus walau klaim barisnya gagal.
+    expect(deleteDocMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Finding 1 (regresi) — persetujuan konkuren yang MENANG tidak boleh
+   * kehilangan foto KTP miliknya karena penolakan yang kalah balapan.
+   *
+   * Sebelumnya `discardIdentityDocument` dipanggil di luar transaksi dan
+   * SEBELUM status dicek ulang. Ketika persetujuan konkuren menyelesaikan
+   * pengajuan lebih dulu, transaksi penolakan ini di-rollback — tetapi berkas
+   * KTP sudah telanjur dihapus dan barisnya dinolkan. Kuncinya lalu terbit
+   * untuk pemohon yang dokumen identitasnya sudah lenyap.
+   *
+   * Gagal sebelum perbaikan: penghapusan terjadi walau keputusan ditolak.
+   * Lulus sesudah: tidak ada `userIdentity.update` yang menolkan `ktpFileName`.
+   */
+  it('tidak menghapus foto KTP bila penolakan kalah balapan dengan persetujuan', async () => {
+    // Pra-cek di luar transaksi melihat PENDING; pembacaan ULANG di dalam lock
+    // melihat APPROVED — persetujuan konkuren menang lebih dulu.
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce(pending as any)
+      .mockResolvedValueOnce({ ...pending, status: 'APPROVED' } as any);
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+
+    await expect(
+      EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.')
+    ).rejects.toThrow(/sudah diputuskan/i);
+
+    // Bukti fail-before: jalur lama menghapus berkas di luar transaksi, jadi
+    // `userIdentity.update` tetap terpanggil. Sesudah perbaikan, rollback
+    // transaksi berarti tak ada penghapusan sama sekali.
+    const erased = vi
+      .mocked(prisma.userIdentity.update)
+      .mock.calls.some(
+        ([args]) => (args as { data?: { ktpFileName?: unknown } }).data?.ktpFileName === null
+      );
+    expect(erased).toBe(false);
+  });
+
+  /**
+   * Finding 1 (regresi) — notifikasi penolakan TIDAK boleh terkirim bila
+   * transaksinya gagal/rollback.
+   *
+   * Dulu `eventBus.emit('notification:send', …)` dipanggil DI DALAM
+   * `$transaction`. Karena `emit` bukan operasi database, ia berjalan walau
+   * transaksi kemudian di-ROLLBACK — sehingga pemohon menerima "pengajuan
+   * ditolak" padahal statusnya masih PENDING dan penolakan tidak pernah
+   * tersimpan.
+   *
+   * Di sini transaksi gagal SETELAH klaim status (saat `findUniqueOrThrow`
+   * melempar). Gagal sebelum perbaikan: `emit` tetap terpanggil. Lulus sesudah:
+   * `emit` tidak terpanggil sama sekali.
+   */
+  it('tidak mengirim notifikasi penolakan bila transaksi rollback setelah klaim status', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue(pending as any);
+    vi.mocked(prisma.userIdentity.findUnique).mockResolvedValue(verifiedIdentity() as any);
+    // Klaim status berhasil (count 1) — inilah titik setelah `emit` lama.
+    vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 1 } as any);
+    // ...lalu transaksi gagal setelah klaim: pembacaan ulang melempar.
+    vi.mocked(prisma.signingKeyRequest.findUniqueOrThrow).mockRejectedValue(
+      new Error('boom setelah klaim') as any
+    );
+
+    await expect(
+      EsignService.decideRequest('req-1', 'superadmin', false, undefined, 'Belum perlu.')
+    ).rejects.toThrow(/boom setelah klaim/);
+
+    // Notifikasi HANYA dikirim setelah commit; rollback → tak ada emit.
+    expect(emitMock).not.toHaveBeenCalled();
+    // Dan cleanup berkas tidak berjalan untuk keputusan yang tidak tersimpan.
+    expect(prisma.userIdentity.updateMany).not.toHaveBeenCalled();
   });
 
   it('tidak menuntut verifikasi ulang untuk identitas yang sudah terverifikasi', async () => {
@@ -448,6 +621,58 @@ describe('pengajuan kunci', () => {
   });
 });
 
+describe('aktivasi kunci tidak balapan', () => {
+  /**
+   * Regresi finding: dua `activateKey` paralel sama-sama membaca "tidak ada
+   * kunci" lalu yang kalah menghapus kunci pemenang. Serialisasi diperoleh dari
+   * advisory lock transaksi per pengguna, jadi transaksi aktivasi HARUS
+   * memanggilnya SEBELUM membaca keadaan kunci. Urutan panggilan inilah yang
+   * diuji di sini (perilaku balapan sesungguhnya diuji dengan PostgreSQL nyata
+   * di `esign-activation.db.test.ts`).
+   */
+  it('mengambil advisory lock per pengguna sebelum membaca kunci', async () => {
+    const calls: string[] = [];
+    vi.mocked(prisma.$executeRaw).mockImplementation((async () => {
+      calls.push('lock');
+      return 1;
+    }) as never);
+    vi.mocked(prisma.signingKeyRequest.findFirst).mockImplementation((async () => {
+      calls.push('readApproval');
+      return { decidedById: 'admin', decidedAt: new Date(), grantedDays: 365 };
+    }) as never);
+    vi.mocked(prisma.userSigningKey.findUnique).mockImplementation((async () => {
+      calls.push('readKey');
+      return null;
+    }) as never);
+    vi.mocked(prisma.userSigningKey.create).mockResolvedValue({
+      id: 'new-key',
+      expiresAt: new Date(Date.now() + 365 * DAY),
+    } as any);
+
+    await EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang');
+
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    // Lock diambil lebih dulu, baru keadaan kunci dibaca DI DALAM lock.
+    expect(calls[0]).toBe('lock');
+    expect(calls.indexOf('readApproval')).toBeGreaterThan(0);
+    expect(calls.indexOf('readKey')).toBeGreaterThan(calls.indexOf('readApproval'));
+  });
+
+  it('menolak aktivasi ulang bila kunci aktif masih ada (di dalam lock)', async () => {
+    vi.mocked(prisma.$executeRaw).mockResolvedValue(1 as never);
+    vi.mocked(prisma.signingKeyRequest.findFirst).mockResolvedValue({
+      decidedById: 'admin',
+      decidedAt: new Date(),
+      grantedDays: 365,
+    } as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await expect(
+      EsignService.activateKey('ketua', 'passphrase-yang-cukup-panjang')
+    ).rejects.toThrow(/sudah memiliki kunci tanda tangan yang aktif/i);
+  });
+});
+
 describe('putusan Super Admin', () => {
   it('menolak masa berlaku di luar batas', async () => {
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
@@ -493,6 +718,113 @@ describe('putusan Super Admin', () => {
       /sudah diputuskan/i
     );
   });
+
+  /**
+   * Finding A4 — keputusan yang BERSINGGUNGAN tidak boleh saling menimpa.
+   *
+   * Pre-check status di luar transaksi hanya melihat snapshot. Bila keputusan
+   * lain menang antara pre-check dan penulisan, jalur LAMA tetap menulis
+   * (guard-nya tidak ada) dan hasil akhir ditentukan urutan commit.
+   *
+   * Dua jalur diuji terpisah karena keduanya mengklaim status dengan cara yang
+   * berbeda: persetujuan memakai UPDATE bersyarat (`updateMany`, count harus 1),
+   * penolakan memakai pembacaan ULANG di bawah advisory lock per-pengguna.
+   *
+   * Gagal sebelum perbaikan (menulis dan resolve), lulus sesudah (throw).
+   */
+  it('menolak klaim ganda ketika UPDATE bersyarat kalah balapan (regresi A4)', async () => {
+    // Persetujuan dengan pre-check PENDING; pesaing menyelesaikan pengajuan di
+    // sela, sehingga UPDATE bersyarat tidak menemukan baris PENDING lagi.
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'PENDING',
+    } as any);
+    vi.mocked(prisma.signingKeyRequest.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', true, 365)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+  });
+
+  it('menolak penolakan yang bersinggungan dengan persetujuan di dalam lock (regresi A4)', async () => {
+    // Pre-check PENDING, lalu pembacaan ULANG di dalam lock melihat APPROVED
+    // (pesaing menang). Penolakan harus melempar dan TIDAK menulis status.
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'PENDING',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'APPROVED',
+      } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', false)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+    expect(prisma.signingKeyRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('menolak penolakan kedua setelah status berubah di dalam lock (regresi A4)', async () => {
+    vi.mocked(prisma.signingKeyRequest.findUnique)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'PENDING',
+      } as any)
+      .mockResolvedValueOnce({
+        id: 'r1',
+        userId: 'ketua',
+        kind: 'ENROLLMENT',
+        status: 'REJECTED',
+      } as any);
+
+    await expect(EsignService.decideRequest('r1', 'admin', false)).rejects.toThrow(
+      /sudah diputuskan/i
+    );
+    expect(prisma.signingKeyRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi Flags–Investigation — penerbitan ulang harus menandai rekaman
+   * riwayat kunci LAMA sebagai `supersededAt` SEBELUM kuncinya dihapus.
+   *
+   * `UserSigningKey` satu baris per pengguna dan dihapus saat penerbitan ulang;
+   * tanpa menandai riwayatnya lebih dulu, jejak kunci lama tampak berlaku
+   * selamanya — padahal ia sudah digantikan. Cap waktu itu ditulis DI DALAM
+   * transaksi yang sama, supaya tidak ada jendela di mana kunci hilang tetapi
+   * riwayatnya belum bertanda.
+   */
+  it('mencap supersededAt pada riwayat kunci lama saat penerbitan ulang', async () => {
+    const oldKey = activeKey({ publicKey: 'pk-lama' });
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'PENDING',
+    } as any);
+    vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'r1' } as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(oldKey as any);
+
+    await EsignService.decideRequest('r1', 'admin', true, 365);
+
+    expect(prisma.userSigningKeyHistory.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: 'ketua', supersededAt: null }),
+        data: { supersededAt: expect.any(Date) },
+      })
+    );
+    expect(prisma.userSigningKey.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'ketua' },
+    });
+  });
 });
 
 describe('ganti passphrase', () => {
@@ -521,10 +853,35 @@ describe('ganti passphrase', () => {
       )
     ).rejects.toThrow();
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Failure 5 — kenaikan ATOMIK di basis data, bukan `update` dua-langkah
+    // yang membaca `failedAttempts` lalu menulis `current + 1`. Lihat
+    // `incrementSql`.
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
+  });
+
+  /**
+   * Finding C6 — baca-lalu-tulis material kunci berjalan di bawah advisory
+   * lock per-pengguna yang SAMA dengan penerbitan/pencabutan/decideRequest.
+   *
+   * Sebelum perbaikan jalur ini tidak mengambil lock apa pun, sehingga
+   * `rewrapKeyMaterial` dapat menulis hasil penyegelan ulang atas kunci yang
+   * sudah digantikan `activateKey` di sela. Regresi ini memaku bahwa
+   * `pg_advisory_xact_lock(hashtextextended(userId))` dieksekusi — jalur yang
+   * tanpanya akan langsung merah.
+   */
+  it('mengambil advisory lock per-pengguna sebelum menulis (regresi C6)', async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ passwordHash: 'h' } as any);
+    compareMock.mockResolvedValue(true);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await EsignService.changePassphrase('ketua', PASS, 'pw', 'passphrase-baru-2026');
+
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    const sql = (prisma.$executeRaw as any).mock.calls
+      .map((c: unknown[]) => (c[0] as TemplateStringsArray).join?.('') ?? String(c[0]))
+      .join('\n');
+    expect(sql).toMatch(/pg_advisory_xact_lock/);
+    expect(sql).toMatch(/hashtextextended/);
   });
 });
 
@@ -581,10 +938,10 @@ describe('menandatangani surat', () => {
 
     expect(prisma.letterSignature.create).not.toHaveBeenCalled();
     expect(prisma.letter.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Finding 5 — kenaikan atomik di basis data (bukan update baca-lalu-tulis).
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
+    // Lockout dihitung dari `failed_attempts + 1` dalam pernyataan yang SAMA.
+    expect(incrementSql()).toMatch(/"failed_attempts" \+ 1 >=/);
   });
 
   it('menandatangani, menandai surat SIGNED, dan mencatat riwayat', async () => {
@@ -917,8 +1274,10 @@ describe('mencabut kunci tanda tangan', () => {
 
     await EsignService.revokeKey('ketua', 'admin-1', REASON);
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    // Transisinya bersyarat (`revokedAt: null`) supaya dua pencabutan paralel
+    // tidak dapat saling menimpa; lihat uji balapan di bawah.
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', revokedAt: null },
       data: expect.objectContaining({
         revokedAt: expect.any(Date),
         revokedReason: REASON,
@@ -935,7 +1294,31 @@ describe('mencabut kunci tanda tangan', () => {
     await expect(EsignService.revokeKey('ketua', 'admin-1', REASON)).rejects.toThrow(
       /sudah dicabut/i
     );
-    expect(prisma.userSigningKey.update).not.toHaveBeenCalled();
+    expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Regresi BUG (finding D) — balapan dua pencabutan paralel.
+   *
+   * Kedua permintaan membaca kunci yang belum dicabut di luar transaksi, lalu
+   * keduanya masuk ke transaksinya. Tanpa UPDATE bersyarat, keduanya menulis
+   * dan masing-masing menulis audit "sukses", sehingga yang terakhir menimpa
+   * tanggal/alasan/pelaku yang pertama. Di sini yang diuji adalah sisi yang
+   * KALAH: `updateMany` mengembalikan `count: 0` (baris sudah diklaim
+   * permintaan lain), dan pemanggilnya harus mendapat konflik deterministik
+   * — bukan sukses palsu.
+   */
+  it('kalah balapan (count: 0) → 409 konflik, tanpa audit/notifikasi sukses', async () => {
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.userSigningKey.updateMany).mockResolvedValue({ count: 0 } as any);
+
+    await expect(EsignService.revokeKey('ketua', 'admin-1', REASON)).rejects.toMatchObject({
+      statusCode: 409,
+    });
+    // Tidak ada cap riwayat, tidak ada audit sukses, tidak ada notifikasi.
+    expect(prisma.userSigningKeyHistory.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    expect(emitMock).not.toHaveBeenCalledWith('notification:send', expect.anything());
   });
 
   it('menolak alasan yang hanya berisi spasi', async () => {
@@ -944,7 +1327,7 @@ describe('mencabut kunci tanda tangan', () => {
     await expect(EsignService.revokeKey('ketua', 'admin-1', '              ')).rejects.toThrow(
       /Alasan pencabutan/i
     );
-    expect(prisma.userSigningKey.update).not.toHaveBeenCalled();
+    expect(prisma.userSigningKey.updateMany).not.toHaveBeenCalled();
   });
 
   /**
@@ -1019,8 +1402,8 @@ describe('mencabut kunci tanda tangan', () => {
 
     await EsignService.revokeKey('ketua', 'admin-1', REASON);
 
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-1' },
+    expect(prisma.userSigningKey.updateMany).toHaveBeenCalledWith({
+      where: { id: 'key-1', revokedAt: null },
       data: expect.objectContaining({ revocationCode: 'AFFILIATION_CHANGED' }),
     });
   });
@@ -1034,6 +1417,39 @@ describe('mencabut kunci tanda tangan', () => {
       'notification:send',
       expect.objectContaining({ userId: 'ketua', title: expect.stringMatching(/Dicabut/i) })
     );
+  });
+
+  /**
+   * Regresi Flags–Investigation — lifecycle `UserSigningKeyHistory` tidak
+   * pernah dicatat.
+   *
+   * Modelnya mendokumentasikan `supersededAt`/`revokedAt`, tetapi tidak ada
+   * jalur yang menulisnya: `ensureSigningKeyHistory` hanya meng-upsert baris
+   * baru saat suara pertama ditandatangani, sementara penerbitan ulang dan
+   * pencabutan hanya menyentuh `UserSigningKey`. Riwayat — satu-satunya yang
+   * dipercaya saat memverifikasi suara historis — memperlihatkan setiap kunci
+   * berlaku selamanya. Pencabutan harus menandai baris riwayat kunci itu,
+   * dengan cap waktu yang SAMA, tanpa menyentuh suara yang sudah sah.
+   */
+  it('mencap revokedAt pada rekaman riwayat kunci yang dicabut', async () => {
+    const key = activeKey();
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(key as any);
+
+    const r = await EsignService.revokeKey('ketua', 'admin-1', REASON);
+
+    expect(prisma.userSigningKeyHistory.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          userId: 'ketua',
+          fingerprint: expect.any(String),
+          revokedAt: null,
+        }),
+        data: { revokedAt: expect.any(Date) },
+      })
+    );
+    // Cap waktu riwayat harus sama dengan cap waktu kuncinya.
+    const call = vi.mocked(prisma.userSigningKeyHistory.updateMany).mock.calls[0][0] as any;
+    expect((call.data.revokedAt as Date).getTime()).toBe(r.revokedAt.getTime());
   });
 });
 
@@ -1145,10 +1561,8 @@ describe('mencabut naskah dinas', () => {
     ).rejects.toThrow(/Passphrase/i);
 
     expect(prisma.letterSignature.update).not.toHaveBeenCalled();
-    expect(prisma.userSigningKey.update).toHaveBeenCalledWith({
-      where: { id: 'key-ketua' },
-      data: expect.objectContaining({ failedAttempts: 1 }),
-    });
+    // Finding 5 — pencacah pencabut juga naik secara atomik di basis data.
+    expect(incrementSql()).toMatch(/"failed_attempts" = "failed_attempts" \+ 1/);
   });
 
   it('menyimpan tanda tangan Ed25519 atas pernyataan pencabutannya', async () => {

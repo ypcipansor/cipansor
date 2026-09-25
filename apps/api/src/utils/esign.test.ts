@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import crypto from 'crypto';
 import {
   ESIGN_ALGORITHM,
   EsignError,
@@ -10,6 +11,7 @@ import {
   digestOf,
   lockoutUntil,
   newVerificationToken,
+  publicKeyFingerprint,
   rewrapKeyMaterial,
   signPayload,
   verifySignature,
@@ -178,6 +180,32 @@ describe('token verifikasi QR', () => {
     expect(a).toMatch(/^[A-Za-z0-9_-]+$/);
     // 160 bit; menebak/menyisir daftar surat lewat token tidak layak.
     expect(a.length).toBeGreaterThanOrEqual(26);
+  });
+});
+
+describe('fingerprint kunci publik', () => {
+  it('adalah SHA-256 heksadesimal atas teks base64 kunci', () => {
+    const m = createKeyMaterial(PASS);
+    // Kontrak: fingerprint dihitung dari nilai yang BENAR-BENAR tersimpan di
+    // basis data (`publicKey`, base64), sehingga baris yang fingerprint-nya
+    // tidak cocok dengan kuncinya tertangkap. Nilai harap di bawah adalah
+    // SHA-256 standar — bukan hasil fungsi itu sendiri.
+    const expected = crypto.createHash('sha256').update(m.publicKey, 'utf8').digest('hex');
+    expect(publicKeyFingerprint(m.publicKey)).toBe(expected);
+    expect(publicKeyFingerprint(m.publicKey)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('stabil untuk kunci yang sama dan berbeda antar kunci', () => {
+    const a = createKeyMaterial(PASS);
+    const b = createKeyMaterial(OTHER);
+    expect(publicKeyFingerprint(a.publicKey)).toBe(publicKeyFingerprint(a.publicKey));
+    expect(publicKeyFingerprint(a.publicKey)).not.toBe(publicKeyFingerprint(b.publicKey));
+  });
+
+  it('menerima kunci publik yang dikarang bebas (bukan password)', () => {
+    // Sifat yang membuat CodeQL salah menandai fungsi ini: masukannya kunci
+    // publik, bukan password. Kunci sembarang tetap menghasilkan fingerprint.
+    expect(publicKeyFingerprint('pk-karangan')).toMatch(/^[0-9a-f]{64}$/);
   });
 });
 

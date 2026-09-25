@@ -40,6 +40,26 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     --mount=type=secret,id=proxyca,required=false \
     NODE_EXTRA_CA_CERTS=/run/secrets/proxyca pnpm install --frozen-lockfile --prod
 
+# ---- migrate: the one-shot release job for Compose ----
+#
+# The `runner` image CAN apply migrations: since 2026-09-23 its strip step
+# deletes only the Prisma CLI's dev-only weight (@electric-sql/pglite and
+# typescript), NOT the CLI itself. `prisma` is a production `dependency`, so it
+# is present in the runner, and `docker-entrypoint.sh` runs
+# `node_modules/.bin/prisma migrate deploy` there when `MIGRATE_ON_START=true`
+# (the Azure path, where the database is on a private network CI cannot reach).
+#
+# This target is still the Compose path: it keeps the full dependency closure
+# (including tsx and dev tooling) and runs the exact command CI,
+# `scripts/dev-up.sh` and the Makefile use. Compose runs it as a one-shot
+# service that `api` waits on (`service_completed_successfully`), so a failed
+# migration fails the deploy instead of booting the API against a stale schema.
+# Seeding and `db:push` never run from here.
+FROM deps AS migrate
+COPY . .
+WORKDIR /app/apps/api
+CMD ["./node_modules/.bin/prisma", "migrate", "deploy", "--config", "prisma/prisma.config.ts"]
+
 # ---- builder: compile shared + api, generate the Prisma client ----
 FROM base AS builder
 ENV NODE_OPTIONS=--max-old-space-size=4096

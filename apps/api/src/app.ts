@@ -33,6 +33,7 @@ import violationRoutes from '@/modules/violations/violations.routes';
 import rewardRoutes from '@/modules/rewards/rewards.routes';
 import financeRoutes from '@/modules/finance/finance.routes';
 import foundationRoutes from '@/modules/foundation/foundation.routes';
+import { foundationDecisionRoutes } from '@/modules/foundation-decisions';
 // Legacy `psb` module has been superseded by the unified `admissions` module
 // (mounted at `/api/admissions`). Removed from the router so external callers
 // do not silently keep using endpoints whose data shape and field names have
@@ -295,6 +296,10 @@ apiRouter.use('/permits', permitRoutes);
 apiRouter.use('/violations', violationRoutes);
 apiRouter.use('/rewards', rewardRoutes);
 apiRouter.use('/finance', financeRoutes);
+// Keputusan organ yayasan DIPASANG SEBELUM `foundation` (yang punya wildcard
+// `/:id`): literal `/foundation/decisions`, `/rules`, `/verify` harus menang
+// atas `foundation.get('/:id')`.
+apiRouter.use('/foundation', foundationDecisionRoutes);
 apiRouter.use('/foundation', foundationRoutes);
 // `/api/psb` was removed; use `/api/admissions` instead.
 apiRouter.use('/marketing', marketingRoutes);

@@ -13,6 +13,7 @@ Sentry.init({
 import { app } from './app';
 import { config } from '@/config';
 import { assertProductionSecrets } from '@/config/assert-secrets';
+import { assertDecisionPdfFontAvailable } from '@/utils/generate-decision-pdf';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
@@ -27,6 +28,11 @@ async function bootstrap() {
     // Before anything else, and before the port opens. Serving traffic signed
     // by a key published in .env.example is worse than not serving at all.
     assertProductionSecrets();
+
+    // A production image without the Unicode font would refuse to seal any
+    // decision containing Arabic/emoji — fail at boot, not when a meeting tries
+    // to close a decision.
+    assertDecisionPdfFontAvailable();
 
     // Test database connection
     logger.info('Connecting to database...');

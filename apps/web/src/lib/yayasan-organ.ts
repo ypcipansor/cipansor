@@ -64,3 +64,96 @@ export function yayasanOrganConflict(
 
   return null;
 }
+
+/**
+ * Peran yang boleh MEMBUAT keputusan organ, dan yang boleh MEM-FINALISASI-nya.
+ *
+ * Cermin dari `CREATE` dan `FINALIZE` di
+ * `apps/api/src/modules/foundation-decisions/foundation-decisions.routes.ts`.
+ * Halaman daftar/detail dulu merender tombol "Buat Keputusan"/"Finalisasi" ke
+ * SEMUA pembaca, termasuk Bendahara dan Anggota yang hanya boleh membaca —
+ * klik mereka berakhir 403. UI tidak boleh menjanjikan aksi yang peladen pasti
+ * tolak.
+ *
+ * Keduanya dipisah sejak audit Pengawas: satu daftar `WRITE` bersama membuat
+ * menambahkan Pengawas agar dapat membuka rapat organnya juga memberinya hak
+ * finalisasi atas rapat organ lain. Pengawas kini ada di `CREATE` (matriks
+ * kewenangan menetapkan `pemberhentian-sementara-pengurus` kepadanya) dan di
+ * `FINALIZE`; service tetap memperketat finalisasi ke anggota snapshot.
+ *
+ * Ini salinan, bukan aturannya: yang mengikat tetap `authorize(...)` di rute,
+ * dan `foundation-decision-write-gate.test.ts` memaku kedua daftar agar tidak
+ * menyimpang.
+ */
+export const FOUNDATION_DECISION_CREATE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PEMBINA",
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_PENGAWAS",
+];
+
+export const FOUNDATION_DECISION_FINALIZE_ROLES: readonly string[] = [
+  "SUPER_ADMIN",
+  "YAYASAN_PEMBINA",
+  "YAYASAN_KETUA",
+  "YAYASAN_SEKRETARIS",
+  "YAYASAN_PENGAWAS",
+];
+
+export function canCreateFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return !!roleCode && FOUNDATION_DECISION_CREATE_ROLES.includes(roleCode);
+}
+
+export function canFinalizeFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return !!roleCode && FOUNDATION_DECISION_FINALIZE_ROLES.includes(roleCode);
+}
+
+/**
+ * Multi-role variants — ANY active role (primary OR secondary) may grant.
+ *
+ * The single-role predicates above only ever saw `getPrimaryRoleCode(user)`,
+ * so an officer whose sign-in role is `GURU` while holding `YAYASAN_PEMBINA`
+ * as a SECONDARY assignment was hidden the controls the API admits through
+ * `authorizeAnyRole`. These read every active role instead. Prefer them at
+ * call sites that have the whole user.
+ */
+export function userCanCreateFoundationDecisions(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).some((r) =>
+    FOUNDATION_DECISION_CREATE_ROLES.includes(r),
+  );
+}
+
+export function userCanFinalizeFoundationDecisions(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).some((r) =>
+    FOUNDATION_DECISION_FINALIZE_ROLES.includes(r),
+  );
+}
+
+/** SUPER_ADMIN gate (publication, rules) over ALL active roles, not just primary. */
+export function userCanManageFoundationRules(
+  roleCodes: readonly string[] | null | undefined,
+): boolean {
+  return (roleCodes ?? []).includes("SUPER_ADMIN");
+}
+
+/**
+ * Peran yang melihat tombol tulis pada daftar keputusan.
+ *
+ * Halaman daftar hanya menawarkan "Buat Keputusan", jadi gerbangnya adalah
+ * izin CREATE. Finalisasi diperiksa terpisah di halaman detail — dan di sana
+ * server tetap dapat menolaknya bila pengguna bukan anggota snapshot organ itu.
+ */
+export function canManageFoundationDecisions(
+  roleCode: string | null | undefined,
+): boolean {
+  return canCreateFoundationDecisions(roleCode);
+}

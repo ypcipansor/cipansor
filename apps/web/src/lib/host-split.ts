@@ -59,6 +59,14 @@ export const PUBLIC_PATH_PREFIXES = [
    * and so the two canonical lists stay in step (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Verifikasi keputusan organ yayasan. `/public/*` sudah lolos dari matcher
+   * middleware, tetapi harus juga diklasifikasikan publik di sini agar
+   * `hostSplitActionFor` tetap menyajikannya di apex — host yang disematkan
+   * `publicSiteUrl` pada QR di dalam PDF risalah — dan agar dua daftar kanonis
+   * ini tetap sejajar (test menyamakannya).
+   */
+  "/public/verify-decision",
 ];
 
 /** True when the request arrived on the portal, ignoring case and port. */

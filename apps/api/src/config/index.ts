@@ -511,6 +511,38 @@ export const config = {
       alertTo: process.env.CHATBOT_SPEND_ALERT_TO || '',
     },
   },
+
+  foundation: {
+    /**
+     * Passphrase server-side untuk e-seal Yayasan (kunci tanda-tangan organ).
+     *
+     * Ini KEK yang menyegel kunci privat e-seal di `FoundationEseal`. Nilainya
+     * TIDAK boleh diketahui admin basis data: admin hanya melihat blob
+     * tersegel AES-256-GCM, bukan kunci mentah. Di lingkungan non-produksi
+     * jatuh ke nilai dev agar pengembangan & tes tetap berjalan; produksi
+     * menolak boot tanpa nilai eksplisit.
+     */
+    get esealPassphrase(): string {
+      if (process.env.NODE_ENV === 'production') {
+        // Satu definisi "nilai yang tidak boleh dipakai" (`findSecretIssues`),
+        // dipakai bersama gerbang startup. Sebelumnya pemeriksaan di sini
+        // hanya "ada atau tidak", sehingga nilai contoh dari `.env.example`
+        // (dan nilai dev yang publik) lolos selama string-nya tidak kosong.
+        const issue = findSecretIssues({
+          foundationEsealPassphrase: process.env.FOUNDATION_ESEAL_PASSPHRASE,
+        }).find((i) => i.variable === 'FOUNDATION_ESEAL_PASSPHRASE');
+        if (issue) {
+          throw new Error(
+            `FOUNDATION_ESEAL_PASSPHRASE ${issue.reason} — kunci e-seal Yayasan tidak boleh memakai nilai dev/contoh di produksi.`
+          );
+        }
+      }
+      return (
+        process.env.FOUNDATION_ESEAL_PASSPHRASE ||
+        'dev-foundation-eseal-passphrase-not-for-production'
+      );
+    },
+  },
 } as const;
 
 export type Config = typeof config;

@@ -2,7 +2,7 @@
 # Sistem Manajemen Yayasan Pesantren Cipansor
 # Memudahkan operasi Docker untuk development dan production
 
-.PHONY: help check-prereqs install-prereqs build up down restart logs clean db-push db-seed test ready
+.PHONY: help check-prereqs install-prereqs build up down restart logs clean db-migrate db-seed test ready
 
 # Default target
 help:
@@ -25,7 +25,7 @@ help:
 	@echo "  clean            - Stop and remove all containers, networks, volumes"
 	@echo ""
 	@echo "Database Operations:"
-	@echo "  db-push          - Push Prisma schema to database"
+	@echo "  db-migrate       - Apply Prisma migrations to database"
 	@echo "  db-seed          - Seed database with initial data"
 	@echo "  db-reset         - Reset database (WARNING: deletes all data)"
 	@echo ""
@@ -158,11 +158,26 @@ check-health:
 	@echo "$(BLUE)Checking service health...$(NC)"
 	@docker compose ps | grep -q "healthy" && echo "$(GREEN)✓ Services are healthy$(NC)" || echo "$(YELLOW)⚠ Some services may not be healthy yet$(NC)"
 
-# Push database schema
-db-push:
-	@echo "$(BLUE)Pushing Prisma schema to database...$(NC)"
-	docker exec cipansor-api sh -c "cd /app/apps/api && npx prisma db push --url='postgresql://$(DB_USER):$(DB_PASSWORD)@db:5432/$(DB_NAME)'"
-	@echo "$(GREEN)✓ Database schema pushed$(NC)"
+# Apply Prisma migrations to the database.
+#
+# MIGRATIONS, not `prisma db push`. `db push` syncs the database to
+# `schema.prisma`, and `schema.prisma` cannot express the partial unique index
+# `foundation_eseals_single_active_key … WHERE revoked_at IS NULL` that
+# enforces "at most one active e-seal". A `db push` database therefore silently
+# omits that invariant, so the concurrent-seal regression passes locally and
+# fails in production.
+#
+# The command runs in the `migrate` compose service (the API image's `migrate`
+# target), NOT in the running API container: the runtime stage strips the Prisma
+# CLI, so `docker exec cipansor-api npx prisma migrate deploy` resolved to
+# nothing and exited without applying a migration. `make deploy`/`quick-start`
+# also order `db-migrate` after `up`, which now waits on the same one-shot
+# service via `service_completed_successfully`; this target is the manual
+# re-run/entry point. See `apps/api/Dockerfile` and `docker-compose.yml`.
+db-migrate:
+	@echo "$(BLUE)Applying Prisma migrations to database...$(NC)"
+	docker compose run --rm --no-deps --entrypoint sh migrate -c "cd /app/apps/api && ./node_modules/.bin/prisma migrate deploy --config prisma/prisma.config.ts"
+	@echo "$(GREEN)✓ Database migrations applied$(NC)"
 
 # Seed database
 # PERINGATAN: db:seed melakukan TRUNCATE semua tabel lalu insert data demo
@@ -181,7 +196,7 @@ db-reset:
 	read REPLY; \
 	if [ "$$REPLY" = "y" ] || [ "$$REPLY" = "Y" ]; then \
 		docker exec cipansor-db psql -U $(DB_USER) -d $(DB_NAME) -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"; \
-		$(MAKE) db-push; \
+		$(MAKE) db-migrate; \
 		$(MAKE) db-seed; \
 		echo "$(GREEN)✓ Database reset completed$(NC)"; \
 	else \
@@ -244,7 +259,7 @@ ready: check-prereqs
 	@echo "$(BLUE)Production readiness check completed$(NC)"
 
 # Deploy to production
-deploy: build up db-push
+deploy: build up db-migrate
 	@echo "$(GREEN)✓ Deployment completed$(NC)"
 	@echo "$(YELLOW)Services are now running at:$(NC)"
 	@echo "  - Web: http://localhost:3000"
@@ -253,6 +268,6 @@ deploy: build up db-push
 	@echo "  - Redis: localhost:6379"
 
 # Quick start for development
-quick-start: check-prereqs build up db-push
+quick-start: check-prereqs build up db-migrate
 	@echo "$(GREEN)✓ Quick start completed$(NC)"
 	@$(MAKE) check-health

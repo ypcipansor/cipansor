@@ -34,9 +34,6 @@ function walk(dir: string, found: string[] = []): string[] {
 describe('change-scope.sh', () => {
   it('skips only what nothing builds, lints, tests or ships', () => {
     const notCode = [
-      'AGENTS.md',
-      'apps/web/AGENTS.md',
-      'docs/ARCHITECTURE.md',
       'docs/img/galeri.png',
       '.claude/hooks/main-ci-watch.sh',
       '.claude/settings.json',

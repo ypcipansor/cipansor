@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { comparePassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { eventBus } from '@/lib/event-bus';
+import { logger } from '@/lib/logger';
 import {
   assertIdentityReadyToRequest,
   IdentityError,
@@ -27,7 +28,7 @@ import {
 import crypto from 'crypto';
 import {
   createKeyMaterial,
-  lockoutUntil,
+  LOCKOUT_MINUTES,
   newVerificationToken,
   rewrapKeyMaterial,
   signPayload,
@@ -74,6 +75,12 @@ import {
   needsNewIssuance,
   renewedExpiry,
 } from '@/utils/esign-lifecycle';
+import {
+  revokeSigningKeyHistory,
+  supersedeSigningKeyHistory,
+  upsertRevokedSigningKeyHistory,
+} from '@/utils/signing-key-history';
+import { lockSigningKeyTransition } from '@/utils/signing-key-lock';
 
 /** Baris kunci → bahan kriptografi yang dimengerti utils/esign. */
 function toMaterial(key: {
@@ -102,12 +109,31 @@ function toMaterial(key: {
  * Dilakukan di luar transaksi penandatanganan supaya hitungannya tetap
  * bertambah walaupun operasi utamanya dibatalkan — kalau tidak, menebak
  * passphrase menjadi gratis.
+ *
+ * **Finding 5 (BUG) — increment ATOMIK.** Versi lama menerima `current` yang
+ * dibaca pemanggil lalu menulis `current + 1`; dua percobaan gagal yang
+ * berjalan bersamaan membaca nilai yang SAMA, menulis nilai yang sama, dan
+ * lockout tercapai jauh lebih lambat daripada yang seharusnya (atau `lockedUntil`
+ * ditimpa `null` oleh penulis dengan hitungan lebih rendah). Sekarang kenaikan
+ * dihitung DI basis data (`failed_attempts + 1`) dalam satu pernyataan, di
+ * bawah `lockSigningKeyTransition` yang SAMA dengan jalur transisi kunci lain
+ * (`activateKey`, `decideRequest`, `revokeKey`, `castVote`), sehingga transisi
+ * kunci yang konkuren tidak dapat menyelip dan tidak ada pembaruan yang hilang.
  */
-async function recordFailedAttempt(keyId: string, current: number) {
-  const failed = current + 1;
-  await prisma.userSigningKey.update({
-    where: { id: keyId },
-    data: { failedAttempts: failed, lockedUntil: lockoutUntil(failed) },
+async function recordFailedAttempt(userId: string, keyId: string): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    await lockSigningKeyTransition(tx, userId);
+    await tx.$executeRaw`
+      UPDATE "user_signing_keys"
+      SET "failed_attempts" = "failed_attempts" + 1,
+          "locked_until" = CASE
+            WHEN "failed_attempts" + 1 >= ${MAX_PASSPHRASE_ATTEMPTS}
+              THEN NOW() + (${LOCKOUT_MINUTES} * INTERVAL '1 minute')
+            ELSE "locked_until"
+          END
+      WHERE "id" = ${keyId}`;
+    const updated = await tx.userSigningKey.findUnique({ where: { id: keyId } });
+    return updated?.failedAttempts ?? MAX_PASSPHRASE_ATTEMPTS;
   });
 }
 
@@ -177,18 +203,31 @@ function asHttpError(error: unknown): unknown {
  * `ktpDeletedAt` disimpan justru supaya penghapusannya dapat ditunjukkan:
  * kolom kosong tidak dapat membedakan "sudah dihapus" dari "tidak pernah ada".
  */
-async function discardIdentityDocument(userId: string): Promise<void> {
-  const identity = await prisma.userIdentity.findUnique({
-    where: { userId },
-    select: { ktpFileName: true },
-  });
-  if (!identity?.ktpFileName) return;
+async function discardIdentityDocument(
+  userId: string,
+  expectedFileName: string | null
+): Promise<void> {
+  // Compare-and-delete atas nama berkas yang TERIKAT pada keputusan penolakan.
+  //
+  // Pembacaan `findUnique` lalu `delete` (pola lama) menghapus berkas APA PUN
+  // yang sedang dirujuk kolom saat cleanup berjalan. Bila pemohon sudah
+  // mengunggah scan pengganti di sela antara commit penolakan dan cleanup, scan
+  // BARU yang sah itu ikut terhapus dan kolomnya dinolkan — padahal ia sedang
+  // melengkapi persyaratan untuk mengajukan ulang.
+  //
+  // Guard `ktpFileName = expectedFileName` pada `updateMany` menjadikan klaim
+  // baris dan penghapusan berkas satu operasi: kita hanya meng-unlink nama yang
+  // benar-benar berhasil kita klaim. Kolom yang sudah berubah (unggahan
+  // pengganti) tidak cocok, `count` = 0, dan tak ada yang dihapus.
+  if (!expectedFileName) return;
 
-  await deleteIdentityDocument(identity.ktpFileName);
-  await prisma.userIdentity.update({
-    where: { userId },
+  const cleared = await prisma.userIdentity.updateMany({
+    where: { userId, ktpFileName: expectedFileName },
     data: { ktpFileName: null, ktpDeletedAt: new Date() },
   });
+  if (cleared.count !== 1) return;
+
+  await deleteIdentityDocument(expectedFileName);
 }
 
 export const EsignService = {
@@ -615,20 +654,68 @@ export const EsignService = {
     }
 
     if (!approve) {
-      // Ditolak berarti tidak ada kunci yang terbit, jadi foto KTP-nya tidak
-      // lagi membuktikan apa pun — dan data pribadi yang disimpan tanpa
-      // keperluan adalah kewajiban tanpa manfaat.
-      await discardIdentityDocument(request.userId);
-
-      const rejected = await prisma.signingKeyRequest.update({
-        where: { id: requestId },
-        data: {
-          status: SigningKeyRequestStatus.REJECTED,
-          decidedById: deciderId,
-          decidedAt: new Date(),
-          decisionNote: note,
-        },
+      /**
+       * Finding A4 — status PENDING diperiksa ULANG di dalam lock transisi
+       * kunci, dan UPDATE tidak memakai guard `status` sendiri.
+       *
+       * Sebelumnya keputusan ini membaca status di luar transaksi lalu
+       * memperbarui tanpa syarat: dua Super Admin (setuju + tolak) yang
+       * berjalan bersamaan sama-sama lolos pemeriksaan awal dan sama-sama
+       * menulis, sehingga hasil akhirnya ditentukan urutan commit, bukan
+       * keputusan yang lebih dulu. `lockSigningKeyTransition` adalah protokol
+       * yang SAMA dengan `decideRequest` approval, `activateKey`, `revokeKey`,
+       * dan `castVote` foundation — sehingga keempatnya linier per pengguna.
+       * Status dibaca di bawah lock, dan `updateMany` dengan guard `status`
+       * menjadi jaring kedua bila lock ini kelak dilepas.
+       *
+       * Finding — penghapusan foto KTP WAJIB terjadi SETELAH keputusan ini
+       * benar-benar ter-commit. Sebelumnya `discardIdentityDocument` dipanggil
+       * lebih dulu, di luar transaksi: bila persetujuan konkuren menang balapan
+       * (lock per-pengguna yang sama), transaksi penolakan ini di-ROLLBACK —
+       * tetapi berkasnya sudah terhapus dan barisnya sudah dinolkan. Kuncinya
+       * lalu terbit untuk pemohon yang foto KTP-nya sudah lenyap, tanpa jejak
+       * bahwa hal itu terjadi. Menghapus setelah commit membuat operasi
+       * destruktif mengikuti nasib keputusan: rollback → tidak ada yang
+       * terhapus.
+       */
+      const rejected = await prisma.$transaction(async (tx) => {
+        await lockSigningKeyTransition(tx, request.userId);
+        const current = await tx.signingKeyRequest.findUnique({ where: { id: requestId } });
+        if (!current || current.status !== SigningKeyRequestStatus.PENDING) {
+          throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+        }
+        // Finding 2 — berkas identitas yang TERIKAT pada pengajuan ini dibaca
+        // DI DALAM transaksi (di bawah lock) dan dikembalikan ke pemanggil.
+        // Cleanup setelah commit memakai nama ini sebagai guard: bila pemohon
+        // sudah mengunggah scan pengganti, namanya berbeda dan scan baru itu
+        // tidak boleh dihapus.
+        const boundIdentity = await tx.userIdentity.findUnique({
+          where: { userId: request.userId },
+          select: { ktpFileName: true },
+        });
+        const claimed = await tx.signingKeyRequest.updateMany({
+          where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
+          data: {
+            status: SigningKeyRequestStatus.REJECTED,
+            decidedById: deciderId,
+            decidedAt: new Date(),
+            decisionNote: note,
+          },
+        });
+        if (claimed.count !== 1) {
+          throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+        }
+        return {
+          rejected: await tx.signingKeyRequest.findUniqueOrThrow({ where: { id: requestId } }),
+          boundFileName: boundIdentity?.ktpFileName ?? null,
+        };
       });
+
+      // Finding 1 — notifikasi dikirim SETELAH transaksi benar-benar commit.
+      // Dulu `eventBus.emit` dipanggil di DALAM `$transaction`: bila transaksi
+      // di-ROLLBACK (mis. klaim status kalah balapan, atau `findUniqueOrThrow`
+      // melempar), `emit` sudah telanjur berjalan karena bukan operasi DB —
+      // pemohon menerima "pengajuan ditolak" padahal statusnya masih PENDING.
       eventBus.emit('notification:send', {
         userId: request.userId,
         type: 'WARNING',
@@ -636,7 +723,23 @@ export const EsignService = {
         message: note ? `Pengajuan ditolak: ${note}` : 'Pengajuan tanda tangan Anda ditolak.',
         data: { requestId },
       });
-      return rejected;
+
+      // Ditolak berarti tidak ada kunci yang terbit, jadi foto KTP-nya tidak
+      // lagi membuktikan apa pun — dan data pribadi yang disimpan tanpa
+      // keperluan adalah kewajiban tanpa manfaat. Kegagalan menghapus TIDAK
+      // menggagalkan keputusan yang sudah ter-commit: yang tersisa hanyalah
+      // berkas di disk yang masih dapat disapu penyapu retensi, sedangkan
+      // melempar galat di sini akan membuat penolakan yang sah tampak gagal.
+      try {
+        await discardIdentityDocument(request.userId, rejected.boundFileName);
+      } catch (err) {
+        logger.warn('Gagal menghapus dokumen identitas setelah penolakan pengajuan kunci', {
+          requestId,
+          userId: request.userId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      return rejected.rejected;
     }
 
     const days = grantedDays ?? DEFAULT_VALIDITY_DAYS;
@@ -685,6 +788,11 @@ export const EsignService = {
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // Serialkan terhadap `activateKey` untuk pengguna yang sama: penerbitan
+      // ulang yang konkuren tidak boleh menghapus kunci yang baru saja
+      // diperpanjang/diselesaikan keputusannya.
+      await lockSigningKeyTransition(tx, request.userId);
+
       if (identityVerification) {
         await tx.userIdentity.update({
           where: { userId: request.userId },
@@ -711,8 +819,8 @@ export const EsignService = {
         data: { ktpRetainUntil: identityDocumentRetainUntil(keyExpiry) },
       });
 
-      const approved = await tx.signingKeyRequest.update({
-        where: { id: requestId },
+      const approvedCount = await tx.signingKeyRequest.updateMany({
+        where: { id: requestId, status: SigningKeyRequestStatus.PENDING },
         data: {
           status: SigningKeyRequestStatus.APPROVED,
           decidedById: deciderId,
@@ -720,6 +828,15 @@ export const EsignService = {
           decisionNote: note,
           grantedDays: days,
         },
+      });
+      // Jaring kedua terhadap keputusan ganda (setuju+setuju atau tolak+setuju):
+      // lock per-pengguna menyerialkan `decideRequest`/`revokeKey`/`castVote`,
+      // dan guard `status` di sini menjamin hanya SATU yang benar-benar menulis.
+      if (approvedCount.count !== 1) {
+        throw Errors.badRequest('Pengajuan ini sudah diputuskan.');
+      }
+      const approved = await tx.signingKeyRequest.findUniqueOrThrow({
+        where: { id: requestId },
       });
 
       if (request.kind === SigningKeyRequestKind.RENEWAL) {
@@ -734,6 +851,16 @@ export const EsignService = {
         // Penerbitan: hapus sisa kunci lama (kedaluwarsa/dicabut) supaya
         // pemiliknya bisa menetapkan passphrase baru. Tanda tangan lama tidak
         // terpengaruh — masing-masing menyimpan salinan kunci publiknya.
+        const stale = await tx.userSigningKey.findUnique({ where: { userId: request.userId } });
+        if (stale) {
+          // Cap `supersededAt` di RIWAYAT sebelum kuncinya hilang. Tanpa ini
+          // rekaman riwayat tampak berlaku selamanya; lihat
+          // utils/signing-key-history.ts.
+          await supersedeSigningKeyHistory(tx, {
+            userId: request.userId,
+            publicKey: stale.publicKey,
+          });
+        }
         await tx.userSigningKey.deleteMany({ where: { userId: request.userId } });
       }
 
@@ -748,47 +875,75 @@ export const EsignService = {
    *
    * Kunci baru dibuat di sini — bukan saat disetujui — karena passphrase-nya
    * hanya boleh diketahui pemiliknya.
+   *
+   * Transisi `UserSigningKey` per pengguna diserialisasi oleh advisory lock
+   * transaksi pada kunci `userId` (`lockSigningKeyTransition`), sehingga dua
+   * permintaan `activateKey` yang berjalan bersamaan tidak dapat sama-sama
+   * lolos pemeriksaan "belum ada kunci aktif" lalu saling menghapus hasil.
+   * Pemeriksaan status hidup SATU baris (tanpa riwayat) tetap dilakukan di
+   * dalam lock terhadap kunci yang `id`-nya tersimpan di advisory key, sehingga
+   * `decideRequest`/`revokeKey` juga menunggu sebelum mengganti/mencabut kunci
+   * yang sama.
    */
   async activateKey(userId: string, passphrase: string) {
-    const approved = await prisma.signingKeyRequest.findFirst({
-      where: {
-        userId,
-        status: SigningKeyRequestStatus.APPROVED,
-        kind: SigningKeyRequestKind.ENROLLMENT,
-      },
-      orderBy: { decidedAt: 'desc' },
+    /**
+     * SATU transaksi memegang advisory lock sejak sebelum membaca keadaan
+     * kunci, lalu melakukan seluruh penulisan daur hidup kuncinya. Bila cap
+     * `supersededAt` pada riwayat dan `deleteMany` kunci lama dijalankan di
+     * luar transaksi — atau sebelum lock — kegagalan di tengah meninggalkan
+     * pengguna tanpa kunci sama sekali, dan transisi konkuren dapat menimpa
+     * hasil yang sudah dijanjikan ke pemanggil.
+     */
+    return prisma.$transaction(async (tx) => {
+      await lockSigningKeyTransition(tx, userId);
+
+      // Dibaca di dalam lock: keputusan approval dapat berubah antara precheck
+      // dan commit, dan transisi yang diizinkan harus yang paling baru.
+      const approved = await tx.signingKeyRequest.findFirst({
+        where: {
+          userId,
+          status: SigningKeyRequestStatus.APPROVED,
+          kind: SigningKeyRequestKind.ENROLLMENT,
+        },
+        orderBy: { decidedAt: 'desc' },
+      });
+      if (!approved) {
+        throw Errors.badRequest('Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.');
+      }
+
+      const existing = await tx.userSigningKey.findUnique({ where: { userId } });
+      if (existing && !needsNewIssuance(existing)) {
+        throw Errors.badRequest('Anda sudah memiliki kunci tanda tangan yang aktif.');
+      }
+
+      const material = createKeyMaterial(passphrase);
+      const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
+      const now = new Date();
+
+      if (existing) {
+        // Kunci lama digantikan: cap riwayatnya SEBELUM baris kuncinya dihapus,
+        // dengan cap waktu yang sama untuk kedua sisi peristiwa.
+        await supersedeSigningKeyHistory(tx, { userId, publicKey: existing.publicKey }, now);
+      }
+      await tx.userSigningKey.deleteMany({ where: { userId } });
+      const key = await tx.userSigningKey.create({
+        data: {
+          userId,
+          algorithm: material.algorithm,
+          publicKey: material.publicKey,
+          encryptedPrivateKey: material.encryptedPrivateKey,
+          kdfSalt: material.kdfSalt,
+          kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
+          iv: material.iv,
+          authTag: material.authTag,
+          approvedById: approved.decidedById,
+          approvedAt: approved.decidedAt ?? now,
+          expiresAt: expiryFrom(now, days),
+        },
+      });
+
+      return { id: key.id, expiresAt: key.expiresAt, state: effectiveState(key) };
     });
-    if (!approved) {
-      throw Errors.badRequest('Belum ada persetujuan penerbitan kunci tanda tangan untuk Anda.');
-    }
-
-    const existing = await prisma.userSigningKey.findUnique({ where: { userId } });
-    if (existing && !needsNewIssuance(existing)) {
-      throw Errors.badRequest('Anda sudah memiliki kunci tanda tangan yang aktif.');
-    }
-
-    const material = createKeyMaterial(passphrase);
-    const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
-    const now = new Date();
-
-    await prisma.userSigningKey.deleteMany({ where: { userId } });
-    const key = await prisma.userSigningKey.create({
-      data: {
-        userId,
-        algorithm: material.algorithm,
-        publicKey: material.publicKey,
-        encryptedPrivateKey: material.encryptedPrivateKey,
-        kdfSalt: material.kdfSalt,
-        kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: material.iv,
-        authTag: material.authTag,
-        approvedById: approved.decidedById,
-        approvedAt: approved.decidedAt ?? now,
-        expiresAt: expiryFrom(now, days),
-      },
-    });
-
-    return { id: key.id, expiresAt: key.expiresAt, state: effectiveState(key) };
   },
 
   /**
@@ -801,6 +956,18 @@ export const EsignService = {
    *
    * Kuncinya tidak diganti, hanya disegel ulang, sehingga surat-surat lama
    * tetap terverifikasi.
+   *
+   * **Finding C6.** Baca-lalu-tulis atas material kunci kini berjalan di bawah
+   * advisory lock per-pengguna yang SAMA dengan `activateKey`, `revokeKey`,
+   * `decideRequest`, dan `castVote`. Sebelumnya jalur ini tidak mengambil lock,
+   * sehingga dapat bersinggungan dengan penerbitan/pencabutan kunci pengguna
+   * yang sama: `rewrapKeyMaterial` membaca material LAMA lalu menulis hasilnya
+   * kembali, dan bila `activateKey` menggantinya di sela, pembaruan itu mengenai
+   * kunci yang sudah bukan miliknya (atau gagal P2025 yang membingungkan).
+   *
+   * Pencatatan percobaan gagal tetap di LUAR transaksi: `recordFailedAttempt`
+   * tidak boleh ikut ter-rollback oleh `throw` yang menyusul, atau penghitung
+   * lockout brute-force akan hilang justru saat paling dibutuhkan.
    */
   async changePassphrase(
     userId: string,
@@ -816,34 +983,47 @@ export const EsignService = {
       throw Errors.unauthorized('Password akun salah.');
     }
 
-    const key = await prisma.userSigningKey.findUnique({ where: { userId } });
-    if (!key) throw Errors.badRequest('Anda belum memiliki kunci tanda tangan.');
-    assertCanSign(key);
-
-    let rewrapped;
+    let failedKeyId: string | null = null;
     try {
-      rewrapped = rewrapKeyMaterial(toMaterial(key), currentPassphrase, newPassphrase);
+      return await prisma.$transaction(async (tx) => {
+        await lockSigningKeyTransition(tx, userId);
+        const key = await tx.userSigningKey.findUnique({ where: { userId } });
+        if (!key) throw Errors.badRequest('Anda belum memiliki kunci tanda tangan.');
+        assertCanSign(key);
+
+        let rewrapped;
+        try {
+          rewrapped = rewrapKeyMaterial(toMaterial(key), currentPassphrase, newPassphrase);
+        } catch (error) {
+          if (error instanceof EsignError) {
+            failedKeyId = key.id;
+          }
+          throw error;
+        }
+
+        await tx.userSigningKey.update({
+          where: { id: key.id },
+          data: {
+            encryptedPrivateKey: rewrapped.encryptedPrivateKey,
+            kdfSalt: rewrapped.kdfSalt,
+            kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
+            iv: rewrapped.iv,
+            authTag: rewrapped.authTag,
+            failedAttempts: 0,
+            lockedUntil: null,
+          },
+        });
+
+        return { success: true };
+      });
     } catch (error) {
-      if (error instanceof EsignError) {
-        await recordFailedAttempt(key.id, key.failedAttempts);
+      if (failedKeyId) {
+        // Kenaikan dihitung di basis data; transaksi ini mengambil lock yang
+        // SAMA, sehingga percobaan gagal paralel tidak saling menimpa.
+        await recordFailedAttempt(userId, failedKeyId);
       }
       throw error;
     }
-
-    await prisma.userSigningKey.update({
-      where: { id: key.id },
-      data: {
-        encryptedPrivateKey: rewrapped.encryptedPrivateKey,
-        kdfSalt: rewrapped.kdfSalt,
-        kdfParams: rewrapped.kdfParams as unknown as Prisma.InputJsonValue,
-        iv: rewrapped.iv,
-        authTag: rewrapped.authTag,
-        failedAttempts: 0,
-        lockedUntil: null,
-      },
-    });
-
-    return { success: true };
   },
 
   /**
@@ -950,40 +1130,111 @@ export const EsignService = {
       throw asHttpError(e);
     }
 
-    const revokedAt = new Date();
-    await prisma.userSigningKey.update({
-      where: { id: key.id },
-      data: { revokedAt, revokedReason: trimmed, revocationCode: code, revokedById: actorId },
-    });
+    /**
+     * Pencabutan — update kunci, cap riwayat, temuan surat, dan audit — dalam
+     * SATU transaksi.
+     *
+     * Sebelumnya keempatnya berjalan berurutan di luar transaksi. Bila cap
+     * riwayat atau penulisan audit gagal setelah `userSigningKey.update`
+     * berhasil, permintaan melempar galat padahal kuncinya SUDAH dicabut:
+     * pemanggil (dan pemiliknya) melihat kegagalan, mencoba lagi, dan
+     * mendapati "kunci sudah dicabut" — sementara baris audit pencabutan tidak
+     * pernah ada, sehingga tindakan yang justru paling perlu
+     * dipertanggungjawabkan itu tidak meninggalkan jejak. Di dalam transaksi,
+     * kegagalan mana pun membatalkan pencabutan seluruhnya.
+     *
+     * Satu `revokedAt` dipakai untuk seluruh baris, sehingga cap waktu kunci,
+     * riwayat, dan audit tidak dapat menyimpang satu sama lain.
+     */
+    const { signedWithThisKey, revokedAt } = await prisma.$transaction(async (tx) => {
+      // Serialkan terhadap transisi kunci lain pengguna ini. `updateMany`
+      // bersyarat di bawah sudah atomik terhadap pencabutan paralel, tetapi
+      // tanpa lock `activateKey` dapat menyisipkan kunci pengganti di sela
+      // pembacaan dan menulis, sehingga cap riwayat menunjuk kunci yang salah.
+      await lockSigningKeyTransition(tx, userId);
 
-    // Surat yang ditandatangani dengan kunci ini — dicocokkan pada salinan
-    // kunci publiknya, bukan sekadar pada penandatangannya, karena orang yang
-    // sama bisa pernah memegang kunci lain sebelumnya.
-    const signedWithThisKey = await prisma.letterSignature.findMany({
-      where: { signerId: userId, publicKey: key.publicKey, revokedAt: null },
-      select: {
-        id: true,
-        signedAt: true,
-        letter: { select: { id: true, letterNumber: true, subject: true, date: true } },
-      },
-      orderBy: { signedAt: 'desc' },
-      take: 200,
-    });
+      // Cap waktu diambil DI DALAM lock, bukan sebelum: `castVote` mengambil
+      // advisory lock yang sama sebelum menulis suara, sehingga pencabutan yang
+      // menunggu di sini tidak dapat menstempel `revokedAt` mendahului suara
+      // yang sudah menandatangani di bawah lock — yang akan membuat suara itu
+      // tersimpan tetapi tak lagi autentik.
+      const revokedAt = new Date();
 
-    await prisma.auditLog.create({
-      data: {
-        userId: actorId,
-        action: 'REVOKE',
-        entity: 'UserSigningKey',
-        entityId: key.id,
-        newValues: {
-          revokedAt: revokedAt.toISOString(),
-          revokedReason: trimmed,
-          keyHolderId: userId,
-          revocationCode: code,
-          lettersStillValid: signedWithThisKey.length,
+      /**
+       * UPDATE bersyarat (`revoked_at IS NULL`) — gerbang transisi yang
+       * ATOMIK.
+       *
+       * Kedua permintaan paralel membaca kunci yang belum dicabut di luar
+       * transaksi ini (tidak ada yang mengunci baris saat `findUnique`), lalu
+       * keduanya masuk ke transaksinya sendiri. Bila keduanya memakai
+       * `update({ where: { id } })` tanpa syarat, keduanya menulis dan
+       * masing-masing menulis baris audit "sukses": yang terakhir menimpa
+       * tanggal, alasan, dan pelaku pencabutan yang pertama — dan catatan
+       * pertamalah yang menjawab sejak kapan kunci ini tidak boleh dipercaya.
+       *
+       * UPDATE mengambil kunci baris barisnya sendiri, jadi yang kalah
+       * menunggu, lalu mengevaluasi ulang `revoked_at IS NULL`, tidak
+       * menemukan apa pun, dan mendapat `count: 0`. Hanya pemenang yang
+       * melanjutkan ke cap riwayat dan audit.
+       */
+      const claimed = await tx.userSigningKey.updateMany({
+        where: { id: key.id, revokedAt: null },
+        data: { revokedAt, revokedReason: trimmed, revocationCode: code, revokedById: actorId },
+      });
+      if (claimed.count === 0) {
+        // Permintaan lain sudah menang transisinya. Deterministik, dan tanpa
+        // menyentuh cap waktu/alasan/pelaku yang sudah tercatat.
+        throw Errors.conflict('Kunci tanda tangan ini sudah dicabut sebelumnya.');
+      }
+      // Cap riwayatnya juga. Selama ini hanya `UserSigningKey` yang ditandai,
+      // sehingga tabel riwayat — satu-satunya yang dipercaya saat memverifikasi
+      // suara keputusan — tetap memperlihatkan kunci ini berlaku. Suara yang
+      // sudah sah TIDAK ikut dicabut: pembacaan `revokedAt` memisahkan "kunci ini
+      // berhenti menjadi kunci yang berlaku pada tanggal ini" dari "tanda tangan
+      // ini masih dapat diverifikasi", dan yang kedua tetap benar lewat kunci
+      // publik lamanya.
+      // Rekaman yang BELUM ADA pun ikut dibuat dengan `revokedAt` terisi.
+      // `revokeSigningKeyHistory` murni `updateMany` tidak berbuat apa-apa bila
+      // kuncinya belum pernah menandatangani (belum ada rekaman), sehingga
+      // pencabutannya hilang dari riwayat. `upsertRevokedSigningKeyHistory`
+      // membuat rekaman itu bila perlu, dengan cap waktu pencabutan yang sama.
+      await upsertRevokedSigningKeyHistory(
+        tx,
+        { userId, algorithm: key.algorithm, publicKey: key.publicKey },
+        revokedAt
+      );
+
+      // Surat yang ditandatangani dengan kunci ini — dicocokkan pada salinan
+      // kunci publiknya, bukan sekadar pada penandatangannya, karena orang yang
+      // sama bisa pernah memegang kunci lain sebelumnya.
+      const affected = await tx.letterSignature.findMany({
+        where: { signerId: userId, publicKey: key.publicKey, revokedAt: null },
+        select: {
+          id: true,
+          signedAt: true,
+          letter: { select: { id: true, letterNumber: true, subject: true, date: true } },
         },
-      },
+        orderBy: { signedAt: 'desc' },
+        take: 200,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: actorId,
+          action: 'REVOKE',
+          entity: 'UserSigningKey',
+          entityId: key.id,
+          newValues: {
+            revokedAt: revokedAt.toISOString(),
+            revokedReason: trimmed,
+            keyHolderId: userId,
+            revocationCode: code,
+            lettersStillValid: affected.length,
+          },
+        },
+      });
+
+      return { signedWithThisKey: affected, revokedAt };
     });
 
     eventBus.emit('notification:send', {
@@ -1116,8 +1367,8 @@ export const EsignService = {
       signedRevocation = signRevocation(toMaterial(key!), passphrase, statement);
     } catch (error) {
       if (error instanceof EsignError) {
-        await recordFailedAttempt(key!.id, key!.failedAttempts);
-        const left = MAX_PASSPHRASE_ATTEMPTS - (key!.failedAttempts + 1);
+        const failed = await recordFailedAttempt(actor.id, key!.id);
+        const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
             ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`
@@ -1271,8 +1522,8 @@ export const EsignService = {
       signed = signPayload(toMaterial(key!), passphrase, payload);
     } catch (error) {
       if (error instanceof EsignError) {
-        await recordFailedAttempt(key!.id, key!.failedAttempts);
-        const left = MAX_PASSPHRASE_ATTEMPTS - (key!.failedAttempts + 1);
+        const failed = await recordFailedAttempt(userId, key!.id);
+        const left = MAX_PASSPHRASE_ATTEMPTS - failed;
         throw Errors.unauthorized(
           left > 0
             ? `Passphrase tanda tangan salah. Sisa percobaan: ${left}.`

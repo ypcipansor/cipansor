@@ -34,8 +34,8 @@ than overwriting.
 ```bash
 # after editing schema.prisma
 pnpm --filter api db:generate         # regenerate client
-pnpm --filter api db:push             # apply to dev DB (no migration file)
-# or, for a tracked change:
+pnpm --filter api db:deploy           # apply committed MIGRATIONS (fresh + CI + prod)
+# for a tracked change, create the migration first:
 pnpm --filter api db:migrate          # create + apply a migration
 
 ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed  # TRUNCATEs every table first; refuses without the flag

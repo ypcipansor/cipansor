@@ -353,8 +353,8 @@ Ikuti langkah berikut untuk menjalankan proyek di lingkungan lokal Anda:
     Pastikan PostgreSQL berjalan, lalu jalankan migrasi dan seeding data awal.
 
     ```bash
-    pnpm db:push
-    # Seed mengosongkan SEMUA tabel sebelum mengisi data contoh — jangan pernah ke produksi.
+    pnpm db:deploy
+    # Seed mengosongkan SEMUA tabel sebelum mengisi data contoh - jangan pernah ke produksi.
     ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm db:seed
     ```
 

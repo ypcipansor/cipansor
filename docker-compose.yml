@@ -41,6 +41,32 @@ services:
     networks:
       - cipansor-network
 
+  # One-shot release job: apply Prisma migrations before the API starts.
+  #
+  # This service builds the `migrate` target (full dependency closure) and runs
+  # `prisma migrate deploy`; `api` waits for it to exit 0, so a failed migration
+  # aborts the deploy instead of booting an API against a stale schema.
+  # Migrations from multiple API replicas are safe regardless: Prisma takes an
+  # advisory lock around `migrate deploy`, and compose only starts `api` after
+  # this exits. (The runtime image can also migrate — it keeps the Prisma CLI
+  # and does so when MIGRATE_ON_START=true, the Azure path — but Compose uses
+  # this one-shot service instead so migrations are a discrete, observed step.)
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: migrate
+    container_name: cipansor-migrate
+    restart: "no"
+    logging: *default-logging
+    environment:
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/cipansor
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - cipansor-network
+
   # API Service
   api:
     build:
@@ -61,6 +87,9 @@ services:
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-15m}
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-30d}
       STUDENT_CARD_HMAC_SECRET: ${STUDENT_CARD_HMAC_SECRET:-}
+      # Passphrase server-side e-seal Yayasan. Wajib eksplisit di produksi;
+      # produksi menolak boot tanpa nilai (lihat config/index.ts).
+      FOUNDATION_ESEAL_PASSPHRASE: ${FOUNDATION_ESEAL_PASSPHRASE:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       # Enumerated here on purpose. A var present only in .env never reaches the
       # container, and the failure is silent — which is exactly how the old
@@ -70,6 +99,12 @@ services:
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://cipansor.or.id}
       PORTAL_URL: ${PORTAL_URL:-https://portal.cipansor.or.id}
       PUBLIC_VERIFY_RATE_LIMIT_MAX: ${PUBLIC_VERIFY_RATE_LIMIT_MAX:-30}
+      # Ceiling limiter passphrase yang dipakai BERSAMA jalur tanda tangan esign
+      # dan suara keputusan yayasan. Dienumerasi di sini karena variabel yang
+      # hanya ada di .env tidak pernah sampai ke kontainer: batasnya akan
+      # diam-diam jatuh ke default dan tampak "sudah diatur". Default 20 tetap
+      # ketat; naikkan hanya bila beban sah memang menuntut.
+      ESIGN_RATE_LIMIT_MAX: ${ESIGN_RATE_LIMIT_MAX:-20}
       # Turnstile. Harus disebut namanya di sini: sebuah variabel yang ada di
       # .env tetapi tidak dienumerasi pada blok ini TIDAK PERNAH sampai ke
       # dalam kontainer, dan gerbangnya akan diam-diam mati sementara .env
@@ -178,6 +213,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # Migrations must complete before the API serves a request. Without this
+      # the API starts against a stale schema and endpoints touching new tables
+      # fail until an operator runs `prisma migrate deploy` by hand.
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3001/health || exit 1"]
       interval: 30s

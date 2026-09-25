@@ -12,7 +12,7 @@ process.env.JWT_EXPIRES_IN = '1h';
 // Unit tests mock Prisma, so a stub URL is fine. The opt-in DB integration
 // suite (RUN_DB_TESTS=1) needs a real connection, so leave the environment's
 // DATABASE_URL untouched in that mode.
-if (!process.env.RUN_DB_TESTS) {
+if (!process.env.RUN_DB_TESTS && !process.env.RUN_DEPLOY_TESTS) {
   process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/cipansor_test';
 }
 

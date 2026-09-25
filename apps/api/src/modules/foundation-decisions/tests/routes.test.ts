@@ -1,0 +1,267 @@
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('@/lib/prisma', () => ({
+  // Finding B2/B3: `refreshActorRoles` reads the actor's CURRENT roles from the
+  // database before every governance route, so route-level tests need these two
+  // models. They return an active Pembina — enough to pass the refresh gate.
+  prisma: {
+    user: { findFirst: async () => ({ id: 'u1' }) },
+    userRoleAssignment: {
+      findMany: async () => [{ isPrimary: true, role: { code: 'YAYASAN_PEMBINA' } }],
+    },
+  },
+}));
+vi.mock('@/lib/redis', () => ({ redis: {} }));
+
+import router from '../foundation-decisions.routes';
+import { authorize } from '@/middleware/auth';
+import { FOUNDATION_FINALIZE_ROUTE_ROLES } from '@/utils/foundation-authority';
+
+interface RouteLayer {
+  route?: {
+    path: string;
+    methods: Record<string, boolean>;
+    stack: Array<{ handle: (...args: unknown[]) => unknown; name: string }>;
+  };
+  name?: string;
+}
+
+function handlersFor(method: string, path: string) {
+  const layer = (router.stack as unknown as RouteLayer[]).find(
+    (l) => l.route && l.route.path === path && l.route.methods[method]
+  );
+  if (!layer?.route) throw new Error(`No route for ${method.toUpperCase()} ${path}`);
+  return layer.route.stack;
+}
+
+function isRateLimiter(handle: unknown): boolean {
+  return (
+    typeof handle === 'function' &&
+    typeof (handle as { resetKey?: unknown }).resetKey === 'function'
+  );
+}
+
+function hasLimiter(method: string, path: string) {
+  return handlersFor(method, path).some((h) => isRateLimiter(h.handle));
+}
+
+function isPublicRoute(method: string, path: string) {
+  const stack = router.stack as unknown as RouteLayer[];
+  const authIndex = stack.findIndex((l) => !l.route && l.name === 'authenticate');
+  const routeIndex = stack.findIndex(
+    (l) => l.route && l.route.path === path && l.route.methods[method]
+  );
+  if (routeIndex === -1) throw new Error(`No route for ${method.toUpperCase()} ${path}`);
+  return authIndex === -1 || routeIndex < authIndex;
+}
+
+/**
+ * Rute publik verifikasi keputusan.
+ *
+ * `/verify` (token) dan `/verify-pdf` (unggahan) harus dapat dicapai tanpa
+ * sesi — pemindai QR dan dinas luar tidak punya akun. Keduanya juga harus
+ * dibatasi lajunya: keduanya menukar/menghitung data dan dapat dipakai
+ * membanjiri peladen.
+ */
+describe('foundation-decisions.routes public verify', () => {
+  it('GET /verify is public', () => {
+    expect(isPublicRoute('get', '/verify')).toBe(true);
+  });
+
+  it('POST /verify-pdf is public', () => {
+    expect(isPublicRoute('post', '/verify-pdf')).toBe(true);
+  });
+
+  it('POST /verify-pdf is rate limited', () => {
+    expect(hasLimiter('post', '/verify-pdf')).toBe(true);
+  });
+
+  /**
+   * Regresi audit #3 — GET /verify WAJIB dibatasi lajunya.
+   *
+   * Dulu hanya `POST /verify-pdf` yang punya limiter, sehingga justru jalur
+   * termurah bagi penyerang (GET, tanpa Turnstile, tanpa unggahan) yang
+   * terbuka — padahal satu permintaan men-token melakukan lookup baris,
+   * membaca arsip PDF `bytea`, menghash byte-nya, lalu membaca + memverifikasi
+   * kunci e-seal. `hasLimiter` memeriksa Express MELAKUKAN pemasangan handler
+   * limiter di stack rute (middleware `express-rate-limit` membawa `resetKey`),
+   * bukan sekadar membaca sumber.
+   */
+  it('GET /verify is rate limited', () => {
+    expect(hasLimiter('get', '/verify')).toBe(true);
+  });
+
+  /**
+   * Rute vote TIDAK memakai `authorize(...)`.
+   *
+   * Hak suara ditentukan oleh snapshot anggota yang terkunci, diperiksa di
+   * service. `authorize` memeriksa `req.user.roleCode` SAAT INI dan akan
+   * menolak anggota snapshot yang rolenya sudah berubah sebelum service sempat
+   * melihat snapshot. Yang dipaku di sini: `authenticate` ada, dan tidak ada
+   * handler `authorize(...)` di rute vote.
+   */
+  it('POST /decisions/:id/vote is authenticated but not role-gated', () => {
+    const handlers = handlersFor('post', '/decisions/:id/vote');
+    expect(handlers.some((h) => h.name === 'authenticate')).toBe(true);
+    // `authorize` mengembalikan middleware bernama 'authorize'.
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+    expect(isPublicRoute('post', '/decisions/:id/vote')).toBe(false);
+  });
+
+  it('POST /decisions/:id/finalize is authenticated', () => {
+    expect(isPublicRoute('post', '/decisions/:id/finalize')).toBe(false);
+  });
+});
+
+/**
+ * Regresi item review #3 — rute detail & unduh TIDAK boleh memakai
+ * `authorize(...READ)`.
+ *
+ * Akses bacanya dipindahkan ke service (`canReadFoundationDecision`) justru
+ * karena `authorize` memeriksa peran HARI INI, sedangkan anggota organ
+ * terkunci pada SNAPSHOT saat keputusan dibuat. Anggota snapshot yang rolenya
+ * sudah berubah tetap boleh MENANDATANGANI (rute vote tanpa `authorize`), jadi
+ * menolaknya MEMBACA dokumen yang sama adalah kontradiksi.
+ */
+describe('foundation-decisions.routes — akses baca detail/dokumen', () => {
+  it('GET /decisions/:id is authenticated but not role-gated', () => {
+    // `authenticate` dipasang lewat `router.use` sebelum rute ini, bukan di
+    // dalam stack rute — jadi yang diperiksa adalah sifat publiknya (harus
+    // false) plus tidak adanya `authorize`.
+    expect(isPublicRoute('get', '/decisions/:id')).toBe(false);
+    const handlers = handlersFor('get', '/decisions/:id');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+
+  it('GET /decisions/:id/document is authenticated but not role-gated', () => {
+    expect(isPublicRoute('get', '/decisions/:id/document')).toBe(false);
+    const handlers = handlersFor('get', '/decisions/:id/document');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+
+  /**
+   * Regresi audit #9 — daftar harus sejalan dengan detail.
+   *
+   * Anggota snapshot yang rolenya sudah berubah boleh MEMBUKA keputusannya
+   * (detail tidak `authorize`), jadi daftar yang memakai `authorize(...READ)`
+   * membuat orang itu tidak dapat menemukan dokumen yang boleh ia tanda
+   * tangani. Aksesnya karena itu dipindahkan ke query service
+   * (`foundationDecisionListWhere`), bukan ke middleware.
+   */
+  it('GET /decisions is authenticated but not role-gated', () => {
+    expect(isPublicRoute('get', '/decisions')).toBe(false);
+    const handlers = handlersFor('get', '/decisions');
+    expect(handlers.some((h) => h.handle === authorize || h.name === 'authorize')).toBe(false);
+  });
+});
+
+/**
+ * Regresi BUG — Pengawas tidak dapat memulai keputusan yang menjadi
+ * kewenangannya.
+ *
+ * `YAYASAN_PENGAWAS` tidak ada di daftar izin `POST /decisions`, padahal
+ * matriks kewenangan menetapkan `pemberhentian-sementara-pengurus` kepadanya:
+ * organ yang berwenang tetapi tak dapat membuka rapatnya sendiri. Yang diuji di
+ * sini adalah PERILAKU middleware `authorize` pada rute yang sesungguhnya —
+ * bukan membaca teks sumber — dengan memanggil handler-nya memakai `req.user`
+ * tiruan dan mengamati apakah ia meneruskan atau melempar 403. Kewenangan
+ * organ×jenis tetap diperiksa di service, jadi lolosnya middleware TIDAK
+ * berarti Pengawas boleh membuat keputusan organ lain (lihat service.test.ts).
+ */
+describe('foundation-decisions.routes — izin tulis Pengawas', () => {
+  /**
+   * Cari middleware `authorize` di stack rute berdasarkan PERILAKU, bukan nama.
+   *
+   * `authorize(...)` mengembalikan closure anonim, jadi tidak ada nama atau
+   * identitas modul yang dapat dicocokkan — dan menguji dengan `import` lalu
+   * membandingkan referensi tidak akan pernah cocok. Kandidatnya adalah
+   * middleware ber-arity 3 yang menolak peran yang jelas tidak berhak
+   * (`GURU`); yang memenuhi syarat itulah gerbang izinnya.
+   */
+  function authorizeGate(method: string, path: string) {
+    for (const h of handlersFor(method, path)) {
+      const fn = h.handle as (r: unknown, s: unknown, n: (e?: unknown) => void) => void;
+      if (typeof fn !== 'function' || fn.length !== 3) continue;
+      const errors: unknown[] = [];
+      fn({ user: { roleCode: 'GURU', permissions: [], unitId: null } }, {}, (e?: unknown) => {
+        if (e) errors.push(e);
+      });
+      if (errors.length > 0) return fn;
+    }
+    throw new Error(`No authorize gate for ${method.toUpperCase()} ${path}`);
+  }
+
+  function runAuthorize(method: string, path: string, roleCode: string) {
+    const gate = authorizeGate(method, path);
+    const errors: unknown[] = [];
+    let forwarded = false;
+    gate({ user: { roleCode, permissions: [], unitId: null } }, {}, (e?: unknown) => {
+      if (e) errors.push(e);
+      else forwarded = true;
+    });
+    return { forwarded, forbidden: errors.length > 0 };
+  }
+
+  it('Pengawas DIIZINKAN membuka keputusan (POST /decisions)', () => {
+    expect(runAuthorize('post', '/decisions', 'YAYASAN_PENGAWAS').forwarded).toBe(true);
+  });
+
+  it('Pengawas DIIZINKAN memanggil finalize, dan service tetap membatasi ke snapshot', () => {
+    // Rute memuatnya supaya ia dapat menutup rapat organnya; `finalize` di
+    // service menolak finalizer non-pimpinan yang bukan anggota snapshot.
+    expect(runAuthorize('post', '/decisions/:id/finalize', 'YAYASAN_PENGAWAS').forwarded).toBe(
+      true
+    );
+  });
+
+  it('peran read-only tetap DITOLAK membuka keputusan', () => {
+    for (const role of ['YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'GURU']) {
+      expect(runAuthorize('post', '/decisions', role).forbidden).toBe(true);
+    }
+  });
+
+  /**
+   * Regresi BUG (audit A) — daftar `FINALIZE` rute harus SAMA PERSIS dengan
+   * `FOUNDATION_FINALIZE_ROUTE_ROLES` yang dipakai `canFinalizeDecision`.
+   *
+   * Dulu service menghitung `canFinalize` dari keanggotaan snapshot saja, tanpa
+   * gerbang rute, sehingga Bendahara/Anggota (anggota snapshot PENGURUS tetapi
+   * tidak ada di `FINALIZE`) memperoleh `canFinalize=true` dan UI menawarkan
+   * tombol yang rute ini tolak 403. Dua daftar yang seharusnya sama dipaku di
+   * sini agar tidak menyimpang lagi.
+   */
+  it('FINALIZE rute identik dengan FOUNDATION_FINALIZE_ROUTE_ROLES', () => {
+    // Periksa lewat PERILAKU (handler `authorize` adalah closure anonim tanpa
+    // nama): setiap peran konstanta lolos, Bendahara/Anggota/GURU ditolak.
+    for (const role of FOUNDATION_FINALIZE_ROUTE_ROLES) {
+      expect(runAuthorize('post', '/decisions/:id/finalize', role).forwarded).toBe(true);
+    }
+    for (const role of ['YAYASAN_BENDAHARA', 'YAYASAN_ANGGOTA', 'GURU']) {
+      expect(runAuthorize('post', '/decisions/:id/finalize', role).forbidden).toBe(true);
+    }
+  });
+
+  /**
+   * Regresi BUG (audit B) — form create membutuhkan daftar organ yang boleh
+   * dibuat aktor, dan endpoint-nya harus ada serta dibatasi `CREATE`.
+   *
+   * Didaftarkan SEBELUM `/decisions/:id` agar "create-options" tidak tertelan
+   * sebagai id keputusan.
+   */
+  it('GET /decisions/create-options terautentikasi & dibatasi CREATE', () => {
+    expect(isPublicRoute('get', '/decisions/create-options')).toBe(false);
+    expect(runAuthorize('get', '/decisions/create-options', 'YAYASAN_PENGAWAS').forwarded).toBe(
+      true
+    );
+    expect(runAuthorize('get', '/decisions/create-options', 'GURU').forbidden).toBe(true);
+  });
+
+  it('/decisions/create-options terdaftar sebelum /decisions/:id', () => {
+    const stack = router.stack as unknown as RouteLayer[];
+    const literal = stack.findIndex((l) => l.route && l.route.path === '/decisions/create-options');
+    const wildcard = stack.findIndex((l) => l.route && l.route.path === '/decisions/:id');
+    expect(literal).toBeGreaterThanOrEqual(0);
+    expect(wildcard).toBeGreaterThanOrEqual(0);
+    expect(literal).toBeLessThan(wildcard);
+  });
+});

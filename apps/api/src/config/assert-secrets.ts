@@ -60,6 +60,11 @@ const MIN_SECRET_LENGTH = 32;
  */
 const LEAKED_OR_DEFAULT_VALUES = [
   '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+  // config/index.ts's own dev-only fallback for the Yayasan e-seal KEK. It is a
+  // fixed string published in this repository, so it passes the length check
+  // and contains none of the placeholder markers — only an exact match catches
+  // it. It must never seal production data.
+  'dev-foundation-eseal-passphrase-not-for-production',
 ];
 
 export interface SecretIssue {
@@ -71,6 +76,16 @@ export interface SecretCheckInput {
   env?: string;
   jwtSecret?: string;
   studentCardHmacSecret?: string;
+  /**
+   * Passphrase server-side e-seal Yayasan (`FOUNDATION_ESEAL_PASSPHRASE`).
+   *
+   * Diperiksa di sini, bukan hanya lewat getter `config.foundation`, karena
+   * getter itu hanya berjalan ketika modul keputusan MEMBACA-nya. Selama
+   * ketiadaan nilai itu baru ketahuan saat e-seal pertama dipakai, aplikasi
+   * produksi dapat boot dan melayani lalu gagal pada permintaan pertama yang
+   * membutuhkan seal. Gerbang ini jalan SEBELUM port dibuka.
+   */
+  foundationEsealPassphrase?: string;
 }
 
 function inspect(variable: string, value: string | undefined, issues: SecretIssue[]): void {
@@ -118,6 +133,11 @@ export function findSecretIssues(input: SecretCheckInput): SecretIssue[] {
   // a card signer that falls back to a hardcoded value means anyone can mint
   // a verifiable card. Refuse to boot in either case.
   inspect('STUDENT_CARD_HMAC_SECRET', input.studentCardHmacSecret, issues);
+  // E-seal passphrase: the KEK that seals the Yayasan signing key. The dev
+  // fallback in config/index.ts is a fixed, public string, so a production
+  // boot without an explicit value would seal the foundation seal under a key
+  // everyone can read.
+  inspect('FOUNDATION_ESEAL_PASSPHRASE', input.foundationEsealPassphrase, issues);
   return issues;
 }
 
@@ -133,6 +153,8 @@ export function assertProductionSecrets(input: SecretCheckInput = {}): void {
     env,
     jwtSecret: input.jwtSecret ?? process.env.JWT_SECRET,
     studentCardHmacSecret: input.studentCardHmacSecret ?? process.env.STUDENT_CARD_HMAC_SECRET,
+    foundationEsealPassphrase:
+      input.foundationEsealPassphrase ?? process.env.FOUNDATION_ESEAL_PASSPHRASE,
   });
 
   if (issues.length === 0) return;

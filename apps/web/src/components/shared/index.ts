@@ -38,3 +38,4 @@ export {
   LoadingPage,
 } from "./error-boundary";
 export { PhotoGallery, type PhotoGalleryItem } from "./photo-gallery";
+export { AccessDenied } from "./access-denied";
