@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import type { AppPrismaClient } from '@/lib/prisma';
 import {
   deleteIdentityDocument,
   listIdentityDocuments,
@@ -70,7 +71,8 @@ export const IDENTITY_PURGE_AUDIT_ACTION = 'PURGE_IDENTITY_DOCUMENTS';
  * memaksa salah satu pemanggil memformat ulang keluaran pemanggil yang lain.
  */
 export async function purgeIdentityDocuments(
-  prisma: PrismaClient,
+  // The API's client, or the plain one `prisma/scripts/purge-identity-documents.ts` makes.
+  prisma: AppPrismaClient | PrismaClient,
   { dryRun = false }: { dryRun?: boolean } = {}
 ): Promise<IdentityPurgeSummary> {
   const expiredRows = await prisma.userIdentity.findMany({
@@ -157,7 +159,7 @@ export async function purgeIdentityDocuments(
  * berkasnya sudah lenyap, dan melempar galat di sini hanya akan membuat
  * penjadwal melaporkan kegagalan atas pekerjaan yang berhasil.
  */
-async function recordRun(prisma: PrismaClient, summary: IdentityPurgeSummary) {
+async function recordRun(prisma: AppPrismaClient | PrismaClient, summary: IdentityPurgeSummary) {
   try {
     await prisma.auditLog.create({
       data: {

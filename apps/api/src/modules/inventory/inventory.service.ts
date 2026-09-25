@@ -7,7 +7,7 @@ import {
   NotificationType,
 } from '@prisma/client';
 import { JournalReferenceType } from '@cipansor/shared';
-import { prisma } from '../../lib/prisma';
+import { prisma, type Db } from '../../lib/prisma';
 import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
 import { createPurchaseJournal } from './asset-accounting.service';
@@ -668,10 +668,7 @@ export async function completeAudit(id: string) {
 
 // ==================== DEPRECIATION ====================
 
-export async function calculateDepreciation(
-  assetId: string,
-  tx: Prisma.TransactionClient = prisma
-) {
+export async function calculateDepreciation(assetId: string, tx: Db = prisma) {
   const asset = await tx.asset.findUnique({ where: { id: assetId } });
   if (!asset || !asset.purchasePrice || !asset.purchaseDate || !asset.usefulLife) {
     return null;
