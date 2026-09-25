@@ -9,6 +9,10 @@ Next.js 16 (App Router) + React 19 client. Read the root `AGENTS.md` first.
 - **Data layer:** the Axios instance in `src/lib/api.ts` (errors via
   `src/lib/api-error.ts`), wrapped by **React Query** hooks in `src/hooks/*`.
   `src/lib/api-client.ts` is a back-compat re-export; import from `lib/api`.
+  The response interceptor toasts every non-401 error. A best-effort or
+  parallel call whose failure the page handles itself (a role dashboard's
+  optional widgets) passes `skipErrorToast: true` in the axios config, or it
+  spams "missing permission" / "route not found" at the user.
 - **No mock/placeholder data in pages.** If an endpoint is missing, add it to the
   API rather than hardcoding. (Pages still carrying mock data are listed in
   `.claude/memory/known-issues.md`.) This is the web half of **golden rule #8** (ship

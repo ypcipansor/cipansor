@@ -84,6 +84,18 @@ monorepo**:
    very files #504 deleted. `git worktree add --detach <dir> origin/main`, merge
    both heads into it, run the gate there; it costs one gate run and it is the
    only thing that catches this class.
+10. **Every UI change ships before/after screenshots**, one pair per affected
+    surface, taken from the real components — "before" rendered from `main`,
+    not remembered. Put them where the reviewer sees them (the PR body, or a
+    shared page linked from it). The `screenshot-roles` skill has the rigs
+    (`before-after.md`). Walking each screen for its screenshot is also what
+    finds the defects a diff hides.
+11. **Say "done" only when someone can click it — and say how far it went.**
+    Every report of a UI change gives the **menu path** to reach it (e.g.
+    *Perencanaan & Kinerja → Perjanjian Kinerja → Tambah*) and its state:
+    **on a branch**, **merged to `main`**, **on staging**, or **in
+    production**. A page on an unmerged branch is not "built" to the person
+    looking for it in the app.
 
 ## Commands
 
@@ -158,7 +170,7 @@ two copies drift, and a stale one actively misleads.
 | Rules every change follows: architecture, build/test/deploy, style, guardrails | this file + the nested `AGENTS.md` | rarely, by PR |
 | Procedures and domain knowledge, loaded when relevant ([index](#skills)) | `.claude/skills/<name>/SKILL.md` | when a standard or a rule changes, by PR |
 | Enforcement | CI and the `main` ruleset (every agent); `.claude/hooks/` (Claude only) | rarely, by PR |
-| Project memory: plan and backlog, known issues, progress, decisions not yet in a skill | `.claude/memory/` | as work happens, by PR |
+| Project memory: progress, backlog, known issues (`.claude/memory/*.md`); decisions not yet in a skill (`decisions/`); traps that cost time (`lessons/`) — indexed in `INDEX.md` | `.claude/memory/` | as work happens, by PR |
 | Documentation for people: architecture, deployment, setup, user manuals | `docs/` | with the code it describes |
 | Anything **sensitive**, personal, or specific to one machine | the machine-local memory (`~/.claude/projects/…/memory/`), never the repo | — |
 
