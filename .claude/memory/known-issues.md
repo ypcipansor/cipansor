@@ -79,6 +79,28 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 - **Some modules still admit whole legacy buckets** (`STAFF` in particular),
   where a feature permission would be narrower. Review module by module under
   Model A; the list is kept outside the repository.
+- **"Roles & Permissions" edits a list almost nothing reads** (measured
+  2026-09-25). Super Admin can create a role and tick permissions, stored in
+  `roles.permissions`, but only 13 API routes check a permission
+  (`hasPermission`); 670 check a legacy bucket (`authorize`), menus come from
+  `navigation.ts` by role code, and web routes from `rbac.ts` by bucket. A new
+  role gets the fallback menu, and unticking a permission does not remove the
+  access a bucket grants. Model A (roadmap §1.2) is the fix; until then the
+  page should not suggest it governs access.
+- **The planning chain cannot be walked from the menu** (found 2026-09-25 by
+  printing every role's menu with `apps/web/scripts/role-menus.ts`).
+  `/perencanaan` is in the sidebar of Super Admin and unit admins only. The
+  yayasan organs (bucket `UNIT_ADMIN`) may open it but have no link — the
+  ratification flow they run is reachable by URL alone. Kepala sekolah and the
+  Kiai (bucket `TEACHER`) are **refused** by the web middleware, although
+  `canAuthorUnitPlan` on the API admits the head to draft the RKA Unit that
+  their PK must anchor to; so today only the unit admin can draft it in the web.
+  `perencanaan-pengesahan.spec.ts` stays green because it opens pages by URL.
+- **Support and business-unit roles cannot reach their own modules.**
+  `PUSTAKAWAN`, `LABORAN` and `BUSINESS_*` share the generic staff menu, which
+  lists neither `/library`, `/practicum`, `/canteen` nor `/laundry`, and the
+  `STAFF` bucket's routes in `rbac.ts` refuse all four pages. (Perawat and
+  Keamanan are covered: `/health` and `/permits` are in both.)
 
 ## Waiting on a decision
 

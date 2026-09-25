@@ -26,8 +26,15 @@ backlog to [`roadmap.md`](roadmap.md).
 ## In flight
 
 - **Agent-context restructure** (decided 2026-09-25): steps 1–3 are merged
-  (see below); step 4 — new skills: user manuals per role, naskah dinas and
-  yayasan governance knowledge — is not started. `docs/DEPLOYMENT.md` goes
+  (see below); step 4 is the domain skills `panduan-peran`,
+  `tata-kelola-yayasan` and `naskah-dinas`, with `apps/web/scripts/role-menus.ts`
+  to print any role's menu from code.
+- **Model A design document** — approved to draft on 2026-09-25: a permission
+  per feature and action, data scope from the assignment, menus derived from
+  permissions, separation-of-duty rules locked in code, and the account
+  lifecycle (joiner–mover–leaver, immediate deactivation, SCIM from Microsoft
+  Entra or a Google Directory API sync after SSO). For the user's review before
+  any code. `docs/DEPLOYMENT.md` goes
   after 2026-10-01 (the VM is the rollback target until then, and a guard test
   reads it).
 

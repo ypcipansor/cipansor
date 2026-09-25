@@ -1,16 +1,17 @@
 # eoffice-verify-by-upload-not-qr
 
-> E-Office letter verification is deliberately upload-the-PDF + captcha, never scan-QR-and-trust — and the whole e-signature plan lives in docs/EOFFICE_ESIGN_PLAN.md
+> E-Office letter verification is deliberately upload-the-PDF + Turnstile, never scan-QR-and-trust — the feature as it stands is the `naskah-dinas` skill; its audit and plan are docs/EOFFICE_ESIGN_PLAN.md
 
-**The plan, the audit findings and the six-PR sequence live in
-`docs/EOFFICE_ESIGN_PLAN.md`** (added 2026-09-02). Read it before touching
-e-office, the letter PDF, or the signing code. What follows is only what is
-easiest to get wrong from outside that file.
+**How the feature works now is the `naskah-dinas` skill**
+(`.claude/skills/naskah-dinas/SKILL.md`); the audit findings, the PR sequence
+and the sources live in `docs/EOFFICE_ESIGN_PLAN.md` (added 2026-09-02). Read
+the skill before touching e-office, the letter PDF, or the signing code. What
+follows is only what is easiest to get wrong.
 
 ## The design decision — do not "restore" the QR landing page
 
-Public verification happens at `/public/verify-letter`: upload the PDF, answer a
-captcha, submit. The server SHA-256s the uploaded bytes against
+Public verification happens at `/public/verify-letter`: upload the PDF, pass
+Turnstile (`requireTurnstile('verify-letter')`) and a rate limiter, submit. The server SHA-256s the uploaded bytes against
 `LetterSignature.pdfHash`.
 
 `/verifikasi/[token]` was removed **on purpose**. A token attests *"a letter with
