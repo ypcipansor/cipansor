@@ -594,15 +594,9 @@ async function main() {
     // Pesantren roles (cross-unit)
     {
       code: RoleCode.PESANTREN_PENGASUH,
-      name: 'Pengasuh Pesantren',
+      name: 'Pimpinan Pesantren (Kiai)',
       realm: Realm.PESANTREN,
-      description: 'Kyai / pimpinan tertinggi pesantren',
-    },
-    {
-      code: RoleCode.PESANTREN_DIREKTUR,
-      name: 'Direktur Pesantren',
-      realm: Realm.PESANTREN,
-      description: 'Pengelola operasional harian pesantren',
+      description: 'Kiai — pengasuh dan pemimpin tertinggi pesantren (UU 18/2019 Ps. 9 ayat 2)',
     },
     {
       code: RoleCode.PESANTREN_TATA_USAHA,
@@ -618,39 +612,15 @@ async function main() {
     },
     {
       code: RoleCode.MUSYRIF,
-      name: 'Musyrif',
+      name: 'Musyrif / Musyrifah',
       realm: Realm.PESANTREN,
-      description: 'Pembina asrama (putra)',
-    },
-    {
-      code: RoleCode.MUSYRIFAH,
-      name: 'Musyrifah',
-      realm: Realm.PESANTREN,
-      description: 'Pembina asrama (putri)',
+      description: 'Pembina asrama, wali kamar dan pembina akhlak (murabbi), putra atau putri',
     },
     {
       code: RoleCode.MUHAFIDZ,
-      name: 'Muhafidz',
+      name: 'Muhafidz / Muhafidzah',
       realm: Realm.PESANTREN,
-      description: 'Pengampu tahfidz (putra)',
-    },
-    {
-      code: RoleCode.MUHAFIDZAH,
-      name: 'Muhafidzah',
-      realm: Realm.PESANTREN,
-      description: 'Pengampu tahfidz (putri)',
-    },
-    {
-      code: RoleCode.MURABBI,
-      name: 'Murabbi',
-      realm: Realm.PESANTREN,
-      description: 'Pembina akhlaq',
-    },
-    {
-      code: RoleCode.WALI_KAMAR,
-      name: 'Wali Kamar',
-      realm: Realm.PESANTREN,
-      description: 'Penanggung jawab kamar',
+      description: 'Pengampu tahfidz, putra atau putri',
     },
 
     // Cross-unit support staff (yayasan-wide services)
@@ -748,15 +718,10 @@ async function main() {
    */
   const PESANTREN_REALM_ROLES = new Set([
     'PESANTREN_PENGASUH',
-    'PESANTREN_DIREKTUR',
     'PESANTREN_TATA_USAHA',
     'USTADZ',
     'MUSYRIF',
-    'MUSYRIFAH',
     'MUHAFIDZ',
-    'MUHAFIDZAH',
-    'MURABBI',
-    'WALI_KAMAR',
     'KEAMANAN',
     'PERAWAT',
     'PUSTAKAWAN',
@@ -786,17 +751,7 @@ async function main() {
     if (code.endsWith('_ORANG_TUA')) return UserRole.PARENT;
     const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_WAKASEK', '_WALI_KELAS', '_GURU_BK'];
     if (teacherSuffix.some((s) => code.endsWith(s))) return UserRole.TEACHER;
-    const teacherExact = [
-      'PESANTREN_PENGASUH',
-      'PESANTREN_DIREKTUR',
-      'USTADZ',
-      'MUSYRIF',
-      'MUSYRIFAH',
-      'MUHAFIDZ',
-      'MUHAFIDZAH',
-      'MURABBI',
-      'WALI_KAMAR',
-    ];
+    const teacherExact = ['PESANTREN_PENGASUH', 'USTADZ', 'MUSYRIF', 'MUHAFIDZ'];
     if (teacherExact.includes(code)) return UserRole.TEACHER;
     return UserRole.STAFF;
   };
@@ -804,6 +759,9 @@ async function main() {
   // Kept so the domain rows for these personas can be created further down,
   // once classes, students and teachers exist.
   const demoUsers = new Map<string, { id: string; name: string; unitId?: string }>();
+  // Every account, including a role's second persona, for the per-person
+  // domain rows (Teacher, Student, parent link) built further down.
+  const demoPersonas: Array<[string, { id: string; name: string; unitId?: string }]> = [];
   let demoCreated = 0;
   for (const acc of DEMO_ACCOUNTS) {
     const role = roles[acc.roleCode];
@@ -831,7 +789,11 @@ async function main() {
         isActive: true,
       },
     });
-    demoUsers.set(acc.roleCode, { id: demoUser.id, name: acc.name, unitId });
+    // Several musyrif and muhafidz personas share one role since 2026-09-25;
+    // the first account listed for a role is the one looked up by role.
+    const persona = { id: demoUser.id, name: acc.name, unitId };
+    demoPersonas.push([acc.roleCode, persona]);
+    if (!demoUsers.has(acc.roleCode)) demoUsers.set(acc.roleCode, persona);
     demoCreated++;
   }
   console.log(`✅ Demo accounts created (${demoCreated} of ${DEMO_ACCOUNTS.length})`);
@@ -847,10 +809,14 @@ async function main() {
   // These pairings are the ones that genuinely occur in a pesantren: a kepala
   // sekolah who still teaches, and a yayasan treasurer who also keeps a unit's
   // books. The second is deliberately cross-realm (YAYASAN + SD_IT) so the
-  // switcher's realm grouping is exercised too.
+  // switcher's realm grouping is exercised too. The third is Cipansor's own:
+  // the Kiai, Pimpinan Pesantren, also sits on the yayasan's Pembina (UU
+  // 16/2001 Ps. 29 bars Pembina only from Pengurus and Pengawas; a pesantren
+  // leader is a "pelaksana kegiatan", Ps. 35 ayat 3).
   const SECONDARY_ROLES: Array<{ primary: string; secondary: string }> = [
     { primary: 'SMPIT_KEPALA_SEKOLAH', secondary: 'SMPIT_GURU' },
     { primary: 'YAYASAN_BENDAHARA', secondary: 'SDIT_BENDAHARA' },
+    { primary: 'PESANTREN_PENGASUH', secondary: 'YAYASAN_PEMBINA' },
   ];
   let secondaryCreated = 0;
   for (const pair of SECONDARY_ROLES) {
@@ -1580,7 +1546,7 @@ async function main() {
   let demoParents = 0;
   let demoNis = 9000;
 
-  for (const [roleCode, demo] of demoUsers) {
+  for (const [roleCode, demo] of demoPersonas) {
     if (!demo.unitId) continue;
 
     const isStudent = roleCode.endsWith('_SISWA');
@@ -1655,7 +1621,7 @@ async function main() {
   // Second pass: the parent of a unit is linked to that unit's demo student.
   // Done separately because map iteration order does not guarantee the
   // student was created before the parent.
-  for (const [roleCode, demo] of demoUsers) {
+  for (const [roleCode, demo] of demoPersonas) {
     if (!roleCode.endsWith('_ORANG_TUA') || !demo.unitId) continue;
     const studentId = demoStudentByUnit.get(demo.unitId);
     if (!studentId) continue;

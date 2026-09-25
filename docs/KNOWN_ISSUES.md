@@ -88,7 +88,12 @@ Yang masih terbuka:
   Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" untuk semua unit.
 - **Takhosus sebagai unit kelima** (`UnitType.PESANTREN`, keputusan
   2026-09-13) belum diterapkan. Paket ini menaruh halaqoh takhosus di bawah
-  SMA.
+  SMA. Akibat lain: SEMUA peran pesantren — termasuk Pimpinan Pesantren
+  (Kiai), musyrif, muhafidz — berpenugasan di unit **SMP IT** (seed
+  `PESANTREN_REALM_ROLES`, dan begitu pula di produksi), jadi "unit Kiai"
+  menurut data adalah SMP IT. Katalog peran pesantren dirapikan 2026-09-25
+  (tanpa Direktur; Musyrifah/Wali Kamar/Murabbi → Musyrif; Muhafidzah →
+  Muhafidz), lingkupnya belum.
 
 ## ✅ CLOSED — `docs/DEPLOYMENT.md` menyuruh operator menghapus data produksi (2026-09-21 → 2026-09-23)
 

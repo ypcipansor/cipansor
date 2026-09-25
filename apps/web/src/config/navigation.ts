@@ -146,17 +146,9 @@ const YAYASAN_ROLES = [
 ];
 
 // Pesantren leadership vs. field pengasuhan staff — they get different menus.
-const PESANTREN_PIMPINAN_ROLES = ["PESANTREN_PENGASUH", "PESANTREN_DIREKTUR"];
+const PESANTREN_PIMPINAN_ROLES = ["PESANTREN_PENGASUH"];
 
-const PESANTREN_PENGASUHAN_ROLES = [
-  "USTADZ",
-  "MUSYRIF",
-  "MUSYRIFAH",
-  "MUHAFIDZ",
-  "MUHAFIDZAH",
-  "MURABBI",
-  "WALI_KAMAR",
-];
+const PESANTREN_PENGASUHAN_ROLES = ["USTADZ", "MUSYRIF", "MUHAFIDZ"];
 
 const PESANTREN_ROLES = [
   ...PESANTREN_PIMPINAN_ROLES,
@@ -1701,7 +1693,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
   },
 ];
 
-// Pesantren leadership (Pengasuh, Direktur) — oversight across pengasuhan,
+// Pesantren leadership (Pimpinan Pesantren / Kiai) — oversight across pengasuhan,
 // tahfidz/diniyah, boarding services and reporting.
 const pesantrenPimpinanNavigation: NavGroup[] = [
   {

@@ -54,8 +54,8 @@ export function resolveLegacyRoleToRoleCode(
   // NOTE on PESANTREN/OTHER units:
   //   - TEACHER maps to MUSYRIF (the generic pesantren teacher role) to preserve
   //     backward compatibility for legacy API clients registering pesantren teachers.
-  //     More specific pesantren roles (MUHAFIDZ, MURABBI, WALI_KAMAR) must be
-  //     selected explicitly via `roleCode` since they are distinct responsibilities.
+  //     Other pesantren roles (USTADZ, MUHAFIDZ) must be selected explicitly
+  //     via `roleCode` since they are distinct responsibilities.
   //   - STAFF/STUDENT/PARENT have NO dedicated pesantren RoleCode. Legacy clients
   //     registering these against PESANTREN/OTHER units must migrate to send
   //     `roleCode` explicitly. Do NOT silently fall back to a school-unit RoleCode

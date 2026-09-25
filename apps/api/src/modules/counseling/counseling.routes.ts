@@ -32,8 +32,6 @@ const teacherAndAbove = () =>
     RoleCode.SMAQ_KEPALA_SEKOLAH,
     RoleCode.MUSYRIF,
     RoleCode.MUHAFIDZ,
-    RoleCode.MURABBI,
-    RoleCode.WALI_KAMAR,
     'UNIT_ADMIN',
     'TEACHER' // Legacy pre-migration token values
   );
@@ -65,8 +63,6 @@ const teacherOrParent = () =>
     RoleCode.SMAQ_KEPALA_SEKOLAH,
     RoleCode.MUSYRIF,
     RoleCode.MUHAFIDZ,
-    RoleCode.MURABBI,
-    RoleCode.WALI_KAMAR,
     RoleCode.TKQ_ORANG_TUA,
     RoleCode.SDIT_ORANG_TUA,
     RoleCode.SMPIT_ORANG_TUA,
