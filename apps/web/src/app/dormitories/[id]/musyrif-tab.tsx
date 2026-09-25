@@ -125,7 +125,9 @@ export function MusyrifTab({
                 <TableHead>Cakupan</TableHead>
                 <TableHead>Tugas</TableHead>
                 <TableHead>Sejak</TableHead>
-                {canAssign && <TableHead className="text-right">Aksi</TableHead>}
+                {canAssign && (
+                  <TableHead className="text-right">Aksi</TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>

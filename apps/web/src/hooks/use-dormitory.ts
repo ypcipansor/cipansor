@@ -494,9 +494,7 @@ export function useEndMusyrifAssignment(dormitoryId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (assignmentId: string) => {
-      await api.post(
-        `/dormitories/${dormitoryId}/musyrif/${assignmentId}/end`,
-      );
+      await api.post(`/dormitories/${dormitoryId}/musyrif/${assignmentId}/end`);
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: musyrifKey(dormitoryId) }),

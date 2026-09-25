@@ -38,7 +38,6 @@
     "GET /curriculum/schedules/teacher/{id}  apps/web/src/hooks/use-curriculum.ts",
     "GET /curriculum/teacher-assignments  apps/web/src/hooks/use-curriculum.ts",
     "GET /dormitories/attendance/today  apps/web/src/hooks/use-musyrif-dashboard.ts",
-    "GET /dormitories/{id}/rooms  apps/web/src/hooks/use-dormitory.ts",
     "GET /duty-assignments/my-duties  apps/web/src/hooks/use-duty-roster.ts",
     "GET /duty-assignments/{id}  apps/web/src/hooks/use-duty-roster.ts",
     "GET /extracurricular/{id}/attendance  apps/web/src/hooks/use-extracurricular.ts",

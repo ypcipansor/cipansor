@@ -6,7 +6,12 @@ vi.mock('@/lib/prisma', () => {
     room: { findFirst: vi.fn() },
     userRoleAssignment: { findFirst: vi.fn(), findMany: vi.fn() },
     musyrif: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn() },
-    musyrifAssignment: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+    musyrifAssignment: {
+      findFirst: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      updateMany: vi.fn(),
+    },
     $transaction: vi.fn(),
   };
   prisma.$transaction.mockImplementation(async (fn: (tx: typeof prisma) => unknown) => fn(prisma));
@@ -149,7 +154,9 @@ describe('listCandidates', () => {
 
 describe('listAssignments', () => {
   it('only active assignments of this asrama', async () => {
-    db.musyrifAssignment.findMany.mockResolvedValue([row({ room: { id: ROOM, name: 'Kamar A1' } })]);
+    db.musyrifAssignment.findMany.mockResolvedValue([
+      row({ room: { id: ROOM, name: 'Kamar A1' } }),
+    ]);
     const list = await service.listAssignments(DORM);
     expect(db.musyrifAssignment.findMany.mock.calls[0][0].where).toEqual({
       dormitoryId: DORM,
