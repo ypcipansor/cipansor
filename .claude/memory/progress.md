@@ -41,6 +41,13 @@ backlog to [`roadmap.md`](roadmap.md).
   researching naming practice. Order: audit → glossary and phased plan for the
   user's decision → PRs with permanent redirects. The glossary comes before
   Model A's permission catalogue, whose keys use the feature names.
+- **Skipped tests** — asked by the user on 2026-09-25, to take in priority
+  order: make every skipped API, web and Playwright test run, or say why it
+  cannot. Known so far: 92 of the 94 skipped API tests are two opt-in suites
+  that need a real Postgres (`decommission-pt-session.integration`,
+  `database-migrations`); the Playwright suite has data guards
+  (`test.skip` when the seed lacks rows) and firefox/webkit run with
+  `continue-on-error`.
 - **Model A design document** — approved to draft on 2026-09-25: a permission
   per feature and action, data scope from the assignment, menus derived from
   permissions, separation-of-duty rules locked in code, and the account
