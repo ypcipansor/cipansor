@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { PermitStatus, PermitType } from '@prisma/client';
+import { PermitDecider, PermitStatus, PermitType } from '@prisma/client';
 import {
+  ADMIN_ROLE_CODES,
+  PERMIT_DECIDER_VALUES,
   PERMIT_STATUS_VALUES,
   PERMIT_TYPE_VALUES,
   PERMIT_DECIDER_ROLE_CODES,
@@ -21,6 +23,10 @@ describe('the shared permit contract matches the database', () => {
     expect([...PERMIT_STATUS_VALUES].sort()).toEqual(Object.values(PermitStatus).sort());
   });
 
+  it('the capacities a permit is decided in', () => {
+    expect([...PERMIT_DECIDER_VALUES].sort()).toEqual(Object.values(PermitDecider).sort());
+  });
+
   it('every role code in the permit lists exists', () => {
     const known = new Set<string>(Object.values(RoleCode));
     for (const code of [...PERMIT_STAFF_ROLE_CODES, ...PERMIT_DECIDER_ROLE_CODES]) {
@@ -34,6 +40,13 @@ describe('the shared permit contract matches the database', () => {
     }
     for (const code of GOVERNANCE_ROLE_CODES) {
       expect(PERMIT_STAFF_ROLE_CODES).not.toContain(code);
+    }
+  });
+
+  it('admins read permits but decide none: they run the system, not the child’s care', () => {
+    for (const code of ADMIN_ROLE_CODES) {
+      expect(PERMIT_STAFF_ROLE_CODES).toContain(code);
+      expect(PERMIT_DECIDER_ROLE_CODES).not.toContain(code);
     }
   });
 });

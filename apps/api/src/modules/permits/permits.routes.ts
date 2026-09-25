@@ -16,10 +16,12 @@ import {
 } from './permits.schema';
 
 /**
- * Perizinan. Who may call what is the three lists in @cipansor/shared
+ * Perizinan. Who may call what is the lists in @cipansor/shared
  * (`schemas/permits.ts`), which the web reads too; which permits each caller
- * sees is `studentScope`, applied in the service. Static paths come before
- * `/:id`.
+ * sees is `studentScope`, applied in the service. Approve and reject pass the
+ * role guard for any teacher, musyrif or unit head; the service then lets
+ * through only the learner's own mentor or head (`permits.decider.ts`).
+ * Static paths come before `/:id`.
  */
 const router = Router();
 
@@ -44,6 +46,7 @@ const deciders = authorize(...PERMIT_DECIDER_ROLE_CODES);
  *       - { in: query, name: outside, description: through the gate and not back, schema: { type: boolean } }
  *       - { in: query, name: from, schema: { type: string, format: date } }
  *       - { in: query, name: to, schema: { type: string, format: date } }
+ *       - { in: query, name: awaitingMe, description: pending and the caller's own to decide, oldest first, schema: { type: boolean } }
  *       - { in: query, name: page, schema: { type: integer, default: 1 } }
  *       - { in: query, name: limit, schema: { type: integer, default: 20, maximum: 100 } }
  *     responses:
@@ -64,7 +67,7 @@ router.post('/', requesters, validate(createPermitSchema), controller.create);
  * @swagger
  * /api/permits/summary:
  *   get:
- *     summary: Counts — pending, approved, outside, overdue
+ *     summary: Counts — pending (and how many are the caller's own to decide), approved, outside, overdue
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
@@ -113,12 +116,14 @@ router.patch('/:id', requesters, validate(updatePermitSchema), controller.update
  * /api/permits/{id}/approve:
  *   post:
  *     summary: PENDING → APPROVED; excuses the learner's attendance for those days
+ *     description: By the learner's musyrif (a boarder) or wali kelas; by the unit head for leave over PERMIT_HEAD_AFTER_DAYS, when no mentor is on record, or as a takeover.
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200: { description: Approved }
- *       409: { description: Not PENDING }
+ *       403: { description: Not this learner's mentor or head; the message names who decides }
+ *       409: { description: Not PENDING, or changed since it was read }
  * /api/permits/{id}/reject:
  *   post:
  *     summary: PENDING → REJECTED, with the reason
@@ -131,7 +136,8 @@ router.patch('/:id', requesters, validate(updatePermitSchema), controller.update
  *           schema: { type: object, required: [rejectionNote], properties: { rejectionNote: { type: string } } }
  *     responses:
  *       200: { description: Rejected }
- *       409: { description: Not PENDING }
+ *       403: { description: Not this learner's mentor or head }
+ *       409: { description: Not PENDING, or changed since it was read }
  * /api/permits/{id}/cancel:
  *   post:
  *     summary: PENDING → CANCELLED (withdrawn by whoever may file it)

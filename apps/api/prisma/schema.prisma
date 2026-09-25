@@ -190,6 +190,17 @@ enum PermitStatus {
   CANCELLED
 }
 
+// Who decides a learner's leave (2026-09-25): the learner's own mentor — the
+// musyrif of their asrama for a boarder, the wali kelas otherwise — and the
+// unit head only for long leave, when no mentor is on record, or on taking
+// over. See `modules/permits/permits.decider.ts`.
+enum PermitDecider {
+  MUSYRIF
+  WALI_KELAS
+  KEPALA_SEKOLAH
+  PIMPINAN_PESANTREN
+}
+
 enum ViolationType {
   MINOR // Ringan
   MODERATE // Sedang
@@ -1515,6 +1526,10 @@ model Permit {
   departedAt    DateTime?    @map("departed_at")
   returnedAt    DateTime?    @map("returned_at")
   code          String?      @unique // Unique short code for scanning
+  // In what capacity `approvedBy` decided, and whether a unit head decided
+  // what was the learner's own musyrif or wali kelas to decide.
+  decidedAs     PermitDecider? @map("decided_as")
+  tookOver      Boolean        @default(false) @map("took_over")
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 

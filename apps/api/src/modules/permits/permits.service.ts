@@ -5,8 +5,17 @@ import {
   PermitStatus,
   PermitType,
   Prisma,
+  UnitType,
 } from '@prisma/client';
-import type { CreatePermitInput, UpdatePermitInput } from '@cipansor/shared';
+import {
+  PARENT_ROLE_CODES,
+  PERMIT_DECIDER_ROLE_CODES,
+  PESANTREN_LEADER_ROLE_CODES,
+  PRINCIPAL_ROLE_CODES,
+  type CreatePermitInput,
+  type PermitDecision,
+  type UpdatePermitInput,
+} from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
 import { Errors } from '@/middleware/error';
@@ -18,6 +27,7 @@ import {
 } from '@/utils/student-scope';
 import { createNotification } from '../notifications/notifications.service';
 import type { ListPermitsQueryParsed } from './permits.schema';
+import { decisionFor, whoDecides, type Guardianship } from './permits.decider';
 
 /**
  * Perizinan: a learner's leave, from request to return.
@@ -34,6 +44,11 @@ import type { ListPermitsQueryParsed } from './permits.schema';
  * Every read and every move is limited to the permits of learners the caller
  * may see (`studentScope`): a wali, their own children; staff, their unit;
  * boarding and cross-unit staff, every unit. Outside that, a permit is 404.
+ *
+ * Approve and reject are further limited to the learner's own mentor — their
+ * musyrif if they board, else their wali kelas — or the unit head
+ * (`permits.decider.ts`). Every permit on the wire carries `decision`: who
+ * decides it, and whether the caller may.
  */
 
 /** The columns a permit carries on the wire — no `include: { student }`. */
@@ -51,6 +66,8 @@ const PERMIT_SELECT = {
   rejectionNote: true,
   departedAt: true,
   returnedAt: true,
+  decidedAs: true,
+  tookOver: true,
   createdAt: true,
   updatedAt: true,
   student: {
@@ -67,6 +84,9 @@ const PERMIT_SELECT = {
 
 type PermitRow = Prisma.PermitGetPayload<{ select: typeof PERMIT_SELECT }>;
 
+/** A permit as the API sends it: the row, and who decides it. */
+export type PermitView = PermitRow & { decision: PermitDecision };
+
 const scopeOf = (actor: ScopeActor): Prisma.PermitWhereInput =>
   onlyScopedStudents(studentScope(actor));
 
@@ -78,6 +98,124 @@ async function findInScope(id: string, actor: ScopeActor): Promise<PermitRow> {
   });
   if (!permit) throw Errors.notFound('Permit');
   return permit;
+}
+
+// ------------------------------------------------------------ who decides
+
+/**
+ * The learner's mentors as of now, for every learner in `studentIds`, in two
+ * queries: the learners (unit, active kamar, active class's wali kelas), then
+ * the musyrif assigned to their asrama. A musyrif assigned to the whole asrama
+ * (`roomId` null) covers every kamar in it.
+ */
+async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guardianship>> {
+  const ids = [...new Set(studentIds)];
+  if (!ids.length) return new Map();
+  const now = new Date();
+  const person = { select: { id: true, name: true, isActive: true } } as const;
+
+  const students = await prisma.student.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      unitId: true,
+      unit: { select: { type: true } },
+      roomAssignments: {
+        where: { isActive: true, endedAt: null },
+        select: { room: { select: { id: true, dormitoryId: true } } },
+        orderBy: { assignedAt: 'desc' },
+        take: 1,
+      },
+      enrollments: {
+        where: { status: 'active', class: { deletedAt: null } },
+        select: { class: { select: { homeroomTeacher: { select: { user: person } } } } },
+      },
+    },
+  });
+
+  const dormitoryIds = [
+    ...new Set(students.flatMap((s) => s.roomAssignments.map((r) => r.room.dormitoryId))),
+  ];
+  const musyrif = dormitoryIds.length
+    ? await prisma.musyrifAssignment.findMany({
+        where: {
+          dormitoryId: { in: dormitoryIds },
+          isActive: true,
+          OR: [{ endDate: null }, { endDate: { gt: now } }],
+          musyrif: { isActive: true },
+        },
+        select: { dormitoryId: true, roomId: true, musyrif: { select: { user: person } } },
+      })
+    : [];
+
+  return new Map(
+    students.map((s) => {
+      const room = s.roomAssignments[0]?.room;
+      const people = room
+        ? musyrif
+            .filter(
+              (a) =>
+                a.dormitoryId === room.dormitoryId && (a.roomId === null || a.roomId === room.id)
+            )
+            .map((a) => a.musyrif.user)
+        : s.enrollments.flatMap((e) =>
+            e.class.homeroomTeacher ? [e.class.homeroomTeacher.user] : []
+          );
+      const mentors = [
+        ...new Map(
+          people.filter((p) => p.isActive).map((p) => [p.id, { id: p.id, name: p.name }])
+        ).values(),
+      ];
+      return [s.id, { unitId: s.unitId, unitType: s.unit.type, boarder: !!room, mentors }];
+    })
+  );
+}
+
+/** A learner the loader did not return has no mentor on record. */
+const guardianshipOf = (g: Map<string, Guardianship>, row: PermitRow): Guardianship =>
+  g.get(row.studentId) ?? {
+    unitId: row.student.unit.id,
+    unitType: UnitType.OTHER,
+    boarder: false,
+    mentors: [],
+  };
+
+function viewOf(row: PermitRow, g: Guardianship, actor: ScopeActor): PermitView {
+  // `capacity` is the service's own business; the wire gets the decision.
+  const { capacity: _capacity, ...decision } = decisionFor(row, g, actor);
+  return { ...row, decision };
+}
+
+async function withDecisions(rows: PermitRow[], actor: ScopeActor): Promise<PermitView[]> {
+  const g = await loadGuardianship(rows.map((r) => r.studentId));
+  return rows.map((row) => viewOf(row, guardianshipOf(g, row), actor));
+}
+
+const withDecision = async (row: PermitRow, actor: ScopeActor) =>
+  (await withDecisions([row], actor))[0];
+
+/**
+ * Pending permits in `where` that are the caller's own to decide — routed to
+ * them, not merely open to a head's takeover. Which ones those are depends on
+ * kamar and class relations a single `where` cannot express next to the
+ * permit's length, so it is worked out here; pending permits are few by nature
+ * (they get decided), and at most `PENDING_CAP` are looked at.
+ */
+const PENDING_CAP = 500;
+async function awaitingDecisionBy(
+  actor: ScopeActor,
+  where: Prisma.PermitWhereInput
+): Promise<PermitView[]> {
+  if (!PERMIT_DECIDER_ROLE_CODES.includes(actor.roleCode ?? '')) return [];
+  const pending = await prisma.permit.findMany({
+    where: { AND: [where, { status: PermitStatus.PENDING }] },
+    select: PERMIT_SELECT,
+    orderBy: { createdAt: 'asc' },
+    take: PENDING_CAP,
+  });
+  return (await withDecisions(pending, actor)).filter(
+    (p) => p.decision.canDecide && !p.decision.asTakeover
+  );
 }
 
 /** Ambiguous characters (0/O, 1/I/L) left out: the code is read aloud and typed at the gate. */
@@ -117,12 +255,27 @@ async function assertNoOverlap(
   }
 }
 
-export async function createPermit(input: CreatePermitInput, actor: ScopeActor) {
+export async function createPermit(
+  input: CreatePermitInput,
+  actor: ScopeActor
+): Promise<PermitView> {
   await assertStudentInScope(input.studentId, actor);
   const startDate = new Date(input.startDate);
   const endDate = new Date(input.endDate);
   await assertNoOverlap(input.studentId, startDate, endDate);
 
+  const row = await insertWithCode(input, startDate, endDate);
+  const g = guardianshipOf(await loadGuardianship([row.studentId]), row);
+  const permit = viewOf(row, g, actor);
+  await notifyFiled(permit, g, actor);
+  return permit;
+}
+
+async function insertWithCode(
+  input: CreatePermitInput,
+  startDate: Date,
+  endDate: Date
+): Promise<PermitRow> {
   // The code is unique; on the rare collision draw again rather than
   // check-then-insert, which races.
   for (let attempt = 0; ; attempt++) {
@@ -146,7 +299,7 @@ export async function createPermit(input: CreatePermitInput, actor: ScopeActor) 
 }
 
 export interface ListPermitsResult {
-  data: PermitRow[];
+  data: PermitView[];
   total: number;
   page: number;
   limit: number;
@@ -156,7 +309,7 @@ export async function listPermits(
   query: ListPermitsQueryParsed,
   actor: ScopeActor
 ): Promise<ListPermitsResult> {
-  const { studentId, type, status, outside, from, to, page, limit } = query;
+  const { studentId, type, status, outside, from, to, awaitingMe, page, limit } = query;
   const where: Prisma.PermitWhereInput = {
     AND: [
       scopeOf(actor),
@@ -171,7 +324,12 @@ export async function listPermits(
       },
     ],
   };
-  const [data, total] = await Promise.all([
+  if (awaitingMe) {
+    // Oldest first: a queue of decisions to make.
+    const mine = await awaitingDecisionBy(actor, where);
+    return { data: mine.slice((page - 1) * limit, page * limit), total: mine.length, page, limit };
+  }
+  const [rows, total] = await Promise.all([
     prisma.permit.findMany({
       where,
       select: PERMIT_SELECT,
@@ -181,11 +339,11 @@ export async function listPermits(
     }),
     prisma.permit.count({ where }),
   ]);
-  return { data, total, page, limit };
+  return { data: await withDecisions(rows, actor), total, page, limit };
 }
 
-export async function getPermit(id: string, actor: ScopeActor) {
-  return findInScope(id, actor);
+export async function getPermit(id: string, actor: ScopeActor): Promise<PermitView> {
+  return withDecision(await findInScope(id, actor), actor);
 }
 
 /** The gate types the code from the learner's slip. */
@@ -195,7 +353,7 @@ export async function getPermitByCode(code: string, actor: ScopeActor) {
     select: PERMIT_SELECT,
   });
   if (!permit) throw Errors.notFound('Permit');
-  return permit;
+  return withDecision(permit, actor);
 }
 
 export async function getSummary(actor: ScopeActor) {
@@ -203,13 +361,14 @@ export async function getSummary(actor: ScopeActor) {
   const now = new Date();
   const count = (where: Prisma.PermitWhereInput) =>
     prisma.permit.count({ where: { AND: [scope, where] } });
-  const [pending, approved, outside, overdue] = await Promise.all([
+  const [pending, approved, outside, overdue, mine] = await Promise.all([
     count({ status: PermitStatus.PENDING }),
     count({ status: PermitStatus.APPROVED, departedAt: null, endDate: { gte: now } }),
     count({ departedAt: { not: null }, returnedAt: null }),
     count({ departedAt: { not: null }, returnedAt: null, endDate: { lt: now } }),
+    awaitingDecisionBy(actor, scope),
   ]);
-  return { pending, approved, outside, overdue };
+  return { pending, awaitingMe: mine.length, approved, outside, overdue };
 }
 
 export async function updatePermit(id: string, input: UpdatePermitInput, actor: ScopeActor) {
@@ -223,7 +382,7 @@ export async function updatePermit(id: string, input: UpdatePermitInput, actor: 
     throw Errors.badRequest('Waktu kembali harus sesudah waktu berangkat');
   }
   await assertNoOverlap(permit.studentId, startDate, endDate, id);
-  return prisma.permit.update({
+  const row = await prisma.permit.update({
     where: { id },
     data: {
       type: input.type,
@@ -234,6 +393,7 @@ export async function updatePermit(id: string, input: UpdatePermitInput, actor: 
     },
     select: PERMIT_SELECT,
   });
+  return withDecision(row, actor);
 }
 
 /**
@@ -247,20 +407,46 @@ async function transition(
   from: Prisma.PermitWhereInput,
   data: Prisma.PermitUncheckedUpdateManyInput,
   refusal: string
-): Promise<PermitRow> {
+): Promise<PermitView> {
   await findInScope(id, actor);
   const { count } = await prisma.permit.updateMany({ where: { id, ...from }, data });
   if (count === 0) throw Errors.conflict(refusal);
-  return prisma.permit.findUniqueOrThrow({ where: { id }, select: PERMIT_SELECT });
+  const row = await prisma.permit.findUniqueOrThrow({ where: { id }, select: PERMIT_SELECT });
+  return withDecision(row, actor);
 }
 
+/**
+ * 409 once decided; 403 unless the caller decides this permit (its learner's
+ * mentor, or a unit head). The move that follows is guarded on the dates read
+ * here too, so a permit lengthened in the meantime — which may have sent it
+ * to the head — is not decided by the mentor on the old reading.
+ */
+async function assertDecides(id: string, actor: ScopeActor) {
+  const permit = await findInScope(id, actor);
+  if (permit.status !== PermitStatus.PENDING) throw Errors.conflict('Izin ini sudah diputuskan');
+  const g = guardianshipOf(await loadGuardianship([permit.studentId]), permit);
+  const d = decisionFor(permit, g, actor);
+  if (!d.canDecide || !d.capacity) throw Errors.forbidden(whoDecides(d));
+  return {
+    from: {
+      status: PermitStatus.PENDING,
+      startDate: permit.startDate,
+      endDate: permit.endDate,
+    } satisfies Prisma.PermitWhereInput,
+    as: { decidedAs: d.capacity, tookOver: d.asTakeover },
+  };
+}
+
+const DECIDED_OR_CHANGED = 'Izin ini sudah diputuskan atau baru saja diubah';
+
 export async function approvePermit(id: string, actor: ScopeActor) {
+  const { from, as } = await assertDecides(id, actor);
   const permit = await transition(
     id,
     actor,
-    { status: PermitStatus.PENDING },
-    { status: PermitStatus.APPROVED, approvedById: actor.sub, approvedAt: new Date() },
-    'Izin ini sudah diputuskan'
+    from,
+    { status: PermitStatus.APPROVED, approvedById: actor.sub, approvedAt: new Date(), ...as },
+    DECIDED_OR_CHANGED
   );
   await recordAttendance(permit, actor.sub);
   await notifyParents(
@@ -269,16 +455,18 @@ export async function approvePermit(id: string, actor: ScopeActor) {
     `Izin ${TYPE_LABEL[permit.type]} untuk ${permit.student.user.name} disetujui.`,
     permit.id
   );
+  if (as.tookOver) await notifyTakenOver(permit, 'disetujui');
   return permit;
 }
 
 export async function rejectPermit(id: string, rejectionNote: string, actor: ScopeActor) {
+  const { from, as } = await assertDecides(id, actor);
   const permit = await transition(
     id,
     actor,
-    { status: PermitStatus.PENDING },
-    { status: PermitStatus.REJECTED, approvedById: actor.sub, rejectionNote },
-    'Izin ini sudah diputuskan'
+    from,
+    { status: PermitStatus.REJECTED, approvedById: actor.sub, rejectionNote, ...as },
+    DECIDED_OR_CHANGED
   );
   await notifyParents(
     permit.studentId,
@@ -286,6 +474,7 @@ export async function rejectPermit(id: string, rejectionNote: string, actor: Sco
     `Izin untuk ${permit.student.user.name} ditolak. Alasan: ${rejectionNote}`,
     permit.id
   );
+  if (as.tookOver) await notifyTakenOver(permit, 'ditolak');
   return permit;
 }
 
@@ -410,16 +599,12 @@ async function recordAttendance(permit: PermitRow, recordedById: string) {
   ]);
 }
 
-/** Tell the learner's walis. A failed notification never undoes the move. */
-async function notifyParents(studentId: string, title: string, message: string, permitId: string) {
-  const parents = await prisma.studentParent.findMany({
-    where: { studentId },
-    select: { parentId: true },
-  });
+/** A failed notification is logged and never undoes the move. */
+async function notifyUsers(userIds: string[], title: string, message: string, permitId: string) {
   await Promise.all(
-    parents.map(({ parentId }) =>
+    [...new Set(userIds)].map((userId) =>
       createNotification({
-        userId: parentId,
+        userId,
         type: NotificationType.INFO,
         title,
         message,
@@ -429,4 +614,76 @@ async function notifyParents(studentId: string, title: string, message: string, 
       )
     )
   );
+}
+
+/** Tell the learner's walis. */
+async function notifyParents(studentId: string, title: string, message: string, permitId: string) {
+  const parents = await prisma.studentParent.findMany({
+    where: { studentId },
+    select: { parentId: true },
+  });
+  await notifyUsers(
+    parents.map((p) => p.parentId),
+    title,
+    message,
+    permitId
+  );
+}
+
+/** A head decided what was the mentor's: the mentor hears of it. */
+async function notifyTakenOver(permit: PermitView, outcome: 'disetujui' | 'ditolak') {
+  await notifyUsers(
+    permit.decision.mentors.map((m) => m.id),
+    'Izin diputuskan kepala unit',
+    `Izin ${TYPE_LABEL[permit.type]} untuk ${permit.student.user.name} ${outcome} oleh ${
+      permit.approvedBy?.name ?? 'kepala unit'
+    }.`,
+    permit.id
+  );
+}
+
+/** The unit heads over this learner (see `headCapacity`). */
+async function headsOf(g: Guardianship): Promise<string[]> {
+  const overPesantren = g.boarder || g.unitType === UnitType.PESANTREN;
+  const rows = await prisma.userRoleAssignment.findMany({
+    where: {
+      isActive: true,
+      user: { isActive: true },
+      OR: [
+        { role: { code: { in: [...PRINCIPAL_ROLE_CODES] } }, unitId: g.unitId },
+        ...(overPesantren ? [{ role: { code: { in: [...PESANTREN_LEADER_ROLE_CODES] } } }] : []),
+      ],
+    },
+    select: { userId: true },
+  });
+  return rows.map((r) => r.userId);
+}
+
+/**
+ * A new permit: whoever decides it is told it is waiting — the mentor, or the
+ * heads when it goes to them. When staff filed it, the walis are told at once
+ * rather than only once it is decided: leave from the pesantren is theirs to
+ * know about.
+ */
+async function notifyFiled(permit: PermitView, g: Guardianship, actor: ScopeActor) {
+  const who = permit.student.user.name;
+  const what = `Izin ${TYPE_LABEL[permit.type]} untuk ${who}`;
+  const deciders =
+    permit.decision.route === 'MENTOR'
+      ? permit.decision.mentors.map((m) => m.id)
+      : await headsOf(g);
+  await notifyUsers(
+    deciders.filter((id) => id !== actor.sub),
+    'Izin menunggu keputusan Anda',
+    `${what} menunggu keputusan.`,
+    permit.id
+  );
+  if (!PARENT_ROLE_CODES.includes(actor.roleCode ?? '')) {
+    await notifyParents(
+      permit.studentId,
+      'Izin diajukan',
+      `${what} diajukan dan menunggu keputusan.`,
+      permit.id
+    );
+  }
 }

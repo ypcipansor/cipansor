@@ -15,7 +15,13 @@ vi.mock('../permits.service', () => {
   const ok = vi.fn(async () => ({ id: 'p1' }));
   return {
     listPermits: vi.fn(async () => ({ data: [], total: 0, page: 1, limit: 20 })),
-    getSummary: vi.fn(async () => ({ pending: 0, approved: 0, outside: 0, overdue: 0 })),
+    getSummary: vi.fn(async () => ({
+      pending: 0,
+      awaitingMe: 0,
+      approved: 0,
+      outside: 0,
+      overdue: 0,
+    })),
     getPermitByCode: ok,
     getPermit: ok,
     createPermit: ok,
@@ -93,7 +99,10 @@ const STAFF: Who[] = [
   'perawat',
 ];
 const REQUESTERS: Who[] = [...STAFF, 'wali'];
-const DECIDERS: Who[] = ['superAdmin', 'admin', 'kepala', 'pengasuh'];
+// The route guard lets any possible decider through; the service then admits
+// only the learner's own musyrif or wali kelas, or the head (see
+// permits.service.test.ts). Admins are not among them.
+const DECIDERS: Who[] = ['kepala', 'pengasuh', 'waliKelas', 'musyrif'];
 
 const MATRIX: Array<[string, Call, Who[]]> = [
   ['list', ['get', '/permits'], REQUESTERS],
@@ -160,6 +169,14 @@ describe('permit routes — validation at the edge', () => {
 
   it('reject needs a reason', async () => {
     expect((await send('kepala', ['post', `/permits/${ID}/reject`, {}])).status).toBe(400);
+  });
+
+  it('awaitingMe is a boolean filter', async () => {
+    expect((await send('waliKelas', ['get', '/permits?awaitingMe=true'])).status).toBe(200);
+    expect(vi.mocked(service.listPermits).mock.calls.at(-1)?.[0]).toMatchObject({
+      awaitingMe: true,
+    });
+    expect((await send('waliKelas', ['get', '/permits?awaitingMe=yes'])).status).toBe(400);
   });
 
   it('return accepts an empty body', async () => {

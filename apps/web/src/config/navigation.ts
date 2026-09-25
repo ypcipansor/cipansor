@@ -236,6 +236,14 @@ const teacherNavigation: NavGroup[] = [
         href: "/homeroom/messages",
         icon: Send,
       },
+      {
+        // A day pupil's leave is the wali kelas's to decide (2026-09-25);
+        // the page lists the ones waiting for them under "Perlu keputusan
+        // saya".
+        title: "Perizinan",
+        href: "/permits",
+        icon: FileText,
+      },
     ],
   },
   {

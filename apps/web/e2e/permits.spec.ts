@@ -6,13 +6,18 @@
  * called routes the API did not have, the gate recorded a return through a
  * route that completed permits nobody had used, and every yayasan organ could
  * approve while no kepala sekolah could. This walks the chain the way it is
- * meant to run:
+ * meant to run, with the santri's own mentor deciding (2026-09-25):
  *
- *   wali files it → kepala SMP IT approves it from Perizinan → keamanan
- *   records leaving and coming back at Pos Gerbang
+ *   wali files it → the musyrif of the santri's asrama approves it from
+ *   Perizinan → keamanan records leaving and coming back at Pos Gerbang
  *
- * Accounts come from DEMO_ACCOUNTS (the seed links the SMP IT demo wali to the
- * SMP IT demo pupil), so no password is written down here a second time.
+ * and, for a day pupil at SD IT, the wali kelas deciding or the kepala taking
+ * it over.
+ *
+ * Accounts come from DEMO_ACCOUNTS (the seed links each unit's demo wali to its
+ * demo pupil, makes the wali kelas persona wali kelas of that pupil's class and
+ * gives the musyrif persona the putra asrama), so no password is written down
+ * here a second time.
  */
 import { test, expect, type Page } from "@playwright/test";
 import {
@@ -83,14 +88,62 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     await expect(card).toBeVisible();
   });
 
-  test("the kepala SMP IT approves it from Perizinan", async ({ page }) => {
+  test("the wali sees who decides it: the santri boards, so the musyrif", async ({
+    page,
+  }) => {
+    await signIn(page, "SMPIT_ORANG_TUA");
+    await page.goto("/parent/permits");
+    const card = page
+      .locator("div")
+      .filter({ has: page.getByText(reason, { exact: true }) })
+      .filter({ has: page.getByText("Diputuskan oleh") })
+      .last();
+    await expect(card.getByText(/^Musyrif: /)).toBeVisible();
+  });
+
+  test("the kepala SMP IT is not the one to decide it: no button in the list, only a takeover", async ({
+    page,
+  }) => {
     await signIn(page, "SMPIT_KEPALA_SEKOLAH");
+    await page.goto("/permits");
+    const row = page.getByRole("row", { name: new RegExp(stamp) });
+    await expect(row.getByText("Menunggu")).toBeVisible();
+    await expect(row.getByText(/^Musyrif: /)).toBeVisible();
+    await expect(row.getByRole("button", { name: "Setujui" })).toHaveCount(0);
+
+    await row.getByRole("link", { name: "Detail" }).click();
+    await expect(
+      page.getByRole("button", { name: "Setujui (ambil alih)" }),
+    ).toBeVisible();
+  });
+
+  test("the wali kelas of a boarder does not decide it (403, naming the musyrif)", async () => {
+    const wali = await apiLogin(demoLogin("SMPIT_ORANG_TUA"));
+    const mine = await apiRequest<{ data: { id: string; reason: string }[] }>(
+      wali,
+      "GET",
+      "/permits?status=PENDING&limit=100",
+    );
+    const permit = mine.data.find((p) => p.reason === reason);
+    expect(permit).toBeTruthy();
+
+    const waliKelas = await apiLogin(demoLogin("SMPIT_WALI_KELAS"));
+    await expect(
+      apiRequest(waliKelas, "POST", `/permits/${permit!.id}/approve`),
+    ).rejects.toThrow(/→ 403.*musyrif/);
+  });
+
+  test("the musyrif approves it from Perizinan → Perlu keputusan saya", async ({
+    page,
+  }) => {
+    await signIn(page, "MUSYRIF");
     await page.goto("/");
     await page
       .locator("aside")
       .getByRole("link", { name: "Perizinan", exact: true })
       .click();
     await page.waitForURL((url) => url.pathname === "/permits");
+    await page.getByRole("button", { name: "Perlu keputusan saya" }).click();
 
     const row = page.getByRole("row", { name: new RegExp(stamp) });
     await expect(row.getByText("Menunggu")).toBeVisible();
@@ -99,10 +152,14 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
       .getByRole("alertdialog")
       .getByRole("button", { name: "Setujui" })
       .click();
-
     await expect(page.getByText("Izin disetujui")).toBeVisible();
-    await expect(row.getByText("Disetujui")).toBeVisible();
-    await expect(row.getByRole("button", { name: "Setujui" })).toHaveCount(0);
+
+    // Decided, it leaves the queue; in the full list it says who and as what.
+    await expect(row).toHaveCount(0);
+    await page.getByRole("button", { name: "Perlu keputusan saya" }).click();
+    const decided = page.getByRole("row", { name: new RegExp(stamp) });
+    await expect(decided.getByText("Disetujui")).toBeVisible();
+    await expect(decided.getByText(/\(musyrif\)/)).toBeVisible();
   });
 
   test("keamanan records leaving and coming back at Pos Gerbang", async ({
@@ -131,6 +188,59 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     await expect(page.getByText("Kepulangan dicatat")).toBeVisible();
     await expect(page.getByText(/Sudah kembali/).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Catat/ })).toHaveCount(0);
+  });
+
+  test("a day pupil's leave: the wali kelas decides it, another guru may not, the kepala may take it over", async ({
+    page,
+  }) => {
+    const wali = await apiLogin(demoLogin("SDIT_ORANG_TUA"));
+    const children = await apiRequest<{ data: { id: string }[] }>(
+      wali,
+      "GET",
+      "/parent/children",
+    );
+    const studentId = children.data[0]?.id;
+    expect(studentId, "the SD IT demo wali has a child").toBeTruthy();
+
+    const file = (days: number, why: string) =>
+      apiRequest<{ data: { id: string } }>(wali, "POST", "/permits", {
+        studentId,
+        type: "KELUARGA",
+        reason: `${why} (e2e ${stamp})`,
+        startDate: new Date(Date.now() + days * 86_400_000).toISOString(),
+        endDate: new Date(Date.now() + (days + 1) * 86_400_000).toISOString(),
+      });
+    const first = await file(offset + 10, "Menghadiri khitanan sepupu");
+    const second = await file(offset + 20, "Mengantar nenek berobat");
+
+    const guru = await apiLogin(demoLogin("SDIT_GURU"));
+    await expect(
+      apiRequest(guru, "POST", `/permits/${first.data.id}/approve`),
+    ).rejects.toThrow(/→ 403.*wali kelas/);
+
+    const waliKelas = await apiLogin(demoLogin("SDIT_WALI_KELAS"));
+    const approved = await apiRequest<{
+      data: { decidedAs: string; tookOver: boolean };
+    }>(waliKelas, "POST", `/permits/${first.data.id}/approve`);
+    expect(approved.data).toMatchObject({
+      decidedAs: "WALI_KELAS",
+      tookOver: false,
+    });
+
+    await signIn(page, "SDIT_KEPALA_SEKOLAH");
+    await page.goto(`/permits/${second.data.id}`);
+    await expect(page.getByTestId("permit-decider")).toContainText(
+      "Wali kelas:",
+    );
+    await page.getByRole("button", { name: "Setujui (ambil alih)" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Setujui (ambil alih)" })
+      .click();
+    await expect(page.getByText("Izin disetujui")).toBeVisible();
+    await expect(page.getByTestId("permit-decider")).toContainText(
+      "sebagai kepala sekolah, mengambil alih keputusan wali kelas",
+    );
   });
 
   test("the bendahara has no part in it: no menu entry, and the API refuses", async ({

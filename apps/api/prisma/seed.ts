@@ -1541,6 +1541,9 @@ async function main() {
   };
 
   const demoStudentByUnit = new Map<string, string>();
+  // Teacher rows of the `*_WALI_KELAS` personas, made homeroom of their unit's
+  // demo class below.
+  const demoHomeroomByUnit = new Map<string, string>();
   let demoStudents = 0;
   let demoTeachers = 0;
   let demoParents = 0;
@@ -1598,13 +1601,14 @@ async function main() {
       demoStudentByUnit.set(demo.unitId, student.id);
       demoStudents++;
     } else if (isTeacher) {
-      await prisma.teacher.create({
+      const teacher = await prisma.teacher.create({
         data: {
           userId: demo.id,
           unitId: demo.unitId,
           nip: `1990${String(demoNis++).padStart(11, '0')}`,
         },
       });
+      if (roleCode.endsWith('_WALI_KELAS')) demoHomeroomByUnit.set(demo.unitId, teacher.id);
       demoTeachers++;
     } else if (isParent) {
       demoParents++; // linked in the second pass, once every student exists
@@ -1616,6 +1620,17 @@ async function main() {
   // opened a portal with no child in it. Point it at a real TK pupil.
   if (tkPupils.length > 0) {
     demoStudentByUnit.set(tkQuran.id, tkPupils[0].id);
+  }
+
+  // The wali kelas persona is the wali kelas of the class its unit's demo
+  // santri sits in. A day pupil's leave is the wali kelas's to decide
+  // (2026-09-25), and a persona that is wali kelas of no class could decide
+  // nothing and saw an empty homeroom page. TK Qur'an's demo pupil is a real
+  // pupil in a real class, so that class is left as it is.
+  for (const [unitId, teacherId] of demoHomeroomByUnit) {
+    const classId = demoUnitClasses.get(unitId);
+    if (!classId) continue;
+    await prisma.class.update({ where: { id: classId }, data: { homeroomTeacherId: teacherId } });
   }
 
   // Second pass: the parent of a unit is linked to that unit's demo student.
@@ -5504,6 +5519,43 @@ async function main() {
       isActive: true,
     },
   });
+
+  // The demo musyrif personas look after real asrama and kamar. A boarder's
+  // leave is their musyrif's to decide (2026-09-25); without a Musyrif row and
+  // an assignment these logins were musyrif in name only and could decide
+  // nothing. The murabbi keeps no asrama: pembinaan akhlak is not a kamar.
+  const musyrifDuties: Array<
+    [email: string, dormitoryId: string, roomId: string | null, role: string]
+  > = [
+    ['pesantren.musyrif@cipansor.or.id', dormitoryPutra.id, null, 'KOORDINATOR'],
+    ['pesantren.musyrifah@cipansor.or.id', dormitoryPutri.id, null, 'KOORDINATOR'],
+    ['pesantren.walikamar@cipansor.or.id', dormitoryPutra.id, rooms[0].room.id, 'PEMBINA'],
+  ];
+  for (const [email, dormitoryId, roomId, role] of musyrifDuties) {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, unitId: true },
+    });
+    if (!user) continue;
+    const musyrif = await prisma.musyrif.create({
+      data: {
+        userId: user.id,
+        unitId: user.unitId ?? smpIt.id,
+        isActive: true,
+        joinDate: currentYear.startDate,
+      },
+    });
+    await prisma.musyrifAssignment.create({
+      data: {
+        musyrifId: musyrif.id,
+        dormitoryId,
+        roomId,
+        role,
+        startDate: currentYear.startDate,
+        isActive: true,
+      },
+    });
+  }
   console.log('   ✅ Musyrif & assignments created');
 
   // --- Santri Wallet & Transactions ---

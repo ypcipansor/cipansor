@@ -120,7 +120,7 @@ function BoardingCommandCenterContent() {
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
             {permitSummary
-              ? `${permitSummary.overdue} terlambat kembali, ${permitSummary.pending} menunggu keputusan.`
+              ? `${permitSummary.overdue} terlambat kembali, ${permitSummary.awaitingMe} menunggu keputusan Anda.`
               : "Memuat…"}
           </CardContent>
         </Card>
