@@ -1,13 +1,40 @@
 # `.claude/` — why the hooks and skills work the way they do
 
-`AGENTS.md` lists what is here and the rules for changing it (standing
-permission, through a PR, prove a file unused before deleting it). This file
-holds the reasoning behind each hook: the failure it answers, what was
+`AGENTS.md` → "Where things live" has the rules for changing anything here
+(standing permission, through a PR, prove a file unused before deleting it) and
+the skills index. This file lists the hooks and holds the reasoning behind each: the failure it answers, what was
 measured, and the rails that keep it from wedging a session. It was moved out
 of `AGENTS.md` on 2026-09-24 because every agent (OpenHands, Jules, Copilot)
 loads that file whole, and this history matters only to whoever edits a hook.
 
 When you change a hook, update its paragraph here in the same PR.
+
+| Hook | What it does |
+|---|---|
+| `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma`, a push to `main`, and a Write/Edit of a repo Markdown file that `check-sensitive.py` flags |
+| `hooks/format-before-push.sh` | PreToolUse — refuses a `git push` whose commits carry `.ts`/`.tsx` files Prettier would change, and prints the command that fixes them |
+| `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
+| `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
+| `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |
+| `hooks/main-ci-watch.sh` | SessionStart + UserPromptSubmit + PostToolUse — reports once when a workflow on `main` fails (CI, E2E, CodeQL, Deploy staging/production), and once when it recovers |
+| `hooks/sync_stamp.py` | shared by the hooks above and the `sync-records` skill: one definition of "the records are level", plus the context-size reading |
+| `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
+| `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
+
+**Why sensitive text is refused at the write** (added 2026-09-25). Project
+memory moved into the repository (`.claude/memory/`), and the repository is
+public until release, so what an agent writes down as it works is published.
+An audit of the machine-local memory that day found that 37 of 85 notes
+touched infrastructure, open weaknesses, credentials or incidents. The rule
+("Where things live" in `AGENTS.md`) is advisory; `guard.sh` makes its
+mechanical half binding for Claude by running `.github/scripts/check-sensitive.py`
+on the text of every Write/Edit to a Markdown file inside the repository, and
+the Security CI job runs the same script on every PR for the agents no hook
+reaches. It checks the *new* text only, so an edit elsewhere in a file with an
+old finding is not blocked. Placeholders pass on purpose — `user:pass@host`, a
+key cut short, `1.2.3.4`, the RFC 5737 ranges — because every example in the
+docs is written that way. `<app>.azurewebsites.net` passes too: the app names
+are in the deploy workflows, and both apps admit only Cloudflare's ranges.
 
 **Why the compaction hook exists.** Compaction discards the transcript, and only
 files survive it. Findings were reaching `memory/`, the plan and the ROADMAP

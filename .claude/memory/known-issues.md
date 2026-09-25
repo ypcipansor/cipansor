@@ -2,7 +2,7 @@
 
 Status of production-readiness work and the remaining roadmap. Updated as part of
 the production-readiness / architecture-standardization effort. For the system
-overview see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+overview see [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
 
 ## 🔴 OPEN — cacat tampilan yang terlihat begitu datanya lengkap (2026-09-24)
 
@@ -175,7 +175,7 @@ A server-side `pdf-lib` generator that keeps text as text and embeds only the QR
 as an image exists at commit `e93a7cf2` (21 `drawText` calls). It has four
 defects to fix before use — silent single-page truncation, a missing letterhead
 logo, WinAnsi-only fonts that throw on Arabic, and a signature block that can
-overlap the body. See [`EOFFICE_ESIGN_PLAN.md`](./EOFFICE_ESIGN_PLAN.md) §2.2.
+overlap the body. See [`EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md) §2.2.
 
 ## ✅ SUDAH BISA — pencabutan terpasang penuh (dibuktikan lawan `main` 2026-09-05)
 
@@ -316,7 +316,7 @@ Cloudflare addresses, so it cannot be used to investigate abuse either.
 
 **Fix applied 2026-07-31.** The address is rewritten at the edge of our own
 stack rather than by raising the Express hop count.
-`/home/cipansoradm/cipansor-deploy/cloudflare-realip.conf` holds
+`~/cipansor-deploy/cloudflare-realip.conf` holds
 `set_real_ip_from` for Cloudflare's published ranges plus
 `real_ip_header CF-Connecting-IP` and `real_ip_recursive on`; it is copied to
 `/etc/nginx/` and included from the `http{}` block of `/etc/nginx/nginx.conf`,
@@ -332,11 +332,11 @@ not assumed — see the third check below.
 Verified against the live site after the reload:
 
 1. A request to `https://cipansor.or.id/...` that demonstrably travelled
-   through Cloudflare (`remote_ip=172.67.222.200`) was logged by nginx as
-   `70.153.137.180`, the true client address, not the edge.
+   through Cloudflare (`remote_ip` = a Cloudflare edge address) was logged by nginx as
+   the true client address (redacted here; say `203.0.113.7`), not the edge.
 2. Six `POST /api/auth/login` against a nonexistent account returned
    `401 401 401 401 401 429` — the 5/min ceiling now trips — and the API's own
-   warning recorded `{"ip":"70.153.137.180"}`, proving `req.ip` reaches Express
+   warning recorded `{"ip":"203.0.113.7"}` (the same, redacted), proving `req.ip` reaches Express
    as the visitor rather than the edge.
 3. A forged `CF-Connecting-IP: 1.2.3.4` sent from `127.0.0.1`, which is **not**
    in the trust list, was ignored: nginx logged `127.0.0.1`. Spoofing one's own

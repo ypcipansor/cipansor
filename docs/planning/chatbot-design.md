@@ -5,7 +5,7 @@ later a role-aware assistant inside the information system. Advisory first given
 2026-07-23, expanded and recorded here 2026-07-24 after the conclusions alone
 proved too thin to act on.
 
-Companion to [`../ROADMAP.md`](../ROADMAP.md) §10, which tracks _what_ to build
+Companion to [`roadmap.md`](../../.claude/memory/roadmap.md) §10, which tracks _what_ to build
 and in which order. This file records _why_.
 
 **Status: Phase 1 implemented (2026-07-24), inert until a provider is
@@ -534,7 +534,7 @@ deterministic answers that never reach the model.
 > requests from one visitor never hit the limit. Fixed 2026-07-31 by trusting
 > `CF-Connecting-IP` from Cloudflare's ranges only, at the nginx layer; the live
 > site now 429s and the API logs the visitor's address. Full evidence in
-> [`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md).
+> [`known-issues.md`](../../.claude/memory/known-issues.md).
 >
 > The instructive part is that the code passed review, the config passed review,
 > and only the deployed topology made them wrong together — a limiter is not
@@ -609,7 +609,7 @@ problems.** A wrong number on a dashboard tile invites suspicion; the same wrong
 number in a fluent Indonesian sentence carries authority it has not earned. The
 teacher dashboard currently reports fabricated figures — a hardcoded `|| 4`
 rendering as "dari 4 kelas", and a total of 0 where the real answer is 14 (see
-[`../KNOWN_ISSUES.md`](../KNOWN_ISSUES.md)). Putting an assistant over endpoints
+[`known-issues.md`](../../.claude/memory/known-issues.md)). Putting an assistant over endpoints
 in that state ships the errors with a more persuasive voice.
 
 Phase 1 meanwhile carries real value now — admissions are open — at
