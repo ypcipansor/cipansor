@@ -55,6 +55,7 @@ import {
   useUnassignRoom,
   Room,
 } from "@/hooks/use-dormitory";
+import { MusyrifTab } from "./musyrif-tab";
 
 function DormitoryDetailPageContent({
   params,
@@ -294,6 +295,7 @@ function DormitoryDetailPageContent({
           <TabsList>
             <TabsTrigger value="rooms">Daftar Kamar</TabsTrigger>
             <TabsTrigger value="occupants">Penghuni</TabsTrigger>
+            <TabsTrigger value="musyrif">Musyrif</TabsTrigger>
           </TabsList>
           <Dialog open={showAddRoom} onOpenChange={setShowAddRoom}>
             <DialogTrigger asChild>
@@ -520,6 +522,9 @@ function DormitoryDetailPageContent({
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+        <TabsContent value="musyrif">
+          <MusyrifTab dormitoryId={id} rooms={rooms ?? []} />
         </TabsContent>
       </Tabs>
 

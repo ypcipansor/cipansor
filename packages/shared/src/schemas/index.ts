@@ -7,3 +7,4 @@ export * from "./raport-merdeka";
 export * from "./performance";
 export * from "./planning";
 export * from "./permits";
+export * from "./musyrif-assignments";
