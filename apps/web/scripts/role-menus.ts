@@ -38,11 +38,7 @@ function bucketOf(roleCode: string): LegacyRole {
 }
 
 function bounces(roleCode: string, href: string): boolean {
-  return !canAccessRoute(
-    bucketOf(roleCode),
-    href.split("?")[0],
-    roleCode,
-  );
+  return !canAccessRoute(bucketOf(roleCode), href.split("?")[0], roleCode);
 }
 
 function printItems(roleCode: string, items: NavItem[], depth: number): void {

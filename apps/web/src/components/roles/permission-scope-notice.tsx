@@ -19,9 +19,9 @@ export function PermissionScopeNotice() {
         Baru sebagian kecil fitur yang membaca izin ini. Menu dan sebagian besar
         halaman masih ditentukan jenis peran (admin, guru, staf, siswa, orang
         tua), jadi membuat peran baru atau menghapus centang belum tentu
-        menambah atau mencabut akses. Untuk mencabut akses seseorang
-        sepenuhnya, nonaktifkan akunnya; itu berlaku paling lambat 15 menit.
-        Hak akses per fitur sedang dirancang.
+        menambah atau mencabut akses. Untuk mencabut akses seseorang sepenuhnya,
+        nonaktifkan akunnya; itu berlaku paling lambat 15 menit. Hak akses per
+        fitur sedang dirancang.
       </AlertDescription>
     </Alert>
   );
