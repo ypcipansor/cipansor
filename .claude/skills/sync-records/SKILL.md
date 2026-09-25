@@ -34,7 +34,8 @@ through PRs, **nothing sensitive** — the repo is public until release) and the
 | what merged, what is on staging or in production, what waits on the user, what is in flight | `.claude/memory/progress.md` |
 | what to do next, and in what order | `.claude/memory/roadmap.md` |
 | a defect found, or fixed | `.claude/memory/known-issues.md` (delete a fixed entry — git keeps it) |
-| a decision the yayasan made, or a standard already researched | the skill for that domain, or `docs/EOFFICE_ESIGN_PLAN.md` for naskah dinas until its skill exists; plus a line in `progress.md` |
+| a decision the yayasan or the user made, or a standard already researched | the skill for that domain if it exists; otherwise `.claude/memory/decisions/<subject>.md` (naskah dinas also has `docs/EOFFICE_ESIGN_PLAN.md`) |
+| a trap that cost time and will cost it again — a tool that lies, a test that measured the wrong thing | `.claude/memory/lessons/<subject>.md` — generic, no machine paths; the machine-specific half stays local |
 | a convention every change must follow | `AGENTS.md` (or the per-area one) |
 | why a Claude hook works the way it does | `.claude/README.md` |
 | a fact about the user, or how they want the work done | machine-local memory, type `user` / `feedback` (a rule for every agent goes to `AGENTS.md` instead) |
