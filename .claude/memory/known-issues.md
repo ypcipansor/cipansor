@@ -16,6 +16,19 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **The web calls API paths that do not exist — 213 call sites, 109 reachable
+  from pages** (measured 2026-09-25 by matching every `api.*`/`fetch` call in
+  `apps/web/src` against the router; staging answers them "Route … not found").
+  Worst felt: Perizinan's Setujui/Tolak (`POST /permits/:id/approve|reject`;
+  the API has `PUT /permits/:id/status`), the Kurikulum list
+  (`/curriculum/curriculums`), HR employees (`/hr/employees`), every
+  Sertifikat page (`/certificates`), parent messages (`/parent/messages`),
+  and three pages that write `/api/…` and so call `/api/api/…`
+  (`analytics/grc`, `talenta/analytics`, `perencanaan/[id]/activity-dialog`).
+  84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
+  Types entries below are part of this. Phase 1 of the audit plan fixes it,
+  after a ratchet guard (phase 0) stops new ones.
+
 - **Tagihan & SPP — the write screens call an API that does not exist.** The
   read screens were fixed in #540; the writes still use the imagined contract
   (`apps/web/src/hooks/use-finance.ts`): "Buat Tagihan" sends `billType` (the
@@ -116,14 +129,38 @@ decision.
 
 ## Design gaps
 
-- **Names that say something other than what the module does** (found
-  2026-09-25). `/practicum` and the `practicum` module are Amaliyah Tadris —
-  lesson plans, schedules and evaluations of teaching practice — while the
-  schema comment on `LABORAN` calls it "practicum labs". There is no
-  laboratory module: the laboran's permissions are inventory ones. The user
-  asked the same day for a full rename (files, code, routes, roles) across
-  praktikum, kurikulum, laboratorium, inventaris and Amaliyah Tadris, grounded
-  in researched practice; see `progress.md`.
+- **Names that say something other than what the module does** (audit
+  2026-09-25, every module): `practicum` is Amaliyah Tadris, `research` is
+  Fathul Kutub (shown as "Turats Lab"), `inventory` is fixed assets,
+  `student-`/`teacher-compliance` are data completeness,
+  `finance-`/`dashboard-enhancement` name their history, `pengawasan`
+  (internal audit) reads as the Pengawas organ, `non-formal` is courses,
+  `/api/health` is the UKS module while `/health` is the server check, and
+  `/assessment/skhun` prints a document not issued since the national exam was
+  abolished (2021). 50 English menu labels in an Indonesian UI; 27 paths with
+  more than one label. Full table: the audit report linked in `progress.md`.
+- **One concept, several modules** (audit 2026-09-25): tahfidz across five
+  modules (`takhosus` re-exposes murojaah, simaan, sanad and halaqoh on the same
+  tables), report cards in five places, lesson plans in three models, P5 in two
+  modules (the term was retired by Permendikdasmen 13/2025 — now
+  *kokurikuler*), chart of accounts and journals in `finance` and
+  `finance-enhancement`, two monthly-depreciation implementations
+  (`jobs/asset-depreciation.job.ts` runs; `inventory/depreciation.service.ts`
+  never did), three daily santri logs (`daily-report`, `ibadah`, `muhasabah`),
+  and duplicate pages: `/payroll` + `/hr/payroll`, `/wallet` +
+  `/finance/wallet`, `/tahfidz/simaan` + `/takhosus/simaan`, three certificate
+  pages.
+- **The module standard is not followed, and `AGENTS.md` describes it wrongly.**
+  It says `routes.ts`, `service.ts`…; every module uses `<name>.routes.ts`.
+  22 of 93 modules have all five parts; 12 call Prisma from a route or
+  controller; 23 import other modules directly (the rule is the event bus);
+  1,457 bare `res.json` against 399 `ApiResponse`; 349 of 562 POST/PUT/PATCH
+  routes carry no `validate()`. `docs/ARCHITECTURE.md` still describes nginx on
+  the VM.
+- **Scheduled jobs assume one instance.** Ten `node-cron` jobs run inside the
+  API process with no lock; scaling the App Service to two instances would send
+  SPP reminders twice. Add a `pg_try_advisory_lock` (or a separate worker)
+  before any scale-out.
 
 - **Ratification by the yayasan is not modelled collectively.** One Pembina
   account decides, not a meeting. And the header of an `IN_PROGRESS` plan can

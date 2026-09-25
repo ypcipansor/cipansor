@@ -12,6 +12,26 @@ items before 2026-09-25 is in the history of this file and of
 
 ## 1. Now — in this order (decided 2026-09-23 → 25)
 
+0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
+   where it sits against items 1–4 is for the user to confirm). Phases, each
+   releasable alone:
+   0. guards — a ratchet that fails on any new web call to a path the router
+      does not serve, factual fixes to `AGENTS.md` and `docs/ARCHITECTURE.md`;
+   1. reconnect the 109 broken calls page by page, delete the 84 dead ones,
+      `services/` and the `api-client` alias;
+   2. glossary from the user's eight decisions;
+   3. consolidate duplicates (tahfidz, report cards, lesson plans,
+      P5 → kokurikuler, accounting, depreciation, daily logs, duplicate pages,
+      dashboards);
+   4. API grouped by context under `/api/v1`, Zod contracts in
+      `packages/shared` → `zod-to-openapi` → `openapi-typescript` client, one
+      style for actions (`POST /{id}/{verb}`), updates (`PATCH`), aggregates
+      (`/summary`) and self (`/me`); Prisma models renamed; multi-file schema;
+   5. web route groups, URLs that follow the API, 308s, Indonesian labels;
+   6. module boundaries enforced by lint, Zod on every mutation, one test
+      location, a cron lock, dead models dropped once proven dead;
+   7. `docs/ARCHITECTURE.md` rewritten from the result.
+
 1. **Finish the role catalogue.** The pesantren part shipped in #552. Left:
    - a *bidang* attribute for Wakasek;
    - `PESANTREN_ADMIN` — needs a pesantren unit first (see known-issues,
