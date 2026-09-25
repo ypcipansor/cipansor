@@ -1,5 +1,11 @@
 import { test, expect } from "./fixtures/auth.fixture";
-import { loginAs, apiRequest, apiLogin } from "./helpers/auth-api";
+import {
+  loginAs,
+  apiRequest,
+  apiLogin,
+  injectSession,
+} from "./helpers/auth-api";
+import { DEMO_ACCOUNTS } from "../../../packages/shared/src/types/demo-accounts";
 
 type ApiSession = Awaited<ReturnType<typeof apiLogin>>;
 
@@ -129,7 +135,17 @@ test.describe("Public Card Verification, Raport Merdeka & E-Office Edit Letter F
   test("raport merdeka page supports student search and exports a real PDF", async ({
     page,
   }) => {
-    await loginAs(page, "teacher");
+    // The wali kelas of SD IT 1A exports the rapor of a pupil in 1A. (Until
+    // 2026-09-26 the seed made the "Guru SD IT" account wali kelas of 1A and
+    // left the "Wali Kelas SD IT" persona wali kelas of no class; the rapor
+    // gate lets a teacher open only the classes they are homeroom of or teach.)
+    const waliKelas = DEMO_ACCOUNTS.find(
+      (a) => a.roleCode === "SDIT_WALI_KELAS",
+    )!;
+    await injectSession(
+      page,
+      await apiLogin({ email: waliKelas.email, password: waliKelas.password }),
+    );
     await page.waitForTimeout(1000);
 
     await page.goto("/assessment/raport-merdeka");

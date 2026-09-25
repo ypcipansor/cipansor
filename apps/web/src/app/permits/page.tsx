@@ -298,7 +298,7 @@ function PermitsPageContent() {
                             {phase.label}
                           </Badge>
                           {decided && (
-                            <p className="mt-1 max-w-[220px] text-xs text-muted-foreground">
+                            <p className="mt-1 max-w-[240px] whitespace-normal text-xs text-muted-foreground">
                               {decided}
                             </p>
                           )}
