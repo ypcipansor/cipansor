@@ -29,6 +29,25 @@ backlog to [`roadmap.md`](roadmap.md).
   (see below); step 4 is the domain skills `panduan-peran`,
   `tata-kelola-yayasan` and `naskah-dinas`, with `apps/web/scripts/role-menus.ts`
   to print any role's menu from code.
+- **Roles reach their own pages** (branch `fix/role-reach`, 2026-09-25): a
+  per-role-code page map in `rbac.ts` (kepala sekolah → `/perencanaan`,
+  pustakawan → `/library`, laboran → `/inventory`, unit usaha → kantin, laundry,
+  unit usaha), the planning link in the yayasan and kepala sekolah menus, a
+  role-filtered *Sarana & Layanan* group in the staff menu, and a notice on
+  "Roles & Permissions" saying what its ticks do not govern.
+- **Naming refactor** — requested by the user on 2026-09-25: rename files,
+  code, routes and roles so each name says what the module does (praktikum,
+  kurikulum, laboratorium, inventaris, Amaliyah Tadris and others), after
+  researching naming practice. Order: audit → glossary and phased plan for the
+  user's decision → PRs with permanent redirects. The glossary comes before
+  Model A's permission catalogue, whose keys use the feature names.
+- **Skipped tests** — asked by the user on 2026-09-25, to take in priority
+  order: make every skipped API, web and Playwright test run, or say why it
+  cannot. Known so far: 92 of the 94 skipped API tests are two opt-in suites
+  that need a real Postgres (`decommission-pt-session.integration`,
+  `database-migrations`); the Playwright suite has data guards
+  (`test.skip` when the seed lacks rows) and firefox/webkit run with
+  `continue-on-error`.
 - **Model A design document** — approved to draft on 2026-09-25: a permission
   per feature and action, data scope from the assignment, menus derived from
   permissions, separation-of-duty rules locked in code, and the account

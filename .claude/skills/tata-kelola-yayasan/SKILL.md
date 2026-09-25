@@ -100,7 +100,7 @@ oleh peran yang melihat semua unit (`seesAll`).
 
 | Tugas | Halaman | Jalur menu (2026-09-25) |
 |---|---|---|
-| Menyusun, mengajukan, mereviu, dan menetapkan rencana | `/perencanaan`, `/perencanaan/[id]` | Super Admin dan admin unit: *Perencanaan & Kinerja → Perencanaan Strategis*. **Organ yayasan: tidak ada di menu**, buka `/perencanaan`. **Kepala sekolah dan Kiai: ditolak web.** Lihat `known-issues.md`. |
+| Menyusun, mengajukan, mereviu, dan menetapkan rencana | `/perencanaan`, `/perencanaan/[id]` | *Perencanaan & Kinerja → Perencanaan Strategis*: Super Admin, admin unit, organ yayasan, dan kepala sekolah (sejak 2026-09-25; sebelumnya organ hanya lewat URL dan kepala sekolah ditolak web). Kiai mencapainya lewat penugasan Pembina-nya. |
 | Peta strategi | `/perencanaan/strategy-map` | di bawah Perencanaan Strategis |
 | PK dan evaluasinya | `/kinerja/pk`, `/kinerja/evaluasi` | *Kinerja → Manajemen Kinerja → Perjanjian Kinerja* (organ, kepala sekolah, guru, staf); *Perencanaan & Kinerja → …* (admin) |
 

@@ -74,7 +74,7 @@ Pada 2026-09-25 jumlahnya **0**, sejalan dengan uji kontrak menu↔RBAC
 | Guru | `*_GURU`, `*_WALI_KELAS`, `*_WAKASEK`, `*_GURU_BK` | `/teacher` · TEACHER | Satu menu untuk semuanya; grup Wali Kelas ada di menu itu. |
 | Pimpinan Pesantren | `PESANTREN_PENGASUH` | `/teacher` · TEACHER | Kiai, kepala unit pesantren — skill `tata-kelola-yayasan`. |
 | Pendidik pesantren | `USTADZ`, `MUSYRIF`, `MUHAFIDZ` | `/teacher` · TEACHER | Satu peran per tugas, bukan per jenis kelamin (musyrif = wali kamar + murabbi). |
-| Staf | `*_TATA_USAHA`, `*_BENDAHARA`, `PESANTREN_TATA_USAHA`, `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_*` | `/staff` · STAFF | **Satu menu bersama** untuk sembilan fungsi — lihat celah di bawah. |
+| Staf | `*_TATA_USAHA`, `*_BENDAHARA`, `PESANTREN_TATA_USAHA`, `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_*` | `/staff` · STAFF | **Satu menu bersama** untuk sembilan fungsi. Butir layanan di grup *Sarana & Layanan* (Perpustakaan, Inventaris, Kantin & Koperasi, Laundry, Unit Usaha) hanya tampil untuk peran yang menjalankannya. |
 | Komite | `*_KOMITE` | `/reports` · STAFF | Komite sekolah: membaca, tidak mengelola. |
 | Orang tua | `*_ORANG_TUA` | `/parent` · PARENT | Wali santri: data anaknya sendiri. |
 | Siswa | `SDIT_SISWA`, `SMPIT_SISWA`, `SMAQ_SISWA` | `/student` · STUDENT | TK tidak punya peran siswa. |
@@ -93,8 +93,8 @@ kelompoknya di `roles.ts` (ada uji sinkron) dan keluarganya di `navigation.ts`.
 3. Halaman yang dibuka dari header (avatar, kanan atas) ditulis begitu:
    *avatar → Settings → tab Akun → Tanda Tangan Elektronik*.
 4. Kalau halaman itu tidak ada di menu perannya, **katakan itu**: "tidak ada di
-   menu — buka `/perencanaan`". Catat sebagai celah di `known-issues.md`,
-   jangan dikarang.
+   menu — buka `/…`". Catat sebagai celah di `known-issues.md`, jangan
+   dikarang.
 5. Sebutkan statusnya: di cabang, sudah di `main`, di staging, atau di
    produksi.
 
@@ -110,20 +110,17 @@ Jawab "ya" hanya kalau keempatnya lolos. Sebutkan lapis mana yang menolak.
 
 Contoh yang ditemukan dengan cara ini (2026-09-25): kepala sekolah dan RKA Unit
 lolos lapis 3 dan 4 (`canAuthorUnitPlan` sengaja mengizinkannya), tetapi
-**ditolak di lapis 2**. Uji e2e-nya tetap hijau karena membuka halaman lewat
-URL. Uji yang melewati menu akan menangkapnya.
+**ditolak di lapis 2**, dan tautannya tidak ada di lapis 1. Uji e2e-nya tetap
+hijau karena membuka halaman lewat URL. Diperbaiki dengan `roleCodeRouteAccess`
+di `rbac.ts`: halaman tambahan per kode peran, di atas bucket, supaya halaman
+dibuka untuk satu peran tanpa ikut terbuka bagi seluruh bucket.
 
 ## Celah yang diketahui
 
-Di `.claude/memory/known-issues.md` → "Access that is too narrow":
-
-- rantai perencanaan tidak bisa dijalani lewat menu (organ yayasan tidak punya
-  tautannya; kepala sekolah dan Kiai ditolak web);
-- Pustakawan, Laboran, dan staf unit usaha tidak mencapai `/library`,
-  `/practicum`, `/canteen`, `/laundry`.
-- halaman "Roles & Permissions" mengedit daftar yang hampir tidak dibaca.
-
-Hapus baris di sini begitu entrinya di `known-issues.md` dihapus.
+Di `.claude/memory/known-issues.md` → "Access that is too narrow": halaman
+"Roles & Permissions" mengedit daftar yang hampir tidak dibaca. Halamannya kini
+mengatakan itu sendiri. Hapus baris ini begitu entrinya di `known-issues.md`
+dihapus.
 
 ## Menulis panduan pengguna untuk staf
 

@@ -52,7 +52,14 @@ that depend on them silently never mount their parts — go to route 3.
    `middleware.ts` only decodes the `auth-storage` cookie; it does not verify
    the JWT, so a stub token works and no database is needed for read-only
    pages.
-3. `next start` (or `next dev` for HMR-based before/after).
+3. `next start`. **`next dev` does not run `middleware.ts` here** (measured
+   2026-09-25, Next 16.3: with no cookie at all, `/finance` answered 200 under
+   `next dev` and 307 → `/login` under `next start` of the same tree). HMR
+   before/after is fine for how a page *looks*; anything about which role may
+   open which page must be shot on a production build, one for "before" and
+   one for "after". The same holds for Playwright: locally its `webServer` runs
+   `pnpm dev`, so specs that depend on a middleware redirect pass only in CI,
+   which runs `pnpm start`.
 4. **Plant the session at the context level.** Middleware reads cookies on the
    *first* request, before any page script runs, so `addInitScript` alone
    always bounces to `/login`:
