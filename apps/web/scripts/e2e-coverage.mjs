@@ -2,11 +2,9 @@
 /**
  * E2E coverage audit: cross-references App Router pages (page.tsx files under
  * src/app) with Playwright specs (*.spec.ts under e2e) and prints a fresh
- * audit to stdout.
- *
- * e2e/COVERAGE.md is the LIVING document — cells there are upgraded manually
- * when a spec proves a dimension against the real seeded stack. Run this
- * script to detect drift (new routes with no spec, specs still on mocks):
+ * audit to stdout: the routes no spec visits, and the specs still on mocks.
+ * It is the only record of coverage — a hand-kept table went stale and was
+ * removed on 2026-09-25.
  *
  *   node scripts/e2e-coverage.mjs
  */

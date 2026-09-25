@@ -5,7 +5,7 @@ later a role-aware assistant inside the information system. Advisory first given
 2026-07-23, expanded and recorded here 2026-07-24 after the conclusions alone
 proved too thin to act on.
 
-Companion to [`roadmap.md`](../../.claude/memory/roadmap.md) §10, which tracks _what_ to build
+Companion to [`roadmap.md`](../../.claude/memory/roadmap.md) §5, which tracks _what_ to build
 and in which order. This file records _why_.
 
 **Status: Phase 1 implemented (2026-07-24), inert until a provider is
