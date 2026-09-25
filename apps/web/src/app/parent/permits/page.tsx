@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { toast } from "sonner";
+import { Ban, Calendar, FileText, Plus, QrCode } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,184 +27,97 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { api } from "@/lib/api";
-// Children come from `useParentChildren`'s shared `ParentChild` shape.
-// Each of these pages used to declare its own local `Child` with a nested
-// `student` object the API never returns — see use-parent-portal.ts.
-import type { ParentChild } from "@/hooks/use-parent-portal";
-import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { useParentChildren } from "@/hooks/use-parent-portal";
 import {
-  FileText,
-  Plus,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Calendar,
-  LogOut,
-  QrCode,
-} from "lucide-react";
+  usePermits,
+  useCreatePermit,
+  useCancelPermit,
+  localInputToIso,
+  PERMIT_TYPES,
+  PERMIT_TYPE_LABELS,
+  PERMIT_PHASES,
+  permitPhase,
+  type PermitType,
+} from "@/hooks/use-permits";
 
-interface Permit {
-  id: string;
-  code?: string;
-  type: string;
-  reason: string;
-  startDate: string;
-  endDate: string;
-  status: string;
-  departedAt?: string;
-  returnedAt?: string;
-  notes?: string;
-  approvedBy?: {
-    name: string;
-  };
-  approvedAt?: string;
-  createdAt: string;
-}
+const EMPTY_FORM = {
+  type: "" as PermitType | "",
+  reason: "",
+  startDate: "",
+  endDate: "",
+};
 
-export default function PermitsPage() {
-  const searchParams = useSearchParams();
-  const selectedStudentId = searchParams.get("studentId");
-
-  const [loading, setLoading] = useState(true);
-  const [children, setChildren] = useState<ParentChild[]>([]);
-  const [selectedChild, setSelectedChild] = useState<string>("");
-  const [permits, setPermits] = useState<Permit[]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Form state
-  const [formData, setFormData] = useState({
-    type: "",
-    reason: "",
-    startDate: "",
-    endDate: "",
+const when = (iso: string) =>
+  new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 
-  useEffect(() => {
-    const fetchChildren = async () => {
-      try {
-        const res = await api.get("/parent/children");
-        const childrenData = res.data.data || [];
-        setChildren(childrenData);
+/**
+ * A wali files leave for their child and follows it. The same /permits API
+ * staff use, limited by the server to this wali's own children.
+ */
+export default function ParentPermitsPage() {
+  const searchParams = useSearchParams();
+  const { data: children = [] } = useParentChildren();
+  const [chosen, setChosen] = useState<string>("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
 
-        if (childrenData.length > 0) {
-          const defaultChild = selectedStudentId
-            ? childrenData.find((c: ParentChild) => c.id === selectedStudentId)
-                ?.id
-            : childrenData[0].id;
-          setSelectedChild(defaultChild || childrenData[0].id);
-        }
-      } catch (err) {
-        console.error("Failed to fetch children:", err);
-      }
-    };
+  const selectedChild =
+    chosen ||
+    children.find((c) => c.id === searchParams.get("studentId"))?.id ||
+    children[0]?.id ||
+    "";
+  const child = children.find((c) => c.id === selectedChild);
 
-    fetchChildren();
-  }, [selectedStudentId]);
+  const { data, isLoading } = usePermits(
+    { studentId: selectedChild, limit: 50 },
+    !!selectedChild,
+  );
+  const permits = data?.data ?? [];
+  const create = useCreatePermit();
+  const cancel = useCancelPermit();
 
-  useEffect(() => {
-    if (!selectedChild) return;
-
-    const fetchPermits = async () => {
-      setLoading(true);
-      try {
-        const res = await api.get(`/parent/children/${selectedChild}/permits`);
-        setPermits(res.data.data || []);
-      } catch (err) {
-        console.error("Failed to fetch permits:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchPermits();
-  }, [selectedChild]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedChild) return;
-
-    setSubmitting(true);
+    if (!selectedChild || !form.type) return;
+    if (new Date(form.endDate) <= new Date(form.startDate)) {
+      toast.error("Waktu kembali harus sesudah waktu berangkat");
+      return;
+    }
     try {
-      await api.post(`/parent/children/${selectedChild}/permits`, formData);
-      toast.success("Pengajuan izin berhasil dikirim");
+      await create.mutateAsync({
+        studentId: selectedChild,
+        type: form.type,
+        reason: form.reason,
+        startDate: localInputToIso(form.startDate),
+        endDate: localInputToIso(form.endDate),
+      });
+      toast.success("Pengajuan izin terkirim");
       setDialogOpen(false);
-      setFormData({ type: "", reason: "", startDate: "", endDate: "" });
-
-      // Refresh permits list
-      const res = await api.get(`/parent/children/${selectedChild}/permits`);
-      setPermits(res.data.data || []);
-    } catch (err: any) {
-      toast.error(
-        err.response?.data?.error?.message || "Gagal mengajukan izin",
-      );
-    } finally {
-      setSubmitting(false);
+      setForm(EMPTY_FORM);
+    } catch {
+      // The API client has already shown the server's message.
     }
   };
 
-  const getStatusBadge = (permit: Permit) => {
-    if (permit.returnedAt) {
-      return (
-        <Badge className="bg-blue-500">
-          <CheckCircle className="h-3 w-3 mr-1" /> Selesai (Kembali)
-        </Badge>
-      );
-    }
-    if (permit.departedAt) {
-      return (
-        <Badge className="bg-orange-500 animate-pulse">
-          <LogOut className="h-3 w-3 mr-1" /> Sedang Keluar
-        </Badge>
-      );
-    }
-
-    switch (permit.status) {
-      case "APPROVED":
-        return (
-          <Badge className="bg-green-500">
-            <CheckCircle className="h-3 w-3 mr-1" /> Disetujui
-          </Badge>
-        );
-      case "REJECTED":
-        return (
-          <Badge variant="destructive">
-            <XCircle className="h-3 w-3 mr-1" /> Ditolak
-          </Badge>
-        );
-      case "PENDING":
-        return (
-          <Badge variant="secondary">
-            <Clock className="h-3 w-3 mr-1" /> Menunggu
-          </Badge>
-        );
-      case "COMPLETED":
-        return (
-          <Badge className="bg-blue-500">
-            <CheckCircle className="h-3 w-3 mr-1" /> Selesai
-          </Badge>
-        );
-      default:
-        return <Badge variant="secondary">{permit.status}</Badge>;
+  const withdraw = async (id: string) => {
+    try {
+      await cancel.mutateAsync(id);
+      toast.success("Pengajuan dibatalkan");
+    } catch {
+      // The API client has already shown the server's message.
     }
   };
-
-  const getTypeLabel = (type: string) => {
-    const labels: Record<string, string> = {
-      SICK: "Sakit",
-      FAMILY: "Keperluan Keluarga",
-      PERSONAL: "Keperluan Pribadi",
-      OTHER: "Lainnya",
-    };
-    return labels[type] || type;
-  };
-
-  const selectedChildData = children.find((c) => c.id === selectedChild);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Izin</h1>
           <p className="text-muted-foreground">
@@ -217,14 +126,14 @@ export default function PermitsPage() {
         </div>
         <div className="flex items-center gap-4">
           {children.length > 1 && (
-            <Select value={selectedChild} onValueChange={setSelectedChild}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Pilih Anak" />
+            <Select value={selectedChild} onValueChange={setChosen}>
+              <SelectTrigger className="w-[200px]" aria-label="Pilih anak">
+                <SelectValue placeholder="Pilih anak" />
               </SelectTrigger>
               <SelectContent>
-                {children.map((child) => (
-                  <SelectItem key={child.id} value={child.id}>
-                    {child.name}
+                {children.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -233,7 +142,7 @@ export default function PermitsPage() {
 
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" disabled={!selectedChild}>
                 <Plus className="h-4 w-4" />
                 Ajukan Izin
               </Button>
@@ -242,64 +151,54 @@ export default function PermitsPage() {
               <DialogHeader>
                 <DialogTitle>Ajukan Izin</DialogTitle>
                 <DialogDescription>
-                  Ajukan izin untuk {selectedChildData?.name}
+                  Ajukan izin untuk {child?.name}
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={submit}>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="type">Jenis Izin</Label>
+                    <Label htmlFor="type">Jenis izin</Label>
                     <Select
-                      value={formData.type}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, type: value })
+                      value={form.type}
+                      onValueChange={(v) =>
+                        setForm({ ...form, type: v as PermitType })
                       }
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id="type">
                         <SelectValue placeholder="Pilih jenis izin" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="SICK">Sakit</SelectItem>
-                        <SelectItem value="FAMILY">
-                          Keperluan Keluarga
-                        </SelectItem>
-                        <SelectItem value="PERSONAL">
-                          Keperluan Pribadi
-                        </SelectItem>
-                        <SelectItem value="OTHER">Lainnya</SelectItem>
+                        {PERMIT_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label htmlFor="startDate">Tanggal Mulai</Label>
+                      <Label htmlFor="startDate">Berangkat</Label>
                       <Input
                         id="startDate"
-                        type="date"
-                        value={formData.startDate}
+                        type="datetime-local"
+                        value={form.startDate}
                         onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            startDate: e.target.value,
-                          })
+                          setForm({ ...form, startDate: e.target.value })
                         }
-                        min={new Date().toISOString().split("T")[0]}
                         required
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="endDate">Tanggal Selesai</Label>
+                      <Label htmlFor="endDate">Kembali</Label>
                       <Input
                         id="endDate"
-                        type="date"
-                        value={formData.endDate}
+                        type="datetime-local"
+                        value={form.endDate}
+                        min={form.startDate || undefined}
                         onChange={(e) =>
-                          setFormData({ ...formData, endDate: e.target.value })
-                        }
-                        min={
-                          formData.startDate ||
-                          new Date().toISOString().split("T")[0]
+                          setForm({ ...form, endDate: e.target.value })
                         }
                         required
                       />
@@ -310,13 +209,14 @@ export default function PermitsPage() {
                     <Label htmlFor="reason">Alasan</Label>
                     <Textarea
                       id="reason"
-                      placeholder="Jelaskan alasan izin..."
-                      value={formData.reason}
+                      placeholder="Jelaskan alasan izin (minimal 10 karakter)…"
+                      value={form.reason}
                       onChange={(e) =>
-                        setFormData({ ...formData, reason: e.target.value })
+                        setForm({ ...form, reason: e.target.value })
                       }
                       rows={4}
                       required
+                      minLength={10}
                     />
                   </div>
                 </div>
@@ -331,9 +231,13 @@ export default function PermitsPage() {
                   </Button>
                   <Button
                     type="submit"
-                    disabled={submitting || !formData.type || !formData.reason}
+                    disabled={
+                      create.isPending ||
+                      !form.type ||
+                      form.reason.trim().length < 10
+                    }
                   >
-                    {submitting ? "Mengirim..." : "Kirim Pengajuan"}
+                    {create.isPending ? "Mengirim…" : "Kirim Pengajuan"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -342,7 +246,7 @@ export default function PermitsPage() {
         </div>
       </div>
 
-      {loading ? (
+      {isLoading || !selectedChild ? (
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-32" />
@@ -351,91 +255,93 @@ export default function PermitsPage() {
       ) : permits.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center">
-            <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
             <h3 className="text-lg font-medium">Belum ada izin</h3>
-            <p className="text-muted-foreground mt-2">
-              Anda belum mengajukan izin untuk anak ini
+            <p className="mt-2 text-muted-foreground">
+              Belum ada izin untuk {child?.name ?? "anak ini"}
             </p>
-            <Button className="mt-4" onClick={() => setDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Ajukan Izin Pertama
-            </Button>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          {permits.map((permit) => (
-            <Card key={permit.id}>
-              <CardContent className="p-4">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium">
-                          {getTypeLabel(permit.type)}
-                        </p>
-                        {getStatusBadge(permit)}
-                      </div>
-                      {permit.code && (
-                        <div className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs font-mono">
-                          <QrCode className="h-3 w-3" />
-                          {permit.code}
+          {permits.map((permit) => {
+            const phase = PERMIT_PHASES[permitPhase(permit)];
+            return (
+              <Card key={permit.id}>
+                <CardContent className="p-4">
+                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+                    <div className="flex-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">
+                            {PERMIT_TYPE_LABELS[permit.type]}
+                          </p>
+                          <Badge className={phase.className}>
+                            {phase.label}
+                          </Badge>
                         </div>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      {permit.reason}
-                    </p>
-                    <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
-                      <div className="flex items-center gap-1">
+                        {permit.code && permit.status === "APPROVED" && (
+                          <div className="flex items-center gap-1 rounded bg-muted px-2 py-1 font-mono text-xs">
+                            <QrCode className="h-3 w-3" />
+                            {permit.code}
+                          </div>
+                        )}
+                      </div>
+                      <p className="mt-2 text-sm text-muted-foreground">
+                        {permit.reason}
+                      </p>
+                      <div className="mt-3 flex items-center gap-1 text-sm text-muted-foreground">
                         <Calendar className="h-4 w-4" />
                         <span>
-                          {new Date(permit.startDate).toLocaleDateString(
-                            "id-ID",
-                            {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            },
-                          )}
-                          {" - "}
-                          {new Date(permit.endDate).toLocaleDateString(
-                            "id-ID",
-                            {
-                              day: "numeric",
-                              month: "short",
-                              year: "numeric",
-                            },
-                          )}
+                          {when(permit.startDate)} – {when(permit.endDate)}
                         </span>
                       </div>
+                      {permit.rejectionNote && (
+                        <p className="mt-2 text-sm">
+                          <span className="text-muted-foreground">
+                            Alasan penolakan:
+                          </span>{" "}
+                          {permit.rejectionNote}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2 text-sm md:text-right">
+                      <p className="text-muted-foreground">
+                        Diajukan{" "}
+                        {new Date(permit.createdAt).toLocaleDateString("id-ID")}
+                      </p>
+                      {permit.approvedBy && (
+                        <p className="text-muted-foreground">
+                          {permit.status === "REJECTED"
+                            ? "Ditolak"
+                            : "Disetujui"}{" "}
+                          oleh{" "}
+                          <span className="font-medium">
+                            {permit.approvedBy.name}
+                          </span>
+                        </p>
+                      )}
+                      {permit.status === "PENDING" && (
+                        <ConfirmDialog
+                          title="Batalkan pengajuan"
+                          description="Pengajuan izin ini ditarik."
+                          confirmLabel="Batalkan pengajuan"
+                          variant="destructive"
+                          onConfirm={() => withdraw(permit.id)}
+                          loading={cancel.isPending}
+                        >
+                          <Button variant="outline" size="sm">
+                            <Ban className="mr-1 h-4 w-4" />
+                            Batalkan
+                          </Button>
+                        </ConfirmDialog>
+                      )}
                     </div>
                   </div>
-                  <div className="text-right text-sm">
-                    <p className="text-muted-foreground">
-                      Diajukan:{" "}
-                      {new Date(permit.createdAt).toLocaleDateString("id-ID")}
-                    </p>
-                    {permit.approvedBy && (
-                      <p className="text-muted-foreground mt-1">
-                        {permit.status === "APPROVED" ? "Disetujui" : "Ditolak"}{" "}
-                        oleh:{" "}
-                        <span className="font-medium">
-                          {permit.approvedBy.name}
-                        </span>
-                      </p>
-                    )}
-                    {permit.notes && (
-                      <p className="mt-2 text-sm">
-                        <span className="text-muted-foreground">Catatan:</span>{" "}
-                        {permit.notes}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

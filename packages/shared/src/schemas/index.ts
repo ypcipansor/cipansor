@@ -6,3 +6,4 @@ export * from "./assessment";
 export * from "./raport-merdeka";
 export * from "./performance";
 export * from "./planning";
+export * from "./permits";

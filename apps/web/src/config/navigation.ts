@@ -62,6 +62,7 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
+import { PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
 
 export interface NavItem {
   title: string;
@@ -354,9 +355,12 @@ const staffNavigation: NavGroup[] = [
         icon: Heart,
       },
       {
+        // Of the nine staff functions only tata usaha, keamanan (the gate)
+        // and the nurse work with permits; the API refuses the rest.
         title: "Perizinan",
         href: "/permits",
         icon: FileText,
+        roleCodes: [...PERMIT_STAFF_ROLE_CODES],
       },
       {
         title: "Pelanggaran",
@@ -1097,7 +1101,7 @@ const adminNavigation: NavGroup[] = [
         icon: Home,
         children: [
           {
-            title: "Permits",
+            title: "Perizinan",
             href: "/permits",
             icon: FileText,
           },
@@ -1660,7 +1664,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
     title: "Kesantrian",
     items: [
       {
-        title: "Permits",
+        title: "Perizinan",
         href: "/permits",
         icon: FileText,
       },

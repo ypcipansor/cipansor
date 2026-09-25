@@ -1,295 +1,169 @@
 import { Router } from 'express';
-import { UserRole } from '@prisma/client';
+import {
+  PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_REQUESTER_ROLE_CODES,
+  PERMIT_STAFF_ROLE_CODES,
+} from '@cipansor/shared';
 import * as controller from './permits.controller';
 import { authenticate, authorize } from '../../middleware/auth';
-import { validateQuery } from '../../middleware/error';
-import { queryPermitSchema } from './permits.schema';
+import { validate, validateQuery } from '../../middleware/error';
+import {
+  createPermitSchema,
+  listPermitsQuerySchema,
+  rejectPermitSchema,
+  returnPermitSchema,
+  updatePermitSchema,
+} from './permits.schema';
 
+/**
+ * Perizinan. Who may call what is the three lists in @cipansor/shared
+ * (`schemas/permits.ts`), which the web reads too; which permits each caller
+ * sees is `studentScope`, applied in the service. Static paths come before
+ * `/:id`.
+ */
 const router = Router();
 
 router.use(authenticate);
 
+const staff = authorize(...PERMIT_STAFF_ROLE_CODES);
+const requesters = authorize(...PERMIT_REQUESTER_ROLE_CODES);
+const deciders = authorize(...PERMIT_DECIDER_ROLE_CODES);
+
 /**
  * @swagger
+ * /api/permits:
+ *   get:
+ *     summary: List the permits the caller may see
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: studentId, schema: { type: string, format: uuid } }
+ *       - { in: query, name: type, schema: { type: string, enum: [PULANG, KELUAR, SAKIT, KELUARGA, OTHER] } }
+ *       - { in: query, name: status, schema: { type: string, enum: [PENDING, APPROVED, REJECTED, COMPLETED, CANCELLED] } }
+ *       - { in: query, name: outside, description: through the gate and not back, schema: { type: boolean } }
+ *       - { in: query, name: from, schema: { type: string, format: date } }
+ *       - { in: query, name: to, schema: { type: string, format: date } }
+ *       - { in: query, name: page, schema: { type: integer, default: 1 } }
+ *       - { in: query, name: limit, schema: { type: integer, default: 20, maximum: 100 } }
+ *     responses:
+ *       200: { description: A page of permits }
+ *   post:
+ *     summary: File a permit (a wali for their own child; staff for a learner in scope)
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201: { description: Created, PENDING }
+ *       409: { description: The learner already has a permit in force at that time }
+ */
+router.get('/', requesters, validateQuery(listPermitsQuerySchema), controller.list);
+router.post('/', requesters, validate(createPermitSchema), controller.create);
+
+/**
+ * @swagger
+ * /api/permits/summary:
+ *   get:
+ *     summary: Counts — pending, approved, outside, overdue
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: PermitSummary }
  * /api/permits/code/{code}:
  *   get:
- *     summary: Get permit by unique code
+ *     summary: Look a permit up by the code on the learner's slip (the gate)
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - in: path
- *         name: code
- *         required: true
- *         schema:
- *           type: string
+ *       - { in: path, name: code, required: true, schema: { type: string } }
  *     responses:
- *       200:
- *         description: Permit details
+ *       200: { description: The permit }
+ *       404: { description: No such permit in the caller's scope }
  */
-router.get(
-  '/code/:code',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  controller.getPermitByCode
-);
-
-/**
- * @swagger
- * /api/permits:
- *   get:
- *     summary: List permits
- *     tags: [Permits]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: studentId
- *         schema:
- *           type: string
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *           enum: [PENDING, APPROVED, REJECTED, RETURNED]
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *           enum: [SICK, FAMILY, PERSONAL]
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *     responses:
- *       200:
- *         description: List of permits
- */
-router.get(
-  '/',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  validateQuery(queryPermitSchema),
-  controller.getPermits
-);
-
-/**
- * @swagger
- * /api/permits/stats:
- *   get:
- *     summary: Get permit statistics
- *     tags: [Permits]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Permit statistics (pending, approved, by type, etc.)
- */
-router.get(
-  '/stats',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getPermitStats
-);
-
-/**
- * @swagger
- * /api/permits:
- *   post:
- *     summary: Create permit request
- *     tags: [Permits]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - studentId
- *               - type
- *               - startDate
- *               - endDate
- *               - reason
- *             properties:
- *               studentId:
- *                 type: string
- *               type:
- *                 type: string
- *                 enum: [SICK, FAMILY, PERSONAL]
- *               startDate:
- *                 type: string
- *                 format: date-time
- *               endDate:
- *                 type: string
- *                 format: date-time
- *               reason:
- *                 type: string
- *               parentContact:
- *                 type: string
- *     responses:
- *       201:
- *         description: Permit created
- */
-router.post(
-  '/',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT),
-  controller.createPermit
-);
-
-/**
- * @swagger
- * /api/permits/student/{studentId}/active:
- *   get:
- *     summary: Get student's active permit
- *     tags: [Permits]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: studentId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Student's active permit (if any)
- */
-router.get(
-  '/student/:studentId/active',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.PARENT),
-  controller.getStudentActivePermit
-);
+router.get('/summary', staff, controller.summary);
+router.get('/code/:code', staff, controller.getByCode);
 
 /**
  * @swagger
  * /api/permits/{id}:
  *   get:
- *     summary: Get permit by ID
+ *     summary: One permit
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
  *     responses:
- *       200:
- *         description: Permit details
- *       404:
- *         description: Permit not found
- */
-router.get(
-  '/:id',
-  authorize(
-    UserRole.SUPER_ADMIN,
-    UserRole.UNIT_ADMIN,
-    UserRole.TEACHER,
-    UserRole.PARENT,
-    UserRole.STAFF
-  ),
-  controller.getPermitById
-);
-
-/**
- * @swagger
- * /api/permits/{id}/status:
- *   put:
- *     summary: Update permit status (approve/reject)
+ *       200: { description: The permit }
+ *       404: { description: No such permit in the caller's scope }
+ *   patch:
+ *     summary: Change a permit while it is PENDING
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - status
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [APPROVED, REJECTED]
- *               notes:
- *                 type: string
  *     responses:
- *       200:
- *         description: Permit status updated
+ *       200: { description: Updated }
+ *       409: { description: Already decided }
  */
-router.put(
-  '/:id/status',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updatePermitStatus
-);
+router.get('/:id', requesters, controller.getById);
+router.patch('/:id', requesters, validate(updatePermitSchema), controller.update);
 
 /**
  * @swagger
- * /api/permits/{id}/return:
+ * /api/permits/{id}/approve:
  *   post:
- *     summary: Mark student as returned
+ *     summary: PENDING → APPROVED; excuses the learner's attendance for those days
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     responses:
+ *       200: { description: Approved }
+ *       409: { description: Not PENDING }
+ * /api/permits/{id}/reject:
+ *   post:
+ *     summary: PENDING → REJECTED, with the reason
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
  *     requestBody:
  *       content:
  *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               returnDate:
- *                 type: string
- *                 format: date-time
- *               notes:
- *                 type: string
+ *           schema: { type: object, required: [rejectionNote], properties: { rejectionNote: { type: string } } }
  *     responses:
- *       200:
- *         description: Student marked as returned
- */
-router.put(
-  '/:id/return',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  controller.markReturned
-);
-
-/**
- * @swagger
+ *       200: { description: Rejected }
+ *       409: { description: Not PENDING }
+ * /api/permits/{id}/cancel:
+ *   post:
+ *     summary: PENDING → CANCELLED (withdrawn by whoever may file it)
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Cancelled }
+ *       409: { description: Not PENDING }
  * /api/permits/{id}/depart:
  *   post:
- *     summary: Mark student as departed
+ *     summary: Record leaving through the gate (APPROVED, still valid, not yet departed)
  *     tags: [Permits]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
  *     responses:
- *       200:
- *         description: Student marked as departed
+ *       200: { description: Departure recorded }
+ *       409: { description: Not approved, already used, or expired }
+ * /api/permits/{id}/return:
+ *   post:
+ *     summary: Record coming back → COMPLETED
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Return recorded }
+ *       409: { description: Never departed, or already back }
  */
-router.post(
-  '/:id/depart',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  controller.markDeparted
-);
+router.post('/:id/approve', deciders, controller.approve);
+router.post('/:id/reject', deciders, validate(rejectPermitSchema), controller.reject);
+router.post('/:id/cancel', requesters, controller.cancel);
+router.post('/:id/depart', staff, controller.depart);
+router.post('/:id/return', staff, validate(returnPermitSchema), controller.markReturned);
 
 export default router;

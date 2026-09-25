@@ -243,7 +243,9 @@ describe('web ↔ API contract', () => {
     expect(calls.length).toBeGreaterThan(1200);
     expect(served('POST', '/auth/login')).toBe(true);
     expect(served('GET', `/students/${ID}`)).toBe(true);
-    expect(served('POST', `/permits/${ID}/approve`)).toBe(false);
+    expect(served('POST', `/permits/${ID}/approve`)).toBe(true);
+    // The web's old name for "mark returned"; the API never had it.
+    expect(served('POST', `/permits/${ID}/returned`)).toBe(false);
     // The web client already prefixes /api; a call that writes it again goes to /api/api.
     expect(served('GET', '/api/risks')).toBe(false);
   });

@@ -107,6 +107,13 @@ const nextConfig: NextConfig = {
         destination: "/kinerja/:path*",
         permanent: true,
       },
+      // The gate check belongs to Perizinan: it looks up a permit and records
+      // leaving and coming back. Under /reception it had no menu entry at all.
+      {
+        source: "/reception/gate",
+        destination: "/permits/gate",
+        permanent: true,
+      },
     ];
   },
 

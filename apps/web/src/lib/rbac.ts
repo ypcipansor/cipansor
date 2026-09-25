@@ -351,6 +351,19 @@ export interface RbacUser {
 }
 
 /**
+ * The RoleCode of the user's active (primary) assignment — the code the API
+ * reads from the token — or undefined when the user has none.
+ */
+export function getActiveRoleCode(
+  user: RbacUser | null | undefined,
+): string | undefined {
+  const assignments = user?.userRoles ?? [];
+  const primary =
+    assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
+  return primary?.role?.code ?? undefined;
+}
+
+/**
  * Resolve the effective legacy bucket for a user.
  *
  * Backward-compatible by design: the legacy `user.role` field (still emitted
@@ -370,10 +383,7 @@ export function getEffectiveRole(
   // Pengurus by assignment — was bounced from /perencanaan to /staff by the web
   // while the API served the page, and switching roles never changed which
   // pages the web allowed.
-  const assignments = user.userRoles ?? [];
-  const primary =
-    assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
-  const code = primary?.role?.code;
+  const code = getActiveRoleCode(user);
   if (code) {
     const derived = deriveLegacyRole(code);
     if (derived) return derived;
