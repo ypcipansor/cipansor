@@ -3,7 +3,7 @@
 System overview for the Cipansor IMS monorepo. This is the "map"; the
 authoritative, area-specific conventions live in the `AGENTS.md` files
 (root + per package) and the known gaps live in
-[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md).
+[`known-issues.md`](../.claude/memory/known-issues.md).
 
 ## Monorepo layout
 

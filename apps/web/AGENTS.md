@@ -9,9 +9,13 @@ Next.js 16 (App Router) + React 19 client. Read the root `AGENTS.md` first.
 - **Data layer:** the Axios instance in `src/lib/api.ts` (errors via
   `src/lib/api-error.ts`), wrapped by **React Query** hooks in `src/hooks/*`.
   `src/lib/api-client.ts` is a back-compat re-export; import from `lib/api`.
+  The response interceptor toasts every non-401 error. A best-effort or
+  parallel call whose failure the page handles itself (a role dashboard's
+  optional widgets) passes `skipErrorToast: true` in the axios config, or it
+  spams "missing permission" / "route not found" at the user.
 - **No mock/placeholder data in pages.** If an endpoint is missing, add it to the
   API rather than hardcoding. (Pages still carrying mock data are listed in
-  `docs/KNOWN_ISSUES.md`.) This is the web half of **golden rule #8** (ship
+  `.claude/memory/known-issues.md`.) This is the web half of **golden rule #8** (ship
   features wired end-to-end): a page needing data is backed by a real endpoint in
   the same change.
 - **Types come from `@cipansor/shared`.** Don't redeclare DTOs or use `any` for
@@ -20,7 +24,7 @@ Next.js 16 (App Router) + React 19 client. Read the root `AGENTS.md` first.
 - **Roles:** route protection (`middleware.ts`), navigation (`src/config/navigation.ts`),
   and the auth store (`src/stores/auth.ts`) must reflect real backend `RoleCode`
   + permissions. (Aligning the legacy `UserRole` usage here is tracked in
-  `docs/KNOWN_ISSUES.md`.)
+  `.claude/memory/known-issues.md`.)
 - **UI:** Tailwind + Radix primitives in `src/components/ui/*`; compose, don't
   fork. Charts via the shared chart components.
 
@@ -69,6 +73,33 @@ a route or `src/config/navigation.ts`.
 - Realtime: `src/providers/socket-provider.tsx` (Socket.IO).
 - Auth state: `src/stores/auth.ts`.
 
+## Blob preview URLs
+
+Previewing a picked file means `URL.createObjectURL` → `<img src>`. Two traps,
+both hit while fixing CodeQL `js/xss-through-dom` in PR #545 (the first only in
+that PR's own first commit); `src/hooks/use-file-previews.ts` and
+`src/lib/files.ts` are the shared answer.
+
+- **Never re-encode the URL.** A blob URL embeds the page origin. On an IPv6 host
+  the serialized host is bracketed, so `encodeURI` rewrites
+  `blob:http://[::1]:3000/abc` to `blob:http://%5B::1%5D:3000/abc` — a string the
+  browser never registered, and the image silently fails to resolve.
+  `objectUrlForFile` returns the value untouched; the `blob:` prefix guard is
+  what satisfies CodeQL's `js/xss-through-dom` (its `PrefixStringSanitizer`
+  recognizes the guard), not an escaping call.
+- **Never create the URL inside a state updater.** React Strict Mode
+  double-invokes updaters, so `setItems((prev) => [...prev, { url: createObjectURL(f) }])`
+  registers two blobs per file and only the surviving one is ever revoked — the
+  other leaks for the document's lifetime. Build the list once in the event
+  handler, then `setItems`.
+
+A blob URL pins its file's bytes until revoked, so whoever creates it must
+release it (`releaseObjectUrl`) on remove **and** on unmount; `useFilePreviews`
+owns both routes. `next.config.ts` sets `reactStrictMode: true`, and Strict Mode
+double-invokes updaters only in development (`pnpm dev`), never in a production
+build — so the leak shows in dev and in a `<StrictMode>` unit test, and not on
+the deployed site. The StrictMode unit test is what pins it.
+
 ## Testing
 
 - **Mandatory (golden rule #7):** every new/changed **route/page or user flow**
@@ -82,7 +113,7 @@ a route or `src/config/navigation.ts`.
   Radix triggers animate — on Firefox/WebKit under CI load, `click({ force: true })`
   once the element is visible avoids the flaky "element not stable" gate.
 - **Unit/component tests:** add jsdom + React Testing Library under `src/**`
-  (see `docs/KNOWN_ISSUES.md` — a vitest project for `src` is a pending task).
+  (see `.claude/memory/known-issues.md` — a vitest project for `src` is a pending task).
   Once that project exists, shared hooks/utilities get unit tests too.
 
 ## PWA (the mobile app)

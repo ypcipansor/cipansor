@@ -40,7 +40,7 @@ is_code() {
     AGENTS.md | */AGENTS.md | README.md | */README.md \
       | .claude/skills/*/SKILL.md \
       | docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md) return 0 ;;
-    *.md | docs/* | .claude/* | .github/agents/* | .github/ISSUE_TEMPLATE/* | LICENSE | LICENSE.*) return 1 ;;
+    *.md | docs/* | .claude/* | .github/ISSUE_TEMPLATE/* | LICENSE | LICENSE.*) return 1 ;;
     *) return 0 ;;
   esac
 }

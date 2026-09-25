@@ -100,7 +100,6 @@ export const LEADERSHIP_ROLES: readonly string[] = [
   RoleCode.SMPIT_KEPALA_SEKOLAH,
   RoleCode.SMAQ_KEPALA_SEKOLAH,
   RoleCode.PESANTREN_PENGASUH,
-  RoleCode.PESANTREN_DIREKTUR,
 ];
 
 /**
@@ -126,15 +125,10 @@ export function isLeadershipRole(roleCode?: string | null): boolean {
  */
 export const CROSS_UNIT_SCOPE_ROLES: readonly string[] = [
   RoleCode.PESANTREN_PENGASUH,
-  RoleCode.PESANTREN_DIREKTUR,
   RoleCode.PESANTREN_TATA_USAHA,
   RoleCode.USTADZ,
   RoleCode.MUSYRIF,
-  RoleCode.MUSYRIFAH,
   RoleCode.MUHAFIDZ,
-  RoleCode.MUHAFIDZAH,
-  RoleCode.MURABBI,
-  RoleCode.WALI_KAMAR,
   RoleCode.KEAMANAN,
   RoleCode.PERAWAT,
   RoleCode.PUSTAKAWAN,

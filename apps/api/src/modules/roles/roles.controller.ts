@@ -98,6 +98,7 @@ export class RolesController {
     try {
       const input = req.body as AssignRoleInput;
       const assignment = await rolesService.assignRoleToUser(
+        req.user!,
         input.userId,
         input.roleId,
         input.unitId,
@@ -114,7 +115,7 @@ export class RolesController {
    */
   async removeRoleAssignment(req: Request, res: Response, next: NextFunction) {
     try {
-      await rolesService.removeRoleAssignment(req.params.id);
+      await rolesService.removeRoleAssignment(req.user!, req.params.id);
       res.status(204).send();
     } catch (error) {
       next(error);
@@ -128,7 +129,11 @@ export class RolesController {
     try {
       const userId = req.params.userId;
       const input = req.body as SetPrimaryRoleInput;
-      const assignment = await rolesService.setPrimaryRole(userId, input.roleAssignmentId);
+      const assignment = await rolesService.setPrimaryRole(
+        req.user!,
+        userId,
+        input.roleAssignmentId
+      );
       res.json({ success: true, data: assignment });
     } catch (error) {
       next(error);

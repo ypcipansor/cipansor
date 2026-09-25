@@ -30,7 +30,8 @@ jobs:
   # Does this change touch code at all? A change to documentation or agent
   # tooling only (`*.md`, `docs/`, `.claude/` …; the list and its exceptions
   # live in .github/scripts/change-scope.sh) cannot change what lint, the
-  # builds, the tests or the dependency audit report, so they are skipped.
+  # builds, the tests or the dependency audit report, so they are skipped
+  # (Security still runs its Markdown scan — see that job).
   # Build and Tests need Lint, so they are skipped with it. A job skipped by
   # its `if:` reports success, which satisfies the required checks; a `paths:`
   # filter on the trigger would leave them pending instead.
@@ -211,25 +212,42 @@ jobs:
       - name: Run Web tests
         run: pnpm --filter web test
 
-  # Supply-chain / dependency security.
+  # Supply-chain / dependency security, plus the records check.
+  #
+  # Unlike the other jobs this one runs on every change: project memory and the
+  # docs are exactly what a no-code PR carries, and the repository is public
+  # until release. The Markdown scan always runs (seconds, no install); the
+  # dependency audit only when code changed. Security is a required check, so
+  # a finding blocks the merge.
   security:
     name: Security
     needs: scope
-    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      # Keys, tokens, credentials in connection strings, cloud resource names,
+      # IP addresses, host paths — AGENTS.md → "Where things live".
+      - name: No sensitive detail in the repository's Markdown
+        run: |
+          python3 .github/scripts/check-sensitive.py --self-test
+          python3 .github/scripts/check-sensitive.py $(git ls-files '*.md') .claude/memory > findings.txt || {
+            sed -E 's/^([^:]+):([0-9]+): (.*)$/::error file=\1,line=\2::\3 — keep it in the machine-local memory, or use a placeholder/' findings.txt
+            exit 1
+          }
       - uses: pnpm/action-setup@v6.1.0
+        if: needs.scope.outputs.run == 'true'
         with:
           version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v7
+        if: needs.scope.outputs.run == 'true'
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+        if: needs.scope.outputs.run == 'true'
       # Fail the build on known high/critical advisories in the dependency tree.
       # (CodeQL runs separately via GitHub's default code-scanning setup and
       # gates PRs — an alert with security-severity >= 8 fails the CodeQL check.
@@ -239,4 +257,5 @@ jobs:
       # endpoint and dies with HTTP 410, so we query the bulk advisory
       # endpoint directly — see scripts/audit-deps.mjs.
       - name: Audit dependencies
+        if: needs.scope.outputs.run == 'true'
         run: pnpm run audit:deps

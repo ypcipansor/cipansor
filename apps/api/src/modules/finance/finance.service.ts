@@ -244,42 +244,118 @@ export async function createInvoice(data: CreateInvoiceDto, tx?: Prisma.Transact
   return invoice;
 }
 
-export async function getInvoices(query: QueryInvoiceDto) {
-  const { studentId, paymentTypeId, status, startDate, endDate, overdue, page, limit } = query;
+/**
+ * The student fields a bill list or bill page needs, and nothing else.
+ *
+ * These endpoints used `include: { user }`, which returns every scalar column
+ * of Student: the santri's NIK and family-card number, both parents' NIK,
+ * income and phone. The billing screen reads a name and a NIS.
+ */
+const INVOICE_STUDENT_SELECT = {
+  id: true,
+  nis: true,
+  unitId: true,
+  user: { select: { id: true, name: true } },
+} satisfies Prisma.StudentSelect;
+
+/**
+ * Invoices a user may see: those of the bill's own unit (its payment type's),
+ * the rule the verification queue below already uses. The list had no unit
+ * filter at all, so every unit's TU saw every unit's bills.
+ */
+function invoiceScope(currentUser: VerifierContext): Prisma.InvoiceWhereInput {
+  return seesAllUnits(currentUser) ? {} : { paymentType: { unitId: currentUser.unitId ?? 'none' } };
+}
+
+/**
+ * The due dates that belong to an academic year: every month it spans, from
+ * the first of its starting month to the end of its final month.
+ *
+ * Not `startDate`..`endDate`: the year starts on 15 July, but July's SPP is due
+ * on the 10th, so a strict range files July's bills under the year before.
+ * Both columns hold a date at UTC midnight, so months are read in UTC.
+ */
+export function academicYearBillingWindow(year: { startDate: Date; endDate: Date }): {
+  gte: Date;
+  lt: Date;
+} {
+  const { startDate: s, endDate: e } = year;
+  return {
+    gte: new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), 1)),
+    lt: new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth() + 1, 1)),
+  };
+}
+
+async function billingWindowFor(academicYearId: string | undefined) {
+  if (!academicYearId) return undefined;
+  const year = await prisma.academicYear.findUnique({
+    where: { id: academicYearId },
+    select: { startDate: true, endDate: true },
+  });
+  // An unknown id matches nothing rather than silently widening to all years.
+  return year ? academicYearBillingWindow(year) : { gte: new Date(0), lt: new Date(0) };
+}
+
+export async function getInvoices(query: QueryInvoiceDto, currentUser: VerifierContext) {
+  const {
+    studentId,
+    paymentTypeId,
+    paymentTypeCode,
+    status,
+    startDate,
+    endDate,
+    overdue,
+    academicYearId,
+    search,
+    page,
+    limit,
+  } = query;
   const skip = (page - 1) * limit;
 
-  const where: Prisma.InvoiceWhereInput = {
-    ...(studentId && { studentId }),
-    ...(paymentTypeId && { paymentTypeId }),
-    ...(status && { status }),
-    ...(startDate || endDate
-      ? {
-          dueDate: {
-            ...(startDate && { gte: new Date(startDate) }),
-            ...(endDate && { lte: new Date(endDate) }),
-          },
-        }
-      : {}),
+  const window = await billingWindowFor(academicYearId);
+  const dueDate: Prisma.DateTimeFilter = {
+    ...(window ?? {}),
+    ...(startDate && { gte: new Date(startDate) }),
+    ...(endDate && { lte: new Date(endDate) }),
   };
-
   if (overdue === true) {
-    where.dueDate = { lt: new Date() };
-    where.status = { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL] };
+    const now = new Date();
+    dueDate.lt = dueDate.lt && dueDate.lt < now ? dueDate.lt : now;
   }
+
+  const term = search?.trim();
+  const where: Prisma.InvoiceWhereInput = {
+    AND: [
+      invoiceScope(currentUser),
+      {
+        ...(studentId && { studentId }),
+        ...(paymentTypeId && { paymentTypeId }),
+        ...(paymentTypeCode && { paymentType: { code: paymentTypeCode } }),
+        ...(status && { status }),
+        ...(overdue === true && { status: { in: [PaymentStatus.PENDING, PaymentStatus.PARTIAL] } }),
+        ...(Object.keys(dueDate).length > 0 && { dueDate }),
+        ...(term && {
+          OR: [
+            { invoiceNumber: { contains: term, mode: 'insensitive' } },
+            { student: { nis: { contains: term } } },
+            { student: { user: { name: { contains: term, mode: 'insensitive' } } } },
+          ],
+        }),
+      },
+    ],
+  };
 
   const [data, total] = await Promise.all([
     prisma.invoice.findMany({
       where,
       include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-          },
-        },
+        student: { select: INVOICE_STUDENT_SELECT },
         paymentType: { select: { id: true, name: true, code: true } },
         _count: { select: { payments: true } },
       },
-      orderBy: { dueDate: 'asc' },
+      // Newest first: a TU opens this list to see this month's bills, and
+      // ascending order opened it on July 2024.
+      orderBy: [{ dueDate: 'desc' }, { invoiceNumber: 'asc' }],
       skip,
       take: limit,
     }),
@@ -292,15 +368,13 @@ export async function getInvoices(query: QueryInvoiceDto) {
   };
 }
 
-export async function getInvoiceById(id: string) {
-  return prisma.invoice.findUnique({
-    where: { id },
+/** One bill, or null when it doesn't exist or belongs to another unit. */
+export async function getInvoiceById(id: string, currentUser: VerifierContext) {
+  return prisma.invoice.findFirst({
+    where: { AND: [{ id }, invoiceScope(currentUser)] },
     include: {
       student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-          unit: { select: { id: true, name: true } },
-        },
+        select: { ...INVOICE_STUDENT_SELECT, unit: { select: { id: true, name: true } } },
       },
       paymentType: { select: { id: true, name: true, code: true, amount: true } },
       payments: {
@@ -877,38 +951,52 @@ export async function verifyPayment(
   return result;
 }
 
-export async function getPayments(query: QueryPaymentDto) {
+/**
+ * Payments a user may see. Staff: their unit's bills (invoiceScope). A parent,
+ * who may open a single receipt: only payments on their own children's bills.
+ */
+function paymentScope(currentUser: VerifierContext): Prisma.PaymentWhereInput {
+  if (currentUser.role === UserRole.PARENT) {
+    return { invoice: { student: { parents: { some: { parentId: currentUser.sub } } } } };
+  }
+  return { invoice: invoiceScope(currentUser) };
+}
+
+const PAYMENT_INVOICE_INCLUDE = {
+  invoice: {
+    include: {
+      student: { select: INVOICE_STUDENT_SELECT },
+      paymentType: { select: { id: true, name: true, code: true } },
+    },
+  },
+} satisfies Prisma.PaymentInclude;
+
+export async function getPayments(query: QueryPaymentDto, currentUser: VerifierContext) {
   const { invoiceId, method, startDate, endDate, page, limit } = query;
   const skip = (page - 1) * limit;
 
-  const where = {
-    ...(invoiceId && { invoiceId }),
-    ...(method && { method }),
-    ...(startDate || endDate
-      ? {
-          paidAt: {
-            ...(startDate && { gte: new Date(startDate) }),
-            ...(endDate && { lte: new Date(endDate) }),
-          },
-        }
-      : {}),
+  const where: Prisma.PaymentWhereInput = {
+    AND: [
+      paymentScope(currentUser),
+      {
+        ...(invoiceId && { invoiceId }),
+        ...(method && { method }),
+        ...(startDate || endDate
+          ? {
+              paidAt: {
+                ...(startDate && { gte: new Date(startDate) }),
+                ...(endDate && { lte: new Date(endDate) }),
+              },
+            }
+          : {}),
+      },
+    ],
   };
 
   const [data, total] = await Promise.all([
     prisma.payment.findMany({
       where,
-      include: {
-        invoice: {
-          include: {
-            student: {
-              include: {
-                user: { select: { id: true, name: true } },
-              },
-            },
-            paymentType: { select: { id: true, name: true, code: true } },
-          },
-        },
-      },
+      include: PAYMENT_INVOICE_INCLUDE,
       orderBy: { paidAt: 'desc' },
       skip,
       take: limit,
@@ -922,18 +1010,26 @@ export async function getPayments(query: QueryPaymentDto) {
   };
 }
 
-export async function getPaymentById(id: string) {
-  return prisma.payment.findUnique({
-    where: { id },
+/** One payment, or null when it doesn't exist or is outside paymentScope. */
+export async function getPaymentById(id: string, currentUser: VerifierContext) {
+  return prisma.payment.findFirst({
+    where: { AND: [{ id }, paymentScope(currentUser)] },
     include: {
       invoice: {
         include: {
+          ...PAYMENT_INVOICE_INCLUDE.invoice.include,
+          // The receipt prints the santri's class.
           student: {
-            include: {
-              user: { select: { id: true, name: true, email: true } },
+            select: {
+              ...INVOICE_STUDENT_SELECT,
+              enrollments: {
+                where: { status: CLASS_ENROLLMENT_STATUS.ACTIVE },
+                select: { class: { select: { id: true, name: true } } },
+                take: 1,
+                orderBy: { enrolledAt: 'desc' },
+              },
             },
           },
-          paymentType: { select: { id: true, name: true, code: true } },
         },
       },
     },
@@ -1015,23 +1111,27 @@ export async function getUnitFinanceStats(unitId: string, month?: string) {
 }
 
 /**
- * Yayasan-wide financial summary for the finance and foundation dashboards.
+ * Billing summary for the finance and foundation dashboards: the user's own
+ * unit, or every unit for foundation-scope roles, over one academic year when
+ * `academicYearId` is given (see academicYearBillingWindow).
  *
  * The web app has called GET /api/finance/summary since those pages were
  * written, but the route never existed — every card rendered zero. Shape
  * matches the `FinancialSummary` interface in apps/web/src/hooks/use-finance.ts.
  *
- * NOTE ON `academicYearId`: the caller passes one, but Invoice has no academic
- * year column — it hangs off the student and the payment type, neither of
- * which is dated. Accepting and ignoring it keeps the existing callers working;
- * making it a real filter needs a schema change, so it is deliberately not
- * pretended here.
+ * It used to ignore both the unit and the year, so an SMP IT admin read the
+ * whole yayasan's all-time totals under a card labelled "tahun ajaran aktif".
  */
-export async function getFinancialSummary() {
+export async function getFinancialSummary(currentUser: VerifierContext, academicYearId?: string) {
   const now = new Date();
+  const window = await billingWindowFor(academicYearId);
+  const where: Prisma.InvoiceWhereInput = {
+    AND: [invoiceScope(currentUser), window ? { dueDate: window } : {}],
+  };
 
   const [invoices, recentPayments] = await Promise.all([
     prisma.invoice.findMany({
+      where,
       select: {
         amount: true,
         paidAmount: true,
@@ -1041,6 +1141,7 @@ export async function getFinancialSummary() {
       },
     }),
     prisma.payment.findMany({
+      where: { invoice: where },
       take: 10,
       orderBy: { paidAt: 'desc' },
       include: {

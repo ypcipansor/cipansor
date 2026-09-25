@@ -34,11 +34,9 @@ function walk(dir: string, found: string[] = []): string[] {
 describe('change-scope.sh', () => {
   it('skips only what nothing builds, lints, tests or ships', () => {
     const notCode = [
-      'docs/ROADMAP.md',
       'docs/img/galeri.png',
       '.claude/hooks/main-ci-watch.sh',
       '.claude/settings.json',
-      '.github/agents/Deep Plan.agent.md',
       '.github/PULL_REQUEST_TEMPLATE.md',
       'LICENSE',
     ];
@@ -51,13 +49,7 @@ describe('change-scope.sh', () => {
       '.github/workflows/ci.yml',
       '.github/scripts/change-scope.sh',
       'deploy/azure/nginx/nginx.conf',
-      // Guard tests read these, so a change must re-run CI (see the test below).
-      'docs/DEPLOYMENT.md',
-      'AGENTS.md',
-      'apps/web/AGENTS.md',
-      'README.md',
-      '.claude/skills/stack/SKILL.md',
-      'docs/REVIEW_GEMINI_RISALAH_DIGITAL_SIGNATURE.md',
+      'docs/DEPLOYMENT.md', // a test reads it
     ];
     expect(codeAmong(notCode)).toEqual([]);
     expect(codeAmong(code)).toEqual(code);

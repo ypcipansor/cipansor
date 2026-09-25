@@ -88,12 +88,21 @@ export function getInitials(name: string, maxLength = 2): string {
 export function slugify(str: string): string {
   if (!str) return "";
 
-  return str
+  const slug = str
     .toLowerCase()
     .trim()
     .replace(/[^\w\s-]/g, "")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+    .replace(/[\s_-]+/g, "-");
+
+  // Trim leading/trailing dashes by index rather than with a regex. The
+  // anchored `/-+$/` this replaces is what CodeQL reports as polynomial
+  // (js/polynomial-redos, alert #18) on strings with long dash runs; walking
+  // the indices sidesteps the regex engine entirely.
+  let start = 0;
+  let end = slug.length;
+  while (start < end && slug.charCodeAt(start) === 45) start++;
+  while (end > start && slug.charCodeAt(end - 1) === 45) end--;
+  return slug.slice(start, end);
 }
 
 /**

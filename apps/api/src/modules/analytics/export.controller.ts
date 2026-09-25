@@ -4,15 +4,27 @@
 
 import { Request, Response, NextFunction } from 'express';
 import * as exportService from './export.service';
+import { requireUser } from '@/middleware/auth';
+import { seesAllUnits } from '@/utils/resolve-unit-id';
+
+/**
+ * The unit an export may cover: any (or all) for a cross-unit account, the
+ * account's own unit for everyone else — `?unitId=` used to pick any unit.
+ */
+function exportUnitId(req: Request): string | undefined {
+  const user = requireUser(req);
+  if (seesAllUnits(user)) return (req.query.unitId as string | undefined) || undefined;
+  return user.unitId ?? '__no_unit__';
+}
 
 /**
  * Export students data
  */
 export async function exportStudents(req: Request, res: Response, next: NextFunction) {
   try {
-    const { unitId, format = 'json' } = req.query;
+    const { format = 'json' } = req.query;
     const data = await exportService.exportStudentsData({
-      unitId: unitId as string | undefined,
+      unitId: exportUnitId(req),
       format: format as 'json' | 'csv',
     });
 
@@ -34,9 +46,9 @@ export async function exportStudents(req: Request, res: Response, next: NextFunc
  */
 export async function exportAttendance(req: Request, res: Response, next: NextFunction) {
   try {
-    const { unitId, startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, format = 'json' } = req.query;
     const data = await exportService.exportAttendanceData({
-      unitId: unitId as string | undefined,
+      unitId: exportUnitId(req),
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
       format: format as 'json' | 'csv',
@@ -60,9 +72,9 @@ export async function exportAttendance(req: Request, res: Response, next: NextFu
  */
 export async function exportFinance(req: Request, res: Response, next: NextFunction) {
   try {
-    const { unitId, startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, format = 'json' } = req.query;
     const data = await exportService.exportFinanceData({
-      unitId: unitId as string | undefined,
+      unitId: exportUnitId(req),
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
       format: format as 'json' | 'csv',
@@ -86,9 +98,9 @@ export async function exportFinance(req: Request, res: Response, next: NextFunct
  */
 export async function exportTahfidz(req: Request, res: Response, next: NextFunction) {
   try {
-    const { unitId, startDate, endDate, format = 'json' } = req.query;
+    const { startDate, endDate, format = 'json' } = req.query;
     const data = await exportService.exportTahfidzData({
-      unitId: unitId as string | undefined,
+      unitId: exportUnitId(req),
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
       format: format as 'json' | 'csv',
@@ -112,9 +124,9 @@ export async function exportTahfidz(req: Request, res: Response, next: NextFunct
  */
 export async function exportAll(req: Request, res: Response, next: NextFunction) {
   try {
-    const { unitId, startDate, endDate } = req.query;
+    const { startDate, endDate } = req.query;
     const data = await exportService.getComprehensiveExport({
-      unitId: unitId as string | undefined,
+      unitId: exportUnitId(req),
       startDate: startDate as string | undefined,
       endDate: endDate as string | undefined,
       format: 'json',

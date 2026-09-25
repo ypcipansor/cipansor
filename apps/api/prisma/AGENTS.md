@@ -59,7 +59,7 @@ failed when it ran inside `db:seed` (#530) — "the first exam" is a different
 exam among 648, a homeroom teacher gains the `WALI_KELAS` role, and unit
 addresses push `admin.sdit@`'s and `fatimah@`'s `auth-storage` cookie past 4 KB,
 which Playwright refuses outright (the browser drops it silently — see
-`docs/KNOWN_ISSUES.md`). Test fixtures and presentation data do different jobs.
+`.claude/memory/known-issues.md`). Test fixtures and presentation data do different jobs.
 
 Its guarantees are checked by invariants rather than by eye: nobody in two
 classes, no teacher or class in two places at once, no setoran on a day the

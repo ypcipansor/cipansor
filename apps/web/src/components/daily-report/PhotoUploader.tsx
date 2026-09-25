@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -149,16 +149,26 @@ export function PhotoUploader({
     onChange(newPhotos.map((p, i) => ({ ...p, order: i })));
   };
 
-  // Clean up blob URLs on unmount
-  // useEffect(() => {
-  //   return () => {
-  //     photos.forEach(photo => {
-  //       if (photo.url.startsWith('blob:')) {
-  //         URL.revokeObjectURL(photo.url);
-  //       }
-  //     });
-  //   };
-  // }, []);
+  // Revoke every outstanding preview URL on unmount. The photos belong to the
+  // parent (this is a controlled component), so this is only right while the
+  // uploader lives exactly as long as the form that owns them — true on
+  // /tk/daily-reports/new. Inside tabs or steps it would revoke previews the
+  // parent still shows; move the cleanup to the owner then.
+  // `removePhoto` only frees
+  // the ones the user deletes; the ones still present when the page is
+  // navigated away from would otherwise pin their files' bytes for the
+  // document's lifetime.
+  const photosRef = useRef(photos);
+  useEffect(() => {
+    photosRef.current = photos;
+  }, [photos]);
+  useEffect(() => {
+    return () => {
+      for (const photo of photosRef.current) {
+        if (photo.url.startsWith("blob:")) URL.revokeObjectURL(photo.url);
+      }
+    };
+  }, []);
 
   if (readOnly) {
     if (photos.length === 0) {

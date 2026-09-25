@@ -8,6 +8,7 @@ const { mockMedicalRecord, mockMedication, mockMedicationUsageLog } = vi.hoisted
       findMany: vi.fn(),
       count: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -104,7 +105,7 @@ describe('Health Service', () => {
       mockMedicalRecord.findMany.mockResolvedValue(mockData);
       mockMedicalRecord.count.mockResolvedValue(1);
 
-      const result = await service.getMedicalRecords({ page: 1, limit: 10 });
+      const result = await service.getMedicalRecords({ page: 1, limit: 10 }, {});
 
       expect(result.success).toBe(true);
       expect(result.data).toHaveLength(1);
@@ -189,9 +190,10 @@ describe('Health Service', () => {
         student: { id: 's1', user: { name: 'John' } },
       };
 
+      mockMedicalRecord.findFirst.mockResolvedValue({ id: '1' });
       mockMedicalRecord.update.mockResolvedValue(mockUpdated);
 
-      const result = await service.updateMedicalRecord('1', updateInput);
+      const result = await service.updateMedicalRecord('1', updateInput, {});
 
       expect(mockMedicalRecord.update).toHaveBeenCalledWith(
         expect.objectContaining({

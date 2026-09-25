@@ -1,12 +1,11 @@
 import express from 'express';
 import * as Sentry from '@sentry/node';
-import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
-import { buildCorsOptions } from '@/config/cors';
+import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
 import {
@@ -135,7 +134,7 @@ app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet());
-app.use(cors(buildCorsOptions(config.cors.origins)));
+app.use(buildCorsMiddleware(config.cors.origins));
 
 // Request parsing
 app.use(express.json({ limit: '10mb' }));

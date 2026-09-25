@@ -13,6 +13,7 @@ import {
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { STUDENT_SAFE_SELECT, studentScope, type ScopeActor } from '@/utils/student-scope';
 
 export class AttendanceService {
   /**
@@ -28,21 +29,13 @@ export class AttendanceService {
   /**
    * Get attendance records with pagination
    */
-  async findAll(
-    query: ListAttendanceQuery,
-    currentUser: { role: string; roleCode?: string | null; unitId: string | null }
-  ) {
+  async findAll(query: ListAttendanceQuery, currentUser: ScopeActor) {
     const { page, limit, classId, studentId, date, startDate, endDate, status } = query;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.AttendanceWhereInput = {};
-
-    // Filter by unit for non-super-admins
-    if (!seesAllUnits(currentUser)) {
-      where.student = {
-        unitId: currentUser.unitId || 'none',
-      };
-    }
+    // Staff see their unit, a santri their own days, a wali their children's.
+    // (Filtering by unit alone gave a santri the whole school's register.)
+    const where: Prisma.AttendanceWhereInput = { student: studentScope(currentUser) };
 
     if (classId) {
       where.classId = classId;
@@ -90,13 +83,7 @@ export class AttendanceService {
         take: limit,
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         include: {
-          student: {
-            include: {
-              user: {
-                select: { id: true, name: true },
-              },
-            },
-          },
+          student: { select: STUDENT_SAFE_SELECT },
           class: {
             select: { id: true, name: true, level: true },
           },
@@ -125,17 +112,14 @@ export class AttendanceService {
   /**
    * Get single attendance record
    */
-  async findById(id: string): Promise<Attendance> {
-    const attendance = await prisma.attendance.findUnique({
-      where: { id },
+  async findById(id: string, currentUser: ScopeActor): Promise<Attendance> {
+    const attendance = await prisma.attendance.findFirst({
+      where: { id, student: studentScope(currentUser) },
       include: {
         student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            unit: { select: { id: true, name: true } },
-          },
+          select: { ...STUDENT_SAFE_SELECT, unit: { select: { id: true, name: true } } },
         },
-        class: true,
+        class: { select: { id: true, name: true, level: true } },
         recordedBy: { select: { id: true, name: true } },
       },
     });
@@ -417,7 +401,7 @@ export class AttendanceService {
    */
   async getSummary(
     query: AttendanceSummaryQuery,
-    currentUser: { role: string; roleCode?: string | null; unitId: string | null }
+    currentUser: ScopeActor & { role?: string | null }
   ): Promise<AttendanceSummary> {
     const { classId, studentId, unitId, date, startDate, endDate } = query;
 
@@ -438,11 +422,9 @@ export class AttendanceService {
       where.date = { gte: new Date(startDate), lte: new Date(endDate) };
     }
 
-    // Filter by unit for non-super-admins
+    // Same scope as the list; a cross-unit account may narrow to one unit.
     if (!seesAllUnits(currentUser)) {
-      where.student = {
-        unitId: currentUser.unitId || 'none',
-      };
+      where.student = studentScope(currentUser);
     } else if (unitId) {
       where.student = { unitId };
     }

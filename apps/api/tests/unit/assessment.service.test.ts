@@ -36,6 +36,7 @@ vi.mock('../../src/lib/prisma', () => ({
       findMany: vi.fn(),
       count: vi.fn(),
       findUnique: vi.fn(),
+      findFirst: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -145,8 +146,8 @@ describe('Assessment Service', () => {
         averageScore: new Decimal(85),
       } as any);
 
-      // Mock FindUnique for return
-      vi.mocked(prisma.reportCard.findUnique).mockResolvedValue({
+      // Mock the re-fetch for return
+      vi.mocked(prisma.reportCard.findFirst).mockResolvedValue({
         id: 'rc-1',
         studentId,
         averageScore: new Decimal(85),

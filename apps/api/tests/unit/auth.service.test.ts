@@ -299,6 +299,54 @@ describe('AuthService', () => {
         expect(result).not.toHaveProperty('accessToken');
       });
     });
+
+    // Decided 2026-09-24: 2FA is mandatory for the yayasan organs, on any of
+    // their roles — the Kiai is pimpinan pesantren AND Pembina.
+    describe('second factor for the yayasan organs', () => {
+      const withRoles = (...codes: string[]) => ({
+        ...mockUser,
+        role: UserRole.STAFF,
+        isTwoFactorEnabled: false,
+        userRoles: codes.map((code, i) => ({
+          ...mockUser.userRoles[0],
+          id: `ura-${i}`,
+          isPrimary: i === 0,
+          role: { id: `role-${code}`, name: code, code },
+        })),
+      });
+
+      beforeEach(() => {
+        mockPrisma.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
+        mockComparePassword.mockResolvedValue(true);
+        mockPrisma.refreshToken.create.mockResolvedValue({});
+      });
+
+      it.each(['YAYASAN_PEMBINA', 'YAYASAN_KETUA', 'YAYASAN_PENGAWAS', 'YAYASAN_BENDAHARA'])(
+        'forces 2FA setup on %s',
+        async (code) => {
+          mockPrisma.user.findFirst.mockResolvedValue(withRoles(code));
+          const result = (await authService.login(validLoginInput)) as any;
+          expect(result.requiresTwoFactorSetup).toBe(true);
+          expect(result).not.toHaveProperty('accessToken');
+        }
+      );
+
+      it('forces it when the organ role is not the primary one', async () => {
+        mockPrisma.user.findFirst.mockResolvedValue(
+          withRoles('PESANTREN_PENGASUH', 'YAYASAN_PEMBINA')
+        );
+        const result = (await authService.login(validLoginInput)) as any;
+        expect(result.requiresTwoFactorSetup).toBe(true);
+      });
+
+      it('leaves a teacher without an organ role alone', async () => {
+        const guru = withRoles('SMPIT_GURU');
+        mockPrisma.user.findFirst.mockResolvedValue(guru);
+        mockPrisma.user.update.mockResolvedValue(guru);
+        const result = (await authService.login(validLoginInput)) as any;
+        expect(result).toHaveProperty('accessToken');
+      });
+    });
   });
 
   describe('register', () => {
@@ -661,6 +709,24 @@ describe('AuthService', () => {
   });
 
   describe('disableTwoFactor', () => {
+    it('prevents a yayasan organ from self-disabling 2FA, even on a secondary role', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 'kiai',
+        role: UserRole.STAFF,
+        unitId: null,
+        isTwoFactorEnabled: true,
+        twoFactorSecret: 'ACTIVE_SECRET',
+        userRoles: [
+          { isPrimary: true, role: { code: RoleCode.PESANTREN_PENGASUH } },
+          { isPrimary: false, role: { code: RoleCode.YAYASAN_PEMBINA } },
+        ],
+      });
+      mockVerifyOtp.mockResolvedValue({ valid: true });
+
+      await expect(authService.disableTwoFactor('kiai', '123456')).rejects.toThrow();
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+    });
+
     it('lets a non-admin user disable their own 2FA with a valid OTP', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({
         id: 'user-1',

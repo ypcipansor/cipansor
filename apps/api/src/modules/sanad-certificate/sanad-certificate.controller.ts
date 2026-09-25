@@ -16,12 +16,13 @@ export const listSanadRecords = asyncHandler(async (req: Request, res: Response)
 
   // Read what `validateQuery` produced, not the raw query. Express 5 makes
   // `req.query` read-only, so the middleware parks the parsed result in
-  // `res.locals.validatedQuery`; casting `req.query as any` here threw that
-  // away along with the schema's page=1/limit=20 defaults. A caller sending
-  // only `?limit=50` left `page` undefined, `skip` became NaN, and Prisma
-  // rejected the query with "Argument `skip` is missing" — a 500 on a plain
-  // list call.
-  const query = (res.locals.validatedQuery || req.query) as ListSanadQuery;
+  // `res.locals.validatedQuery`; falling back to `req.query` here would throw
+  // that away along with the schema's page=1/limit=20 defaults and would let a
+  // raw, unvalidated `hasCertificate` reach the service (CodeQL
+  // js/sensitive-get-query flagged it). A caller sending only `?limit=50` left
+  // `page` undefined, `skip` became NaN, and Prisma rejected the query with
+  // "Argument `skip` is missing" — a 500 on a plain list call.
+  const query = res.locals.validatedQuery as ListSanadQuery;
 
   const result = await SanadCertificateService.findAllSanadRecords(query, context);
 

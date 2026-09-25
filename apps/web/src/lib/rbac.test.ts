@@ -121,11 +121,11 @@ describe("rbac — legacy bucket derivation", () => {
     expect(deriveLegacyRole("SMPIT_WALI_KELAS")).toBe("TEACHER");
     expect(deriveLegacyRole("SMAQ_GURU_BK")).toBe("TEACHER");
     expect(deriveLegacyRole("TKQ_BENDAHARA")).toBe("STAFF");
-    // Pesantren leadership + gender-segregated pembina
+    // Pesantren leadership + pembina
     expect(deriveLegacyRole("PESANTREN_PENGASUH")).toBe("TEACHER");
     expect(deriveLegacyRole("USTADZ")).toBe("TEACHER");
-    expect(deriveLegacyRole("MUSYRIFAH")).toBe("TEACHER");
-    expect(deriveLegacyRole("MUHAFIDZAH")).toBe("TEACHER");
+    expect(deriveLegacyRole("MUSYRIF")).toBe("TEACHER");
+    expect(deriveLegacyRole("MUHAFIDZ")).toBe("TEACHER");
     expect(deriveLegacyRole("PESANTREN_TATA_USAHA")).toBe("STAFF");
     // Business units → STAFF, never an admin bucket
     expect(deriveLegacyRole("BUSINESS_MANAGER")).toBe("STAFF");
@@ -1069,7 +1069,6 @@ describe("e-office menu coverage", () => {
     "SMPIT_BENDAHARA",
     "TKQ_GURU",
     "TKQ_TATA_USAHA",
-    "PESANTREN_DIREKTUR",
     "PESANTREN_PENGASUH",
     "PESANTREN_TATA_USAHA",
     "USTADZ",

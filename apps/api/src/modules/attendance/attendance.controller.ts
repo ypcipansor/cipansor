@@ -20,11 +20,7 @@ import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.s
 export const list = asyncHandler(
   async (req: Request, res: Response<SharedPaginatedResponse<Attendance>>) => {
     const query = (res.locals.validatedQuery || req.query) as ListAttendanceQuery;
-    const result = await attendanceService.findAll(query, {
-      role: req.user!.role,
-      roleCode: req.user!.roleCode,
-      unitId: req.user!.unitId,
-    });
+    const result = await attendanceService.findAll(query, req.user!);
 
     res.json({
       success: true,
@@ -43,7 +39,7 @@ export const list = asyncHandler(
 export const getById = asyncHandler(
   async (req: Request, res: Response<ApiResponse<Attendance>>) => {
     const { id } = req.params;
-    const attendance = await attendanceService.findById(id);
+    const attendance = await attendanceService.findById(id, req.user!);
 
     res.json({
       success: true,
@@ -128,11 +124,7 @@ export const remove = asyncHandler(
 export const getSummary = asyncHandler(
   async (req: Request, res: Response<ApiResponse<AttendanceSummary>>) => {
     const query = (res.locals.validatedQuery || req.query) as AttendanceSummaryQuery;
-    const summary = await attendanceService.getSummary(query, {
-      role: req.user!.role,
-      roleCode: req.user!.roleCode,
-      unitId: req.user!.unitId,
-    });
+    const summary = await attendanceService.getSummary(query, req.user!);
 
     res.json({
       success: true,

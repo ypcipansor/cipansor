@@ -55,11 +55,11 @@ describe('middleware/auth RBAC', () => {
       expect(deriveLegacyRole(RoleCode.SMPIT_WALI_KELAS)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.SMAQ_GURU_BK)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.TKQ_BENDAHARA)).toBe('STAFF');
-      // Pesantren leadership + gender-segregated pembina
+      // Pesantren leadership + pembina
       expect(deriveLegacyRole(RoleCode.PESANTREN_PENGASUH)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.USTADZ)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.MUSYRIFAH)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.MUHAFIDZAH)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.MUSYRIF)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.MUHAFIDZ)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.PESANTREN_TATA_USAHA)).toBe('STAFF');
       // Business units map to STAFF — never to an admin bucket
       expect(deriveLegacyRole(RoleCode.BUSINESS_MANAGER)).toBe('STAFF');
@@ -195,8 +195,8 @@ describe('middleware/auth RBAC', () => {
         RoleCode.SMPIT_WALI_KELAS,
         RoleCode.SMAQ_GURU_BK,
         RoleCode.USTADZ,
-        RoleCode.MUSYRIFAH,
-        RoleCode.MUHAFIDZAH,
+        RoleCode.MUSYRIF,
+        RoleCode.MUHAFIDZ,
         RoleCode.PESANTREN_PENGASUH,
       ]) {
         const n = vi.fn();

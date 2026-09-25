@@ -1,20 +1,20 @@
 # CLAUDE.md
 
-This file is intentionally a thin pointer to avoid guidance drift.
+@AGENTS.md
+@.claude/memory/INDEX.md
 
-**Read [`AGENTS.md`](./AGENTS.md) for all project conventions, commands, the
-module architecture standard, and the golden rules.** Per-area guides live in
-`apps/api/AGENTS.md`, `apps/web/AGENTS.md`, `packages/shared/AGENTS.md`, and
-`apps/api/prisma/AGENTS.md`. Known issues and the remaining roadmap are in
-`docs/KNOWN_ISSUES.md`.
+## Claude Code only
 
-Quick reminders (full detail in `AGENTS.md`):
+The two imports above are the whole of the project guidance: `AGENTS.md` for
+the rules (every agent reads it), `.claude/memory/INDEX.md` for where the work
+stands. Claude Code does not load `AGENTS.md` on its own when a `CLAUDE.md`
+exists — until 2026-09-25 this file only *said* "read AGENTS.md", and the
+golden rules were not in context unless a session chose to open it.
 
-- Monorepo: `apps/api` (Express 5 + Prisma 7), `apps/web` (Next 16 + React Query),
-  `packages/shared` (Zod DTOs).
-- Never clobber `apps/api/prisma/schema.prisma`; run `pnpm --filter api db:generate`
-  after editing it.
-- Import DB enums from `@prisma/client`; use `RoleCode`, not legacy `UserRole`.
-- Run the full local quality gate (build / build:strict / test / e2e) before
-  pushing — CI is only a backstop.
-- Work on the feature branch; never push to `main`.
+- Hooks in `.claude/hooks/` enforce part of `AGENTS.md` mechanically; the list
+  and the reasons are in `.claude/README.md`.
+- Two memories, kept apart on purpose (`AGENTS.md` → "Where things live"): the
+  repo's `.claude/memory/` — shared, committed through PRs, **nothing
+  sensitive** — and the machine-local auto memory under
+  `~/.claude/projects/…/memory/`, which holds what is sensitive, personal or
+  specific to this machine.

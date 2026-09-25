@@ -1,11 +1,17 @@
 import { Router } from 'express';
 import * as controller from './curriculum.controller';
-import { authenticate } from '@/middleware/auth';
+import { authenticate, isTeacherOrAbove } from '@/middleware/auth';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Subjects, teaching assignments, lesson plans and the timetable are set by
+// teachers and the school's leadership. Until 2026-09-24 every write here
+// accepted any signed-in account, santri and wali included. Reads stay open:
+// the santri dashboard shows its timetable from /schedules.
+router.use((req, res, next) => (req.method === 'GET' ? next() : isTeacherOrAbove(req, res, next)));
 
 // ==================== SUBJECTS ====================
 

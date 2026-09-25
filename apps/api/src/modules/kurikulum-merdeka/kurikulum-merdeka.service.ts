@@ -1,4 +1,10 @@
 import { prisma } from '@/lib/prisma';
+import type { Prisma } from '@prisma/client';
+import {
+  onlyScopedStudents,
+  STUDENT_SAFE_SELECT,
+  TEACHER_SAFE_SELECT,
+} from '@/utils/student-scope';
 import {
   ListLearningOutcomesQueryInput,
   CreateLearningOutcomeInput,
@@ -209,7 +215,7 @@ export async function getLearningObjectiveById(id: string) {
       },
       teachingModules: {
         include: {
-          teacher: { include: { user: { select: { name: true } } } },
+          teacher: { select: TEACHER_SAFE_SELECT },
         },
         take: 10,
       },
@@ -279,7 +285,7 @@ export async function listTeachingModules(query: ListTeachingModulesQueryInput) 
             },
           },
         },
-        teacher: { include: { user: { select: { name: true } } } },
+        teacher: { select: TEACHER_SAFE_SELECT },
         class: { select: { id: true, name: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -314,7 +320,7 @@ export async function getTeachingModuleById(id: string) {
           },
         },
       },
-      teacher: { include: { user: { select: { name: true, email: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
       class: { select: { id: true, name: true } },
     },
   });
@@ -453,7 +459,7 @@ export async function listP5Projects(query: ListP5ProjectsQueryInput) {
         academicYear: { select: { id: true, name: true } },
         theme: { select: { id: true, code: true, name: true } },
         class: { select: { id: true, name: true } },
-        supervisor: { include: { user: { select: { name: true } } } },
+        supervisor: { select: TEACHER_SAFE_SELECT },
         _count: { select: { assessments: true } },
       },
       orderBy: { createdAt: 'desc' },
@@ -474,7 +480,7 @@ export async function listP5Projects(query: ListP5ProjectsQueryInput) {
   };
 }
 
-export async function getP5ProjectById(id: string) {
+export async function getP5ProjectById(id: string, scope: Prisma.StudentWhereInput) {
   return prisma.p5Project.findUnique({
     where: { id },
     include: {
@@ -482,11 +488,12 @@ export async function getP5ProjectById(id: string) {
       academicYear: { select: { id: true, name: true } },
       theme: true,
       class: { select: { id: true, name: true } },
-      supervisor: { include: { user: { select: { name: true, email: true } } } },
+      supervisor: { select: TEACHER_SAFE_SELECT },
       assessments: {
+        where: onlyScopedStudents(scope),
         include: {
-          student: { include: { user: { select: { name: true } } } },
-          assessedBy: { include: { user: { select: { name: true } } } },
+          student: { select: STUDENT_SAFE_SELECT },
+          assessedBy: { select: TEACHER_SAFE_SELECT },
         },
         orderBy: { assessedAt: 'desc' },
       },
@@ -539,10 +546,14 @@ export async function deleteP5Project(id: string) {
 
 // ==================== P5 ASSESSMENTS ====================
 
-export async function listP5Assessments(query: ListP5AssessmentsQueryInput) {
+export async function listP5Assessments(
+  query: ListP5AssessmentsQueryInput,
+  scope: Prisma.StudentWhereInput
+) {
   const { projectId, studentId, assessedById, page, limit } = query;
 
   const where = {
+    ...onlyScopedStudents(scope),
     ...(projectId && { projectId }),
     ...(studentId && { studentId }),
     ...(assessedById && { assessedById }),
@@ -553,8 +564,8 @@ export async function listP5Assessments(query: ListP5AssessmentsQueryInput) {
       where,
       include: {
         project: { select: { id: true, title: true, dimensions: true } },
-        student: { include: { user: { select: { name: true } } } },
-        assessedBy: { include: { user: { select: { name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
+        assessedBy: { select: TEACHER_SAFE_SELECT },
       },
       orderBy: { assessedAt: 'desc' },
       skip: (page - 1) * limit,
@@ -574,9 +585,9 @@ export async function listP5Assessments(query: ListP5AssessmentsQueryInput) {
   };
 }
 
-export async function getP5AssessmentById(id: string) {
-  return prisma.p5Assessment.findUnique({
-    where: { id },
+export async function getP5AssessmentById(id: string, scope: Prisma.StudentWhereInput) {
+  return prisma.p5Assessment.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
     include: {
       project: {
         include: {
@@ -584,8 +595,8 @@ export async function getP5AssessmentById(id: string) {
           unit: { select: { id: true, name: true } },
         },
       },
-      student: { include: { user: { select: { name: true, email: true } } } },
-      assessedBy: { include: { user: { select: { name: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
+      assessedBy: { select: TEACHER_SAFE_SELECT },
     },
   });
 }
@@ -653,7 +664,7 @@ export async function listMerdekaAssessments(query: ListMerdekaAssessmentsQueryI
             },
           },
         },
-        teacher: { include: { user: { select: { name: true } } } },
+        teacher: { select: TEACHER_SAFE_SELECT },
         academicYear: { select: { id: true, name: true } },
         _count: { select: { results: true } },
       },
@@ -675,7 +686,7 @@ export async function listMerdekaAssessments(query: ListMerdekaAssessmentsQueryI
   };
 }
 
-export async function getMerdekaAssessmentById(id: string) {
+export async function getMerdekaAssessmentById(id: string, scope: Prisma.StudentWhereInput) {
   return prisma.merdekaAssessment.findUnique({
     where: { id },
     include: {
@@ -691,11 +702,12 @@ export async function getMerdekaAssessmentById(id: string) {
           },
         },
       },
-      teacher: { include: { user: { select: { name: true, email: true } } } },
+      teacher: { select: TEACHER_SAFE_SELECT },
       academicYear: { select: { id: true, name: true } },
       results: {
+        where: onlyScopedStudents(scope),
         include: {
-          student: { include: { user: { select: { name: true } } } },
+          student: { select: STUDENT_SAFE_SELECT },
           gradedBy: { select: { id: true, name: true } },
         },
         orderBy: { gradedAt: 'desc' },
@@ -748,10 +760,14 @@ export async function deleteMerdekaAssessment(id: string) {
 
 // ==================== MERDEKA ASSESSMENT RESULTS ====================
 
-export async function listMerdekaResults(query: ListMerdekaResultsQueryInput) {
+export async function listMerdekaResults(
+  query: ListMerdekaResultsQueryInput,
+  scope: Prisma.StudentWhereInput
+) {
   const { assessmentId, studentId, page, limit } = query;
 
   const where = {
+    ...onlyScopedStudents(scope),
     ...(assessmentId && { assessmentId }),
     ...(studentId && { studentId }),
   };
@@ -766,7 +782,7 @@ export async function listMerdekaResults(query: ListMerdekaResultsQueryInput) {
             class: { select: { id: true, name: true } },
           },
         },
-        student: { include: { user: { select: { name: true } } } },
+        student: { select: STUDENT_SAFE_SELECT },
         gradedBy: { select: { id: true, name: true } },
       },
       orderBy: { gradedAt: 'desc' },
@@ -787,18 +803,18 @@ export async function listMerdekaResults(query: ListMerdekaResultsQueryInput) {
   };
 }
 
-export async function getMerdekaResultById(id: string) {
-  return prisma.merdekaAssessmentResult.findUnique({
-    where: { id },
+export async function getMerdekaResultById(id: string, scope: Prisma.StudentWhereInput) {
+  return prisma.merdekaAssessmentResult.findFirst({
+    where: { id, ...onlyScopedStudents(scope) },
     include: {
       assessment: {
         include: {
           subject: true,
           class: true,
-          teacher: { include: { user: { select: { name: true } } } },
+          teacher: { select: TEACHER_SAFE_SELECT },
         },
       },
-      student: { include: { user: { select: { name: true, email: true } } } },
+      student: { select: STUDENT_SAFE_SELECT },
       gradedBy: { select: { id: true, name: true, email: true } },
     },
   });

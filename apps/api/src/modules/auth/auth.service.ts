@@ -3,7 +3,12 @@ import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { hashPassword, comparePassword } from '@/lib/password';
 import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken } from '@/lib/jwt';
 import { Errors } from '@/middleware/error';
-import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
+import {
+  isAdminRoleCode,
+  isGovernanceRoleCode,
+  deriveLegacyRole,
+  requiresSecondFactor,
+} from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import { RoleCode, UnitType } from '@prisma/client';
@@ -49,8 +54,8 @@ export function resolveLegacyRoleToRoleCode(
   // NOTE on PESANTREN/OTHER units:
   //   - TEACHER maps to MUSYRIF (the generic pesantren teacher role) to preserve
   //     backward compatibility for legacy API clients registering pesantren teachers.
-  //     More specific pesantren roles (MUHAFIDZ, MURABBI, WALI_KAMAR) must be
-  //     selected explicitly via `roleCode` since they are distinct responsibilities.
+  //     Other pesantren roles (USTADZ, MUHAFIDZ) must be selected explicitly
+  //     via `roleCode` since they are distinct responsibilities.
   //   - STAFF/STUDENT/PARENT have NO dedicated pesantren RoleCode. Legacy clients
   //     registering these against PESANTREN/OTHER units must migrate to send
   //     `roleCode` explicitly. Do NOT silently fall back to a school-unit RoleCode
@@ -159,7 +164,8 @@ export class AuthService {
     const roleId = primaryAssignment.roleId;
     const assignmentUnitId = primaryAssignment.unitId;
 
-    const isUserAdmin = isAdminRoleCode(roleCode);
+    // Every active assignment counts, not only the one this login lands on.
+    const mustUseSecondFactor = requiresSecondFactor(user.userRoles.map((r) => r.role.code));
 
     // Build the payload used for all token generation in this method
     const basePayload = {
@@ -189,8 +195,10 @@ export class AuthService {
       };
     }
 
-    // Force 2FA setup for Admin/Super Admin
-    if (isUserAdmin && !user.isTwoFactorEnabled) {
+    // Force 2FA setup for admins and the yayasan organs (decided 2026-09-24:
+    // Pembina, Pengurus and Pengawas sign off the yayasan's plans and budgets,
+    // and their seeded passwords are public).
+    if (mustUseSecondFactor && !user.isTwoFactorEnabled) {
       const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
 
       return {
@@ -920,7 +928,11 @@ export class AuthService {
     // UserRoleAssignment would have targetRoleCode = '' and isTargetAdmin = false,
     // allowing non-SUPER_ADMIN admins to disable their 2FA.
     const targetRoleCode = primaryTargetRole?.role.code || user.role || '';
-    const isTargetAdmin = isAdminRoleCode(targetRoleCode);
+    // Admins and yayasan organs must keep 2FA, on whichever of their roles.
+    const isTargetAdmin = requiresSecondFactor([
+      targetRoleCode,
+      ...user.userRoles.map((r) => r.role.code),
+    ]);
 
     if (adminId) {
       // Admin disabling for another user (Reset flow)

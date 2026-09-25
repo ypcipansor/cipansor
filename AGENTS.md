@@ -84,6 +84,18 @@ monorepo**:
    very files #504 deleted. `git worktree add --detach <dir> origin/main`, merge
    both heads into it, run the gate there; it costs one gate run and it is the
    only thing that catches this class.
+10. **Every UI change ships before/after screenshots**, one pair per affected
+    surface, taken from the real components — "before" rendered from `main`,
+    not remembered. Put them where the reviewer sees them (the PR body, or a
+    shared page linked from it). The `screenshot-roles` skill has the rigs
+    (`before-after.md`). Walking each screen for its screenshot is also what
+    finds the defects a diff hides.
+11. **Say "done" only when someone can click it — and say how far it went.**
+    Every report of a UI change gives the **menu path** to reach it (e.g.
+    *Perencanaan & Kinerja → Perjanjian Kinerja → Tambah*) and its state:
+    **on a branch**, **merged to `main`**, **on staging**, or **in
+    production**. A page on an unmerged branch is not "built" to the person
+    looking for it in the app.
 
 ## Commands
 
@@ -144,46 +156,61 @@ add new events to the `AppEvents` interface with a payload type.
 ## Per-area guides
 
 See nested `AGENTS.md` files: `apps/api/AGENTS.md`, `apps/web/AGENTS.md`,
-`packages/shared/AGENTS.md`, `apps/api/prisma/AGENTS.md`. Known technical debt and
-the remaining build-green roadmap live in `docs/KNOWN_ISSUES.md`.
+`packages/shared/AGENTS.md`, `apps/api/prisma/AGENTS.md`. The nearest one to the
+file you are changing applies on top of this one.
 
-## Committed skills and hooks
+## Where things live
 
-`.claude/` carries the automation this repo relies on, and it is checked in so
-every session gets it.
+Every agent (Claude, OpenHands, Jules, Copilot) loads this file; Claude also
+loads `.claude/memory/INDEX.md`. Each kind of knowledge has exactly one home —
+two copies drift, and a stale one actively misleads.
 
-**These files are kept current without asking.** Standing permission from the
-user (2026-07-24, widened 2026-09-05) covers **adding, changing and deleting**
-anything in `.claude/`, `AGENTS.md`, `CLAUDE.md` and the per-area guides — new
-files where one is missing, and removal of files that guard a flow that no
-longer exists. The reason is the same one that put them here: a stale guide is
-not neutral, it actively misleads, and a skill for a workflow we deleted is a
-trap for whoever reads it next.
+| Kind | Home | Changes |
+|---|---|---|
+| Rules every change follows: architecture, build/test/deploy, style, guardrails | this file + the nested `AGENTS.md` | rarely, by PR |
+| Procedures and domain knowledge, loaded when relevant ([index](#skills)) | `.claude/skills/<name>/SKILL.md` | when a standard or a rule changes, by PR |
+| Enforcement | CI and the `main` ruleset (every agent); `.claude/hooks/` (Claude only) | rarely, by PR |
+| Project memory: progress, backlog, known issues (`.claude/memory/*.md`); decisions not yet in a skill (`decisions/`); traps that cost time (`lessons/`) — indexed in `INDEX.md` | `.claude/memory/` | as work happens, by PR |
+| Documentation for people: architecture, deployment, setup, user manuals | `docs/` | with the code it describes |
+| Anything **sensitive**, personal, or specific to one machine | the machine-local memory (`~/.claude/projects/…/memory/`), never the repo | — |
 
-Three conditions, none of them loosened by that permission: it goes through a
-branch and a PR like any other change, **never straight to `main`**; a deletion
-must say in the PR body *why*, because what is gone is invisible on screen; and
-before removing anything, prove it is unused — grep for callers, check
-`settings.json` for a hook registration — rather than assuming.
+**Sensitive** means what an attacker could use: credentials and their status,
+keys, tokens, connection strings, cloud resource names and ids (vault, storage,
+database server), IP addresses, host paths, a weakness still open in
+production, incident details, personal data. The repository is **public until
+release** and git history keeps everything. `.github/scripts/check-sensitive.py`
+rejects the mechanical cases — Claude's `guard.sh` before the write, the
+Security CI job on every PR — and the judgement cases are on whoever writes the
+note. Until the repository is private, moving a machine-local memory into
+`.claude/memory/` needs the user's approval, file by file; once it is private,
+the two are merged.
 
-| | |
+**Lifecycle.** Add a skill when the same procedure or domain knowledge is needed
+a second time; a hook when a written rule was broken anyway; a memory when a
+future session would otherwise repeat the work or the mistake. Update in place
+— one subject, one file. Delete what guards a flow that no longer exists, after
+proving it unused (grep for callers, check `.claude/settings.json`), and say why
+in the PR body, because what is gone is invisible on screen. The `sync-records`
+skill is the pass that moves findings out of a session and into the right home.
+
+Standing permission from the user (2026-07-24, widened 2026-09-05) covers
+adding, changing and deleting anything in `.claude/`, `AGENTS.md`, `CLAUDE.md`
+and the per-area guides — always on a branch and through a PR, never straight
+to `main`.
+
+### Skills
+
+Claude loads a skill by its description; any other agent opens the file when
+its "use when" matches the task.
+
+| Skill | Use when |
 |---|---|
-| `skills/gate` | the quality gate AGENTS.md requires before pushing |
-| `skills/stack` | bring the local Postgres + Redis stack up |
-| `skills/screenshot-roles` | render real components for before/after shots |
-| `skills/sync-records` | move findings out of the transcript and into files |
-| `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
-| `hooks/format-before-push.sh` | PreToolUse — refuses a `git push` whose commits carry `.ts`/`.tsx` files Prettier would change, and prints the command that fixes them |
-| `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
-| `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
-| `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |
-| `hooks/main-ci-watch.sh` | SessionStart + UserPromptSubmit + PostToolUse — reports once when a workflow on `main` fails (CI, E2E, CodeQL, Deploy staging/production), and once when it recovers |
-| `hooks/sync_stamp.py` | shared by the hooks above and the `sync-records` skill: one definition of "the records are level", plus the context-size reading |
-| `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
-| `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
+| [`gate`](.claude/skills/gate/SKILL.md) | before every push: the full local quality gate |
+| [`stack`](.claude/skills/stack/SKILL.md) | the app must run locally: Postgres + Redis + API + web |
+| [`screenshot-roles`](.claude/skills/screenshot-roles/SKILL.md) | before/after screenshots, per-role visual QA |
+| [`sync-records`](.claude/skills/sync-records/SKILL.md) | end of a work session or before compaction: update memory, roadmap, guides |
 
-**Why each hook works the way it does** — what went wrong before, what was
-measured, and the safety rails — is in [`.claude/README.md`](./.claude/README.md).
-It matters only to whoever changes a hook, so it is kept out of this file,
-which every agent loads whole. Read it before touching a hook: most of these
-designs replaced an earlier one that looked right and did nothing.
+The Claude Code hooks, what each one enforces, and why each works the way it
+does are in [`.claude/README.md`](./.claude/README.md). Read it before touching
+a hook: most of these designs replaced an earlier one that looked right and did
+nothing.
