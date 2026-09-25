@@ -1,5 +1,4 @@
 import {
-  PrismaClient,
   Prisma,
   LetterFlowAction,
   LetterStatus as DbLetterStatus,
@@ -7,7 +6,7 @@ import {
   LetterNature as DbLetterNature,
   RoleCode,
 } from '@prisma/client';
-import { prisma } from '@/lib/prisma';
+import { prisma, type Db } from '@/lib/prisma';
 import {
   CreateLetterInput,
   CreateDispositionInput,
@@ -43,8 +42,6 @@ import { AGENDA_TYPE_CODE, assertNatureAllowed } from '@/utils/letter-naskah';
 import { Errors } from '@/middleware/error';
 
 /** Anything that can run a query — the live client or a transaction handle. */
-type Db = Prisma.TransactionClient | PrismaClient;
-
 /**
  * Append one entry to a letter's history.
  *

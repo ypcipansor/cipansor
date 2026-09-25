@@ -111,6 +111,8 @@ export class AuthService {
    */
   async login(input: LoginInput) {
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
       where: {
         email: input.email,
         deletedAt: null,
@@ -584,6 +586,8 @@ export class AuthService {
    */
   async changePassword(userId: string, input: ChangePasswordInput) {
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
       where: { id: userId, deletedAt: null },
     });
 
@@ -761,7 +765,11 @@ export class AuthService {
    * Enable 2FA
    */
   async enableTwoFactor(userId: string, token: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecretPending: false },
+    });
     if (!user) throw Errors.notFound('User');
 
     if (user.isTwoFactorEnabled) {
@@ -804,6 +812,8 @@ export class AuthService {
     }
 
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecret: false },
       where: { id: userId, deletedAt: null },
       include: {
         unit: true,
@@ -911,6 +921,8 @@ export class AuthService {
    */
   async disableTwoFactor(userId: string, token: string, adminId?: string) {
     const user = await prisma.user.findUnique({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecret: false },
       where: { id: userId },
       include: {
         userRoles: {
@@ -937,6 +949,8 @@ export class AuthService {
     if (adminId) {
       // Admin disabling for another user (Reset flow)
       const admin = await prisma.user.findUnique({
+        // The client omits credentials by default (lib/prisma.ts); this check needs it.
+        omit: { twoFactorSecret: false },
         where: { id: adminId },
         include: {
           userRoles: {
