@@ -50,6 +50,22 @@ describe('production secret guard', () => {
     ).toThrow(/too short/);
   });
 
+  // Regression for CodeQL js/clear-text-logging: the boot error is logged by
+  // main.ts, so the reason must never quote the secret itself (not even its
+  // length, which is derived from it).
+  it('does not put the secret value or its length in the error', () => {
+    const secret = 'short-secret-value';
+    let message = '';
+    try {
+      assertProductionSecrets({ env: 'production', jwtSecret: secret });
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(/too short/);
+    expect(message).not.toContain(secret);
+    expect(message).not.toContain(String(secret.length));
+  });
+
   it("refuses config/index.ts's own dev fallback", () => {
     expect(() =>
       assertProductionSecrets({

@@ -8,7 +8,13 @@ import { ListStudentsQuery, CreateStudentInput, UpdateStudentInput } from './stu
  * GET /api/students
  */
 export const list = asyncHandler(async (req: Request, res: Response) => {
-  const query = (res.locals.validatedQuery || req.query) as ListStudentsQuery;
+  // Read only what `validateQuery` produced. Express 5 makes `req.query`
+  // read-only; the middleware parks the parsed result in
+  // `res.locals.validatedQuery`. Falling back to the raw `req.query` here
+  // would bypass that schema (CodeQL js/sensitive-get-query flagged `gender`
+  // arriving from the raw query string) and would also lose the schema's
+  // page/limit defaults.
+  const query = res.locals.validatedQuery as ListStudentsQuery;
   const result = await studentService.findAll(query, {
     role: req.user!.role,
     roleCode: req.user!.roleCode,
