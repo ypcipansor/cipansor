@@ -150,13 +150,12 @@ decision.
   and duplicate pages: `/payroll` + `/hr/payroll`, `/wallet` +
   `/finance/wallet`, `/tahfidz/simaan` + `/takhosus/simaan`, three certificate
   pages.
-- **The module standard is not followed, and `AGENTS.md` describes it wrongly.**
-  It says `routes.ts`, `service.ts`…; every module uses `<name>.routes.ts`.
+- **The module standard is not followed.**
   22 of 93 modules have all five parts; 12 call Prisma from a route or
   controller; 23 import other modules directly (the rule is the event bus);
   1,457 bare `res.json` against 399 `ApiResponse`; 349 of 562 POST/PUT/PATCH
-  routes carry no `validate()`. `docs/ARCHITECTURE.md` still describes nginx on
-  the VM.
+  routes carry no `validate()`. (`AGENTS.md` and `docs/ARCHITECTURE.md` were
+  corrected on 2026-09-25; the code itself is phase 6 of the plan.)
 - **Scheduled jobs assume one instance.** Ten `node-cron` jobs run inside the
   API process with no lock; scaling the App Service to two instances would send
   SPP reminders twice. Add a `pg_try_advisory_lock` (or a separate worker)
