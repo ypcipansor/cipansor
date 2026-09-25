@@ -415,6 +415,14 @@ export async function generateCertificate(
   const certificateNumber = certificate.certificateNumber;
   const verificationCode = certificate.qrCode;
 
+  // The "Mengetahui" signatory printed is the one stored when the certificate
+  // was minted — what the public verify page attests — not whatever a later
+  // request's ?signedBy= says, or two prints of one certificate could name two
+  // different signatories. Minted without one, the stored value is the teacher,
+  // who already signs the first box, so the second stays blank as before.
+  const countersigned =
+    !!certificate.signatoryName && certificate.signatoryName !== sanad.teacher.name;
+
   // Generate certificate data
   const certificateData = {
     certificateNumber,
@@ -430,8 +438,8 @@ export async function generateCertificate(
     certifiedAt: sanad.certifiedAt,
     unitName: sanad.enrollment.student.unit?.name || 'Pesantren',
     halaqohName: sanad.enrollment.halaqoh?.name,
-    signedBy: input.signedBy,
-    signedByTitle: input.signedByTitle,
+    signedBy: countersigned ? (certificate.signatoryName ?? undefined) : undefined,
+    signedByTitle: countersigned ? (certificate.signatoryTitle ?? undefined) : undefined,
     templateType: input.templateType,
     includeQRCode: input.includeQRCode,
     generatedAt: new Date(),
