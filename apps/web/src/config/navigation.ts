@@ -405,6 +405,54 @@ const staffNavigation: NavGroup[] = [
       },
     ],
   },
+  {
+    // One menu serves nine staff functions, so each service page is shown
+    // only to the role that runs it (filtered in getNavigationForRoleCode;
+    // `roleCodeRouteAccess` in rbac.ts opens the same pages). Until 2026-09-25
+    // none of these roles could reach its own module.
+    title: "Sarana & Layanan",
+    items: [
+      {
+        title: "Perpustakaan",
+        href: "/library",
+        icon: Library,
+        roleCodes: ["PUSTAKAWAN"],
+        children: [
+          {
+            title: "Maktabah Digital",
+            href: "/library/digital",
+            icon: BookOpen,
+            roleCodes: ["PUSTAKAWAN"],
+          },
+        ],
+      },
+      {
+        // Laboratory equipment; /practicum is Amaliyah Tadris, not a lab.
+        title: "Inventaris",
+        href: "/inventory",
+        icon: Package,
+        roleCodes: ["LABORAN"],
+      },
+      {
+        title: "Kantin & Koperasi",
+        href: "/canteen",
+        icon: ShoppingCart,
+        roleCodes: ["BUSINESS_MANAGER", "BUSINESS_STAFF"],
+      },
+      {
+        title: "Laundry",
+        href: "/laundry",
+        icon: WashingMachine,
+        roleCodes: ["BUSINESS_MANAGER", "BUSINESS_STAFF"],
+      },
+      {
+        title: "Unit Usaha",
+        href: "/unit-usaha",
+        icon: Briefcase,
+        roleCodes: ["BUSINESS_MANAGER"],
+      },
+    ],
+  },
 ];
 
 // Student-specific navigation
@@ -672,8 +720,24 @@ const yayasanNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Kinerja",
+    title: "Perencanaan & Kinerja",
     items: [
+      {
+        // Pengurus drafts and the Ketua submits the yayasan's plans, Pengawas
+        // reviews and Pembina ratifies them; the kepala sekolah drafts the RKA
+        // Unit. Until 2026-09-25 none of them had this link — the ratification
+        // flow was reachable by typing the URL.
+        title: "Perencanaan Strategis",
+        href: "/perencanaan",
+        icon: ClipboardList,
+        children: [
+          {
+            title: "Peta Strategi",
+            href: "/perencanaan/strategy-map",
+            icon: Globe,
+          },
+        ],
+      },
       {
         title: "Manajemen Kinerja",
         href: "/kinerja",
@@ -1630,8 +1694,24 @@ const kepalaSekolahNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Kinerja",
+    title: "Perencanaan & Kinerja",
     items: [
+      {
+        // Pengurus drafts and the Ketua submits the yayasan's plans, Pengawas
+        // reviews and Pembina ratifies them; the kepala sekolah drafts the RKA
+        // Unit. Until 2026-09-25 none of them had this link — the ratification
+        // flow was reachable by typing the URL.
+        title: "Perencanaan Strategis",
+        href: "/perencanaan",
+        icon: ClipboardList,
+        children: [
+          {
+            title: "Peta Strategi",
+            href: "/perencanaan/strategy-map",
+            icon: Globe,
+          },
+        ],
+      },
       {
         title: "Manajemen Kinerja",
         href: "/kinerja",
@@ -2044,7 +2124,12 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
 
   // Staff roles
   if (isStaffRole(roleCode)) {
-    return staffNavigation;
+    return staffNavigation
+      .map((group) => ({
+        ...group,
+        items: filterNavItemsByRoleCode(group.items, roleCode),
+      }))
+      .filter((group) => group.items.length > 0);
   }
 
   // Student roles

@@ -9,6 +9,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { PERMISSION_GROUPS, PERMISSION_LABELS } from "@/constants/permissions";
+import { PermissionScopeNotice } from "./permission-scope-notice";
 
 interface PermissionSelectorProps {
   selectedPermissions: string[];
@@ -50,6 +51,7 @@ export function PermissionSelector({
 
   return (
     <div className="space-y-4 border rounded-lg p-4">
+      <PermissionScopeNotice />
       <h3 className="font-medium text-sm">Permissions</h3>
       <Accordion
         type="multiple"

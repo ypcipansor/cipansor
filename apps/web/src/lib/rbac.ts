@@ -388,19 +388,54 @@ export function getEffectiveRole(
   return undefined;
 }
 
-/** Can this role reach `pathname`? */
+/**
+ * Pages one RoleCode needs beyond its bucket.
+ *
+ * The buckets are coarse: every kepala sekolah shares TEACHER with every guru,
+ * and the pustakawan shares STAFF with tata usaha and the nurse. Opening these
+ * pages to a whole bucket would show them to everyone in it, so each entry
+ * opens a page to the one role whose job it is. The API still decides what
+ * the role may do there.
+ *
+ * Found on 2026-09-25 by printing every role's menu
+ * (`apps/web/scripts/role-menus.ts`): each page below was refused to the very
+ * role it exists for, while the API already admitted that role. Model A
+ * (roadmap §1.2) replaces the buckets and this map with a permission per
+ * feature.
+ */
+export const roleCodeRouteAccess: Readonly<Record<string, readonly string[]>> =
+  {
+    // The head drafts the RKA Unit their PK must anchor to
+    // (`canAuthorUnitPlan` on the API).
+    TKQ_KEPALA_SEKOLAH: ["/perencanaan"],
+    SDIT_KEPALA_SEKOLAH: ["/perencanaan"],
+    SMPIT_KEPALA_SEKOLAH: ["/perencanaan"],
+    SMAQ_KEPALA_SEKOLAH: ["/perencanaan"],
+    PUSTAKAWAN: ["/library"],
+    // Laboratory equipment: the role holds INVENTORY_VIEW / INVENTORY_MANAGE.
+    // `/practicum` is Amaliyah Tadris (teaching practice), not a laboratory.
+    LABORAN: ["/inventory"],
+    BUSINESS_MANAGER: ["/canteen", "/laundry", "/unit-usaha"],
+    BUSINESS_STAFF: ["/canteen", "/laundry"],
+  };
+
+/**
+ * Can this role reach `pathname`? `roleCode`, when given, adds the pages in
+ * `roleCodeRouteAccess` to what the bucket allows.
+ */
 export function canAccessRoute(
   role: LegacyRole | undefined,
   pathname: string,
+  roleCode?: string | null,
 ): boolean {
   if (!role) return false;
-  const allowed = roleRouteAccess[role];
-  if (!allowed || allowed.length === 0) return false;
+  const allowed = roleRouteAccess[role] ?? [];
   if (allowed.includes("*")) return true;
+  const extra = (roleCode && roleCodeRouteAccess[roleCode]) || [];
   // Match on segment boundaries, not raw string prefixes: a plain startsWith
   // would let "/student" also grant "/students" (the whole admin student
   // roster) to every student.
-  return allowed.some(
+  return [...allowed, ...extra].some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 }
