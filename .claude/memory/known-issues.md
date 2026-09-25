@@ -16,19 +16,31 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **The web calls API paths that do not exist — 212 distinct calls, about 109
-  reachable from pages** (measured 2026-09-25; the list is
+- **The web calls API paths that do not exist — 203 distinct calls left**
+  (212 when measured on 2026-09-25; Perizinan fixed in #564; the list is
   `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
   keeps honest — it only shrinks; staging answers them "Route … not found").
-  Worst felt: Perizinan's Setujui/Tolak (`POST /permits/:id/approve|reject`;
-  the API has `PUT /permits/:id/status`), the Kurikulum list
+  Worst felt now: the Kurikulum list
   (`/curriculum/curriculums`), HR employees (`/hr/employees`), every
   Sertifikat page (`/certificates`), parent messages (`/parent/messages`),
   and three pages that write `/api/…` and so call `/api/api/…`
   (`analytics/grc`, `talenta/analytics`, `perencanaan/[id]/activity-dialog`).
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
-  Types entries below are part of this. Phase 1 of the audit plan fixes it,
-  after a ratchet guard (phase 0) stops new ones.
+  Types entries below are part of this. Phase 1 of the audit plan fixes it area
+  by area; the guard (#563) stops new ones.
+- **The staff dashboard's other counters are always 0.** `use-staff-dashboard.ts`
+  reads `meta.pagination.total` for health, violations, rewards and students;
+  those APIs send other shapes (#564 fixed only the permit counter). The API has
+  three pagination shapes (`pagination`, `meta.pagination`, `meta`) — phase 6.
+- **`/musyrif/boarding-center` is still mostly sample data** (Social Harmony,
+  "4 Musyrif on Duty", alerts, health counts); only the dormitory list and,
+  since #564, the permit card and tab are live. The page says so.
+- **Permits without a gate code.** Older seeded permits have `code` null, so the
+  gate cannot find them once approved. New permits always get one; approving a
+  code-less permit should assign one.
+- **2FA recovery codes are stored but never accepted.** Enrolment writes
+  `twoFactorRecoveryCodes`; no login path reads them, so a user who loses the
+  authenticator cannot use them.
 
 - **Tagihan & SPP — the write screens call an API that does not exist.** The
   read screens were fixed in #540; the writes still use the imagined contract
