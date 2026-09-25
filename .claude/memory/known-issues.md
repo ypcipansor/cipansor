@@ -104,8 +104,6 @@ decision.
    families side by side. The seed now has one per unit; the live data was not
    rechecked. Prefer `is_active = false` over deleting, so the audit trail
    survives.
-7. **LICENSE.** The README advertises an MIT badge and links a `LICENSE` file
-   that does not exist. Add the file or drop the claim.
 
 ## Design gaps
 

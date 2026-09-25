@@ -25,15 +25,11 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## In flight
 
-- **Agent-context restructure** (decided 2026-09-25): (1) this memory folder,
-  the "Where things live" map and the sensitive-text check — #554; (2) stale
-  docs deleted, and this folder's roadmap and known issues cut down to open
-  work, each item rechecked against the code; (3) move the non-sensitive
-  machine-local memories here, from a list the user approved (decisions and
-  research → `decisions/`, engineering lessons → `lessons/`); (4) new skills —
-  user manuals per role, naskah dinas and yayasan governance knowledge.
-  `docs/DEPLOYMENT.md` goes after 2026-10-01 (the VM is the rollback target
-  until then, and a guard test reads it).
+- **Agent-context restructure** (decided 2026-09-25): steps 1–3 are merged
+  (see below); step 4 — new skills: user manuals per role, naskah dinas and
+  yayasan governance knowledge — is not started. `docs/DEPLOYMENT.md` goes
+  after 2026-10-01 (the VM is the rollback target until then, and a guard test
+  reads it).
 
 ## Recently done (2026-09-24 → 25)
 
@@ -46,6 +42,13 @@ backlog to [`roadmap.md`](roadmap.md).
 - The E2E helper that picked another spec's plan (#551).
 - The server checks who is named *atasan penilai* on a PK: never the owner,
   and only someone who holds a supervising role (#553).
+- Agent context (#554, #555, #556): `CLAUDE.md` imports `AGENTS.md` and this
+  index; stale docs deleted; roadmap and known issues cut to open work;
+  decisions and lessons moved here from the machine-local memory; golden rules
+  10 (before/after screenshots) and 11 (menu path + state).
+- **Licence decided (2026-09-25): proprietary, owned by Yayasan Pesantren
+  Cipansor — not open source**, because the repository becomes private. Never
+  add an open-source licence, badge, or "contributions welcome" text.
 
 ## Next
 

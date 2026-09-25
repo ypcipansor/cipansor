@@ -2,6 +2,7 @@
   "name": "cipansor",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
