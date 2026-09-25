@@ -3,15 +3,9 @@ import { MainLayout } from "@/components/layout";
 
 import { useState } from "react";
 import Link from "next/link";
-import { CalendarClock, Plus, Check, X, RotateCcw } from "lucide-react";
+import { CalendarClock, Plus, Check, X, ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -28,151 +22,133 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { Pagination, ConfirmDialog } from "@/components/shared";
 import { toast } from "sonner";
 import {
   usePermits,
+  usePermitSummary,
+  usePermitAbilities,
   useApprovePermit,
-  useRejectPermit,
-  useMarkReturned,
   PERMIT_TYPES,
-  PERMIT_STATUSES,
-  PermitType,
-  PermitStatus,
-  Permit,
+  PERMIT_TYPE_LABELS,
+  PERMIT_STATUS_FILTERS,
+  PERMIT_PHASES,
+  permitPhase,
+  type PermitStatus,
+  type PermitType,
 } from "@/hooks/use-permits";
+import { RejectPermitDialog } from "./reject-permit-dialog";
+
+const formatDateTime = (iso: string) =>
+  new Date(iso).toLocaleString("id-ID", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 function PermitsPageContent() {
   const [page, setPage] = useState(1);
-  const [permitType, setPermitType] = useState<PermitType | "">("");
+  const [type, setType] = useState<PermitType | "">("");
   const [status, setStatus] = useState<PermitStatus | "">("");
+  const [outside, setOutside] = useState(false);
   const [approveId, setApproveId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
-  const [returnId, setReturnId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
   const limit = 20;
 
+  const { isStaff, canDecide } = usePermitAbilities();
   const { data: permitsData, isLoading } = usePermits({
     page,
     limit,
-    permitType: permitType || undefined,
+    type: type || undefined,
     status: status || undefined,
+    outside: outside ? "true" : undefined,
   });
-
+  const { data: summary } = usePermitSummary(isStaff);
   const approveMutation = useApprovePermit();
-  const rejectMutation = useRejectPermit();
-  const returnMutation = useMarkReturned();
 
   const handleApprove = async () => {
     if (!approveId) return;
     try {
       await approveMutation.mutateAsync(approveId);
-      toast.success("Izin berhasil disetujui");
+      toast.success("Izin disetujui");
       setApproveId(null);
     } catch {
-      toast.error("Gagal menyetujui izin");
+      // The API client has already shown the server's message.
     }
   };
 
-  const handleReject = async () => {
-    if (!rejectId || !rejectReason) {
-      toast.error("Alasan penolakan wajib diisi");
-      return;
-    }
-    try {
-      await rejectMutation.mutateAsync({ id: rejectId, reason: rejectReason });
-      toast.success("Izin berhasil ditolak");
-      setRejectId(null);
-      setRejectReason("");
-    } catch {
-      toast.error("Gagal menolak izin");
-    }
-  };
-
-  const handleMarkReturned = async () => {
-    if (!returnId) return;
-    try {
-      await returnMutation.mutateAsync(returnId);
-      toast.success("Santri berhasil ditandai sudah kembali");
-      setReturnId(null);
-    } catch {
-      toast.error("Gagal menandai kembali");
-    }
-  };
-
-  const getStatusBadge = (permitStatus: PermitStatus) => {
-    const statusInfo = PERMIT_STATUSES.find((s) => s.value === permitStatus);
-    return statusInfo ? (
-      <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
-    ) : (
-      <Badge variant="secondary">{permitStatus}</Badge>
-    );
-  };
-
-  // Count pending permits
-  const pendingCount =
-    permitsData?.data.filter((p) => p.status === "PENDING").length || 0;
+  const filtered = !!(type || status || outside);
+  const permits = permitsData?.data ?? [];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Perizinan</h1>
-          <p className="text-muted-foreground">Kelola izin keluar santri</p>
+          <p className="text-muted-foreground">
+            Izin pulang, keluar sementara, dan sakit
+          </p>
         </div>
-        <Button asChild>
-          <Link href="/permits/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Buat Izin
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          {isStaff && (
+            <Button variant="outline" asChild>
+              <Link href="/permits/gate">
+                <ScanLine className="mr-2 h-4 w-4" />
+                Pos gerbang
+              </Link>
+            </Button>
+          )}
+          <Button asChild>
+            <Link href="/permits/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Ajukan Izin
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      {/* Stats */}
-      {pendingCount > 0 && (
-        <Card className="border-yellow-200 bg-yellow-50">
-          <CardContent className="flex items-center gap-4 py-4">
-            <CalendarClock className="h-8 w-8 text-yellow-600" />
-            <div>
-              <p className="font-medium text-yellow-800">
-                {pendingCount} izin menunggu persetujuan
-              </p>
-              <p className="text-sm text-yellow-600">
-                Segera proses izin yang tertunda
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {summary && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {(
+            [
+              ["Menunggu keputusan", summary.pending],
+              ["Disetujui, belum berangkat", summary.approved],
+              ["Sedang di luar", summary.outside],
+              ["Terlambat kembali", summary.overdue],
+            ] as const
+          ).map(([label, value]) => (
+            <Card key={label}>
+              <CardContent className="py-4">
+                <p className="text-sm text-muted-foreground">{label}</p>
+                <p className="text-2xl font-bold">{value}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-6">
           <div className="flex flex-col gap-4 sm:flex-row">
             <Select
-              value={permitType || "ALL"}
-              onValueChange={(v) =>
-                setPermitType(v === "ALL" ? "" : (v as PermitType))
-              }
+              value={type || "ALL"}
+              onValueChange={(v) => {
+                setType(v === "ALL" ? "" : (v as PermitType));
+                setPage(1);
+              }}
             >
-              <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="Jenis Izin" />
+              <SelectTrigger
+                className="w-full sm:w-[200px]"
+                aria-label="Jenis izin"
+              >
+                <SelectValue placeholder="Jenis izin" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Semua Jenis</SelectItem>
-                {PERMIT_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>
-                    {type.label}
+                <SelectItem value="ALL">Semua jenis</SelectItem>
+                {PERMIT_TYPES.map((t) => (
+                  <SelectItem key={t.value} value={t.value}>
+                    {t.label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -180,16 +156,20 @@ function PermitsPageContent() {
 
             <Select
               value={status || "ALL"}
-              onValueChange={(v) =>
-                setStatus(v === "ALL" ? "" : (v as PermitStatus))
-              }
+              onValueChange={(v) => {
+                setStatus(v === "ALL" ? "" : (v as PermitStatus));
+                setPage(1);
+              }}
             >
-              <SelectTrigger className="w-full sm:w-40">
+              <SelectTrigger
+                className="w-full sm:w-[180px]"
+                aria-label="Status izin"
+              >
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">Semua Status</SelectItem>
-                {PERMIT_STATUSES.map((s) => (
+                <SelectItem value="ALL">Semua status</SelectItem>
+                {PERMIT_STATUS_FILTERS.map((s) => (
                   <SelectItem key={s.value} value={s.value}>
                     {s.label}
                   </SelectItem>
@@ -197,36 +177,47 @@ function PermitsPageContent() {
               </SelectContent>
             </Select>
 
-            {(permitType || status) && (
+            <Button
+              variant={outside ? "default" : "outline"}
+              onClick={() => {
+                setOutside(!outside);
+                setPage(1);
+              }}
+            >
+              Sedang di luar
+            </Button>
+
+            {filtered && (
               <Button
                 variant="ghost"
                 onClick={() => {
-                  setPermitType("");
+                  setType("");
                   setStatus("");
+                  setOutside(false);
+                  setPage(1);
                 }}
               >
-                Reset Filter
+                Reset filter
               </Button>
             )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Permits Table */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
             </div>
-          ) : permitsData?.data.length === 0 ? (
+          ) : permits.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12">
               <CalendarClock className="h-12 w-12 text-muted-foreground" />
-              <h3 className="mt-4 text-lg font-semibold">
-                Tidak ada data izin
-              </h3>
+              <h3 className="mt-4 text-lg font-semibold">Tidak ada izin</h3>
               <p className="text-muted-foreground">
-                Belum ada izin untuk filter yang dipilih
+                {filtered
+                  ? "Tidak ada izin untuk filter yang dipilih"
+                  : "Belum ada izin yang diajukan"}
               </p>
             </div>
           ) : (
@@ -234,98 +225,83 @@ function PermitsPageContent() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Santri</TableHead>
+                    <TableHead>Nama</TableHead>
                     <TableHead>Jenis</TableHead>
                     <TableHead>Alasan</TableHead>
-                    <TableHead>Tanggal</TableHead>
+                    <TableHead>Waktu</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {permitsData?.data.map((permit: Permit) => (
-                    <TableRow key={permit.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{permit.student?.name}</p>
+                  {permits.map((permit) => {
+                    const phase = PERMIT_PHASES[permitPhase(permit)];
+                    return (
+                      <TableRow key={permit.id}>
+                        <TableCell>
+                          <p className="font-medium">
+                            {permit.student.user.name}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {permit.student?.nis}
+                            {permit.student.nis} · {permit.student.unit.name}
                           </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {PERMIT_TYPES.find((t) => t.value === permit.permitType)
-                          ?.label || permit.permitType}
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate">
-                        {permit.reason}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <p>
-                            {new Date(permit.startDate).toLocaleDateString(
-                              "id-ID",
-                            )}
-                          </p>
+                        </TableCell>
+                        <TableCell>{PERMIT_TYPE_LABELS[permit.type]}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">
+                          {permit.reason}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          <p>{formatDateTime(permit.startDate)}</p>
                           <p className="text-muted-foreground">
-                            s/d{" "}
-                            {new Date(permit.endDate).toLocaleDateString(
-                              "id-ID",
-                            )}
+                            s/d {formatDateTime(permit.endDate)}
                           </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>{getStatusBadge(permit.status)}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {permit.status === "PENDING" && (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-green-600"
-                                onClick={() => setApproveId(permit.id)}
-                              >
-                                <Check className="mr-1 h-4 w-4" />
-                                Setuju
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="text-red-600"
-                                onClick={() => setRejectId(permit.id)}
-                              >
-                                <X className="mr-1 h-4 w-4" />
-                                Tolak
-                              </Button>
-                            </>
-                          )}
-                          {permit.status === "APPROVED" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setReturnId(permit.id)}
-                            >
-                              <RotateCcw className="mr-1 h-4 w-4" />
-                              Kembali
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={phase.className}>
+                            {phase.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {canDecide && permit.status === "PENDING" && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-green-600"
+                                  onClick={() => setApproveId(permit.id)}
+                                >
+                                  <Check className="mr-1 h-4 w-4" />
+                                  Setujui
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-red-600"
+                                  onClick={() => setRejectId(permit.id)}
+                                >
+                                  <X className="mr-1 h-4 w-4" />
+                                  Tolak
+                                </Button>
+                              </>
+                            )}
+                            <Button variant="outline" size="sm" asChild>
+                              <Link href={`/permits/${permit.id}`}>Detail</Link>
                             </Button>
-                          )}
-                          <Button variant="outline" size="sm" asChild>
-                            <Link href={`/permits/${permit.id}`}>Detail</Link>
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
 
-              {permitsData && permitsData.meta.totalPages > 1 && (
+              {permitsData && permitsData.pagination.totalPages > 1 && (
                 <Pagination
                   page={page}
-                  totalPages={permitsData.meta.totalPages}
+                  totalPages={permitsData.pagination.totalPages}
                   pageSize={limit}
-                  total={permitsData.meta.total}
+                  total={permitsData.pagination.total}
                   onPageChange={setPage}
                 />
               )}
@@ -334,65 +310,19 @@ function PermitsPageContent() {
         </CardContent>
       </Card>
 
-      {/* Approve Dialog */}
       <ConfirmDialog
         open={!!approveId}
         onOpenChange={(open: boolean) => !open && setApproveId(null)}
-        title="Setujui Izin"
-        description="Apakah Anda yakin ingin menyetujui izin ini? Sistem akan otomatis membuat data absensi (Izin/Sakit) untuk santri selama periode izin."
+        title="Setujui izin"
+        description="Presensi kelas pada hari-hari izin ini akan dicatat Izin (atau Sakit untuk izin sakit), dan wali diberi tahu."
         confirmLabel="Setujui"
         onConfirm={handleApprove}
         isLoading={approveMutation.isPending}
       />
 
-      {/* Reject Dialog */}
-      <Dialog
-        open={!!rejectId}
-        onOpenChange={(open) => !open && setRejectId(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Tolak Izin</DialogTitle>
-            <DialogDescription>
-              Berikan alasan penolakan izin ini
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="reason">Alasan Penolakan</Label>
-              <Textarea
-                id="reason"
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Masukkan alasan penolakan..."
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setRejectId(null)}>
-                Batal
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleReject}
-                disabled={rejectMutation.isPending || !rejectReason}
-              >
-                {rejectMutation.isPending ? "Menolak..." : "Tolak"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Return Dialog */}
-      <ConfirmDialog
-        open={!!returnId}
-        onOpenChange={(open: boolean) => !open && setReturnId(null)}
-        title="Tandai Sudah Kembali"
-        description="Apakah santri sudah kembali ke pondok?"
-        confirmLabel="Ya, Sudah Kembali"
-        onConfirm={handleMarkReturned}
-        isLoading={returnMutation.isPending}
+      <RejectPermitDialog
+        permitId={rejectId}
+        onClose={() => setRejectId(null)}
       />
     </div>
   );

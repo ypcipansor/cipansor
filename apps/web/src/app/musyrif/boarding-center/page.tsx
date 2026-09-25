@@ -24,6 +24,14 @@ import {
 import { api } from "@/lib/api";
 import { Progress } from "@/components/ui/progress";
 import { MainLayout } from "@/components/layout";
+import Link from "next/link";
+import {
+  usePermits,
+  usePermitSummary,
+  PERMIT_TYPE_LABELS,
+  PERMIT_PHASES,
+  permitPhase,
+} from "@/hooks/use-permits";
 
 function BoardingCommandCenterContent() {
   const { data: dormitoriesResponse, isLoading } = useQuery({
@@ -34,6 +42,11 @@ function BoardingCommandCenterContent() {
     },
   });
   const dormitories = dormitoriesResponse;
+  const { data: permitSummary } = usePermitSummary();
+  const { data: outsidePermits, isLoading: outsideLoading } = usePermits({
+    outside: "true",
+    limit: 50,
+  });
 
   return (
     <div className="container mx-auto py-8 space-y-8">
@@ -44,16 +57,16 @@ function BoardingCommandCenterContent() {
 
       {/*
         NOTE: Several metrics on this dashboard (Social Harmony Score,
-        capacity %, urgent alerts count, active permits count, and the
-        health condition summary) are still wired to placeholder values
-        while the corresponding backend endpoints are being built. They
-        are surfaced under the "Preview" label below so users do not
-        mistake them for live data.
+        capacity %, urgent alerts count, and the health condition summary)
+        are still wired to placeholder values while the corresponding
+        backend endpoints are being built. They are surfaced under the
+        "Preview" label below so users do not mistake them for live data.
+        The permit card and tab are live (GET /permits/summary, /permits).
       */}
       <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
         <strong>Preview:</strong> beberapa metrik (Social Harmony Score,
-        kapasitas, jumlah alert/perizinan, ringkasan kesehatan) masih berupa
-        data contoh. Hanya daftar asrama yang ditarik real-time.
+        kapasitas, jumlah alert, ringkasan kesehatan) masih berupa data contoh.
+        Daftar asrama dan perizinan ditarik langsung.
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -99,12 +112,16 @@ function BoardingCommandCenterContent() {
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="pb-2">
             <CardDescription className="text-xs font-bold text-blue-500 uppercase">
-              Activity
+              Perizinan
             </CardDescription>
-            <CardTitle className="text-2xl">12 Permits</CardTitle>
+            <CardTitle className="text-2xl">
+              {permitSummary ? `${permitSummary.outside} di luar` : "…"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="text-xs text-muted-foreground">
-            8 Santri di luar komplek, 4 dijadwalkan kembali sore ini.
+            {permitSummary
+              ? `${permitSummary.overdue} terlambat kembali, ${permitSummary.pending} menunggu keputusan.`
+              : "Memuat…"}
           </CardContent>
         </Card>
       </div>
@@ -201,9 +218,51 @@ function BoardingCommandCenterContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-center py-10 text-muted-foreground italic text-sm">
-                Integrasi log absensi gerbang otomatis segera tersedia.
-              </div>
+              {outsideLoading ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Memuat…
+                </div>
+              ) : !outsidePermits?.data.length ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">
+                  Tidak ada yang sedang di luar.
+                </div>
+              ) : (
+                <ul className="divide-y">
+                  {outsidePermits.data.map((permit) => {
+                    const phase = PERMIT_PHASES[permitPhase(permit)];
+                    return (
+                      <li key={permit.id}>
+                        <Link
+                          href={`/permits/${permit.id}`}
+                          className="flex items-center justify-between gap-4 py-3 hover:bg-muted/50"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">
+                              {permit.student.user.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {PERMIT_TYPE_LABELS[permit.type]} · kembali{" "}
+                              {new Date(permit.endDate).toLocaleString(
+                                "id-ID",
+                                {
+                                  weekday: "short",
+                                  day: "numeric",
+                                  month: "short",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                },
+                              )}
+                            </p>
+                          </div>
+                          <Badge className={phase.className}>
+                            {phase.label}
+                          </Badge>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

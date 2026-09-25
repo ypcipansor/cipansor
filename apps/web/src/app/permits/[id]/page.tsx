@@ -1,5 +1,6 @@
 "use client";
-import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
+import { useParams } from "next/navigation";
 import { safeFormat } from "@/lib/date";
 import Link from "next/link";
 
@@ -10,11 +11,12 @@ import {
   X,
   Clock,
   Calendar,
-  Phone,
   MapPin,
   User,
   Edit,
-  Trash2,
+  Ban,
+  LogOut,
+  LogIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,74 +34,72 @@ import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
 import {
   usePermit,
-  useDeletePermit,
+  usePermitAbilities,
   useApprovePermit,
-  useRejectPermit,
-  PERMIT_TYPES,
-  PERMIT_STATUSES,
+  useCancelPermit,
+  PERMIT_TYPE_LABELS,
+  PERMIT_PHASES,
+  permitPhase,
 } from "@/hooks/use-permits";
+import { RejectPermitDialog } from "../reject-permit-dialog";
 
-function getStatusVariant(
-  status: string,
-): "default" | "secondary" | "destructive" | "outline" {
-  switch (status) {
-    case "APPROVED":
-      return "default";
-    case "PENDING":
-      return "secondary";
-    case "REJECTED":
-      return "destructive";
-    default:
-      return "outline";
-  }
-}
+const when = (iso: string) =>
+  safeFormat(new Date(iso), "dd MMMM yyyy HH:mm", { locale: localeId });
 
-function getStatusLabel(status: string): string {
-  return PERMIT_STATUSES.find((s) => s.value === status)?.label || status;
-}
-
-function getTypeLabel(type: string): string {
-  return PERMIT_TYPES.find((t) => t.value === type)?.label || type;
+function TimelineStep({
+  icon,
+  title,
+  at,
+  detail,
+  tone = "bg-primary text-primary-foreground",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  at: string;
+  detail?: string;
+  tone?: string;
+}) {
+  return (
+    <div className="flex gap-4">
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone}`}
+      >
+        {icon}
+      </div>
+      <div className="pb-4">
+        <p className="font-medium">{title}</p>
+        <p className="text-sm text-muted-foreground">{at}</p>
+        {detail && <p className="text-sm text-muted-foreground">{detail}</p>}
+      </div>
+    </div>
+  );
 }
 
 function PermitDetailPageContent() {
   const params = useParams();
-  const router = useRouter();
   const permitId = params.id as string;
+  const [rejecting, setRejecting] = useState(false);
 
   const { data: permit, isLoading, error } = usePermit(permitId);
-  const deleteMutation = useDeletePermit();
+  const { canDecide } = usePermitAbilities();
   const approveMutation = useApprovePermit();
-  const rejectMutation = useRejectPermit();
-
-  const handleDelete = async () => {
-    try {
-      await deleteMutation.mutateAsync(permitId);
-      toast.success("Izin berhasil dihapus");
-      router.push("/permits");
-    } catch {
-      toast.error("Gagal menghapus izin");
-    }
-  };
+  const cancelMutation = useCancelPermit();
 
   const handleApprove = async () => {
     try {
       await approveMutation.mutateAsync(permitId);
-      toast.success("Izin berhasil disetujui");
+      toast.success("Izin disetujui");
     } catch {
-      toast.error("Gagal menyetujui izin");
+      // The API client has already shown the server's message.
     }
   };
 
-  const handleReject = async () => {
+  const handleCancel = async () => {
     try {
-      await rejectMutation.mutateAsync({
-        id: permitId,
-        reason: "Ditolak oleh admin",
-      });
-      toast.success("Izin berhasil ditolak");
+      await cancelMutation.mutateAsync(permitId);
+      toast.success("Izin dibatalkan");
     } catch {
-      toast.error("Gagal menolak izin");
+      // The API client has already shown the server's message.
     }
   };
 
@@ -126,88 +126,86 @@ function PermitDetailPageContent() {
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-muted-foreground">Izin tidak ditemukan</p>
         <Button asChild className="mt-4">
-          <Link href="/permits">Kembali ke Daftar</Link>
+          <Link href="/permits">Kembali ke daftar</Link>
         </Button>
       </div>
     );
   }
 
   const isPending = permit.status === "PENDING";
+  const phase = PERMIT_PHASES[permitPhase(permit)];
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/permits">
+            <Link href="/permits" aria-label="Kembali ke daftar izin">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-3xl font-bold tracking-tight">Detail Izin</h1>
-              <Badge variant={getStatusVariant(permit.status)}>
-                {getStatusLabel(permit.status)}
-              </Badge>
+              <Badge className={phase.className}>{phase.label}</Badge>
             </div>
             <p className="text-muted-foreground">
-              {getTypeLabel(permit.permitType)} - {permit.student?.name}
+              {PERMIT_TYPE_LABELS[permit.type]} · {permit.student.user.name}
+              {permit.code && ` · ${permit.code}`}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {isPending && (
-            <>
-              <Button
-                variant="outline"
-                className="text-green-600 hover:text-green-700"
-                onClick={handleApprove}
-                disabled={approveMutation.isPending}
-              >
-                <Check className="mr-2 h-4 w-4" />
-                Setujui
-              </Button>
-              <Button
-                variant="outline"
-                className="text-red-600 hover:text-red-700"
-                onClick={handleReject}
-                disabled={rejectMutation.isPending}
-              >
-                <X className="mr-2 h-4 w-4" />
-                Tolak
-              </Button>
-            </>
-          )}
-          {isPending && (
+        {isPending && (
+          <div className="flex flex-wrap items-center gap-2">
+            {canDecide && (
+              <>
+                <Button
+                  variant="outline"
+                  className="text-green-600 hover:text-green-700"
+                  onClick={handleApprove}
+                  disabled={approveMutation.isPending}
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Setujui
+                </Button>
+                <Button
+                  variant="outline"
+                  className="text-red-600 hover:text-red-700"
+                  onClick={() => setRejecting(true)}
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Tolak
+                </Button>
+              </>
+            )}
             <Button variant="outline" asChild>
               <Link href={`/permits/${permitId}/edit`}>
                 <Edit className="mr-2 h-4 w-4" />
-                Edit
+                Ubah
               </Link>
             </Button>
-          )}
-          <ConfirmDialog
-            title="Hapus Izin"
-            description="Apakah Anda yakin ingin menghapus izin ini? Tindakan ini tidak dapat dibatalkan."
-            onConfirm={handleDelete}
-            loading={deleteMutation.isPending}
-          >
-            <Button variant="destructive">
-              <Trash2 className="mr-2 h-4 w-4" />
-              Hapus
-            </Button>
-          </ConfirmDialog>
-        </div>
+            <ConfirmDialog
+              title="Batalkan izin"
+              description="Pengajuan ini ditarik dan tidak dapat disetujui lagi. Riwayatnya tetap tersimpan."
+              confirmLabel="Batalkan izin"
+              variant="destructive"
+              onConfirm={handleCancel}
+              loading={cancelMutation.isPending}
+            >
+              <Button variant="destructive">
+                <Ban className="mr-2 h-4 w-4" />
+                Batalkan
+              </Button>
+            </ConfirmDialog>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Permit Information */}
         <Card>
           <CardHeader>
             <CardTitle>Informasi Izin</CardTitle>
-            <CardDescription>Detail perizinan santri</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
@@ -215,8 +213,8 @@ function PermitDetailPageContent() {
                 <Clock className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Jenis Izin</p>
-                <p className="font-medium">{getTypeLabel(permit.permitType)}</p>
+                <p className="text-sm text-muted-foreground">Jenis izin</p>
+                <p className="font-medium">{PERMIT_TYPE_LABELS[permit.type]}</p>
               </div>
             </div>
 
@@ -227,15 +225,9 @@ function PermitDetailPageContent() {
                 <Calendar className="h-5 w-5 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Tanggal</p>
+                <p className="text-sm text-muted-foreground">Waktu</p>
                 <p className="font-medium">
-                  {safeFormat(new Date(permit.startDate), "dd MMMM yyyy", {
-                    locale: localeId,
-                  })}{" "}
-                  -{" "}
-                  {safeFormat(new Date(permit.endDate), "dd MMMM yyyy", {
-                    locale: localeId,
-                  })}
+                  {when(permit.startDate)} – {when(permit.endDate)}
                 </p>
               </div>
             </div>
@@ -262,30 +254,23 @@ function PermitDetailPageContent() {
               </>
             )}
 
-            {permit.parentPhone && (
+            {permit.rejectionNote && (
               <>
                 <Separator />
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
-                    <Phone className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      No. HP Penjemput
-                    </p>
-                    <p className="font-medium">{permit.parentPhone}</p>
-                  </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Alasan penolakan
+                  </p>
+                  <p className="mt-1">{permit.rejectionNote}</p>
                 </div>
               </>
             )}
           </CardContent>
         </Card>
 
-        {/* Student Information */}
         <Card>
           <CardHeader>
-            <CardTitle>Informasi Santri</CardTitle>
-            <CardDescription>Data santri yang mengajukan izin</CardDescription>
+            <CardTitle>Identitas</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-3">
@@ -294,7 +279,7 @@ function PermitDetailPageContent() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Nama</p>
-                <p className="font-medium">{permit.student?.name}</p>
+                <p className="font-medium">{permit.student.user.name}</p>
               </div>
             </div>
 
@@ -303,118 +288,75 @@ function PermitDetailPageContent() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">NIS</p>
-                <p className="font-medium">{permit.student?.nis}</p>
+                <p className="font-medium">{permit.student.nis}</p>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Kelas</p>
-                <p className="font-medium">
-                  {permit.student?.class?.name || "-"}
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-sm text-muted-foreground">Unit</p>
-                <p className="font-medium">
-                  {permit.student?.unit?.name || "-"}
-                </p>
+                <p className="font-medium">{permit.student.unit.name}</p>
               </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Jenis Kelamin</p>
-                <p className="font-medium">
-                  {permit.student?.gender === "MALE"
-                    ? "Laki-laki"
-                    : "Perempuan"}
-                </p>
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex justify-end">
-              <Button variant="outline" asChild>
-                <Link href={`/students/${permit.studentId}`}>
-                  Lihat Profil Santri
-                </Link>
-              </Button>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Timeline / History */}
       <Card>
         <CardHeader>
           <CardTitle>Riwayat</CardTitle>
-          <CardDescription>Timeline perizinan</CardDescription>
+          <CardDescription>Perjalanan izin ini</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex flex-col items-center">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                  <Clock className="h-4 w-4" />
-                </div>
-                <div className="h-full w-px bg-border" />
-              </div>
-              <div className="pb-4">
-                <p className="font-medium">Izin Dibuat</p>
-                <p className="text-sm text-muted-foreground">
-                  {safeFormat(
-                    new Date(permit.createdAt),
-                    "dd MMMM yyyy HH:mm",
-                    {
-                      locale: localeId,
-                    },
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {permit.status !== "PENDING" && (
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <div
-                    className={`flex h-8 w-8 items-center justify-center rounded-full ${
-                      permit.status === "APPROVED"
-                        ? "bg-green-500 text-white"
-                        : "bg-red-500 text-white"
-                    }`}
-                  >
-                    {permit.status === "APPROVED" ? (
-                      <Check className="h-4 w-4" />
-                    ) : (
-                      <X className="h-4 w-4" />
-                    )}
-                  </div>
-                </div>
-                <div>
-                  <p className="font-medium">
-                    {permit.status === "APPROVED" ? "Disetujui" : "Ditolak"}
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {safeFormat(
-                      new Date(permit.updatedAt),
-                      "dd MMMM yyyy HH:mm",
-                      {
-                        locale: localeId,
-                      },
-                    )}
-                  </p>
-                  {permit.approver && (
-                    <p className="text-sm text-muted-foreground">
-                      Oleh: {permit.approver.name}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <TimelineStep
+            icon={<Clock className="h-4 w-4" />}
+            title="Diajukan"
+            at={when(permit.createdAt)}
+          />
+          {permit.status === "APPROVED" || permit.status === "COMPLETED" ? (
+            <TimelineStep
+              icon={<Check className="h-4 w-4" />}
+              title="Disetujui"
+              at={permit.approvedAt ? when(permit.approvedAt) : "-"}
+              detail={permit.approvedBy ? `Oleh ${permit.approvedBy.name}` : ""}
+              tone="bg-green-500 text-white"
+            />
+          ) : permit.status === "REJECTED" ? (
+            <TimelineStep
+              icon={<X className="h-4 w-4" />}
+              title="Ditolak"
+              at={when(permit.updatedAt)}
+              detail={permit.approvedBy ? `Oleh ${permit.approvedBy.name}` : ""}
+              tone="bg-red-500 text-white"
+            />
+          ) : permit.status === "CANCELLED" ? (
+            <TimelineStep
+              icon={<Ban className="h-4 w-4" />}
+              title="Dibatalkan"
+              at={when(permit.updatedAt)}
+              tone="bg-gray-500 text-white"
+            />
+          ) : null}
+          {permit.departedAt && (
+            <TimelineStep
+              icon={<LogOut className="h-4 w-4" />}
+              title="Berangkat"
+              at={when(permit.departedAt)}
+              tone="bg-orange-500 text-white"
+            />
+          )}
+          {permit.returnedAt && (
+            <TimelineStep
+              icon={<LogIn className="h-4 w-4" />}
+              title="Kembali"
+              at={when(permit.returnedAt)}
+              tone="bg-blue-500 text-white"
+            />
+          )}
         </CardContent>
       </Card>
+
+      <RejectPermitDialog
+        permitId={rejecting ? permitId : null}
+        onClose={() => setRejecting(false)}
+      />
     </div>
   );
 }

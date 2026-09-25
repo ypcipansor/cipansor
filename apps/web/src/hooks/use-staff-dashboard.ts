@@ -3,14 +3,23 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import {
+  PERMIT_STAFF_ROLE_CODES,
+  STUDENT_STATUS,
+  type PageResponse,
+  type Permit,
+  type PermitSummary,
+} from "@cipansor/shared";
+import { getActiveRoleCode } from "@/lib/rbac";
+import { PERMIT_TYPE_LABELS } from "./use-permits";
 
 // ============================================
 // TYPES
 // ============================================
 
 export interface StaffDashboardStats {
-  pendingPermits: number;
+  /** Null for a role that has no part in permits (bendahara, pustakawan…). */
+  pendingPermits: number | null;
   sickStudents: number;
   todayViolations: number;
   todayRewards: number;
@@ -45,16 +54,6 @@ export interface RecentActivity {
   rawTime: number;
 }
 
-export interface PermitSummary {
-  id: string;
-  studentName: string;
-  permitType: string;
-  reason: string;
-  startDate: string;
-  endDate: string;
-  status: string;
-}
-
 export interface HealthAlert {
   id: string;
   studentName: string;
@@ -68,27 +67,20 @@ export interface HealthAlert {
 // CONSTANTS
 // ============================================
 
-export const PERMIT_TYPE_LABELS: Record<string, string> = {
-  SICK: "Sakit",
-  FAMILY: "Keperluan Keluarga",
-  EMERGENCY: "Darurat",
-  EVENT: "Acara",
-  OTHER: "Lainnya",
-};
-
-export const PERMIT_STATUS_COLORS: Record<string, string> = {
-  PENDING: "bg-yellow-100 text-yellow-800",
-  APPROVED: "bg-green-100 text-green-800",
-  REJECTED: "bg-red-100 text-red-800",
-  CANCELLED: "bg-gray-100 text-gray-800",
-  RETURNED: "bg-blue-100 text-blue-800",
-};
-
 export const VIOLATION_CATEGORY_COLORS: Record<string, string> = {
   LIGHT: "bg-yellow-100 text-yellow-800",
   MEDIUM: "bg-orange-100 text-orange-800",
   HEAVY: "bg-red-100 text-red-800",
 };
+
+/**
+ * The shared staff dashboard serves nine functions; only some of them work
+ * with permits (`PERMIT_STAFF_ROLE_CODES`, the list the API guards with).
+ * The rest are not asked, rather than asked and refused.
+ */
+function readsPermits(user: Parameters<typeof getActiveRoleCode>[0]) {
+  return PERMIT_STAFF_ROLE_CODES.includes(getActiveRoleCode(user) ?? "");
+}
 
 // ============================================
 // DASHBOARD STATS HOOK
@@ -104,20 +96,22 @@ export function useStaffDashboardStats() {
 
       // Fetch multiple stats in parallel
       const [
-        permitsRes,
+        pendingPermits,
         healthRes,
         violationsRes,
         rewardsRes,
         attendanceRes,
         studentsRes,
       ] = await Promise.all([
-        // Pending permits
-        api
-          .get<PaginatedResponse<unknown>>("/permits", {
-            params: { status: "PENDING", unitId: user?.unitId, limit: 1 },
-            skipErrorToast: true,
-          })
-          .catch(() => ({ data: { meta: { pagination: { total: 0 } } } })),
+        // Pending permits, counted by the API over the caller's scope.
+        readsPermits(user)
+          ? api
+              .get<ApiResponse<PermitSummary>>("/permits/summary", {
+                skipErrorToast: true,
+              })
+              .then((res) => res.data.data.pending)
+              .catch(() => null)
+          : Promise.resolve(null),
 
         // Active health issues (students currently sick)
         api
@@ -177,7 +171,7 @@ export function useStaffDashboardStats() {
       ]);
 
       return {
-        pendingPermits: (permitsRes.data as any)?.meta?.pagination?.total || 0,
+        pendingPermits,
         sickStudents: (healthRes.data as any)?.meta?.pagination?.total || 0,
         todayViolations:
           (violationsRes.data as any)?.meta?.pagination?.total || 0,
@@ -210,33 +204,27 @@ export function useStaffPendingTasks(limit: number = 10) {
     queryFn: async (): Promise<PendingTask[]> => {
       const tasks: PendingTask[] = [];
 
-      // Fetch pending permits
-      const permitsRes = await api
-        .get<
-          PaginatedResponse<{
-            id: string;
-            student?: { name: string };
-            permitType: string;
-            reason: string;
-            startDate: string;
-            status: string;
-          }>
-        >("/permits", {
-          params: { status: "PENDING", unitId: user?.unitId, limit: 5 },
-          skipErrorToast: true,
-        })
-        .catch(() => ({ data: { data: [] } }));
+      // Pending permits
+      const pendingPermits = readsPermits(user)
+        ? await api
+            .get<PageResponse<Permit>>("/permits", {
+              params: { status: "PENDING", limit: 5 },
+              skipErrorToast: true,
+            })
+            .then((res) => res.data.data)
+            .catch(() => [] as Permit[])
+        : [];
 
-      (permitsRes.data?.data || []).forEach((permit) => {
+      pendingPermits.forEach((permit) => {
         tasks.push({
           id: permit.id,
           type: "permit",
-          title: `Izin ${PERMIT_TYPE_LABELS[permit.permitType] || permit.permitType}`,
+          title: `Izin ${PERMIT_TYPE_LABELS[permit.type].toLowerCase()}`,
           description: permit.reason,
-          studentName: permit.student?.name || "Unknown",
+          studentName: permit.student.user.name,
           status: permit.status,
           date: permit.startDate,
-          priority: permit.permitType === "EMERGENCY" ? "high" : "medium",
+          priority: permit.type === "SAKIT" ? "high" : "medium",
         });
       });
 
@@ -298,35 +286,34 @@ export function useStaffRecentActivity(limit: number = 10) {
     queryFn: async (): Promise<RecentActivity[]> => {
       const activities: RecentActivity[] = [];
 
-      // Fetch recent permits (all statuses for activity)
-      const permitsRes = await api
-        .get<
-          PaginatedResponse<{
-            id: string;
-            student?: { name: string };
-            permitType: string;
-            status: string;
-            updatedAt: string;
-            approver?: { name: string };
-          }>
-        >("/permits", {
-          params: { unitId: user?.unitId, limit: 5 },
-          skipErrorToast: true,
-        })
-        .catch(() => ({ data: { data: [] } }));
+      // Recent permits, any status
+      const recentPermits = readsPermits(user)
+        ? await api
+            .get<PageResponse<Permit>>("/permits", {
+              params: { limit: 5 },
+              skipErrorToast: true,
+            })
+            .then((res) => res.data.data)
+            .catch(() => [] as Permit[])
+        : [];
 
-      (permitsRes.data?.data || []).forEach((permit) => {
-        let action = "Mengajukan izin";
-        if (permit.status === "APPROVED") action = "Izin disetujui";
-        else if (permit.status === "REJECTED") action = "Izin ditolak";
-        else if (permit.status === "RETURNED") action = "Siswa kembali";
-
+      const PERMIT_ACTIONS: Record<Permit["status"], string> = {
+        PENDING: "Mengajukan izin",
+        APPROVED: "Izin disetujui",
+        REJECTED: "Izin ditolak",
+        COMPLETED: "Kembali dari izin",
+        CANCELLED: "Izin dibatalkan",
+      };
+      recentPermits.forEach((permit) => {
         activities.push({
           id: `permit-${permit.id}`,
           type: "permit",
-          action,
-          subject: permit.student?.name || "Unknown",
-          actor: permit.approver?.name,
+          action:
+            permit.status === "APPROVED" && permit.departedAt
+              ? "Keluar dengan izin"
+              : PERMIT_ACTIONS[permit.status],
+          subject: permit.student.user.name,
+          actor: permit.approvedBy?.name,
           time: permit.updatedAt,
           rawTime: new Date(permit.updatedAt).getTime(),
         });
@@ -397,55 +384,6 @@ export function useStaffRecentActivity(limit: number = 10) {
 }
 
 // ============================================
-// QUICK ACTIONS - APPROVE/REJECT PERMIT
-// ============================================
-
-export function useApprovePermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (permitId: string) => {
-      const response = await api.post<ApiResponse<unknown>>(
-        `/permits/${permitId}/approve`,
-      );
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-pending-tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-recent-activity"] });
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-    },
-  });
-}
-
-export function useRejectPermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      permitId,
-      reason,
-    }: {
-      permitId: string;
-      reason: string;
-    }) => {
-      const response = await api.post<ApiResponse<unknown>>(
-        `/permits/${permitId}/reject`,
-        { reason },
-      );
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-dashboard-stats"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-pending-tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-recent-activity"] });
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-    },
-  });
-}
-
-// ============================================
 // QUICK ACTIONS - HEALTH RECORD
 // ============================================
 
@@ -499,14 +437,6 @@ export function useStaffDashboard() {
 // ============================================
 // HELPER FUNCTIONS
 // ============================================
-
-export function getPermitTypeLabel(type: string): string {
-  return PERMIT_TYPE_LABELS[type] || type;
-}
-
-export function getPermitStatusColor(status: string): string {
-  return PERMIT_STATUS_COLORS[status] || "bg-gray-100 text-gray-800";
-}
 
 export function getViolationCategoryColor(category: string): string {
   return VIOLATION_CATEGORY_COLORS[category] || "bg-gray-100 text-gray-800";

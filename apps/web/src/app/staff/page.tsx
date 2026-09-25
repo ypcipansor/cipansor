@@ -1,6 +1,6 @@
 "use client";
 import { MainLayout } from "@/components/layout";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { safeFormat } from "@/lib/date";
 
 import { id as localeId } from "date-fns/locale";
@@ -13,20 +13,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   Users,
   HeartPulse,
@@ -38,7 +27,6 @@ import {
   Building2,
   RefreshCw,
   CheckCircle,
-  XCircle,
   Clock,
   Activity,
   Calendar,
@@ -47,13 +35,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
-import { toast } from "sonner";
 import {
   useStaffDashboard,
-  useApprovePermit,
-  useRejectPermit,
-  getPermitTypeLabel,
-  getPermitStatusColor,
   getPriorityColor,
   formatRelativeTime,
   getActivityIcon,
@@ -65,44 +48,13 @@ function StaffDashboardContent() {
   const { stats, pendingTasks, recentActivity, isLoading, refetch } =
     useStaffDashboard();
 
-  // Dialog states
-  const [selectedPermit, setSelectedPermit] = useState<PendingTask | null>(
-    null,
-  );
-  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
-  const [rejectReason, setRejectReason] = useState("");
+  const router = useRouter();
 
-  // Mutations
-  const approvePermit = useApprovePermit();
-  const rejectPermit = useRejectPermit();
-
-  const handleApprovePermit = async (permitId: string) => {
-    try {
-      await approvePermit.mutateAsync(permitId);
-      toast.success("Izin berhasil disetujui");
-      setSelectedPermit(null);
-    } catch {
-      toast.error("Gagal menyetujui izin");
-    }
-  };
-
-  const handleRejectPermit = async () => {
-    if (!selectedPermit || !rejectReason.trim()) {
-      toast.error("Masukkan alasan penolakan");
-      return;
-    }
-    try {
-      await rejectPermit.mutateAsync({
-        permitId: selectedPermit.id,
-        reason: rejectReason,
-      });
-      toast.success("Izin berhasil ditolak");
-      setSelectedPermit(null);
-      setRejectDialogOpen(false);
-      setRejectReason("");
-    } catch {
-      toast.error("Gagal menolak izin");
-    }
+  // A permit opens on its own page, which offers exactly the actions the
+  // role may take. None of the staff roles on this dashboard decides
+  // permits, so an approve/reject dialog here only ever led to a 403.
+  const openTask = (task: PendingTask) => {
+    if (task.type === "permit") router.push(`/permits/${task.id}`);
   };
 
   const quickActions = [
@@ -214,28 +166,32 @@ function StaffDashboardContent() {
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Izin Pending</CardTitle>
-            <div className="p-2 rounded-lg bg-purple-100">
-              <ClipboardList className="h-4 w-4 text-purple-600" />
-            </div>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <>
-                <div className="text-2xl font-bold">
-                  {stats?.pendingPermits ?? 0}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  menunggu persetujuan
-                </p>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        {stats?.pendingPermits !== null && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Izin Menunggu
+              </CardTitle>
+              <div className="p-2 rounded-lg bg-purple-100">
+                <ClipboardList className="h-4 w-4 text-purple-600" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <Skeleton className="h-8 w-16" />
+              ) : (
+                <>
+                  <div className="text-2xl font-bold">
+                    {stats?.pendingPermits ?? 0}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    menunggu persetujuan
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Siswa Sakit</CardTitle>
@@ -406,9 +362,7 @@ function StaffDashboardContent() {
                     <div
                       key={task.id}
                       className={`flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer ${getPriorityColor(task.priority)}`}
-                      onClick={() =>
-                        task.type === "permit" && setSelectedPermit(task)
-                      }
+                      onClick={() => openTask(task)}
                     >
                       <div className="flex items-center gap-3">
                         <div
@@ -564,126 +518,6 @@ function StaffDashboardContent() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Permit Action Dialog */}
-      <Dialog
-        open={!!selectedPermit}
-        onOpenChange={(open) => !open && setSelectedPermit(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Detail Perizinan</DialogTitle>
-            <DialogDescription>
-              Review dan tindak lanjuti permintaan izin
-            </DialogDescription>
-          </DialogHeader>
-          {selectedPermit && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <Label className="text-muted-foreground">Nama Siswa</Label>
-                  <p className="font-medium">{selectedPermit.studentName}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Jenis Izin</Label>
-                  <p className="font-medium">{selectedPermit.title}</p>
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-muted-foreground">Alasan</Label>
-                  <p className="font-medium">{selectedPermit.description}</p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Tanggal</Label>
-                  <p className="font-medium">
-                    {safeFormat(new Date(selectedPermit.date), "d MMMM yyyy", {
-                      locale: localeId,
-                    })}
-                  </p>
-                </div>
-                <div>
-                  <Label className="text-muted-foreground">Prioritas</Label>
-                  <Badge className={getPriorityColor(selectedPermit.priority)}>
-                    {selectedPermit.priority === "high"
-                      ? "Tinggi"
-                      : selectedPermit.priority === "medium"
-                        ? "Sedang"
-                        : "Rendah"}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setRejectDialogOpen(true);
-              }}
-              disabled={approvePermit.isPending || rejectPermit.isPending}
-            >
-              <XCircle className="h-4 w-4 mr-2" />
-              Tolak
-            </Button>
-            <Button
-              onClick={() =>
-                selectedPermit && handleApprovePermit(selectedPermit.id)
-              }
-              disabled={approvePermit.isPending || rejectPermit.isPending}
-            >
-              {approvePermit.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <CheckCircle className="h-4 w-4 mr-2" />
-              )}
-              Setujui
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reject Reason Dialog */}
-      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Alasan Penolakan</DialogTitle>
-            <DialogDescription>
-              Masukkan alasan mengapa izin ditolak
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="rejectReason">Alasan</Label>
-              <Textarea
-                id="rejectReason"
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Masukkan alasan penolakan..."
-                rows={3}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRejectDialogOpen(false)}
-            >
-              Batal
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleRejectPermit}
-              disabled={rejectPermit.isPending || !rejectReason.trim()}
-            >
-              {rejectPermit.isPending ? (
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <XCircle className="h-4 w-4 mr-2" />
-              )}
-              Tolak Izin
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

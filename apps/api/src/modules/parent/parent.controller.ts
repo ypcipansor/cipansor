@@ -224,34 +224,6 @@ export class ParentController {
   }
 
   /**
-   * Get child permits
-   */
-  async getChildPermits(req: Request, res: Response, next: NextFunction) {
-    try {
-      const parentId = req.user!.sub;
-      const { studentId } = req.params;
-      const data = await parentService.getChildPermits(parentId, studentId);
-      res.json({ success: true, data });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * Create permit request
-   */
-  async createPermitRequest(req: Request, res: Response, next: NextFunction) {
-    try {
-      const parentId = req.user!.sub;
-      const { studentId } = req.params;
-      const data = await parentService.createPermitRequest(parentId, studentId, req.body);
-      res.status(201).json({ success: true, data });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * Get announcements
    */
   async getAnnouncements(req: Request, res: Response, next: NextFunction) {

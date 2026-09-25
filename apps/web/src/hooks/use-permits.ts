@@ -1,249 +1,210 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+import {
+  PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_STAFF_ROLE_CODES,
+  type CreatePermitInput,
+  type ListPermitsQuery,
+  type PageResponse,
+  type Permit,
+  type PermitStatus,
+  type PermitSummary,
+  type PermitType,
+  type UpdatePermitInput,
+} from "@cipansor/shared";
+import api, { ApiResponse } from "@/lib/api";
+import { getActiveRoleCode } from "@/lib/rbac";
+import { useAuthStore } from "@/stores/auth";
 
-export interface Permit {
-  id: string;
-  studentId: string;
-  student?: {
-    id: string;
-    name: string;
-    nis: string;
-    gender?: "MALE" | "FEMALE";
-    class?: {
-      id: string;
-      name: string;
-    };
-    unit?: {
-      id: string;
-      name: string;
-    };
-  };
-  permitType: PermitType;
-  reason: string;
-  startDate: string;
-  endDate: string;
-  status: PermitStatus;
-  approvedBy?: string;
-  approver?: {
-    id: string;
-    name: string;
-  };
-  approvedAt?: string;
-  rejectionReason?: string;
-  parentPhone?: string;
-  destination?: string;
-  createdAt: string;
-  updatedAt: string;
+// The contract (types, schemas, who may do what) is @cipansor/shared's
+// schemas/permits.ts, which the API validates with. Only labels live here.
+export type { Permit, PermitStatus, PermitSummary, PermitType };
+
+export const PERMIT_TYPE_LABELS: Record<PermitType, string> = {
+  PULANG: "Pulang",
+  KELUAR: "Keluar sementara",
+  SAKIT: "Sakit",
+  KELUARGA: "Keperluan keluarga",
+  OTHER: "Lainnya",
+};
+
+export const PERMIT_TYPES = (
+  Object.keys(PERMIT_TYPE_LABELS) as PermitType[]
+).map((value) => ({ value, label: PERMIT_TYPE_LABELS[value] }));
+
+/**
+ * Where a permit stands, as the people using it say it. The stored status
+ * does not distinguish an approved permit still on the shelf from a learner
+ * who is out through the gate, or one who is late back.
+ */
+export type PermitPhase =
+  | "PENDING"
+  | "APPROVED"
+  | "OUTSIDE"
+  | "OVERDUE"
+  | "COMPLETED"
+  | "REJECTED"
+  | "CANCELLED";
+
+export function permitPhase(
+  permit: Pick<Permit, "status" | "departedAt" | "returnedAt" | "endDate">,
+  now: Date = new Date(),
+): PermitPhase {
+  if (permit.status === "APPROVED" && permit.departedAt && !permit.returnedAt) {
+    return new Date(permit.endDate) < now ? "OVERDUE" : "OUTSIDE";
+  }
+  return permit.status;
 }
 
-export type PermitType = "SICK" | "FAMILY" | "EMERGENCY" | "EVENT" | "OTHER";
+export const PERMIT_PHASES: Record<
+  PermitPhase,
+  { label: string; className: string }
+> = {
+  PENDING: { label: "Menunggu", className: "bg-yellow-100 text-yellow-800" },
+  APPROVED: { label: "Disetujui", className: "bg-green-100 text-green-800" },
+  OUTSIDE: {
+    label: "Sedang di luar",
+    className: "bg-orange-100 text-orange-800",
+  },
+  OVERDUE: { label: "Terlambat kembali", className: "bg-red-100 text-red-800" },
+  COMPLETED: { label: "Sudah kembali", className: "bg-blue-100 text-blue-800" },
+  REJECTED: { label: "Ditolak", className: "bg-red-100 text-red-800" },
+  CANCELLED: { label: "Dibatalkan", className: "bg-gray-100 text-gray-800" },
+};
 
-export const PERMIT_TYPES: { value: PermitType; label: string }[] = [
-  { value: "SICK", label: "Sakit" },
-  { value: "FAMILY", label: "Keperluan Keluarga" },
-  { value: "EMERGENCY", label: "Darurat" },
-  { value: "EVENT", label: "Acara" },
-  { value: "OTHER", label: "Lainnya" },
+/** The status filter offered in lists: the stored statuses. */
+export const PERMIT_STATUS_FILTERS: { value: PermitStatus; label: string }[] = [
+  { value: "PENDING", label: "Menunggu" },
+  { value: "APPROVED", label: "Disetujui" },
+  { value: "COMPLETED", label: "Selesai" },
+  { value: "REJECTED", label: "Ditolak" },
+  { value: "CANCELLED", label: "Dibatalkan" },
 ];
 
-export type PermitStatus =
-  "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "RETURNED";
-
-export const PERMIT_STATUSES: {
-  value: PermitStatus;
-  label: string;
-  color: string;
-}[] = [
-  {
-    value: "PENDING",
-    label: "Menunggu",
-    color: "bg-yellow-100 text-yellow-800",
-  },
-  {
-    value: "APPROVED",
-    label: "Disetujui",
-    color: "bg-green-100 text-green-800",
-  },
-  { value: "REJECTED", label: "Ditolak", color: "bg-red-100 text-red-800" },
-  {
-    value: "CANCELLED",
-    label: "Dibatalkan",
-    color: "bg-gray-100 text-gray-800",
-  },
-  {
-    value: "RETURNED",
-    label: "Sudah Kembali",
-    color: "bg-blue-100 text-blue-800",
-  },
-];
-
-export interface PermitParams {
-  page?: number;
-  limit?: number;
-  studentId?: string;
-  permitType?: PermitType;
-  status?: PermitStatus;
-  startDate?: string;
-  endDate?: string;
+/**
+ * What the signed-in role may do — the same lists the API's route guards
+ * read, so a button is shown exactly when its request is allowed.
+ */
+export function usePermitAbilities() {
+  const user = useAuthStore((s) => s.user);
+  const code = getActiveRoleCode(user) ?? "";
+  return {
+    /** Read every permit in scope, file for a learner, record the gate. */
+    isStaff: PERMIT_STAFF_ROLE_CODES.includes(code),
+    /** Approve or reject. */
+    canDecide: PERMIT_DECIDER_ROLE_CODES.includes(code),
+  };
 }
 
-export function usePermits(params: PermitParams = {}) {
+const KEY = ["permits"] as const;
+
+export function usePermits(params: ListPermitsQuery = {}, enabled = true) {
   return useQuery({
-    queryKey: ["permits", params],
-    queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Permit>>("/permits", {
-        params,
-      });
-      return response.data;
-    },
+    queryKey: [...KEY, "list", params],
+    queryFn: async () =>
+      (await api.get<PageResponse<Permit>>("/permits", { params })).data,
+    enabled,
   });
 }
 
 export function usePermit(id: string) {
   return useQuery({
-    queryKey: ["permits", id],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Permit>>(`/permits/${id}`);
-      return response.data.data;
-    },
+    queryKey: [...KEY, "detail", id],
+    queryFn: async () =>
+      (await api.get<ApiResponse<Permit>>(`/permits/${id}`)).data.data,
     enabled: !!id,
   });
 }
 
-export function useStudentPermits(studentId: string) {
+/** Counts for dashboards; staff roles only (the API refuses the rest). */
+export function usePermitSummary(enabled = true) {
   return useQuery({
-    queryKey: ["students", studentId, "permits"],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Permit[]>>(
-        `/students/${studentId}/permits`,
-      );
-      return response.data.data;
-    },
-    enabled: !!studentId,
+    queryKey: [...KEY, "summary"],
+    queryFn: async () =>
+      (await api.get<ApiResponse<PermitSummary>>("/permits/summary")).data.data,
+    enabled,
   });
 }
 
-export interface CreatePermitData {
-  studentId: string;
-  permitType: PermitType;
-  reason: string;
-  startDate: string;
-  endDate: string;
-  parentPhone?: string;
-  destination?: string;
-}
-
-export function useCreatePermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: CreatePermitData) => {
-      const response = await api.post<ApiResponse<Permit>>("/permits", data);
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-      queryClient.invalidateQueries({
-        queryKey: ["students", variables.studentId, "permits"],
-      });
-    },
+/** The gate: look a permit up by the code on the learner's slip. */
+export function usePermitByCode(code: string) {
+  return useQuery({
+    queryKey: [...KEY, "code", code],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<Permit>>(
+          `/permits/code/${encodeURIComponent(code)}`,
+          { skipErrorToast: true },
+        )
+      ).data.data,
+    enabled: !!code,
+    retry: false,
   });
 }
 
-export interface UpdatePermitData {
-  permitType?: PermitType;
-  reason?: string;
-  startDate?: string;
-  endDate?: string;
-  parentPhone?: string;
-  destination?: string;
-}
-
-export function useUpdatePermit() {
+function usePermitMutation<V>(
+  request: (variables: V) => Promise<{ data: ApiResponse<Permit> }>,
+) {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: UpdatePermitData;
-    }) => {
-      const response = await api.put<ApiResponse<Permit>>(
-        `/permits/${id}`,
-        data,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-      queryClient.invalidateQueries({ queryKey: ["permits", variables.id] });
-    },
-  });
-}
-
-export function useApprovePermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.post<ApiResponse<Permit>>(
-        `/permits/${id}/approve`,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-      queryClient.invalidateQueries({ queryKey: ["permits", id] });
-    },
-  });
-}
-
-export function useRejectPermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      const response = await api.post<ApiResponse<Permit>>(
-        `/permits/${id}/reject`,
-        { reason },
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-      queryClient.invalidateQueries({ queryKey: ["permits", variables.id] });
-    },
-  });
-}
-
-export function useMarkReturned() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.post<ApiResponse<Permit>>(
-        `/permits/${id}/returned`,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
-      queryClient.invalidateQueries({ queryKey: ["permits", id] });
-    },
-  });
-}
-
-export function useDeletePermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      await api.delete(`/permits/${id}`);
-    },
+    mutationFn: async (variables: V) => (await request(variables)).data.data,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["permits"] });
+      queryClient.invalidateQueries({ queryKey: KEY });
+      // The staff dashboard counts and lists pending permits too.
+      queryClient.invalidateQueries({ queryKey: ["staff-dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-pending-tasks"] });
     },
   });
+}
+
+export const useCreatePermit = () =>
+  usePermitMutation((data: CreatePermitInput) =>
+    api.post<ApiResponse<Permit>>("/permits", data),
+  );
+
+export const useUpdatePermit = () =>
+  usePermitMutation(({ id, data }: { id: string; data: UpdatePermitInput }) =>
+    api.patch<ApiResponse<Permit>>(`/permits/${id}`, data),
+  );
+
+export const useApprovePermit = () =>
+  usePermitMutation((id: string) =>
+    api.post<ApiResponse<Permit>>(`/permits/${id}/approve`),
+  );
+
+export const useRejectPermit = () =>
+  usePermitMutation(
+    ({ id, rejectionNote }: { id: string; rejectionNote: string }) =>
+      api.post<ApiResponse<Permit>>(`/permits/${id}/reject`, { rejectionNote }),
+  );
+
+export const useCancelPermit = () =>
+  usePermitMutation((id: string) =>
+    api.post<ApiResponse<Permit>>(`/permits/${id}/cancel`),
+  );
+
+export const useDepartPermit = () =>
+  usePermitMutation((id: string) =>
+    api.post<ApiResponse<Permit>>(`/permits/${id}/depart`),
+  );
+
+export const useReturnPermit = () =>
+  usePermitMutation((id: string) =>
+    api.post<ApiResponse<Permit>>(`/permits/${id}/return`, {}),
+  );
+
+/**
+ * A `datetime-local` value (`2026-09-26T13:00`, the browser's local time) as
+ * the ISO instant the API expects.
+ */
+export function localInputToIso(value: string): string {
+  return new Date(value).toISOString();
+}
+
+/** An ISO instant as a `datetime-local` value in the browser's local time. */
+export function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
 }
