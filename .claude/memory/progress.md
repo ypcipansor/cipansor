@@ -22,25 +22,30 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
+- **Eight naming decisions from the architecture audit (2026-09-25)** — the
+  learner's name on screen (Santri everywhere, or Murid/Siswa in the schools),
+  the transliteration of pesantren terms (Takhosus / Takhassus …), keeping the
+  2026-07-21 URL-language rule, Indonesian-only UI vs full i18n, renaming
+  tables vs `@@map`, `/api/v1` now, no laboratory module, and "Donasi & ZIS"
+  until wakaf is modelled. Each has a recommendation in the audit report
+  (<https://claude.ai/artifact/CqSKU3Zh7tYtDC5LSFvQL9>). Phases 2–7 of the
+  plan wait on them; phases 0–1 do not.
 
 ## In flight
 
-- **Agent-context restructure** (decided 2026-09-25): steps 1–3 are merged
-  (see below); step 4 is the domain skills `panduan-peran`,
-  `tata-kelola-yayasan` and `naskah-dinas`, with `apps/web/scripts/role-menus.ts`
-  to print any role's menu from code.
-- **Roles reach their own pages** (branch `fix/role-reach`, 2026-09-25): a
-  per-role-code page map in `rbac.ts` (kepala sekolah → `/perencanaan`,
-  pustakawan → `/library`, laboran → `/inventory`, unit usaha → kantin, laundry,
-  unit usaha), the planning link in the yayasan and kepala sekolah menus, a
-  role-filtered *Sarana & Layanan* group in the staff menu, and a notice on
-  "Roles & Permissions" saying what its ticks do not govern.
-- **Naming refactor** — requested by the user on 2026-09-25: rename files,
-  code, routes and roles so each name says what the module does (praktikum,
-  kurikulum, laboratorium, inventaris, Amaliyah Tadris and others), after
-  researching naming practice. Order: audit → glossary and phased plan for the
-  user's decision → PRs with permanent redirects. The glossary comes before
-  Model A's permission catalogue, whose keys use the feature names.
+- **Naming, endpoint and architecture audit — done 2026-09-25**; the user
+  widened it the same day to every module without exception, every API
+  endpoint and web route, the repository structure, the architecture and
+  `AGENTS.md`, and allowed a total restructure provided it is tidy and
+  standard. Report: <https://claude.ai/artifact/CqSKU3Zh7tYtDC5LSFvQL9>.
+  Measured: 213 web call sites hit API paths that do not exist (109 reachable
+  from pages, in 31 areas — proven on staging: `POST /permits/:id/approve`,
+  `/curriculum/curriculums`, `/hr/employees`, `/certificates` all 404);
+  10 API modules and 9 web routes are misnamed, 35 + 32 more need tidying;
+  22 of 93 modules meet the module standard. Plan in seven phases (roadmap §1):
+  guards → reconnect the broken contract → glossary → consolidate duplicates →
+  API by context under `/api/v1` with a Zod → OpenAPI contract → web → harden
+  → docs. The glossary still comes before Model A's permission keys.
 - **Skipped tests** — asked by the user on 2026-09-25, to take in priority
   order: make every skipped API, web and Playwright test run, or say why it
   cannot. Known so far: 92 of the 94 skipped API tests are two opt-in suites
@@ -58,6 +63,19 @@ backlog to [`roadmap.md`](roadmap.md).
   reads it).
 
 ## Recently done (2026-09-24 → 25)
+
+- **Roles reach their own pages (#559, merged 2026-09-25, verified on
+  staging):** kepala sekolah open `/perencanaan` (200, was bounced to
+  `/dashboard`) and drafted and deleted an RKA Unit through the API;
+  pustakawan `/library`, laboran `/inventory`, manajer usaha `/unit-usaha`
+  all 200; tata usaha still sent from `/library` to `/staff`. The yayasan
+  organs' accounts need 2FA, so their menu was checked by the e2e spec only.
+- **Four API routes that never ran (#560):** `GET /simaan/upcoming`,
+  `POST /notifications/whatsapp/send`, `GET /donation/mustahik` (each
+  swallowed by a `/:id` sibling) and a second `POST /inventory/depreciation/run`.
+  `utils/route-shadowing.guard.test.ts` walks the real router tree.
+- Agent context step 4: the domain skills `panduan-peran`,
+  `tata-kelola-yayasan` and `naskah-dinas` (#558).
 
 - Santri and staff data scoped to the caller (#546, #547, #549, #550);
   2FA required for the yayasan organs (#548); a unit admin can no longer make
