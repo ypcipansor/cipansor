@@ -41,9 +41,7 @@ describe('seesAllUnits', () => {
   it('is true for boarding and shared-service staff', () => {
     for (const roleCode of [
       RoleCode.MUHAFIDZ,
-      RoleCode.MUHAFIDZAH,
       RoleCode.MUSYRIF,
-      RoleCode.MUSYRIFAH,
       RoleCode.PESANTREN_PENGASUH,
       RoleCode.PERAWAT,
       RoleCode.PUSTAKAWAN,

@@ -305,7 +305,6 @@ export class PerformanceAgreementService {
       RoleCode.SMPIT_KEPALA_SEKOLAH,
       RoleCode.SMAQ_KEPALA_SEKOLAH,
       RoleCode.PESANTREN_PENGASUH,
-      RoleCode.PESANTREN_DIREKTUR,
     ] as string[];
     if (roleCodes.some((c) => kepalaUnit.includes(c))) return RoleCode.YAYASAN_KETUA;
 

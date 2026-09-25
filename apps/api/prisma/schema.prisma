@@ -126,16 +126,11 @@ enum RoleCode {
   SMAQ_ALUMNI
 
   // Pesantren roles (cross-unit)
-  PESANTREN_PENGASUH // Kyai / pimpinan tertinggi pesantren
-  PESANTREN_DIREKTUR // Pengelola operasional harian
+  PESANTREN_PENGASUH // Pimpinan Pesantren (Kiai) — no separate direktur (2026-09-25)
   PESANTREN_TATA_USAHA // Admin pesantren
   USTADZ // Guru pengampu kitab/pesantren
-  MUSYRIF // Pembina asrama (putra)
-  MUSYRIFAH // Pembina asrama (putri)
-  MUHAFIDZ // Pengampu tahfidz (putra)
-  MUHAFIDZAH // Pengampu tahfidz (putri)
-  MURABBI // Pembina akhlaq
-  WALI_KAMAR // Penanggung jawab kamar
+  MUSYRIF // Pembina asrama, wali kamar, murabbi — putra atau putri
+  MUHAFIDZ // Pengampu tahfidz — putra atau putri
 
   // Cross-unit support staff (yayasan-wide services backed by real modules:
   // library, clinic/health, permits/gate security, practicum labs)

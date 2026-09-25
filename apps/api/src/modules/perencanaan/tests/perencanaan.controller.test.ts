@@ -828,6 +828,35 @@ describe('perencanaanController.approvePlan', () => {
     }
   );
 
+  // Keputusan yayasan 2026-09-24: Kiai (Pimpinan Pesantren) juga duduk di
+  // Pembina, dan sebagai Pembina ia tidak mengesahkan RKA unitnya sendiri. Ia
+  // memegang dua penugasan; apa pun yang sedang aktif, RKA unit tetap milik
+  // Ketua Pengurus untuk disahkan.
+  it.each(['YAYASAN_PEMBINA', 'PESANTREN_PENGASUH'])(
+    'Kiai yang juga Pembina tidak mengesahkan RKA unitnya — aktif sebagai %s',
+    async (roleCode) => {
+      vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
+        id: 'rka-pesantren',
+        unitId: 'unit-pesantren',
+        status: 'PROPOSED',
+      } as any);
+      const { req, res } = mockReqRes({
+        user: {
+          sub: 'u-kiai',
+          role: roleCode === 'YAYASAN_PEMBINA' ? 'UNIT_ADMIN' : 'TEACHER',
+          roleCode,
+          unitId: roleCode === 'YAYASAN_PEMBINA' ? null : 'unit-pesantren',
+        } as any,
+        params: { id: 'rka-pesantren' } as any,
+      });
+
+      await expect(run(perencanaanController.approvePlan, req, res)).rejects.toThrowError(
+        /Ketua Pengurus/
+      );
+      expect(perencanaanService.approvePlan).not.toHaveBeenCalled();
+    }
+  );
+
   it('Ketua Pengurus mengesahkan RKA unit', async () => {
     vi.mocked(perencanaanService.getPlanForAuth).mockResolvedValue({
       id: 'rka-sdit',

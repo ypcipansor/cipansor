@@ -69,14 +69,9 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SMPIT_GURU_BK: "TEACHER",
   SMAQ_GURU_BK: "TEACHER",
   PESANTREN_PENGASUH: "TEACHER",
-  PESANTREN_DIREKTUR: "TEACHER",
   USTADZ: "TEACHER",
   MUSYRIF: "TEACHER",
-  MUSYRIFAH: "TEACHER",
   MUHAFIDZ: "TEACHER",
-  MUHAFIDZAH: "TEACHER",
-  MURABBI: "TEACHER",
-  WALI_KAMAR: "TEACHER",
 
   // Tata usaha + bendahara + pesantren administration + business units
   // → STAFF (business managers are NOT admins — see backend note)

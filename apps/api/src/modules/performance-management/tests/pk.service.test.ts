@@ -548,14 +548,9 @@ describe('PerformanceAgreementService', () => {
     });
 
     it('melepaskan peran yang memang lintas unit tanpa menyentuh basis data', async () => {
-      // Pengurus yayasan, pengasuh dan direktur pesantren, super admin.
+      // Pengurus yayasan, pimpinan pesantren (Kiai), super admin.
       // Kalau ini salah, mereka justru terkunci dari unit yang mereka asuh.
-      for (const roleCode of [
-        'SUPER_ADMIN',
-        'YAYASAN_KETUA',
-        'PESANTREN_PENGASUH',
-        'PESANTREN_DIREKTUR',
-      ]) {
+      for (const roleCode of ['SUPER_ADMIN', 'YAYASAN_KETUA', 'PESANTREN_PENGASUH']) {
         await expect(
           pkService.assertUnitScope({ pkId: 'pk-mana-pun' }, { roleCode, unitId: null })
         ).resolves.toBeUndefined();

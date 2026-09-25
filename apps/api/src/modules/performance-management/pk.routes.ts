@@ -30,7 +30,6 @@ const leadership = () =>
     RoleCode.SMPIT_KEPALA_SEKOLAH,
     RoleCode.SMAQ_KEPALA_SEKOLAH,
     RoleCode.PESANTREN_PENGASUH,
-    RoleCode.PESANTREN_DIREKTUR,
     'UNIT_ADMIN' // Legacy pre-migration token value
   );
 

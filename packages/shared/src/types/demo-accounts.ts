@@ -1,5 +1,8 @@
 /**
- * Canonical demo accounts — one per RoleCode in the system.
+ * Canonical demo accounts — at least one per RoleCode in the system. MUSYRIF
+ * and MUHAFIDZ have several personas (putra/putri, wali kamar, murabbi) since
+ * those roles were merged on 2026-09-25; the seed looks a role up by its FIRST
+ * account.
  *
  * This single list is the source of truth for the API seed
  * (apps/api/prisma/seed.ts), which creates the login users, and for the tools
@@ -97,16 +100,8 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     name: "K.H. Muhammad Taufik Ismail, S.Pd",
     email: "pesantren.pengasuh@cipansor.or.id",
     password: P,
-    description: "Pimpinan / Pengasuh Pesantren",
+    description: "Pimpinan Pesantren (Kiai), juga Pembina yayasan",
     photo: "/images/people/pimpinan-pesantren.webp",
-  },
-  {
-    group: "PESANTREN",
-    roleCode: "PESANTREN_DIREKTUR",
-    name: "Ustadz Hilman Fauzi, Lc.",
-    email: "pesantren.direktur@cipansor.or.id",
-    password: P,
-    description: "Direktur operasional pesantren",
   },
   {
     group: "PESANTREN",
@@ -134,7 +129,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MUSYRIFAH",
+    roleCode: "MUSYRIF",
     name: "Ustadzah Nur Aisyah",
     email: "pesantren.musyrifah@cipansor.or.id",
     password: P,
@@ -150,7 +145,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MUHAFIDZAH",
+    roleCode: "MUHAFIDZ",
     name: "Ustadzah Khodijah, Al-Hafidzah",
     email: "pesantren.muhafidzah@cipansor.or.id",
     password: P,
@@ -158,19 +153,19 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MURABBI",
+    roleCode: "MUSYRIF",
     name: "Ustadz Salman Alfarisi",
     email: "pesantren.murabbi@cipansor.or.id",
     password: P,
-    description: "Pembina akhlaq",
+    description: "Musyrif — pembina akhlak (murabbi)",
   },
   {
     group: "PESANTREN",
-    roleCode: "WALI_KAMAR",
+    roleCode: "MUSYRIF",
     name: "Ustadz Rizki Ramadhan",
     email: "pesantren.walikamar@cipansor.or.id",
     password: P,
-    description: "Penanggung jawab kamar",
+    description: "Musyrif — wali kamar",
   },
 
   // ── TK Qur'an ───────────────────────────────────────────────────────

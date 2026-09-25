@@ -73,21 +73,24 @@ export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
   "SMAQ_GURU_BK",
 ];
 
-/** Pesantren leadership (kyai / operational director). */
+/**
+ * Pesantren leadership: the Kiai, Pimpinan Pesantren (UU 18/2019 Ps. 9 ayat 2,
+ * "pemimpin tertinggi Pesantren"). Cipansor has no separate operational
+ * director, so PESANTREN_DIREKTUR was removed on 2026-09-25.
+ */
 export const PESANTREN_LEADER_ROLE_CODES: readonly string[] = [
   "PESANTREN_PENGASUH",
-  "PESANTREN_DIREKTUR",
 ];
 
-/** Pesantren educators & dormitory mentors (incl. gender-segregated variants). */
+/**
+ * Pesantren educators and dormitory mentors. One role per duty, not per
+ * gender: putra/putri follows the asrama or halaqah served, and wali kamar and
+ * murabbi are musyrif duties (merged 2026-09-25).
+ */
 export const PESANTREN_EDUCATOR_ROLE_CODES: readonly string[] = [
   "USTADZ",
   "MUSYRIF",
-  "MUSYRIFAH",
   "MUHAFIDZ",
-  "MUHAFIDZAH",
-  "MURABBI",
-  "WALI_KAMAR",
 ];
 
 /** Tata usaha (administrative office) across school units and pesantren. */
