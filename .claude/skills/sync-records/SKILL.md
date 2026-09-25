@@ -1,6 +1,6 @@
 ---
 name: sync-records
-description: Bring the durable records level with what actually happened this session — memory files and their index, docs/EOFFICE_ESIGN_PLAN.md, docs/ROADMAP.md, AGENTS.md. Use before compacting, before ending a long session, or whenever asked to "sesuaikan memori/plan/file lainnya".
+description: Bring the durable records level with what actually happened this session — the repo's project memory (.claude/memory — progress, roadmap, known issues), the machine-local memory for what is sensitive or personal, AGENTS.md and the plans in docs/. Use before compacting, before ending a long session, or whenever asked to "sesuaikan memori/plan/file lainnya".
 ---
 
 # Sync the durable records
@@ -21,18 +21,31 @@ trusts it.
 
 ## What to write, and where
 
+Two memories, and the line between them is `AGENTS.md` → "Where things live":
+the repo's **`.claude/memory/`** (shared by every machine and agent, committed
+through PRs, **nothing sensitive** — the repo is public until release) and the
+**machine-local** auto memory under `~/.claude/projects/<repo slug>/memory/`
+(this machine only; `MEMORY.md` is its index, of which only the first 200 lines
+/ 25 KB load — keep one short line per entry).
+
 | finding | goes to |
 |---|---|
 | how the codebase works, what a fix was | **nowhere** — the repo and git history already say it |
-| a durable fact about the user or their preferences | `memory/` type `user` |
-| guidance the user gave on how to work, with the why | `memory/` type `feedback` |
-| project state not derivable from code or git | `memory/` type `project` |
-| a decision the yayasan made, or a standard already researched | `docs/EOFFICE_ESIGN_PLAN.md`, and a memory pointer |
-| what is done vs still open | `docs/ROADMAP.md` |
-| a convention future work must follow | `AGENTS.md` (or the per-area one) |
-| why a Claude hook or skill works the way it does | `.claude/README.md` |
+| what merged, what is on staging or in production, what waits on the user, what is in flight | `.claude/memory/progress.md` |
+| what to do next, and in what order | `.claude/memory/roadmap.md` |
+| a defect found, or fixed | `.claude/memory/known-issues.md` (delete a fixed entry — git keeps it) |
+| a decision the yayasan made, or a standard already researched | the skill for that domain, or `docs/EOFFICE_ESIGN_PLAN.md` for naskah dinas until its skill exists; plus a line in `progress.md` |
+| a convention every change must follow | `AGENTS.md` (or the per-area one) |
+| why a Claude hook works the way it does | `.claude/README.md` |
+| a fact about the user, or how they want the work done | machine-local memory, type `user` / `feedback` (a rule for every agent goes to `AGENTS.md` instead) |
+| **anything sensitive** — credentials and their status, keys, cloud resource names, IPs, host paths, a weakness still open in production, incident details, personal data | machine-local memory, never the repo |
+| anything specific to this machine — ports, containers, local paths, CLIs | machine-local memory |
 
-Memory lives in `~/.claude/projects/-home-cipansoradm-cipansor/memory/`.
+`guard.sh` refuses the mechanical half of "sensitive" when you write a repo
+Markdown file, and the Security CI job refuses it on every PR; meaning is not
+something a pattern can see, so ask of every note bound for the repo: *could an
+attacker use this?* Moving a machine-local memory into `.claude/memory/` needs
+the user's approval, file by file, until the repository is private.
 
 ## The pass
 
@@ -47,10 +60,13 @@ Memory lives in `~/.claude/projects/-home-cipansoradm-cipansor/memory/`.
    changed the password it described.
 3. **Update in place, don't duplicate.** Look for the existing file that already
    covers the ground; a second file on the same subject splits the truth.
-4. **Update `MEMORY.md`** — one line per memory, hook only, never content. If a
+4. **Update the indexes** — the machine-local `MEMORY.md`, and
+   `.claude/memory/INDEX.md` when a repo memory file is added or removed. One
+   line per memory, hook only, never content. If a
    memory's headline changed, its index line changed too.
-5. **Docs are code.** Plan and ROADMAP edits go on a branch and through a PR
-   like anything else; never commit them straight to `main`.
+5. **The repo's records are code.** `.claude/memory/`, the plans in `docs/`
+   and the guides go on a branch and through a PR like anything else; never
+   commit them straight to `main`. The machine-local memory is written in place.
 6. **Stamp it, so the pass counts.** Last step, always:
 
    ```

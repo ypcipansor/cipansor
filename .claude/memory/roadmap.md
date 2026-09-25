@@ -1,7 +1,7 @@
 # Roadmap — outstanding work, most urgent first
 
 Ordered backlog as of **2026-09-20**. Companion to
-[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) (which records *defects* in detail); this
+[`known-issues.md`](./known-issues.md) (which records *defects* in detail); this
 file records *what to do next and in what order*.
 
 Ordering principle: anything that can harm people or data first, then anything
@@ -59,7 +59,7 @@ a visitor sees, then correctness work, then deliverables, then tidiness.
   `db push` is no longer used against production; the note that said otherwise
   was stale for two weeks. `prisma migrate diff` remains useful as a pre-flight,
   but it is blind to triggers, functions and views — see
-  [`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) and the migration-history memory.
+  [`known-issues.md`](./known-issues.md) and the migration-history memory.
 - Backups: `pg_dump | gzip` into `~/cipansor-deploy/backups/` before every
   migration. A shrinking dump is not automatically data loss — `dashboard_history`
   is pruned to the last 24 hours by the `cleanupOldSnapshots` job, which
@@ -183,7 +183,7 @@ Still Indonesian by design: the news article *bodies* (headlines and
 standfirsts are translated; the text is marked `lang="id"` under a line telling
 the reader so), the leaders' mottos and the donation page's scripture, and the
 values that are *recorded* rather than displayed — the anonymous donor name and
-the bank details. Detail in `KNOWN_ISSUES.md`. **Live since the 2026-07-31
+the bank details. Detail in `known-issues.md`. **Live since the 2026-07-31
 deploy.**
 
 ## 🟠 6. PWA install prompt — question moved hosts (#401, 2026-08-15)
@@ -199,7 +199,7 @@ step unchanged: Chrome DevTools → Application → Manifest → **Installabilit
 a real device, pointed at the portal. Two suspects, in order — Chrome's
 user-engagement threshold (a fresh Incognito window has zero engagement, so the
 test used to rule out a stale dismissal proved nothing), then the manifest's
-`"id": "/"`. Details in `KNOWN_ISSUES.md`.
+`"id": "/"`. Details in `known-issues.md`.
 
 ## ✅ 7. Temporal data was stale — code fixed (#370), production data now current
 
@@ -347,12 +347,12 @@ guide with a clickable table of contents, then rewrite the README.
 **Live on cipansor.or.id since 2026-07-25** (#373, credentials reaching the
 container via #374). The public widget answers from RAG over the public pages
 with the live SPMB facts, cites its sources, caches structurally, and refuses
-requests for private data. Design and rationale: [`planning/chatbot-design.md`](./planning/chatbot-design.md).
+requests for private data. Design and rationale: [`planning/chatbot-design.md`](../../docs/planning/chatbot-design.md).
 
 **Retrieval no longer selects, and that is settled** (#475, 2026-09-04). The
 corpus measured 2,513 characters — ~628 tokens across 8 entries — so the whole
 of it now goes into every prompt and BM25 has no veto. See
-[`planning/chatbot-design.md`](./planning/chatbot-design.md) §1 "REVISED AGAIN"
+[`planning/chatbot-design.md`](../../docs/planning/chatbot-design.md) §1 "REVISED AGAIN"
 for the numbers, the four techniques deliberately not adopted, and the trigger
 that would justify revisiting them. **Do not re-open this from taste.**
 
@@ -361,7 +361,7 @@ menawarkan meneruskan pertanyaan ke tim, dengan persetujuan, dan suratnya
 dikirim dari `noreply@` dengan `Reply-To` diarahkan ke penanyanya. Antrian
 tahan-lama + percobaan ulang tiap 30 menit; retensi 90 hari mengikuti penyapu
 yang sama dengan riwayat percakapan. Lihat §6b di
-[`planning/chatbot-design.md`](./planning/chatbot-design.md).
+[`planning/chatbot-design.md`](../../docs/planning/chatbot-design.md).
 
 **Digelar ke produksi 2026-09-05**, satu pembangunan ulang image membawa
 kelimanya: #473 (panel pemakaian/biaya), #474 (penolakan "ada informasi apa
@@ -553,7 +553,7 @@ configured the transport is `log`, and — this is the part that was wrong befor
 Every automated message leaves as `noreply@cipansor.or.id` with
 `Reply-To: halo@cipansor.or.id`, so a wali who hits Reply reaches a mailbox
 someone reads. Setup, quotas and the failure-message table:
-[`EMAIL_SETUP.md`](./EMAIL_SETUP.md). It costs nothing — Gmail API has no
+[`EMAIL_SETUP.md`](../../docs/EMAIL_SETUP.md). It costs nothing — Gmail API has no
 per-call charge, and the 2,000 recipients/day limit is far above a school of
 107 accounts.
 
@@ -620,7 +620,7 @@ and the application sends through the Gmail API. Removing it is the user's call.
 
 ## 🟡 14. E-Office & electronic signature — shipped AND deployed 2026-09-03, chain walked end-to-end in production
 
-Full findings and the plan: [`EOFFICE_ESIGN_PLAN.md`](./EOFFICE_ESIGN_PLAN.md).
+Full findings and the plan: [`EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md).
 
 **Shipped so far:** PR-1 (#435, the feature recovered onto `main` and the naskah
 given a real letterhead), PR-2 + PR-2b (#436, revocation that the app can
@@ -858,7 +858,7 @@ potong (mis. akhir semester) atau keduanya — dan tulis keputusannya di sini.
 Bukan pekerjaan yang tertunda karena sulit — tiga hal yang **tidak boleh**
 diputuskan sendiri karena mengubah wewenang atau membuka data pribadi. Bukti
 dan kalimat pertanyaannya ada di
-[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md) → "Menunggu keputusan pengguna".
+[`known-issues.md`](./known-issues.md) → "Menunggu keputusan pengguna".
 
 1. **Tata Usaha dan tombol Luluskan.** API mengizinkan TU (#500); halaman detail
    santri tidak (`allowedRoles` lama). Melonggarkannya membuka seluruh data
@@ -871,7 +871,7 @@ dan kalimat pertanyaannya ada di
    admin unit melihat tombol keputusan dalam keadaan nonaktif.
 
 Setelah dijawab: kerjakan, lalu hapus butirnya dari sini dan dari
-`KNOWN_ISSUES.md`, dan catat keputusannya di memori keputusan yang sesuai.
+`known-issues.md`, dan catat keputusannya di memori keputusan yang sesuai.
 
 ---
 
