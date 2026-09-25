@@ -26,14 +26,14 @@ backlog to [`roadmap.md`](roadmap.md).
 ## In flight
 
 - **Agent-context restructure** (decided 2026-09-25): (1) this memory folder,
-  the "Where things live" map and the sensitive-text check; (2) delete stale
-  docs (`docs/planning/` except `chatbot-design.md`, `docs/screenshots/`,
-  orphan images, closed history here, `apps/web/e2e/COVERAGE.md`); (3) move the
-  non-sensitive machine-local memories here, from a list the user approves;
-  (4) new skills — user manuals per role, naskah dinas and yayasan governance
-  knowledge. `docs/DEPLOYMENT.md` goes after 2026-10-01 (the VM is the rollback
-  target until then, and a guard test reads it).
-- #553 — the server checks who is named *atasan penilai* on a PK.
+  the "Where things live" map and the sensitive-text check — #554; (2) stale
+  docs deleted, and this folder's roadmap and known issues cut down to open
+  work, each item rechecked against the code; (3) move the non-sensitive
+  machine-local memories here, from a list the user approved (decisions and
+  research → `decisions/`, engineering lessons → `lessons/`); (4) new skills —
+  user manuals per role, naskah dinas and yayasan governance knowledge.
+  `docs/DEPLOYMENT.md` goes after 2026-10-01 (the VM is the rollback target
+  until then, and a guard test reads it).
 
 ## Recently done (2026-09-24 → 25)
 
@@ -44,6 +44,8 @@ backlog to [`roadmap.md`](roadmap.md).
   and also Pembina; Musyrifah, Wali Kamar and Murabbi merged into Musyrif,
   Muhafidzah into Muhafidz.
 - The E2E helper that picked another spec's plan (#551).
+- The server checks who is named *atasan penilai* on a PK: never the owner,
+  and only someone who holds a supervising role (#553).
 
 ## Next
 
