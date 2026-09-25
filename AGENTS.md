@@ -163,8 +163,10 @@ name of every module are in
   `apps/api/src/utils/route-shadowing.guard.test.ts` fails otherwise.
 - **The web calls only routes the API serves.** Every call goes through a hook
   in `apps/web/src/hooks/*` with a path the router answers; a string typed on
-  one side and imagined on the other is how 213 calls came to point at nothing
-  (measured 2026-09-25).
+  one side and imagined on the other is how 212 calls came to point at nothing
+  (measured 2026-09-25). `apps/api/src/utils/web-api-contract.guard.test.ts`
+  checks every call against the real router and fails on a new broken one; its
+  baseline of the old ones only shrinks.
 - **Versions:** the API moves under `/api/v1` (phase 4 of the audit plan in
   `roadmap.md`); a breaking change after the first external client ships gets
   a new major version, never an in-place break.
