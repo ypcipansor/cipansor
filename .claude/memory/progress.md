@@ -22,6 +22,10 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
+- **Who decides a learner's leave.** Since #564: unit admin, kepala sekolah,
+  Pimpinan Pesantren and super admin — no yayasan organ. Open: should the
+  musyrif decide leave from the asrama? (One line in
+  `packages/shared/src/schemas/permits.ts`.)
 - **Two facts for the ZIS and wakaf build:** the yayasan's zakat status (UPZ
   of which BAZNAS, a licensed LAZ, or none) and whether it is a registered
   nazhir. The law decides what the app may offer on each
@@ -29,6 +33,11 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## In flight
 
+- **Audit phase 1, area by area.** Perizinan done (#564). Next: Kurikulum, HR
+  employees, Sertifikat, then the dead calls, `services/` and the `api-client`
+  alias. Open PRs: #565 (the Prisma client omits user credentials by default)
+  and #566 (plain notification text escaped in e-mail bodies — CodeQL flagged
+  the sink on #564).
 - **Naming, endpoint and architecture audit — done 2026-09-25**; the user
   widened it the same day to every module without exception, every API
   endpoint and web route, the repository structure, the architecture and
@@ -66,6 +75,18 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Recently done (2026-09-24 → 25)
 
+- **Perizinan end to end (#564, merged 2026-09-25, on staging):** one contract
+  in `@cipansor/shared` (`schemas/permits.ts`: types, Zod, and the role lists
+  both sides read); a status flow with conditional moves (409 otherwise); reads
+  scoped by `studentScope`; Pos Gerbang at `/permits/gate` for keamanan (308
+  from `/reception/gate`); wali, staff dashboard and musyrif card on the same
+  hooks; e2e `permits.spec.ts` (wali files → kepala approves → keamanan out and
+  back → bendahara refused). Before/after on staging:
+  <https://claude.ai/artifact/HQPwoVwwzJzuAxUHZrxs4M>. **#564 merged with the
+  CodeQL check red — CodeQL is not a required check**; #566 fixes what it found.
+- **Web ↔ API contract guard (#563):** `utils/web-api-contract.guard.test.ts`
+  asks the real router about every web call; a baseline that only shrinks.
+- **Naming decisions and `AGENTS.md` conventions (#562)**; records (#561).
 - **Roles reach their own pages (#559, merged 2026-09-25, verified on
   staging):** kepala sekolah open `/perencanaan` (200, was bounced to
   `/dashboard`) and drafted and deleted an RKA Unit through the API;

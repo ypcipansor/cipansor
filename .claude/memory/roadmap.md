@@ -15,9 +15,9 @@ items before 2026-09-25 is in the history of this file and of
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
    on 2026-09-25, so it runs first). Phases, each releasable alone:
-   0. guards — a ratchet that fails on any new web call to a path the router
-      does not serve, factual fixes to `AGENTS.md` and `docs/ARCHITECTURE.md`;
-   1. reconnect the 109 broken calls page by page, delete the 84 dead ones,
+   0. guards — done (#560, #562, #563);
+   1. reconnect the broken calls area by area (Perizinan done in #564; next
+      Kurikulum, HR employees, Sertifikat), delete the 84 dead ones,
       `services/` and the `api-client` alias;
    2. glossary from the user's eight decisions;
    3. consolidate duplicates (tahfidz, report cards, lesson plans,
