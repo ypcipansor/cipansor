@@ -145,6 +145,19 @@ function isLayoutOnlyChar(ch: string): boolean {
   return code === 0x0a || code === 0x0d || code === 0x09;
 }
 
+/** Karakter dalam satu potong teks yang akan HILANG saat PDF merender teks itu.
+ *
+ * Memakai jalur yang SAMA dengan `generateDecisionPdf`/`decisionPdfGlyphOffenders`
+ * (WinAnsi bila font Unicode absen, cakupan glyph font bila termuat), tetapi
+ * untuk satu nilai lepas — dipakai `castVote` guna memvalidasi catatan suara
+ * yang baru masuk, yang tidak terlihat oleh gerbang saat pembuatan keputusan.
+ */
+export function decisionPdfTextGlyphOffenders(value: string): string[] {
+  return unicodeFontPath() !== null
+    ? [...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !unicodeFontHasGlyph(ch)))]
+    : [...new Set([...value].filter((ch) => !isLayoutOnlyChar(ch) && !isWinAnsiEncodable(ch)))];
+}
+
 /** Field yang memuat aksara di luar WinAnsi — hanya relevan pada jalur fallback. */
 export function unencodableDecisionPdfFields(
   data: DecisionPdfData

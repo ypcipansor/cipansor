@@ -66,7 +66,11 @@ import {
   toSealMaterial,
 } from '@/utils/foundation-eseal';
 import { decisionVerificationUrl } from '@/utils/verification-url';
-import { generateDecisionPdf, decisionPdfGlyphOffenders } from '@/utils/generate-decision-pdf';
+import {
+  generateDecisionPdf,
+  decisionPdfGlyphOffenders,
+  decisionPdfTextGlyphOffenders,
+} from '@/utils/generate-decision-pdf';
 import type {
   DecisionPdfVoteRow,
   DecisionPdfMemberRow,
@@ -1722,6 +1726,24 @@ export const FoundationDecisionService = {
       throw Errors.badRequest(
         'Tidak setuju pada keputusan sirkuler wajib disertai alasan (min. 5 karakter).'
       );
+    }
+
+    // Catatan suara adalah teks bebas yang dicetak ke risalah (`buildPdfData`
+    // menyertakannya, dan `generateDecisionPdf` MENOLAK aksara tanpa glyph).
+    // Gerbang saat pembuatan keputusan hanya melihat naskah, bukan catatan yang
+    // masuk belakangan, sehingga satu emoji di catatan membuat suara tersimpan
+    // tetapi `prepareApprovalArtifact` gagal permanen — keputusan tidak dapat
+    // disahkan TANPA jalur mengedit/menghapus catatan. Validasi di pintu masuk,
+    // memakai cakupan glyph yang SAMA, mengembalikan 400 yang menyebut aksara.
+    if (note && note.trim()) {
+      const offending = decisionPdfTextGlyphOffenders(note.trim());
+      if (offending.length > 0) {
+        throw Errors.badRequest(
+          `Catatan suara memuat aksara yang tidak dapat dicetak ke risalah: ${offending.join(' ')}. ` +
+            `Aksara itu akan hilang dari PDF yang di-e-seal, sehingga arsip berbeda dari naskah yang ` +
+            `ditandatangani. Hapus aksara tersebut lalu kirim suara ulang.`
+        );
+      }
     }
 
     // Muat kunci tanda tangan pemilih; pastikan masih sah (aktivasi, masa

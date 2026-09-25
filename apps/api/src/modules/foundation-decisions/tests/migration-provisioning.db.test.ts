@@ -24,7 +24,7 @@
  *
  * Opt-in via RUN_DB_TESTS=1, consistent with the other DB integration suites.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -35,6 +35,17 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { createKeyMaterial, publicKeyFingerprint } from '@/utils/esign';
 import type { PrismaClient as PrismaClientType } from '@prisma/client';
+
+/**
+ * Provisioning menjalankan `prisma migrate deploy` pada database sungguhan untuk
+ * SETIAP kasus, masing-masing membuat/menghapus basis data ephemeral. Ia rutin
+ * melewati 10 detik anggaran repo ketika runner CI sibuk, dan timeout itu
+ * muncul sebagai kegagalan yang menyamar sebagai bug migrasi — padahal
+ * `migrate deploy` sendiri yang memakan waktunya, bukan produk. Naikkan anggaran
+ * khusus berkas ini alih-alih melonggarkan batas repo (yang akan menyembunyikan
+ * test yang benar-benar menggantung di berkas lain).
+ */
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
 const RUN = process.env.RUN_DB_TESTS === '1';
 const API_DIR = path.resolve(__dirname, '../../../..');

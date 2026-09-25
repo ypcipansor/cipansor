@@ -432,6 +432,56 @@ describe('FoundationDecisionService.castVote', () => {
   });
 
   /**
+   * Devin Review — catatan suara dapat "terdampar" seperti naskah.
+   *
+   * Catatan suara dicetak `buildPdfData` → `generateDecisionPdf`, yang MENOLAK
+   * aksara tanpa glyph. Gerbang saat pembuatan keputusan tidak melihat catatan
+   * yang masuk belakangan, jadi sebelum perbaikan sebuah emoji di catatan
+   * membuat suara TERSIMPAN tetapi `prepareApprovalArtifact` gagal permanen:
+   * keputusan tidak dapat disahkan dan tidak ada jalur mengedit catatan.
+   * Perbaikan menolak catatan di pintu masuk, memakai cakupan glyph yang SAMA.
+   */
+  it('menolak catatan suara yang memuat aksara tanpa glyph (emoji) sebelum suara tersimpan', async () => {
+    const d = decisionRow({ kind: 'DELIBERATION' });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+
+    await expect(
+      FoundationDecisionService.castVote({ id: 'user-1', roleCode: 'YAYASAN_PEMBINA' }, 'dec-1', {
+        choice: 'REJECT',
+        note: 'Perlu revisi 🎉',
+        passphrase: PASS,
+      })
+    ).rejects.toThrow(/Catatan suara memuat aksara yang tidak dapat dicetak/);
+
+    // Tidak ada suara yang ditulis: validasi berjalan SEBELUM transaksi, jadi
+    // pemilih tetap dapat mengirim ulang catatan yang sudah dibersihkan.
+    expect(dm.foundationDecisionVote.create).not.toHaveBeenCalled();
+  });
+
+  it('menerima catatan suara biasa (teks WinAnsi) saat font Unicode tersedia', async () => {
+    const d = decisionRow({ kind: 'DELIBERATION' });
+    dm.foundationDecision.findUnique.mockResolvedValue(d);
+    dm.foundationDecisionVote.create.mockResolvedValue({ id: 'vote-1' });
+    dm.foundationDecisionVote.findMany.mockResolvedValue([
+      { ...signedVoteRow(d, 'user-1', 'REJECT'), note: 'Perlu revisi anggaran' },
+    ]);
+    dm.foundationDecision.update.mockResolvedValue({ ...d, status: 'VOTING' });
+    dm.userSigningKey.findUnique.mockResolvedValue(signingKeyRow);
+    dm.userSigningKey.update.mockResolvedValue(signingKeyRow);
+    dm.foundationEseal.findFirst.mockResolvedValue(null);
+
+    const result = await FoundationDecisionService.castVote(
+      { id: 'user-1', roleCode: 'YAYASAN_PEMBINA' },
+      'dec-1',
+      { choice: 'REJECT', note: 'Perlu revisi anggaran', passphrase: PASS }
+    );
+    expect(result.voteId).toBe('vote-1');
+    const created = dm.foundationDecisionVote.create.mock.calls[0][0].data;
+    expect(created.note).toBe('Perlu revisi anggaran');
+  });
+
+  /**
    * F1 (SECURITY CRITICAL) — mantan anggota organ kehilangan hak suara.
    *
    * Snapshot keanggotaan bersifat immutable sebagai catatan historis, tetapi
