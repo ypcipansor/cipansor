@@ -82,6 +82,13 @@ const ORGAN_TANPA_PK: Partial<Record<string, string>> = {
   [RoleCode.YAYASAN_ANGGOTA]: PENGURUS_KOLEKTIF,
 };
 
+/** See `alasanOrganTanpaPK`: the reason, from a user's active role codes. */
+function alasanOrganTanpaPKDari(codes: string[]): string | null {
+  if (codes.length === 0) return null;
+  if (codes.some((c) => !(c in ORGAN_TANPA_PK))) return null;
+  return ORGAN_TANPA_PK[codes[0] as keyof typeof ORGAN_TANPA_PK] ?? null;
+}
+
 export class PerformanceAgreementService {
   /** Throws unless the caller owns the PK, supervises it, or is an admin. */
   assertAccess(
@@ -200,7 +207,8 @@ export class PerformanceAgreementService {
       // Jadi PK di bawahnya berjangkar pada DOKUMEN RKA-nya, bukan pada PK
       // cerminan — supaya sasaran yang sama tidak hidup di dua tempat dan
       // berselisih.
-      if (await this.isOrganTanpaPK(data.supervisorId)) {
+      const supervisorCodes = await this.assertSupervisorEligible(data.userId, data.supervisorId);
+      if (alasanOrganTanpaPKDari(supervisorCodes) !== null) {
         // PermenPANRB 53/2014 bagian C: PK pimpinan satuan kerja disusun oleh
         // pimpinannya, ditandatangani bersama pemberi amanah, dan "harus
         // disusun setelah … menerima dokumen pelaksanaan anggaran". Bagi
@@ -342,6 +350,8 @@ export class PerformanceAgreementService {
     const rows = await prisma.user.findMany({
       where: {
         isActive: true,
+        // Nobody appraises their own PK (see assertSupervisorEligible).
+        ...(callerId ? { id: { not: callerId } } : {}),
         userRoles: {
           some: {
             isActive: true,
@@ -509,6 +519,9 @@ export class PerformanceAgreementService {
     if (data.strategicPlanId !== undefined) {
       await this.assertPlanUnitInScope(data.strategicPlanId, caller);
     }
+    if (data.supervisorId) {
+      await this.assertSupervisorEligible(pk.userId, data.supervisorId);
+    }
 
     return prisma.performanceAgreement.update({
       where: { id },
@@ -581,9 +594,29 @@ export class PerformanceAgreementService {
     return codes.some((c) => c === RoleCode.SUPER_ADMIN);
   }
 
-  /** True bila pengguna ini adalah organ yayasan yang memang tanpa PK. */
-  private async isOrganTanpaPK(userId: string): Promise<boolean> {
-    return (await this.alasanOrganTanpaPK(userId)) !== null;
+  /**
+   * Atasan penilai harus ORANG LAIN yang memang boleh menilai; mengembalikan
+   * peran aktifnya.
+   *
+   * Daftar di formulir (`getSupervisors`) sudah menyaring keduanya, tetapi
+   * server dulu menerima `supervisorId` apa pun. Pemilik PK bisa menunjuk
+   * dirinya sendiri lalu menyetujui PK-nya sendiri — `approvePK` hanya
+   * memeriksa `supervisorId === callerId` — atau menunjuk Pembina/Pengawas
+   * yang sengaja dikeluarkan dari daftar. Bagi Kiai yang juga Pembina
+   * (keputusan yayasan 2026-09-24) itu berarti mengesahkan PK-nya sendiri.
+   */
+  private async assertSupervisorEligible(ownerId: string, supervisorId: string) {
+    if (supervisorId === ownerId) {
+      throw Errors.badRequest('Atasan penilai tidak boleh pemilik Perjanjian Kinerja itu sendiri.');
+    }
+    const codes = await this.activeRoleCodes(supervisorId);
+    if (!codes.some((c) => (SUPERVISOR_CANDIDATE_ROLE_CODES as string[]).includes(c))) {
+      throw Errors.badRequest(
+        'Atasan penilai harus pimpinan atau pegawai yang berwenang menilai. Pembina dan ' +
+          'Pengawas tidak menilai pegawai, dan akun tanpa peran aktif tidak dapat dipilih.'
+      );
+    }
+    return codes;
   }
 
   /**
@@ -596,10 +629,7 @@ export class PerformanceAgreementService {
    * berlaku bila SELURUH peran aktifnya adalah kedudukan organ.
    */
   private async alasanOrganTanpaPK(userId: string): Promise<string | null> {
-    const codes = await this.activeRoleCodes(userId);
-    if (codes.length === 0) return null;
-    if (codes.some((c) => !(c in ORGAN_TANPA_PK))) return null;
-    return ORGAN_TANPA_PK[codes[0] as keyof typeof ORGAN_TANPA_PK] ?? null;
+    return alasanOrganTanpaPKDari(await this.activeRoleCodes(userId));
   }
 
   async proposePK(id: string, callerId: string, isAdmin: boolean) {
