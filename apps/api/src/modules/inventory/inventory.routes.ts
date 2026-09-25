@@ -104,9 +104,6 @@ router.patch(
 );
 router.delete('/maintenance/:id', authorize(UserRole.UNIT_ADMIN), controller.deleteMaintenance);
 
-// Depreciation (Moved before :id routes)
-router.post('/depreciation/run', authorize(UserRole.UNIT_ADMIN), controller.runDepreciation);
-
 // Items
 router.get(
   '/',

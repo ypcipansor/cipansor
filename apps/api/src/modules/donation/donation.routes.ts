@@ -153,6 +153,28 @@ router.get(
   donationController.getMonthlyReport
 );
 
+// Mustahik (ZIS recipients) — staff-managed master data.
+// Registered before `/:id`: Express matches in order, and `GET /:id` would
+// otherwise answer `/mustahik` as a donation lookup (utils/route-shadowing.guard.test.ts).
+router.get(
+  '/mustahik',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  async (_req, res) => {
+    const mustahik = await mustahikService.findAll();
+    res.send(mustahik);
+  }
+);
+
+router.post(
+  '/mustahik',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
+  validate(createMustahikSchema),
+  async (req, res) => {
+    const mustahik = await mustahikService.create(req.body);
+    res.status(httpStatus.CREATED).send(mustahik);
+  }
+);
+
 /**
  * @route GET /api/donation
  * @desc Get all donations
@@ -220,26 +242,6 @@ router.delete(
   '/:id',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   donationController.delete
-);
-
-// Mustahik (ZIS recipients) — staff-managed master data
-router.get(
-  '/mustahik',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  async (_req, res) => {
-    const mustahik = await mustahikService.findAll();
-    res.send(mustahik);
-  }
-);
-
-router.post(
-  '/mustahik',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.STAFF),
-  validate(createMustahikSchema),
-  async (req, res) => {
-    const mustahik = await mustahikService.create(req.body);
-    res.status(httpStatus.CREATED).send(mustahik);
-  }
 );
 
 // ZIS distribution posts journal entries — restrict to finance-capable roles.
