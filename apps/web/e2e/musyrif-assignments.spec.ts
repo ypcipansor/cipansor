@@ -93,6 +93,10 @@ test.describe("Penugasan musyrif — tugaskan, berlaku, akhiri", () => {
 
     // The kamar list loads: it called a route the API never had until now.
     await expect(page.getByRole("cell", { name: room.name })).toBeVisible();
+    // And the asrama says what it is: every asrama used to read "Putri" and
+    // "Tidak Aktif", because the page read fields the API does not send.
+    await expect(page.getByText("Putra", { exact: true })).toBeVisible();
+    await expect(page.getByText("Tidak Aktif", { exact: true })).toHaveCount(0);
 
     await page.getByRole("tab", { name: "Musyrif" }).click();
     await page.getByRole("button", { name: "Tugaskan musyrif" }).click();

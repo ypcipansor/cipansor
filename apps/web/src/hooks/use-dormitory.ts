@@ -81,15 +81,30 @@ export interface DormitoryParams {
   isActive?: boolean;
 }
 
+/**
+ * The API sends an asrama's `gender` and `deletedAt`; the pages read `type`
+ * and `isActive`. Until 2026-09-26 nothing mapped them, so every asrama read
+ * "Putri" and "Tidak Aktif" — Asrama Putra Al-Hikmah included.
+ */
+type ApiDormitory = Omit<Dormitory, "type" | "isActive"> & {
+  gender?: DormitoryType;
+  deletedAt?: string | null;
+};
+const toDormitory = ({ gender, deletedAt, ...d }: ApiDormitory): Dormitory => ({
+  ...d,
+  type: gender ?? "MALE",
+  isActive: !deletedAt,
+});
+
 export function useDormitories(params: DormitoryParams = {}) {
   return useQuery({
     queryKey: ["dormitories", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Dormitory>>(
+      const response = await api.get<PaginatedResponse<ApiDormitory>>(
         "/dormitories",
         { params },
       );
-      return response.data;
+      return { ...response.data, data: response.data.data.map(toDormitory) };
     },
   });
 }
@@ -98,10 +113,10 @@ export function useDormitory(id: string) {
   return useQuery({
     queryKey: ["dormitories", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Dormitory>>(
+      const response = await api.get<ApiResponse<ApiDormitory>>(
         `/dormitories/${id}`,
       );
-      return response.data.data;
+      return toDormitory(response.data.data);
     },
     enabled: !!id,
   });
