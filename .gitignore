@@ -68,6 +68,8 @@ playwright-report/
 *.tmp
 *.temp
 *.txt
+# …except the licence that must ship with a vendored font (SIL OFL 1.1)
+!apps/api/src/assets/fonts/OFL.txt
 .cache/
 .parcel-cache/
 
