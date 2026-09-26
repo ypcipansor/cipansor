@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
+import {
+  MUSYRIF_ASSIGNER_ROLE_CODES,
+  MUSYRIF_READER_ROLE_CODES,
+  assignMusyrifSchema,
+  musyrifCandidatesQuerySchema,
+} from '@cipansor/shared';
 import * as controller from './dormitories.controller';
+import * as musyrif from './musyrif.controller';
 import { authenticate, authorize } from '../../middleware/auth';
-import { validateQuery } from '../../middleware/error';
+import { validate, validateQuery } from '../../middleware/error';
 import {
   queryDormitorySchema,
   queryRoomSchema,
@@ -255,6 +262,69 @@ router.get(
   '/:id/stats',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
   controller.getDormitoryStats
+);
+
+/**
+ * @swagger
+ * /api/dormitories/{id}/musyrif:
+ *   get:
+ *     summary: The asrama's active musyrif assignments (no kamar = the whole asrama)
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: MusyrifAssignment[] }
+ *   post:
+ *     summary: Assign someone to the asrama or one of its kamar
+ *     description: Super admin or Pimpinan Pesantren. The person must hold an educator role.
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [userId], properties: { userId: { type: string, format: uuid }, roomId: { type: string, format: uuid, nullable: true }, role: { type: string, enum: [PEMBINA, KOORDINATOR, PENGAWAS] } } }
+ *     responses:
+ *       201: { description: Assigned }
+ *       400: { description: Not an educator, or a kamar of another asrama }
+ *       409: { description: Already assigned there }
+ * /api/dormitories/{id}/musyrif/candidates:
+ *   get:
+ *     summary: People who may be assigned (active educators), by name
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: q, schema: { type: string } }
+ *     responses:
+ *       200: { description: MusyrifCandidate[] }
+ * /api/dormitories/{id}/musyrif/{assignmentId}/end:
+ *   post:
+ *     summary: End an assignment (kept as history)
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Ended }
+ *       404: { description: No such active assignment in this asrama }
+ */
+router.get('/:id/musyrif', authorize(...MUSYRIF_READER_ROLE_CODES), musyrif.list);
+router.get(
+  '/:id/musyrif/candidates',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  validateQuery(musyrifCandidatesQuerySchema),
+  musyrif.candidates
+);
+router.post(
+  '/:id/musyrif',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  validate(assignMusyrifSchema),
+  musyrif.assign
+);
+router.post(
+  '/:id/musyrif/:assignmentId/end',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  musyrif.end
 );
 
 /**

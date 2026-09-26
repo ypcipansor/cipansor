@@ -1,4 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type {
+  AssignMusyrifInput,
+  MusyrifAssignment,
+  MusyrifCandidate,
+  MusyrifDuty,
+} from "@cipansor/shared";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
 // Dormitory (Asrama) entity
@@ -75,15 +81,30 @@ export interface DormitoryParams {
   isActive?: boolean;
 }
 
+/**
+ * The API sends an asrama's `gender` and `deletedAt`; the pages read `type`
+ * and `isActive`. Until 2026-09-26 nothing mapped them, so every asrama read
+ * "Putri" and "Tidak Aktif" — Asrama Putra Al-Hikmah included.
+ */
+type ApiDormitory = Omit<Dormitory, "type" | "isActive"> & {
+  gender?: DormitoryType;
+  deletedAt?: string | null;
+};
+const toDormitory = ({ gender, deletedAt, ...d }: ApiDormitory): Dormitory => ({
+  ...d,
+  type: gender ?? "MALE",
+  isActive: !deletedAt,
+});
+
 export function useDormitories(params: DormitoryParams = {}) {
   return useQuery({
     queryKey: ["dormitories", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Dormitory>>(
+      const response = await api.get<PaginatedResponse<ApiDormitory>>(
         "/dormitories",
         { params },
       );
-      return response.data;
+      return { ...response.data, data: response.data.data.map(toDormitory) };
     },
   });
 }
@@ -92,10 +113,10 @@ export function useDormitory(id: string) {
   return useQuery({
     queryKey: ["dormitories", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<Dormitory>>(
+      const response = await api.get<ApiResponse<ApiDormitory>>(
         `/dormitories/${id}`,
       );
-      return response.data.data;
+      return toDormitory(response.data.data);
     },
     enabled: !!id,
   });
@@ -220,14 +241,22 @@ export function useRoom(id: string) {
   });
 }
 
+/**
+ * The kamar of one asrama, with how many santri live in each. Until
+ * 2026-09-26 this called `GET /dormitories/{id}/rooms`, which the API never
+ * served: the asrama page's room list was always empty.
+ */
 export function useDormitoryRooms(dormitoryId: string) {
   return useQuery({
     queryKey: ["dormitories", dormitoryId, "rooms"],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Room[]>>(
-        `/dormitories/${dormitoryId}/rooms`,
-      );
-      return response.data.data;
+    queryFn: async (): Promise<Room[]> => {
+      const response = await api.get<{
+        data: (Room & { _count?: { assignments: number } })[];
+      }>("/dormitories/rooms/list", { params: { dormitoryId, limit: 100 } });
+      return response.data.data.map(({ _count, ...room }) => ({
+        ...room,
+        currentOccupancy: _count?.assignments ?? 0,
+      }));
     },
     enabled: !!dormitoryId,
   });
@@ -412,5 +441,77 @@ export function useUnassignRoom() {
       queryClient.invalidateQueries({ queryKey: ["rooms"] });
       queryClient.invalidateQueries({ queryKey: ["dormitories"] });
     },
+  });
+}
+
+// ============================================
+// Musyrif assignments — who looks after the asrama or one of its kamar.
+// The contract is @cipansor/shared `schemas/musyrif-assignments.ts`.
+// ============================================
+
+export const MUSYRIF_DUTY_LABELS: Record<MusyrifDuty, string> = {
+  PEMBINA: "Pembina (wali kamar)",
+  KOORDINATOR: "Koordinator asrama",
+  PENGAWAS: "Pengawas",
+};
+
+const musyrifKey = (dormitoryId: string) =>
+  ["dormitories", dormitoryId, "musyrif"] as const;
+
+export function useDormitoryMusyrif(dormitoryId: string) {
+  return useQuery({
+    queryKey: musyrifKey(dormitoryId),
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<MusyrifAssignment[]>>(
+          `/dormitories/${dormitoryId}/musyrif`,
+        )
+      ).data.data,
+    enabled: !!dormitoryId,
+  });
+}
+
+/** People who may be assigned, by name. Assigners only (the API refuses the rest). */
+export function useMusyrifCandidates(
+  dormitoryId: string,
+  q: string,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...musyrifKey(dormitoryId), "candidates", q],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<MusyrifCandidate[]>>(
+          `/dormitories/${dormitoryId}/musyrif/candidates`,
+          { params: q ? { q } : undefined },
+        )
+      ).data.data,
+    enabled: enabled && !!dormitoryId,
+  });
+}
+
+export function useAssignMusyrif(dormitoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: AssignMusyrifInput) =>
+      (
+        await api.post<ApiResponse<MusyrifAssignment>>(
+          `/dormitories/${dormitoryId}/musyrif`,
+          data,
+        )
+      ).data.data,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: musyrifKey(dormitoryId) }),
+  });
+}
+
+export function useEndMusyrifAssignment(dormitoryId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (assignmentId: string) => {
+      await api.post(`/dormitories/${dormitoryId}/musyrif/${assignmentId}/end`);
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: musyrifKey(dormitoryId) }),
   });
 }
