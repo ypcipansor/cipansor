@@ -31,6 +31,7 @@ the mechanical cases.
 - [chatbot-retrieval-settled](decisions/chatbot-retrieval-settled.md) — the whole corpus goes into every prompt; what was rejected; when to revisit
 - [route-naming](decisions/route-naming.md) — PPDB/PSB → SPMB with permanent redirects; pesantren terms are never translated
 - [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — murid/santri/peserta didik, spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law, target module names
+- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only for long leave, no mentor, or takeover; three parameters open
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 
 ## Lessons — traps that already cost time

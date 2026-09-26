@@ -1,6 +1,7 @@
 # Known issues — open defects
 
-Open defects only, each rechecked against the code on **2026-09-25**. The
+Open defects only, each rechecked against the code on **2026-09-25**
+(asrama and schema entries on 2026-09-26). The
 ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 [`progress.md`](./progress.md); the system overview is
 [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
@@ -16,8 +17,9 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **The web calls API paths that do not exist — 203 distinct calls left**
-  (212 when measured on 2026-09-25; Perizinan fixed in #564; the list is
+- **The web calls API paths that do not exist — 202 distinct calls left**
+  (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama kamar
+  list in #569; the list is
   `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
   keeps honest — it only shrinks; staging answers them "Route … not found").
   Worst felt now: the Kurikulum list
@@ -35,6 +37,17 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 - **`/musyrif/boarding-center` is still mostly sample data** (Social Harmony,
   "4 Musyrif on Duty", alerts, health counts); only the dormitory list and,
   since #564, the permit card and tab are live. The page says so.
+- **Asrama page: adding or deleting a kamar writes the wrong module.**
+  `useCreateRoom` / `useDeleteRoom` in `hooks/use-dormitory.ts` call
+  `/facilities/rooms` — the facilities module's `FacilityRoom` — while a kamar
+  is a `Room` (`POST /dormitories/rooms`, `DELETE /dormitories/rooms/:id`).
+  "Tambah Kamar" on Asrama → an asrama therefore creates no kamar. Editing an
+  asrama calls `PATCH /dormitories/{id}` and a kamar `PATCH /facilities/rooms/{id}`;
+  the API serves `PUT` (both are in the contract baseline).
+- **Asrama "Terisi" reads 0.** The asrama pages read `currentOccupancy` on a
+  dormitory, which the API does not send (`GET /dormitories/:id` sends each
+  kamar's active count, which could be summed); the kamar list's per-kamar
+  count is right since #569.
 - **Permits without a gate code.** Older seeded permits have `code` null, so the
   gate cannot find them once approved. New permits always get one; approving a
   code-less permit should assign one.
@@ -96,6 +109,11 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   pass. The real fix is a partial unique index — a schema change.
 
 ## Access that is too narrow, or needs review
+
+- **Tata Usaha Pesantren has no Asrama menu**, and the musyrif assignment
+  endpoints (#569) admit only the Pimpinan Pesantren and the super admin.
+  Whether TU Pesantren should keep asrama and kamar records is the yayasan's
+  call.
 
 - **Page gates (`allowedRoles`) disagree with `rbac.ts` on 23 pages.** Most are
   deliberate (`/settings` for one's own profile, `/settings/roles` for Super
@@ -169,6 +187,14 @@ decision.
   1,457 bare `res.json` against 399 `ApiResponse`; 349 of 562 POST/PUT/PATCH
   routes carry no `validate()`. (`AGENTS.md` and `docs/ARCHITECTURE.md` were
   corrected on 2026-09-25; the code itself is phase 6 of the plan.)
+- **Schema and migrations disagree on two points** (measured 2026-09-26 with
+  `prisma migrate diff` from a database built by `migrate deploy` to
+  `schema.prisma`): `admission_waves.full_by_capacity` is `Boolean?` in the
+  schema but `NOT NULL DEFAULT false` in its migration, and the migrations
+  create `exam_grade_duplicates_backup`, a one-off backup table the schema
+  does not model. Neither came from recent work; a new migration's diff shows
+  both and nothing is wrong with it. Make the field `Boolean` and decide
+  whether the backup table can be dropped.
 - **Scheduled jobs assume one instance.** Ten `node-cron` jobs run inside the
   API process with no lock; scaling the App Service to two instances would send
   SPP reminders twice. Add a `pg_try_advisory_lock` (or a separate worker)
