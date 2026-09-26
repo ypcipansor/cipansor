@@ -98,12 +98,43 @@ export async function assertRoomAccess(
 // DORMITORY SERVICE
 // =====================================
 
+/** The asrama code is unique across the yayasan, deleted asrama included. */
+async function assertCodeFree(code: string, exceptId?: string) {
+  const taken = await prisma.dormitory.findUnique({ where: { code }, select: { id: true } });
+  if (taken && taken.id !== exceptId) {
+    throw Errors.conflict(`Kode asrama ${code} sudah dipakai`);
+  }
+}
+
 export async function createDormitory(data: CreateDormitoryDto) {
+  await assertCodeFree(data.code);
   return prisma.dormitory.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: data as any,
-    include: { unit: true },
+    data,
+    include: { unit: { select: { id: true, name: true } } },
   });
+}
+
+/**
+ * How many santri live in each asrama now: the active placements in its active
+ * kamar. The pages used to read a `currentOccupancy` the API never sent, so
+ * every asrama showed 0 terisi.
+ */
+async function occupancyOf(dormitoryIds: string[]): Promise<Map<string, number>> {
+  const rooms = await prisma.room.findMany({
+    where: { dormitoryId: { in: dormitoryIds }, isActive: true },
+    select: {
+      dormitoryId: true,
+      _count: { select: { assignments: { where: { isActive: true } } } },
+    },
+  });
+  const byDormitory = new Map<string, number>();
+  for (const room of rooms) {
+    byDormitory.set(
+      room.dormitoryId,
+      (byDormitory.get(room.dormitoryId) ?? 0) + room._count.assignments
+    );
+  }
+  return byDormitory;
 }
 
 export async function getDormitories(query: QueryDormitoryDto) {
@@ -162,9 +193,10 @@ export async function getDormitories(query: QueryDormitoryDto) {
     }),
     prisma.dormitory.count({ where }),
   ]);
+  const occupancy = await occupancyOf(data.map((d) => d.id));
 
   return {
-    data,
+    data: data.map((d) => ({ ...d, occupancy: occupancy.get(d.id) ?? 0 })),
     meta: {
       page,
       limit,
@@ -175,7 +207,7 @@ export async function getDormitories(query: QueryDormitoryDto) {
 }
 
 export async function getDormitoryById(id: string) {
-  return prisma.dormitory.findFirst({
+  const dormitory = await prisma.dormitory.findFirst({
     where: { id, deletedAt: null },
     include: {
       unit: { select: { id: true, name: true, type: true } },
@@ -188,17 +220,53 @@ export async function getDormitoryById(id: string) {
       },
     },
   });
+  if (!dormitory) return null;
+  const occupancy = dormitory.rooms.reduce((n, room) => n + room._count.assignments, 0);
+  return { ...dormitory, occupancy };
+}
+
+async function findLiveDormitory(id: string) {
+  const dormitory = await prisma.dormitory.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true, gender: true },
+  });
+  if (!dormitory) throw Errors.notFound('Asrama tidak ditemukan');
+  return dormitory;
 }
 
 export async function updateDormitory(id: string, data: UpdateDormitoryDto) {
+  const dormitory = await findLiveDormitory(id);
+  if (data.code) await assertCodeFree(data.code, id);
+  // Turning an asrama putra into putri with santri still in it would leave
+  // every one of them in the wrong asrama; the placement rule is checked on
+  // the way in, so it has to hold here too.
+  if (data.gender && data.gender !== dormitory.gender) {
+    const occupied = (await occupancyOf([id])).get(id) ?? 0;
+    if (occupied > 0) {
+      throw Errors.conflict(
+        `Jenis asrama tidak bisa diubah selama ${occupied} santri masih tinggal di sini`
+      );
+    }
+  }
   return prisma.dormitory.update({
     where: { id },
     data,
-    include: { unit: true },
+    include: { unit: { select: { id: true, name: true } } },
   });
 }
 
+/**
+ * Soft delete. An asrama that still houses santri cannot go: they would keep
+ * a bed in a building nobody can open.
+ */
 export async function deleteDormitory(id: string) {
+  await findLiveDormitory(id);
+  const occupied = (await occupancyOf([id])).get(id) ?? 0;
+  if (occupied > 0) {
+    throw Errors.conflict(
+      `Asrama masih dihuni ${occupied} santri; pindahkan atau keluarkan mereka dulu`
+    );
+  }
   return prisma.dormitory.update({
     where: { id },
     data: { deletedAt: new Date() },
@@ -209,12 +277,46 @@ export async function deleteDormitory(id: string) {
 // ROOM SERVICE
 // =====================================
 
+/**
+ * What a placement needs to say about the santri. `include: { student }` sent
+ * the whole student row — the child's personal data, far beyond a name and a
+ * NIS — to every teacher who can read an asrama.
+ */
+const PLACED_STUDENT = {
+  select: {
+    id: true,
+    nis: true,
+    gender: true,
+    user: { select: { id: true, name: true } },
+  },
+} as const;
+
+const ROOM_DORMITORY = { dormitory: { select: { id: true, name: true, code: true } } } as const;
+
+/**
+ * A kamar name is unique within its asrama, deactivated kamar included
+ * (`@@unique([dormitoryId, name])`). Re-adding a kamar that was deleted
+ * therefore brings the old row back with the new figures, rather than failing
+ * on a name nobody can see any more.
+ */
 export async function createRoom(data: CreateRoomDto) {
-  return prisma.room.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: data as any,
-    include: { dormitory: { select: { id: true, name: true, code: true } } },
+  await findLiveDormitory(data.dormitoryId);
+  const existing = await prisma.room.findUnique({
+    where: { dormitoryId_name: { dormitoryId: data.dormitoryId, name: data.name } },
+    select: { id: true, isActive: true },
   });
+  if (existing?.isActive) {
+    throw Errors.conflict(`${data.name} sudah ada di asrama ini`);
+  }
+  if (existing) {
+    const { dormitoryId: _dormitoryId, ...figures } = data;
+    return prisma.room.update({
+      where: { id: existing.id },
+      data: { ...figures, isActive: true },
+      include: ROOM_DORMITORY,
+    });
+  }
+  return prisma.room.create({ data, include: ROOM_DORMITORY });
 }
 
 export async function getRooms(query: QueryRoomDto) {
@@ -260,11 +362,7 @@ export async function getRoomById(id: string) {
       assignments: {
         where: { isActive: true },
         include: {
-          student: {
-            include: {
-              user: { select: { id: true, name: true, email: true } },
-            },
-          },
+          student: PLACED_STUDENT,
         },
         orderBy: { assignedAt: 'desc' },
       },
@@ -272,20 +370,63 @@ export async function getRoomById(id: string) {
   });
 }
 
-export async function updateRoom(id: string, data: UpdateRoomDto) {
-  return prisma.room.update({
+async function findRoomWithOccupancy(id: string) {
+  const room = await prisma.room.findUnique({
     where: { id },
-    data,
-    include: { dormitory: { select: { id: true, name: true, code: true } } },
+    select: {
+      id: true,
+      name: true,
+      dormitoryId: true,
+      capacity: true,
+      isActive: true,
+      _count: { select: { assignments: { where: { isActive: true } } } },
+    },
   });
+  if (!room) throw Errors.notFound('Kamar tidak ditemukan');
+  return { ...room, occupied: room._count.assignments };
 }
 
+export async function updateRoom(id: string, data: UpdateRoomDto) {
+  const room = await findRoomWithOccupancy(id);
+  if (data.capacity !== undefined && data.capacity < room.occupied) {
+    throw Errors.conflict(
+      `${room.name} dihuni ${room.occupied} santri; kapasitasnya tidak bisa kurang dari itu`
+    );
+  }
+  if (data.isActive === false && room.occupied > 0) {
+    throw Errors.conflict(`${room.name} masih dihuni ${room.occupied} santri`);
+  }
+  if (data.name && data.name !== room.name) {
+    const clash = await prisma.room.findUnique({
+      where: { dormitoryId_name: { dormitoryId: room.dormitoryId, name: data.name } },
+      select: { id: true },
+    });
+    if (clash) throw Errors.conflict(`${data.name} sudah ada di asrama ini`);
+  }
+  return prisma.room.update({ where: { id }, data, include: ROOM_DORMITORY });
+}
+
+/**
+ * Soft delete by deactivating. A kamar with santri in it cannot go — the
+ * santri would hold a bed in a kamar no list shows — and whoever was assigned
+ * to look after this kamar stops being its musyrif with it.
+ */
 export async function deleteRoom(id: string) {
-  // Soft delete by deactivating
-  return prisma.room.update({
-    where: { id },
-    data: { isActive: false },
-  });
+  const room = await findRoomWithOccupancy(id);
+  if (room.occupied > 0) {
+    throw Errors.conflict(
+      `${room.name} masih dihuni ${room.occupied} santri; keluarkan atau pindahkan mereka dulu`
+    );
+  }
+  const now = new Date();
+  const [deactivated] = await prisma.$transaction([
+    prisma.room.update({ where: { id }, data: { isActive: false } }),
+    prisma.musyrifAssignment.updateMany({
+      where: { roomId: id, isActive: true },
+      data: { isActive: false, endDate: now },
+    }),
+  ]);
+  return deactivated;
 }
 
 // =====================================
@@ -328,21 +469,34 @@ export async function createRoomAssignment(data: CreateRoomAssignmentDto) {
   // in the asrama putra. Both are caught here rather than in the UI, which is
   // not the only caller.
   const [student, room] = await Promise.all([
-    prisma.student.findUnique({
-      where: { id: data.studentId },
+    prisma.student.findFirst({
+      where: { id: data.studentId, deletedAt: null },
       select: { gender: true, unit: { select: { name: true, type: true } } },
     }),
     prisma.room.findUnique({
       where: { id: data.roomId },
-      select: { dormitory: { select: { name: true, gender: true } } },
+      select: {
+        name: true,
+        capacity: true,
+        isActive: true,
+        dormitory: { select: { name: true, gender: true, deletedAt: true } },
+        assignments: { where: { isActive: true }, select: { studentId: true } },
+      },
     }),
   ]);
 
   if (!student) {
-    throw Errors.notFound('Student not found');
+    throw Errors.notFound('Santri tidak ditemukan');
   }
-  if (!room) {
-    throw Errors.notFound('Room not found');
+  if (!room || !room.isActive || room.dormitory.deletedAt) {
+    throw Errors.notFound('Kamar tidak ditemukan');
+  }
+  if (room.assignments.some((a) => a.studentId === data.studentId)) {
+    throw Errors.conflict(`Santri ini sudah menempati ${room.name}`);
+  }
+  // Capacity was never checked: a kamar for four took a fifth, a sixth, ...
+  if (room.assignments.length >= room.capacity) {
+    throw Errors.conflict(`${room.name} sudah penuh (${room.capacity} santri)`);
   }
   if (BOARDING_POLICY[student.unit.type] === 'NONE') {
     throw Errors.badRequest(`Santri ${student.unit.name} tidak menginap di asrama`);
@@ -351,28 +505,22 @@ export async function createRoomAssignment(data: CreateRoomAssignmentDto) {
     throw Errors.badRequest(`${room.dormitory.name} tidak sesuai dengan jenis kelamin santri`);
   }
 
-  // Deactivate any existing assignment for this student
-  await prisma.roomAssignment.updateMany({
-    where: { studentId: data.studentId, isActive: true },
-    data: { isActive: false, endedAt: new Date() },
-  });
-
-  return prisma.roomAssignment.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: data as any,
-    include: {
-      room: {
-        include: {
-          dormitory: { select: { id: true, name: true, code: true } },
-        },
+  // A santri sleeps in one kamar: placing them ends the placement they had,
+  // in the same transaction, so a failure leaves them where they were.
+  const [, assignment] = await prisma.$transaction([
+    prisma.roomAssignment.updateMany({
+      where: { studentId: data.studentId, isActive: true },
+      data: { isActive: false, endedAt: new Date() },
+    }),
+    prisma.roomAssignment.create({
+      data,
+      include: {
+        room: { include: ROOM_DORMITORY },
+        student: PLACED_STUDENT,
       },
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
-    },
-  });
+    }),
+  ]);
+  return assignment;
 }
 
 export async function getRoomAssignments(query: QueryRoomAssignmentDto) {
@@ -394,11 +542,7 @@ export async function getRoomAssignments(query: QueryRoomAssignmentDto) {
             dormitory: { select: { id: true, name: true, code: true } },
           },
         },
-        student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-          },
-        },
+        student: PLACED_STUDENT,
       },
       orderBy: { assignedAt: 'desc' },
       skip,
@@ -421,18 +565,7 @@ export async function getRoomAssignments(query: QueryRoomAssignmentDto) {
 export async function getRoomAssignmentById(id: string) {
   return prisma.roomAssignment.findUnique({
     where: { id },
-    include: {
-      room: {
-        include: {
-          dormitory: { select: { id: true, name: true, code: true } },
-        },
-      },
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
-    },
+    include: { room: { include: ROOM_DORMITORY }, student: PLACED_STUDENT },
   });
 }
 
@@ -440,26 +573,21 @@ export async function updateRoomAssignment(id: string, data: UpdateRoomAssignmen
   return prisma.roomAssignment.update({
     where: { id },
     data,
-    include: {
-      room: {
-        include: {
-          dormitory: { select: { id: true, name: true, code: true } },
-        },
-      },
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
-    },
+    include: { room: { include: ROOM_DORMITORY }, student: PLACED_STUDENT },
   });
 }
 
+/** Ends an active placement; ending one twice would rewrite when it ended. */
 export async function endRoomAssignment(id: string) {
-  return prisma.roomAssignment.update({
-    where: { id },
+  const { count } = await prisma.roomAssignment.updateMany({
+    where: { id, isActive: true },
     data: { isActive: false, endedAt: new Date() },
   });
+  if (count === 0) {
+    const exists = await prisma.roomAssignment.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) throw Errors.notFound('Penempatan tidak ditemukan');
+    throw Errors.conflict('Santri ini sudah dikeluarkan dari kamarnya');
+  }
 }
 
 export async function getStudentsByMusyrif(userId: string) {

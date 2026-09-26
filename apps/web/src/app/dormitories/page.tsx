@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog, Pagination } from "@/components/shared";
 import { toast } from "sonner";
 import {
+  useCanManageDormitories,
   useDormitories,
   useDeleteDormitory,
   DORMITORY_TYPES,
@@ -55,6 +56,7 @@ function DormitoriesPageContent() {
 
   const { data: unitsData } = useUnits();
   const deleteMutation = useDeleteDormitory();
+  const canManage = useCanManageDormitories();
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -63,7 +65,8 @@ function DormitoriesPageContent() {
       toast.success("Asrama berhasil dihapus");
       setDeleteId(null);
     } catch {
-      toast.error("Gagal menghapus asrama");
+      // The API client has already shown the server's message — an asrama
+      // that still houses santri is refused with how many.
     }
   };
 
@@ -90,12 +93,14 @@ function DormitoriesPageContent() {
             Kelola asrama dan kamar santri
           </p>
         </div>
-        <Button asChild>
-          <Link href="/dormitories/new">
-            <Plus className="mr-2 h-4 w-4" />
-            Tambah Asrama
-          </Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href="/dormitories/new">
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Asrama
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Filters */}
@@ -182,12 +187,14 @@ function DormitoriesPageContent() {
             <p className="mt-2 text-center text-muted-foreground">
               Tambahkan asrama baru untuk mulai mengelola tempat tinggal santri.
             </p>
-            <Button asChild className="mt-4">
-              <Link href="/dormitories/new">
-                <Plus className="mr-2 h-4 w-4" />
-                Tambah Asrama
-              </Link>
-            </Button>
+            {canManage && (
+              <Button asChild className="mt-4">
+                <Link href="/dormitories/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Tambah Asrama
+                </Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -238,12 +245,6 @@ function DormitoriesPageContent() {
                     Pengelola: {dormitory.unit?.name ?? "Yayasan (lintas unit)"}
                   </p>
 
-                  {dormitory.supervisor && (
-                    <p className="text-sm text-muted-foreground">
-                      Pengasuh: {dormitory.supervisor.name}
-                    </p>
-                  )}
-
                   {/* Occupancy Progress Bar */}
                   <div className="space-y-1">
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -276,18 +277,28 @@ function DormitoriesPageContent() {
 
                   <div className="flex items-center justify-between pt-2">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" asChild>
-                        <Link href={`/dormitories/${dormitory.id}/edit`}>
-                          <Pencil className="h-4 w-4" />
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setDeleteId(dormitory.id)}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
+                      {canManage && (
+                        <>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            asChild
+                            aria-label={`Edit ${dormitory.name}`}
+                          >
+                            <Link href={`/dormitories/${dormitory.id}/edit`}>
+                              <Pencil className="h-4 w-4" />
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`Hapus ${dormitory.name}`}
+                            onClick={() => setDeleteId(dormitory.id)}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </>
+                      )}
                     </div>
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/dormitories/${dormitory.id}`}>
@@ -317,7 +328,7 @@ function DormitoriesPageContent() {
         open={!!deleteId}
         onOpenChange={(open: boolean) => !open && setDeleteId(null)}
         title="Hapus Asrama"
-        description="Apakah Anda yakin ingin menghapus asrama ini? Tindakan ini tidak dapat dibatalkan."
+        description="Asrama yang masih dihuni santri tidak bisa dihapus. Asrama yang dihapus hilang dari daftar."
         confirmLabel="Hapus"
         onConfirm={handleDelete}
         isLoading={deleteMutation.isPending}

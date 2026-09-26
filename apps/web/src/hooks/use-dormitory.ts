@@ -1,11 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type {
-  AssignMusyrifInput,
-  MusyrifAssignment,
-  MusyrifCandidate,
-  MusyrifDuty,
+import {
+  DORMITORY_MANAGER_ROLE_CODES,
+  type AssignMusyrifInput,
+  type CreateDormitoryInput,
+  type CreateRoomInput,
+  type MusyrifAssignment,
+  type MusyrifCandidate,
+  type MusyrifDuty,
+  type UpdateDormitoryInput,
+  type UpdateRoomInput,
 } from "@cipansor/shared";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+import { getActiveRoleCode } from "@/lib/rbac";
+import { useAuthStore } from "@/stores/auth";
+
+/**
+ * Whether the signed-in role may add, edit or delete asrama and kamar and
+ * place santri — the list the API's routes check. Others read the pages
+ * without the buttons, rather than pressing one and getting a 403.
+ */
+export function useCanManageDormitories(): boolean {
+  const user = useAuthStore((s) => s.user);
+  return DORMITORY_MANAGER_ROLE_CODES.includes(getActiveRoleCode(user) ?? "");
+}
 
 // Dormitory (Asrama) entity
 export interface Dormitory {
@@ -14,20 +31,16 @@ export interface Dormitory {
   code: string;
   type: DormitoryType;
   capacity: number;
-  currentOccupancy?: number;
+  /** Santri placed in its active kamar now. */
+  currentOccupancy: number;
   /** Unit pengelola; null when the yayasan runs the asrama across units. */
   unitId: string | null;
   unit?: {
     id: string;
     name: string;
   };
-  supervisorId?: string;
-  supervisor?: {
-    id: string;
-    name: string;
-  };
-  description?: string;
-  facilities?: string;
+  address?: string | null;
+  description?: string | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -78,7 +91,6 @@ export interface DormitoryParams {
   limit?: number;
   unitId?: string;
   type?: DormitoryType;
-  isActive?: boolean;
 }
 
 /**
@@ -86,23 +98,36 @@ export interface DormitoryParams {
  * and `isActive`. Until 2026-09-26 nothing mapped them, so every asrama read
  * "Putri" and "Tidak Aktif" — Asrama Putra Al-Hikmah included.
  */
-type ApiDormitory = Omit<Dormitory, "type" | "isActive"> & {
+type ApiDormitory = Omit<
+  Dormitory,
+  "type" | "isActive" | "currentOccupancy"
+> & {
   gender?: DormitoryType;
   deletedAt?: string | null;
+  occupancy?: number;
 };
-const toDormitory = ({ gender, deletedAt, ...d }: ApiDormitory): Dormitory => ({
+const toDormitory = ({
+  gender,
+  deletedAt,
+  occupancy,
+  ...d
+}: ApiDormitory): Dormitory => ({
   ...d,
   type: gender ?? "MALE",
   isActive: !deletedAt,
+  currentOccupancy: occupancy ?? 0,
 });
 
 export function useDormitories(params: DormitoryParams = {}) {
   return useQuery({
     queryKey: ["dormitories", params],
     queryFn: async () => {
+      // The API filters on `gender`; `type` was sent and ignored, so the
+      // Putra/Putri filter on the asrama list changed nothing.
+      const { type, ...rest } = params;
       const response = await api.get<PaginatedResponse<ApiDormitory>>(
         "/dormitories",
-        { params },
+        { params: { ...rest, gender: type } },
       );
       return { ...response.data, data: response.data.data.map(toDormitory) };
     },
@@ -135,29 +160,16 @@ export function useRoomSocialAnalytics(id: string) {
   });
 }
 
-export interface CreateDormitoryData {
-  name: string;
-  code: string;
-  type: DormitoryType;
-  capacity: number;
-  /** Omit or send null for an asrama the yayasan runs across units. */
-  unitId?: string | null;
-  supervisorId?: string;
-  description?: string;
-  facilities?: string;
-  isActive?: boolean;
-}
-
 export function useCreateDormitory() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: CreateDormitoryData) => {
-      const response = await api.post<ApiResponse<Dormitory>>(
+    mutationFn: async (data: CreateDormitoryInput) => {
+      const response = await api.post<ApiResponse<ApiDormitory>>(
         "/dormitories",
         data,
       );
-      return response.data.data;
+      return toDormitory(response.data.data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dormitories"] });
@@ -174,19 +186,18 @@ export function useUpdateDormitory() {
       data,
     }: {
       id: string;
-      data: Partial<CreateDormitoryData>;
+      data: UpdateDormitoryInput;
     }) => {
-      const response = await api.patch<ApiResponse<Dormitory>>(
+      // The API answers PUT; until 2026-09-26 this sent PATCH and every edit
+      // came back "not found".
+      const response = await api.put<ApiResponse<ApiDormitory>>(
         `/dormitories/${id}`,
         data,
       );
-      return response.data.data;
+      return toDormitory(response.data.data);
     },
-    onSuccess: (_, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["dormitories"] });
-      queryClient.invalidateQueries({
-        queryKey: ["dormitories", variables.id],
-      });
     },
   });
 }
@@ -204,38 +215,20 @@ export function useDeleteDormitory() {
   });
 }
 
-// Room hooks
-export interface RoomParams {
-  page?: number;
-  limit?: number;
-  dormitoryId?: string;
-  floor?: number;
-  isActive?: boolean;
-}
-
-export function useRooms(params: RoomParams = {}) {
-  return useQuery({
-    queryKey: ["rooms", params],
-    queryFn: async () => {
-      const response = await api.get<PaginatedResponse<Room>>(
-        "/facilities/rooms",
-        {
-          params,
-        },
-      );
-      return response.data;
-    },
-  });
-}
-
+/**
+ * One kamar, with how many santri live in it. This read the facilities
+ * module's rooms (`/facilities/rooms/:id`), a different table, so the
+ * "Tambah Penghuni" page never found the kamar it was opened for.
+ */
 export function useRoom(id: string) {
   return useQuery({
-    queryKey: ["rooms", id],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Room>>(
-        `/facilities/rooms/${id}`,
-      );
-      return response.data.data;
+    queryKey: ["dormitories", "room", id],
+    queryFn: async (): Promise<Room> => {
+      const response = await api.get<
+        ApiResponse<Room & { assignments?: unknown[] }>
+      >(`/dormitories/rooms/${id}`);
+      const { assignments, ...room } = response.data.data;
+      return { ...room, currentOccupancy: assignments?.length ?? 0 };
     },
     enabled: !!id,
   });
@@ -262,30 +255,25 @@ export function useDormitoryRooms(dormitoryId: string) {
   });
 }
 
-export interface CreateRoomData {
-  name: string;
-  floor: number;
-  capacity: number;
-  dormitoryId: string;
-  isActive?: boolean;
-}
+// Kamar are `Room` rows under /dormitories/rooms. Until 2026-09-26 these
+// three wrote the facilities module's rooms (`/facilities/rooms`): "Tambah
+// Kamar" on an asrama created no kamar, and deleting one deleted nothing.
+// Every write invalidates ["dormitories"], which holds the asrama, its kamar
+// list and its occupancy.
 
 export function useCreateRoom() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: CreateRoomData) => {
+    mutationFn: async (data: CreateRoomInput) => {
       const response = await api.post<ApiResponse<Room>>(
-        "/facilities/rooms",
+        "/dormitories/rooms",
         data,
       );
       return response.data.data;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["rooms"] });
-      queryClient.invalidateQueries({
-        queryKey: ["dormitories", variables.dormitoryId, "rooms"],
-      });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dormitories"] });
     },
   });
 }
@@ -294,22 +282,15 @@ export function useUpdateRoom() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: Partial<CreateRoomData>;
-    }) => {
-      const response = await api.patch<ApiResponse<Room>>(
-        `/facilities/rooms/${id}`,
+    mutationFn: async ({ id, data }: { id: string; data: UpdateRoomInput }) => {
+      const response = await api.put<ApiResponse<Room>>(
+        `/dormitories/rooms/${id}`,
         data,
       );
       return response.data.data;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["rooms"] });
-      queryClient.invalidateQueries({ queryKey: ["rooms", variables.id] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["dormitories"] });
     },
   });
 }
@@ -319,10 +300,10 @@ export function useDeleteRoom() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/facilities/rooms/${id}`);
+      await api.delete(`/dormitories/rooms/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["rooms"] });
+      queryClient.invalidateQueries({ queryKey: ["dormitories"] });
     },
   });
 }
@@ -402,8 +383,6 @@ export function useStudentRoomAssignment(studentId: string) {
 export interface AssignRoomData {
   roomId: string;
   studentId: string;
-  startDate: string;
-  endDate?: string;
 }
 
 export function useAssignRoom() {

@@ -1,10 +1,15 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
 import {
+  DORMITORY_MANAGER_ROLE_CODES,
   MUSYRIF_ASSIGNER_ROLE_CODES,
   MUSYRIF_READER_ROLE_CODES,
   assignMusyrifSchema,
+  createDormitorySchema,
+  createRoomAssignmentSchema,
+  createRoomSchema,
   musyrifCandidatesQuerySchema,
+  updateDormitorySchema,
 } from '@cipansor/shared';
 import * as controller from './dormitories.controller';
 import * as musyrif from './musyrif.controller';
@@ -14,9 +19,17 @@ import {
   queryDormitorySchema,
   queryRoomSchema,
   queryRoomAssignmentSchema,
+  updateRoomAssignmentSchema,
+  updateRoomSchema,
 } from './dormitories.schema';
 
 const router = Router();
+
+/**
+ * Who writes asrama, kamar and placements — one list, which the web reads to
+ * decide whether to show the buttons (see @cipansor/shared dormitories.ts).
+ */
+const manage = authorize(...DORMITORY_MANAGER_ROLE_CODES);
 
 router.use(authenticate);
 
@@ -186,7 +199,7 @@ router.get(
  *       201:
  *         description: Dormitory created
  */
-router.post('/', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createDormitory);
+router.post('/', manage, validate(createDormitorySchema), controller.createDormitory);
 
 /**
  * @swagger
@@ -345,11 +358,7 @@ router.post(
  *       200:
  *         description: Dormitory updated
  */
-router.put(
-  '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateDormitory
-);
+router.put('/:id', manage, validate(updateDormitorySchema), controller.updateDormitory);
 
 /**
  * @swagger
@@ -369,11 +378,7 @@ router.put(
  *       204:
  *         description: Dormitory deleted
  */
-router.delete(
-  '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteDormitory
-);
+router.delete('/:id', manage, controller.deleteDormitory);
 
 // ==================== ROOMS ====================
 
@@ -408,7 +413,7 @@ router.delete(
  *       201:
  *         description: Room created
  */
-router.post('/rooms', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createRoom);
+router.post('/rooms', manage, validate(createRoomSchema), controller.createRoom);
 
 /**
  * @swagger
@@ -476,11 +481,7 @@ router.get(
  *       200:
  *         description: Room updated
  */
-router.put(
-  '/rooms/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateRoom
-);
+router.put('/rooms/:id', manage, validate(updateRoomSchema), controller.updateRoom);
 
 /**
  * @swagger
@@ -500,11 +501,7 @@ router.put(
  *       204:
  *         description: Room deleted
  */
-router.delete(
-  '/rooms/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteRoom
-);
+router.delete('/rooms/:id', manage, controller.deleteRoom);
 
 // ==================== ROOM ASSIGNMENTS ====================
 
@@ -541,7 +538,8 @@ router.delete(
  */
 router.post(
   '/assignments',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  manage,
+  validate(createRoomAssignmentSchema),
   controller.createRoomAssignment
 );
 
@@ -589,7 +587,8 @@ router.get(
  */
 router.put(
   '/assignments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  manage,
+  validate(updateRoomAssignmentSchema),
   controller.updateRoomAssignment
 );
 
@@ -611,10 +610,6 @@ router.put(
  *       204:
  *         description: Room assignment ended
  */
-router.delete(
-  '/assignments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.endRoomAssignment
-);
+router.delete('/assignments/:id', manage, controller.endRoomAssignment);
 
 export default router;
