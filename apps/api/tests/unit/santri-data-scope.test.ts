@@ -123,8 +123,8 @@ describe('writes are teaching work', () => {
     }
   });
 
-  // Subjects are kept by the unit's admin, kepala sekolah and wakasek, not by
-  // every guru (CURRICULUM_MANAGER_ROLE_CODES, since 2026-09-26); the
+  // Subjects are kept by the unit's admin and kepala sekolah, not by every
+  // guru (CURRICULUM_MANAGER_ROLE_CODES, since 2026-09-26); the
   // curriculum module's own access test covers who may.
   it.each(WRITES.filter(([, p]) => !p.startsWith('/health') && p !== '/curriculum/subjects'))(
     '%s %s still lets a teacher through the guard',

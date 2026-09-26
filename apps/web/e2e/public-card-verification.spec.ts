@@ -140,7 +140,7 @@ test.describe("Public Card Verification, Raport Merdeka & E-Office Edit Letter F
     // left the "Wali Kelas SD IT" persona wali kelas of no class; the rapor
     // gate lets a teacher open only the classes they are homeroom of or teach.)
     const waliKelas = DEMO_ACCOUNTS.find(
-      (a) => a.roleCode === "SDIT_WALI_KELAS",
+      (a) => a.homeroom && a.group === "SD_IT",
     )!;
     await injectSession(
       page,

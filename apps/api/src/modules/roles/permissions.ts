@@ -190,7 +190,7 @@ const TEACHING: Permission[] = [
   P.TAHFIDZ_VIEW,
 ];
 
-/** Kepala sekolah / wakasek run a unit but do not administer the system. */
+/** Kepala sekolah run a unit but do not administer the system. */
 const UNIT_LEADERSHIP: Permission[] = [
   ...TEACHING,
   P.STUDENT_UPDATE,
@@ -219,8 +219,8 @@ const PENGASUHAN: Permission[] = [
 
 const SUFFIX_PERMISSIONS: Array<[RegExp, Permission[]]> = [
   [/_ADMIN$/, UNIT_ADMIN_PERMISSIONS],
-  [/_KEPALA_SEKOLAH$|_WAKASEK$/, UNIT_LEADERSHIP],
-  [/_WALI_KELAS$|_GURU$|_GURU_BK$/, TEACHING],
+  [/_KEPALA_SEKOLAH$/, UNIT_LEADERSHIP],
+  [/_GURU$|_GURU_BK$/, TEACHING],
   [
     /_TATA_USAHA$/,
     [

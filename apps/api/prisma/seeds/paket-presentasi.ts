@@ -1610,22 +1610,7 @@ async function siapkanRombel(ctx: Ctx, teachers: TeacherMap): Promise<ClassRef[]
           });
       const homeroom =
         [...teachers.values()].find((t) => t.teacherId === row.homeroomTeacherId) ?? wali;
-      // Wali kelas mendapat peran wali kelas unitnya bila belum punya.
-      const waliRole = roleId(ctx, `${ROLE_PREFIX[unitType]}_WALI_KELAS`);
-      const has = await db.userRoleAssignment.findFirst({
-        where: { userId: homeroom.userId, roleId: waliRole, unitId },
-      });
-      if (!has) {
-        await db.userRoleAssignment.create({
-          data: {
-            userId: homeroom.userId,
-            roleId: waliRole,
-            unitId,
-            isPrimary: false,
-            isActive: true,
-          },
-        });
-      }
+      // Wali kelas is the class's homeroomTeacherId, not a role (2026-09-26).
       out.push({ ...plan, id: row.id, unitType, unitId, index, homeroomUserId: homeroom.userId });
     }
   }

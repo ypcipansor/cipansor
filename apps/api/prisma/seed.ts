@@ -530,8 +530,9 @@ async function main() {
       description: "Siswa SMA Qur'an",
     },
 
-    // Granular school roles (wakasek / wali kelas / guru BK / bendahara /
-    // komite / alumni) for each unit
+    // Granular school roles (guru BK / bendahara / komite / alumni) for each
+    // unit. Wakasek and wali kelas are duties of a guru, not roles (merged
+    // into *_GURU on 2026-09-26); wali kelas is Class.homeroomTeacherId.
     ...(
       [
         ['TKQ', "TK Qur'an", Realm.TK_QURAN],
@@ -540,18 +541,6 @@ async function main() {
         ['SMAQ', "SMA Qur'an", Realm.SMA_QURAN],
       ] as const
     ).flatMap(([prefix, unitLabel, realm]) => [
-      {
-        code: RoleCode[`${prefix}_WAKASEK`],
-        name: `Wakil Kepala ${unitLabel}`,
-        realm,
-        description: `Wakil kepala sekolah ${unitLabel}`,
-      },
-      {
-        code: RoleCode[`${prefix}_WALI_KELAS`],
-        name: `Wali Kelas ${unitLabel}`,
-        realm,
-        description: `Wali kelas ${unitLabel}`,
-      },
       // Guru BK exists only at SMP IT and SMA Qur'an. TK Qur'an and SD IT have
       // no dedicated counselling teacher — the wali kelas covers it — so those
       // RoleCodes do not exist and must not be generated here.
@@ -749,7 +738,7 @@ async function main() {
     if (code.startsWith('YAYASAN_') || code.endsWith('_ADMIN')) return UserRole.UNIT_ADMIN;
     if (code.endsWith('_SISWA') || code.endsWith('_ALUMNI')) return UserRole.STUDENT;
     if (code.endsWith('_ORANG_TUA')) return UserRole.PARENT;
-    const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_WAKASEK', '_WALI_KELAS', '_GURU_BK'];
+    const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_GURU_BK'];
     if (teacherSuffix.some((s) => code.endsWith(s))) return UserRole.TEACHER;
     const teacherExact = ['PESANTREN_PENGASUH', 'USTADZ', 'MUSYRIF', 'MUHAFIDZ'];
     if (teacherExact.includes(code)) return UserRole.TEACHER;
@@ -761,7 +750,9 @@ async function main() {
   const demoUsers = new Map<string, { id: string; name: string; unitId?: string }>();
   // Every account, including a role's second persona, for the per-person
   // domain rows (Teacher, Student, parent link) built further down.
-  const demoPersonas: Array<[string, { id: string; name: string; unitId?: string }]> = [];
+  const demoPersonas: Array<
+    [string, { id: string; name: string; unitId?: string; homeroom?: boolean }]
+  > = [];
   let demoCreated = 0;
   for (const acc of DEMO_ACCOUNTS) {
     const role = roles[acc.roleCode];
@@ -792,7 +783,7 @@ async function main() {
     // Several musyrif and muhafidz personas share one role since 2026-09-25;
     // the first account listed for a role is the one looked up by role.
     const persona = { id: demoUser.id, name: acc.name, unitId };
-    demoPersonas.push([acc.roleCode, persona]);
+    demoPersonas.push([acc.roleCode, { ...persona, homeroom: acc.homeroom }]);
     if (!demoUsers.has(acc.roleCode)) demoUsers.set(acc.roleCode, persona);
     demoCreated++;
   }
@@ -1541,8 +1532,8 @@ async function main() {
   };
 
   const demoStudentByUnit = new Map<string, string>();
-  // Teacher rows of the `*_WALI_KELAS` personas, made homeroom of their unit's
-  // demo class below.
+  // Teacher rows of the wali kelas personas (`homeroom` in DEMO_ACCOUNTS),
+  // made homeroom of their unit's demo class below.
   const demoHomeroomByUnit = new Map<string, string>();
   let demoStudents = 0;
   let demoTeachers = 0;
@@ -1608,7 +1599,7 @@ async function main() {
           nip: `1990${String(demoNis++).padStart(11, '0')}`,
         },
       });
-      if (roleCode.endsWith('_WALI_KELAS')) demoHomeroomByUnit.set(demo.unitId, teacher.id);
+      if (demo.homeroom) demoHomeroomByUnit.set(demo.unitId, teacher.id);
       demoTeachers++;
     } else if (isParent) {
       demoParents++; // linked in the second pass, once every student exists

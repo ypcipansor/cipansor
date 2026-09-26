@@ -93,8 +93,8 @@ describe("navigasi — Bimbingan Konseling untuk pembacanya", () => {
     }
   });
 
-  it("guru, wali kelas dan wakasek tidak", () => {
-    for (const role of ["SMPIT_GURU", "SMPIT_WALI_KELAS", "SMPIT_WAKASEK"]) {
+  it("guru lain tidak", () => {
+    for (const role of ["TKQ_GURU", "SDIT_GURU", "SMPIT_GURU", "SMAQ_GURU"]) {
       expect(navHrefs(role), role).not.toContain("/counseling");
     }
   });
@@ -139,8 +139,7 @@ describe("rbac — legacy bucket derivation", () => {
 
   it("maps the expanded hierarchy (rebuilt #319) like the backend", () => {
     // Granular school roles
-    expect(deriveLegacyRole("SDIT_WAKASEK")).toBe("TEACHER");
-    expect(deriveLegacyRole("SMPIT_WALI_KELAS")).toBe("TEACHER");
+    expect(deriveLegacyRole("SMPIT_GURU_BK")).toBe("TEACHER");
     expect(deriveLegacyRole("SMAQ_GURU_BK")).toBe("TEACHER");
     expect(deriveLegacyRole("TKQ_BENDAHARA")).toBe("STAFF");
     // Pesantren leadership + pembina
@@ -1048,9 +1047,8 @@ describe("e-office menu coverage", () => {
     "YAYASAN_PENGAWAS",
     "SMPIT_ADMIN",
     "SMPIT_KEPALA_SEKOLAH",
-    "SMPIT_WAKASEK",
     "SMPIT_GURU",
-    "SMPIT_WALI_KELAS",
+    "SMPIT_GURU_BK",
     "SMPIT_TATA_USAHA",
     "SMPIT_BENDAHARA",
     "TKQ_GURU",

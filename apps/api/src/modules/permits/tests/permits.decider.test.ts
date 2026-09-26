@@ -58,8 +58,8 @@ describe('headCapacity', () => {
     expect(headCapacity(kiai, { ...DAY_PUPIL, unitType: 'PESANTREN' })).toBe('PIMPINAN_PESANTREN');
   });
 
-  it('a wakasek, an admin or a yayasan organ is no head here', () => {
-    for (const roleCode of ['SDIT_WAKASEK', 'SDIT_ADMIN', 'SUPER_ADMIN', 'YAYASAN_KETUA']) {
+  it('a guru, an admin or a yayasan organ is no head here', () => {
+    for (const roleCode of ['SDIT_GURU', 'SDIT_ADMIN', 'SUPER_ADMIN', 'YAYASAN_KETUA']) {
       expect(headCapacity({ sub: 'x', roleCode, unitId: 'unit-sd' }, DAY_PUPIL)).toBeNull();
     }
   });

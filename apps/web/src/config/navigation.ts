@@ -98,14 +98,6 @@ const TEACHER_ROLES = [
   "SDIT_GURU",
   "SMPIT_GURU",
   "SMAQ_GURU",
-  "TKQ_WAKASEK",
-  "SDIT_WAKASEK",
-  "SMPIT_WAKASEK",
-  "SMAQ_WAKASEK",
-  "TKQ_WALI_KELAS",
-  "SDIT_WALI_KELAS",
-  "SMPIT_WALI_KELAS",
-  "SMAQ_WALI_KELAS",
   "SMPIT_GURU_BK",
   "SMAQ_GURU_BK",
 ];
@@ -2142,8 +2134,8 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return alumniNavigation;
   }
 
-  // Teacher roles — one menu for guru, wali kelas, wakasek and guru BK, with
-  // the entries only some of them use ("Bimbingan Konseling": guru BK).
+  // Teacher roles — one menu for guru and guru BK, with the entries only
+  // some of them use ("Bimbingan Konseling": guru BK).
   if (isTeacherRole(roleCode)) {
     return teacherNavigation
       .map((group) => ({

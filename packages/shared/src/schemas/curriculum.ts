@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  ADMIN_ROLE_CODES,
-  PRINCIPAL_ROLE_CODES,
-  VICE_PRINCIPAL_ROLE_CODES,
-} from "../roles";
+import { ADMIN_ROLE_CODES, PRINCIPAL_ROLE_CODES } from "../roles";
 
 /**
  * Mata pelajaran and the teachers who teach them (guru pengampu).
@@ -25,15 +21,14 @@ export type SubjectType = (typeof SUBJECT_TYPE_VALUES)[number];
 
 /**
  * Who adds, edits and removes a unit's subjects and their guru pengampu: the
- * super admin, and within their own unit its admin, its kepala sekolah and
- * its wakasek. A subject belongs to one unit, so every one of them but the
- * super admin is held to that unit by the API. Teachers and the yayasan
- * organs read subjects; they do not write them.
+ * super admin, and within their own unit its admin and its kepala sekolah.
+ * A subject belongs to one unit, so every one of them but the super admin is
+ * held to that unit by the API. Teachers and the yayasan organs read
+ * subjects; they do not write them.
  */
 export const CURRICULUM_MANAGER_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
   ...PRINCIPAL_ROLE_CODES,
-  ...VICE_PRINCIPAL_ROLE_CODES,
 ];
 
 const optionalText = (max: number) => z.string().trim().max(max).optional();
