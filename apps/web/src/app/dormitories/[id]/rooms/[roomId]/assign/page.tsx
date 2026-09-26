@@ -25,8 +25,15 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { useDormitory, useRoom, useAssignRoom } from "@/hooks/use-dormitory";
+import { STUDENT_STATUS } from "@cipansor/shared";
+import {
+  useAssignRoom,
+  useCanManageDormitories,
+  useDormitory,
+  useDormitoryRooms,
+} from "@/hooks/use-dormitory";
 import { useStudents } from "@/hooks/use-students";
+import { NotADormitoryManager } from "../../../../dormitory-form";
 
 import { MainLayout } from "@/components/layout";
 function AssignRoomPageContent({
@@ -38,45 +45,49 @@ function AssignRoomPageContent({
   const router = useRouter();
 
   const [search, setSearch] = useState("");
-  const [startDate, setStartDate] = useState(
-    new Date().toISOString().split("T")[0],
-  );
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
     null,
   );
 
+  const canManage = useCanManageDormitories();
   const { data: dormitory, isLoading: dormitoryLoading } = useDormitory(id);
-  const { data: room, isLoading: roomLoading } = useRoom(roomId);
+  // From the asrama's kamar list, which is all this page needs (name,
+  // capacity, how many live there). It read the facilities module's rooms
+  // until 2026-09-26 and never found the kamar.
+  const { data: rooms, isLoading: roomLoading } = useDormitoryRooms(id);
+  const room = rooms?.find((r) => r.id === roomId);
+  // Only santri who may sleep here: active, and of the asrama's gender. The
+  // API checks both (and the unit, and the kamar's capacity) on its own.
   const { data: studentsData, isLoading: studentsLoading } = useStudents({
     search: search || undefined,
+    gender: dormitory?.type,
+    status: STUDENT_STATUS.ACTIVE,
     limit: 20,
   });
 
   const assignMutation = useAssignRoom();
 
+  // The page used to ask for a "Tanggal Masuk" it never sent; a placement
+  // starts when it is recorded.
   const handleAssign = async () => {
     if (!selectedStudentId) {
       toast.error("Pilih santri terlebih dahulu");
       return;
     }
-
-    if (!startDate) {
-      toast.error("Tanggal masuk wajib diisi");
-      return;
-    }
-
     try {
       await assignMutation.mutateAsync({
         roomId,
         studentId: selectedStudentId,
-        startDate,
       });
-      toast.success("Santri berhasil ditambahkan ke kamar");
+      toast.success("Santri berhasil ditempatkan di kamar");
       router.push(`/dormitories/${id}`);
     } catch {
-      toast.error("Gagal menambahkan santri ke kamar");
+      // The API client has already shown the server's message.
     }
   };
+
+  if (!canManage)
+    return <NotADormitoryManager backHref={`/dormitories/${id}`} />;
 
   const isLoading = dormitoryLoading || roomLoading;
 
@@ -106,7 +117,7 @@ function AssignRoomPageContent({
     );
   }
 
-  const availableSpots = room.capacity - (room.currentOccupancy || 0);
+  const availableSpots = room.capacity - (room.currentOccupancy ?? 0);
 
   return (
     <div className="space-y-6">
@@ -177,31 +188,21 @@ function AssignRoomPageContent({
             <CardHeader>
               <CardTitle>Pilih Santri</CardTitle>
               <CardDescription>
-                Cari dan pilih santri yang akan ditempatkan di kamar ini
+                Santri {dormitory.type === "MALE" ? "putra" : "putri"} yang
+                aktif. Santri yang sudah punya kamar dipindahkan ke kamar ini.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="search">Cari Santri</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      id="search"
-                      placeholder="Nama atau NIS..."
-                      className="pl-10"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Tanggal Masuk</Label>
+              <div className="space-y-2 sm:max-w-sm">
+                <Label htmlFor="search">Cari Santri</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
-                    id="startDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    id="search"
+                    placeholder="Nama atau NIS..."
+                    className="pl-10"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
               </div>

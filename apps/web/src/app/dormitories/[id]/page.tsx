@@ -33,29 +33,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
 import {
+  useCanManageDormitories,
   useDormitory,
   useDormitoryRooms,
-  useCreateRoom,
   useDeleteRoom,
   useRoomAssignments,
   useUnassignRoom,
   Room,
 } from "@/hooks/use-dormitory";
 import { MusyrifTab } from "./musyrif-tab";
+import { RoomDialog } from "./room-dialog";
 
 function DormitoryDetailPageContent({
   params,
@@ -63,58 +54,36 @@ function DormitoryDetailPageContent({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [showAddRoom, setShowAddRoom] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [tab, setTab] = useState("rooms");
+  /** The kamar dialog: closed, adding ("new"), or changing that kamar. */
+  const [roomDialog, setRoomDialog] = useState<Room | "new" | null>(null);
   const [deleteRoomId, setDeleteRoomId] = useState<string | null>(null);
   const [unassignId, setUnassignId] = useState<string | null>(null);
 
-  // New room form state
-  const [newRoomName, setNewRoomName] = useState("");
-  const [newRoomFloor, setNewRoomFloor] = useState(1);
-  const [newRoomCapacity, setNewRoomCapacity] = useState(4);
-
+  const canManage = useCanManageDormitories();
   const { data: dormitory, isLoading } = useDormitory(id);
   const { data: rooms, isLoading: roomsLoading } = useDormitoryRooms(id);
-  const { data: assignments } = useRoomAssignments(selectedRoom?.id || "");
+  // Looked up from the list rather than kept as a copy, so its count follows
+  // a placement or a departure without reselecting it.
+  const selectedRoom = rooms?.find((r) => r.id === selectedRoomId) ?? null;
+  const { data: assignments } = useRoomAssignments(selectedRoomId || "");
 
-  const createRoomMutation = useCreateRoom();
   const deleteRoomMutation = useDeleteRoom();
   const unassignMutation = useUnassignRoom();
 
-  const handleAddRoom = async () => {
-    if (!newRoomName) {
-      toast.error("Nama kamar wajib diisi");
-      return;
-    }
-
-    try {
-      await createRoomMutation.mutateAsync({
-        name: newRoomName,
-        floor: newRoomFloor,
-        capacity: newRoomCapacity,
-        dormitoryId: id,
-      });
-      toast.success("Kamar berhasil ditambahkan");
-      setShowAddRoom(false);
-      setNewRoomName("");
-      setNewRoomFloor(1);
-      setNewRoomCapacity(4);
-    } catch {
-      toast.error("Gagal menambahkan kamar");
-    }
-  };
-
+  // On failure the API client has already shown the server's message: a kamar
+  // with santri in it cannot be deleted, and it says how many.
   const handleDeleteRoom = async () => {
     if (!deleteRoomId) return;
     try {
       await deleteRoomMutation.mutateAsync(deleteRoomId);
       toast.success("Kamar berhasil dihapus");
-      setDeleteRoomId(null);
-      if (selectedRoom?.id === deleteRoomId) {
-        setSelectedRoom(null);
-      }
+      if (selectedRoomId === deleteRoomId) setSelectedRoomId(null);
     } catch {
-      toast.error("Gagal menghapus kamar");
+      // shown already
+    } finally {
+      setDeleteRoomId(null);
     }
   };
 
@@ -123,9 +92,10 @@ function DormitoryDetailPageContent({
     try {
       await unassignMutation.mutateAsync(unassignId);
       toast.success("Santri berhasil dikeluarkan dari kamar");
-      setUnassignId(null);
     } catch {
-      toast.error("Gagal mengeluarkan santri dari kamar");
+      // shown already
+    } finally {
+      setUnassignId(null);
     }
   };
 
@@ -161,7 +131,7 @@ function DormitoryDetailPageContent({
   }
 
   const occupancyPercent = dormitory.capacity
-    ? Math.round(((dormitory.currentOccupancy || 0) / dormitory.capacity) * 100)
+    ? Math.round((dormitory.currentOccupancy / dormitory.capacity) * 100)
     : 0;
 
   return (
@@ -195,12 +165,14 @@ function DormitoryDetailPageContent({
             <p className="text-muted-foreground">{dormitory.code}</p>
           </div>
         </div>
-        <Button asChild>
-          <Link href={`/dormitories/${id}/edit`}>
-            <Pencil className="mr-2 h-4 w-4" />
-            Edit
-          </Link>
-        </Button>
+        {canManage && (
+          <Button asChild>
+            <Link href={`/dormitories/${id}/edit`}>
+              <Pencil className="mr-2 h-4 w-4" />
+              Edit
+            </Link>
+          </Button>
+        )}
       </div>
 
       {/* Stats Cards */}
@@ -224,8 +196,11 @@ function DormitoryDetailPageContent({
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {dormitory.currentOccupancy || 0}
+            <div
+              className="text-2xl font-bold"
+              data-testid="dormitory-occupied"
+            >
+              {dormitory.currentOccupancy}
             </div>
             <p className="text-xs text-muted-foreground">
               {occupancyPercent}% kapasitas
@@ -240,7 +215,7 @@ function DormitoryDetailPageContent({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {dormitory.capacity - (dormitory.currentOccupancy || 0)}
+              {Math.max(dormitory.capacity - dormitory.currentOccupancy, 0)}
             </div>
             <p className="text-xs text-muted-foreground">tempat kosong</p>
           </CardContent>
@@ -265,14 +240,16 @@ function DormitoryDetailPageContent({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">Unit</p>
-            <p>{dormitory.unit?.name || "-"}</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              Pengelola
+            </p>
+            <p>{dormitory.unit?.name ?? "Yayasan (lintas unit)"}</p>
           </div>
           <div>
             <p className="text-sm font-medium text-muted-foreground">
-              Pengasuh
+              Alamat / Lokasi
             </p>
-            <p>{dormitory.supervisor?.name || "-"}</p>
+            <p>{dormitory.address || "-"}</p>
           </div>
           <div className="sm:col-span-2">
             <p className="text-sm font-medium text-muted-foreground">
@@ -280,91 +257,31 @@ function DormitoryDetailPageContent({
             </p>
             <p>{dormitory.description || "-"}</p>
           </div>
-          <div className="sm:col-span-2">
-            <p className="text-sm font-medium text-muted-foreground">
-              Fasilitas
-            </p>
-            <p>{dormitory.facilities || "-"}</p>
-          </div>
         </CardContent>
       </Card>
 
       {/* Rooms Management */}
-      <Tabs defaultValue="rooms" className="space-y-4">
-        <div className="flex items-center justify-between">
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <TabsList>
             <TabsTrigger value="rooms">Daftar Kamar</TabsTrigger>
             <TabsTrigger value="occupants">Penghuni</TabsTrigger>
             <TabsTrigger value="musyrif">Musyrif</TabsTrigger>
           </TabsList>
-          <Dialog open={showAddRoom} onOpenChange={setShowAddRoom}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Plus className="mr-2 h-4 w-4" />
-                Tambah Kamar
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Tambah Kamar Baru</DialogTitle>
-                <DialogDescription>
-                  Tambahkan kamar baru ke asrama {dormitory.name}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="roomName">Nama Kamar</Label>
-                  <Input
-                    id="roomName"
-                    placeholder="Kamar 101"
-                    value={newRoomName}
-                    onChange={(e) => setNewRoomName(e.target.value)}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="floor">Lantai</Label>
-                    <Input
-                      id="floor"
-                      type="number"
-                      min={1}
-                      value={newRoomFloor}
-                      onChange={(e) =>
-                        setNewRoomFloor(parseInt(e.target.value) || 1)
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="capacity">Kapasitas</Label>
-                    <Input
-                      id="capacity"
-                      type="number"
-                      min={1}
-                      value={newRoomCapacity}
-                      onChange={(e) =>
-                        setNewRoomCapacity(parseInt(e.target.value) || 1)
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowAddRoom(false)}
-                  >
-                    Batal
-                  </Button>
-                  <Button
-                    onClick={handleAddRoom}
-                    disabled={createRoomMutation.isPending}
-                  >
-                    {createRoomMutation.isPending ? "Menyimpan..." : "Simpan"}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          {canManage && tab === "rooms" && (
+            <Button size="sm" onClick={() => setRoomDialog("new")}>
+              <Plus className="mr-2 h-4 w-4" />
+              Tambah Kamar
+            </Button>
+          )}
         </div>
+        <RoomDialog
+          dormitoryId={id}
+          dormitoryName={dormitory.name}
+          room={roomDialog === "new" ? undefined : (roomDialog ?? undefined)}
+          open={roomDialog !== null}
+          onOpenChange={(open) => !open && setRoomDialog(null)}
+        />
 
         <TabsContent value="rooms">
           <Card>
@@ -380,7 +297,9 @@ function DormitoryDetailPageContent({
                     Belum ada kamar
                   </h3>
                   <p className="text-muted-foreground">
-                    Tambahkan kamar untuk mulai mengelola penghuni
+                    {canManage
+                      ? "Tambahkan kamar untuk mulai menempatkan santri"
+                      : "Pengelola asrama belum menambahkan kamar"}
                   </p>
                 </div>
               ) : (
@@ -418,18 +337,34 @@ function DormitoryDetailPageContent({
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => setSelectedRoom(room)}
+                              onClick={() => {
+                                setSelectedRoomId(room.id);
+                                setTab("occupants");
+                              }}
                             >
                               <Users className="mr-1 h-4 w-4" />
                               Lihat Penghuni
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeleteRoomId(room.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {canManage && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Ubah ${room.name}`}
+                                  onClick={() => setRoomDialog(room)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={`Hapus ${room.name}`}
+                                  onClick={() => setDeleteRoomId(room.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -456,16 +391,18 @@ function DormitoryDetailPageContent({
             <CardContent>
               {selectedRoom ? (
                 <div className="space-y-4">
-                  <div className="flex justify-end">
-                    <Button size="sm" asChild>
-                      <Link
-                        href={`/dormitories/${id}/rooms/${selectedRoom.id}/assign`}
-                      >
-                        <UserPlus className="mr-2 h-4 w-4" />
-                        Tambah Penghuni
-                      </Link>
-                    </Button>
-                  </div>
+                  {canManage && (
+                    <div className="flex justify-end">
+                      <Button size="sm" asChild>
+                        <Link
+                          href={`/dormitories/${id}/rooms/${selectedRoom.id}/assign`}
+                        >
+                          <UserPlus className="mr-2 h-4 w-4" />
+                          Tambah Penghuni
+                        </Link>
+                      </Button>
+                    </div>
+                  )}
                   {assignments?.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-8">
                       <Users className="h-8 w-8 text-muted-foreground" />
@@ -496,14 +433,16 @@ function DormitoryDetailPageContent({
                               ).toLocaleDateString("id-ID")}
                             </TableCell>
                             <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setUnassignId(assignment.id)}
-                              >
-                                <UserMinus className="mr-1 h-4 w-4" />
-                                Keluarkan
-                              </Button>
+                              {canManage && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setUnassignId(assignment.id)}
+                                >
+                                  <UserMinus className="mr-1 h-4 w-4" />
+                                  Keluarkan
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -533,7 +472,7 @@ function DormitoryDetailPageContent({
         open={!!deleteRoomId}
         onOpenChange={(open: boolean) => !open && setDeleteRoomId(null)}
         title="Hapus Kamar"
-        description="Apakah Anda yakin ingin menghapus kamar ini? Semua data penghuni akan dihapus."
+        description="Kamar yang masih dihuni santri tidak bisa dihapus; keluarkan atau pindahkan mereka dulu. Musyrif yang ditugaskan di kamar ini ikut diakhiri."
         confirmLabel="Hapus"
         onConfirm={handleDeleteRoom}
         isLoading={deleteRoomMutation.isPending}

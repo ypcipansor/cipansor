@@ -1,34 +1,35 @@
 import { z } from 'zod';
-import { Gender } from '@prisma/client';
+import {
+  createDormitorySchema,
+  createRoomAssignmentSchema,
+  createRoomSchema,
+  DORMITORY_GENDER_VALUES,
+  updateDormitorySchema,
+} from '@cipansor/shared';
 import { partialUpdateSchema } from '@/lib/partial';
 
-// =====================================
-// DORMITORY SCHEMAS
-// =====================================
+// The create and update contracts are in @cipansor/shared, which the web
+// reads too; only the query and assignment-update schemas live here.
+export {
+  createDormitorySchema,
+  updateDormitorySchema,
+  createRoomSchema,
+  createRoomAssignmentSchema,
+};
 
-export const createDormitorySchema = z.object({
-  /**
-   * Unit pengelola. Omitted or null means the asrama is run by the yayasan
-   * across units, which is the normal case — see the Dormitory model.
-   * The empty string is accepted because an unselected <Select> submits one.
-   */
-  unitId: z
-    .union([z.string().uuid('Invalid unit ID'), z.literal('')])
-    .nullish()
-    .transform((v) => v || null),
-  name: z.string().min(2, 'Name must be at least 2 characters'),
-  code: z.string().min(2, 'Code must be at least 2 characters'),
-  gender: z.nativeEnum(Gender),
-  capacity: z.number().int().positive('Capacity must be positive'),
-  address: z.string().optional(),
-  description: z.string().optional(),
-});
-
-export const updateDormitorySchema = createDormitorySchema.partial();
+/**
+ * `z.coerce.boolean()` turns the string "false" into true, so `?isActive=false`
+ * listed the active rows. A query flag is the literal "true" or "false" — or
+ * the boolean it already became: validateQuery() parses the query and the
+ * controller parses the result again.
+ */
+const queryFlag = z
+  .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+  .optional();
 
 export const queryDormitorySchema = z.object({
   unitId: z.string().uuid().optional(),
-  gender: z.nativeEnum(Gender).optional(),
+  gender: z.enum(DORMITORY_GENDER_VALUES).optional(),
   search: z.string().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
@@ -38,21 +39,12 @@ export const queryDormitorySchema = z.object({
 // ROOM SCHEMAS
 // =====================================
 
-export const createRoomSchema = z.object({
-  dormitoryId: z.string().uuid('Invalid dormitory ID'),
-  name: z.string().min(1, 'Name is required'),
-  floor: z.number().int().positive().default(1),
-  capacity: z.number().int().positive('Capacity must be positive'),
-  description: z.string().optional(),
-  isActive: z.boolean().default(true),
-});
-
 export const updateRoomSchema = partialUpdateSchema(createRoomSchema).omit({ dormitoryId: true });
 
 export const queryRoomSchema = z.object({
   dormitoryId: z.string().uuid().optional(),
   floor: z.coerce.number().int().positive().optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryFlag,
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
@@ -61,23 +53,19 @@ export const queryRoomSchema = z.object({
 // ROOM ASSIGNMENT SCHEMAS
 // =====================================
 
-export const createRoomAssignmentSchema = z.object({
-  studentId: z.string().uuid('Invalid student ID'),
-  roomId: z.string().uuid('Invalid room ID'),
-  notes: z.string().optional(),
-});
-
+/**
+ * Only the note. Moving a santri is a new placement (`POST /assignments`),
+ * which checks the asrama's gender, the unit and the kamar's capacity; this
+ * route used to accept `roomId` and `isActive` and skipped all three.
+ */
 export const updateRoomAssignmentSchema = z.object({
-  roomId: z.string().uuid('Invalid room ID').optional(),
-  notes: z.string().optional(),
-  isActive: z.boolean().optional(),
-  endedAt: z.string().datetime().optional(),
+  notes: z.string().trim().max(500).optional(),
 });
 
 export const queryRoomAssignmentSchema = z.object({
   roomId: z.string().uuid().optional(),
   studentId: z.string().uuid().optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryFlag,
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });

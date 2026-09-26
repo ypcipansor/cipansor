@@ -8,3 +8,4 @@ export * from "./performance";
 export * from "./planning";
 export * from "./permits";
 export * from "./musyrif-assignments";
+export * from "./dormitories";
