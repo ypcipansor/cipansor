@@ -1,38 +1,36 @@
 import { z } from 'zod';
+import {
+  assignTeacherSubjectSchema,
+  createSubjectSchema,
+  SUBJECT_TYPE_VALUES,
+} from '@cipansor/shared';
 import { partialUpdateSchema } from '@/lib/partial';
 
-// Subject schemas
-export const createSubjectSchema = z.object({
-  unitId: z.string().uuid(),
-  code: z.string().min(2).max(10),
-  name: z.string().min(2).max(100),
-  type: z.enum(['ACADEMIC', 'RELIGIOUS', 'TAHFIDZ', 'EXTRACURRICULAR']),
-  description: z.string().optional(),
-  credits: z.number().int().min(1).max(10).default(2),
-  level: z.string().optional(),
-  isActive: z.boolean().default(true),
-});
+// Subjects and guru pengampu: the contract is in @cipansor/shared, which the
+// web reads too.
+export { createSubjectSchema, assignTeacherSubjectSchema };
 
-export const updateSubjectSchema = partialUpdateSchema(createSubjectSchema);
+/** A subject's unit never changes, and an edit carries no defaults. */
+export const updateSubjectSchema = partialUpdateSchema(createSubjectSchema).omit({ unitId: true });
+
+/**
+ * A query flag is the literal "true" or "false" — or the boolean it already
+ * became when a controller parses a query validateQuery() parsed.
+ * `z.coerce.boolean()` read "false" as true.
+ */
+const queryFlag = z
+  .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
+  .optional();
 
 export const subjectQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   unitId: z.string().uuid().optional(),
-  type: z.enum(['ACADEMIC', 'RELIGIOUS', 'TAHFIDZ', 'EXTRACURRICULAR']).optional(),
+  type: z.enum(SUBJECT_TYPE_VALUES).optional(),
   search: z.string().optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryFlag,
 });
 
-// Teacher Subject schemas
-export const assignTeacherSubjectSchema = z.object({
-  teacherId: z.string().uuid(),
-  subjectId: z.string().uuid(),
-  classId: z.string().uuid().optional(),
-  isActive: z.boolean().default(true),
-});
-
-// Lesson Plan schemas
 export const createLessonPlanSchema = z.object({
   subjectId: z.string().uuid(),
   teacherId: z.string().uuid(),
@@ -88,10 +86,13 @@ export const scheduleQuerySchema = z.object({
   // was already passing `studentId`; because Zod strips unknown keys it was
   // silently ignored and the widget received every schedule in the school.
   studentId: z.string().uuid().optional(),
+  // The subject page asks for its own schedules; stripped like studentId was,
+  // it listed every schedule in the school under each subject.
+  subjectId: z.string().uuid().optional(),
   dayOfWeek: z
     .enum(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'])
     .optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: queryFlag,
 });
 
 // Types

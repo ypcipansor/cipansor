@@ -1,12 +1,9 @@
 "use client";
 
-import { use, useEffect } from "react";
-import Link from "next/link";
+import { use } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Save, BookOpen } from "lucide-react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@/lib/zod-resolver";
-import { z } from "zod";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,51 +12,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import {
+  useCanManageSubjects,
   useSubject,
   useUpdateSubject,
-  SUBJECT_TYPES,
-  SUBJECT_TYPE_LABELS,
-  SubjectType,
 } from "@/hooks/use-curriculum";
-import { useUnits } from "@/hooks/use-units";
-
 import { MainLayout } from "@/components/layout";
-const subjectSchema = z.object({
-  code: z.string().min(1, "Kode mata pelajaran wajib diisi"),
-  name: z.string().min(1, "Nama mata pelajaran wajib diisi"),
-  description: z.string().optional(),
-  type: z.enum(["REQUIRED", "ELECTIVE", "EXTRACURRICULAR"] as const, {
-    error: "Tipe mata pelajaran wajib dipilih",
-  }),
-  credits: z.coerce.number().min(1, "Minimal 1 SKS"),
-  hoursPerWeek: z.coerce.number().min(1, "Minimal 1 jam per minggu"),
-  passingScore: z.coerce.number().min(0).max(100).optional(),
-  unitId: z.string().min(1, "Unit wajib dipilih"),
-  isActive: z.boolean(),
-});
-
-type SubjectFormData = z.infer<typeof subjectSchema>;
+import { NotASubjectManager, SubjectForm } from "../../subject-form";
 
 function EditSubjectPageContent({
   params,
@@ -68,80 +29,21 @@ function EditSubjectPageContent({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const canManage = useCanManageSubjects();
   const { data: subject, isLoading } = useSubject(id);
   const updateMutation = useUpdateSubject();
-  const { data: units } = useUnits();
 
-  const form = useForm<SubjectFormData>({
-    resolver: zodResolver(subjectSchema),
-    defaultValues: {
-      code: "",
-      name: "",
-      description: "",
-      type: undefined,
-      credits: 2,
-      hoursPerWeek: 2,
-      passingScore: 70,
-      unitId: "",
-      isActive: true,
-    },
-  });
-
-  useEffect(() => {
-    if (subject) {
-      form.reset({
-        code: subject.code,
-        name: subject.name,
-        description: subject.description || "",
-        type: subject.type,
-        credits: subject.credits,
-        hoursPerWeek: subject.hoursPerWeek,
-        passingScore: subject.passingScore || 70,
-        unitId: subject.unitId,
-        isActive: subject.isActive,
-      });
-    }
-  }, [subject, form]);
-
-  const onSubmit = async (data: SubjectFormData) => {
-    try {
-      await updateMutation.mutateAsync({
-        id,
-        data: {
-          code: data.code,
-          name: data.name,
-          description: data.description || undefined,
-          type: data.type as SubjectType,
-          credits: data.credits,
-          hoursPerWeek: data.hoursPerWeek,
-          passingScore: data.passingScore,
-          unitId: data.unitId,
-          isActive: data.isActive,
-        },
-      });
-      toast.success("Mata pelajaran berhasil diperbarui");
-      router.push(`/curriculum/subjects/${id}`);
-    } catch {
-      toast.error("Gagal memperbarui mata pelajaran");
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-      </div>
-    );
+  if (!canManage) {
+    return <NotASubjectManager backHref={`/curriculum/subjects/${id}`} />;
   }
-
+  if (isLoading) return <Skeleton className="h-96" />;
   if (!subject) {
     return (
-      <div className="flex flex-col items-center justify-center py-12">
-        <BookOpen className="h-12 w-12 text-muted-foreground" />
-        <p className="mt-4 text-muted-foreground">
+      <div className="flex flex-col items-center justify-center gap-4 py-12">
+        <h3 className="text-lg font-semibold">
           Mata pelajaran tidak ditemukan
-        </p>
-        <Button asChild className="mt-4">
+        </h3>
+        <Button asChild>
           <Link href="/curriculum">Kembali ke Kurikulum</Link>
         </Button>
       </div>
@@ -150,7 +52,6 @@ function EditSubjectPageContent({
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
           <Link href={`/curriculum/subjects/${id}`}>
@@ -161,271 +62,37 @@ function EditSubjectPageContent({
           <h1 className="text-3xl font-bold tracking-tight">
             Edit Mata Pelajaran
           </h1>
-          <p className="text-muted-foreground">{subject.name}</p>
+          <p className="text-muted-foreground">
+            {subject.code} · {subject.name}
+          </p>
         </div>
       </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-3">
-            {/* Main Info */}
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Informasi Mata Pelajaran</CardTitle>
-                <CardDescription>Edit detail mata pelajaran</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="code"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Kode *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="MAT001" {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Kode unik mata pelajaran
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="name"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Nama *</FormLabel>
-                        <FormControl>
-                          <Input placeholder="Matematika" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Deskripsi</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder="Deskripsi mata pelajaran..."
-                          rows={3}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="unitId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Unit *</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pilih unit" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {units?.map((unit) => (
-                              <SelectItem key={unit.id} value={unit.id}>
-                                {unit.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="type"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tipe *</FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value}
-                        >
-                          <FormControl>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Pilih tipe" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {SUBJECT_TYPES.map((type) => (
-                              <SelectItem key={type} value={type}>
-                                {SUBJECT_TYPE_LABELS[type]}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="credits"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>SKS *</FormLabel>
-                        <FormControl>
-                          <Input type="number" min={1} {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Satuan Kredit Semester
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="hoursPerWeek"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Jam per Minggu *</FormLabel>
-                        <FormControl>
-                          <Input type="number" min={1} {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Jumlah jam pelajaran per minggu
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="passingScore"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>KKM (Passing Score)</FormLabel>
-                        <FormControl>
-                          <Input type="number" min={0} max={100} {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          Nilai minimal kelulusan (default 70)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Side Panel */}
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Status</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <FormField
-                    control={form.control}
-                    name="isActive"
-                    render={({ field }) => (
-                      <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">Aktif</FormLabel>
-                          <FormDescription>
-                            Mata pelajaran dapat digunakan dalam kurikulum
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Ringkasan</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Kode</span>
-                    <span className="font-mono">
-                      {form.watch("code") || "-"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Nama</span>
-                    <span>{form.watch("name") || "-"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Tipe</span>
-                    <span>
-                      {form.watch("type")
-                        ? SUBJECT_TYPE_LABELS[form.watch("type")]
-                        : "-"}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">SKS</span>
-                    <span>{form.watch("credits")}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Jam/Minggu</span>
-                    <span>{form.watch("hoursPerWeek")}</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Actions */}
-          <div className="flex justify-end gap-4">
-            <Button type="button" variant="outline" asChild>
-              <Link href={`/curriculum/subjects/${id}`}>Batal</Link>
-            </Button>
-            <Button type="submit" disabled={updateMutation.isPending}>
-              {updateMutation.isPending ? (
-                <>
-                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  Menyimpan...
-                </>
-              ) : (
-                <>
-                  <Save className="mr-2 h-4 w-4" />
-                  Simpan Perubahan
-                </>
-              )}
-            </Button>
-          </div>
-        </form>
-      </Form>
+      <Card>
+        <CardHeader>
+          <CardTitle>Informasi Mata Pelajaran</CardTitle>
+          <CardDescription>{subject.unit?.name}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SubjectForm
+            subject={subject}
+            lockUnit
+            submitting={updateMutation.isPending}
+            cancelHref={`/curriculum/subjects/${id}`}
+            // The unit field is locked here, and the API's update schema
+            // drops unitId anyway: a subject never moves to another unit.
+            onSubmit={async (data) => {
+              try {
+                await updateMutation.mutateAsync({ id, data });
+                toast.success("Mata pelajaran diperbarui");
+                router.push(`/curriculum/subjects/${id}`);
+              } catch {
+                // The API client has already shown the server's message.
+              }
+            }}
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

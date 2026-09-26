@@ -37,16 +37,12 @@ import {
   useDeleteCurriculum,
   useRemoveSubjectFromCurriculum,
   SUBJECT_TYPE_LABELS,
+  SUBJECT_TYPE_BADGE_CLASS,
   SubjectType,
 } from "@/hooks/use-curriculum";
 
 function getTypeBadgeColor(type: SubjectType) {
-  const colors: Record<SubjectType, string> = {
-    REQUIRED: "bg-blue-100 text-blue-800",
-    ELECTIVE: "bg-green-100 text-green-800",
-    EXTRACURRICULAR: "bg-purple-100 text-purple-800",
-  };
-  return colors[type];
+  return SUBJECT_TYPE_BADGE_CLASS[type];
 }
 
 function CurriculumDetailPageContent({

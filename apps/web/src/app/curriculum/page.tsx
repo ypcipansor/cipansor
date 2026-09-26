@@ -29,12 +29,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  useSubjects,
+  useSubjectList,
   useCurriculums,
   useSchedules,
-  useTeacherAssignments,
+  useCanManageSubjects,
+  passingScoreOf,
   SUBJECT_TYPES,
   SUBJECT_TYPE_LABELS,
+  SUBJECT_TYPE_BADGE_CLASS,
   SCHEDULE_DAYS,
   SCHEDULE_DAY_LABELS,
   type SubjectType,
@@ -49,7 +51,7 @@ import {
   Edit,
   Calendar,
   Clock,
-  Users,
+  UserX,
   GraduationCap,
   Loader2,
 } from "lucide-react";
@@ -62,32 +64,30 @@ export default function CurriculumPage() {
   const [unitFilter, setUnitFilter] = useState<string>("ALL");
   const [classFilter, setClassFilter] = useState<string>("ALL");
 
-  const { data: subjects, isLoading: loadingSubjects } = useSubjects({
+  const canManageSubjects = useCanManageSubjects();
+  const { data: subjectList, isLoading: loadingSubjects } = useSubjectList({
     search: search || undefined,
     type: typeFilter !== "ALL" ? typeFilter : undefined,
     unitId: unitFilter !== "ALL" ? unitFilter : undefined,
   });
+  const subjects = subjectList?.rows;
+  const subjectTotal = subjectList?.total ?? 0;
   const { data: curriculums, isLoading: loadingCurriculums } = useCurriculums({
     unitId: unitFilter !== "ALL" ? unitFilter : undefined,
   });
   const { data: schedules, isLoading: loadingSchedules } = useSchedules({
     classId: classFilter !== "ALL" ? classFilter : undefined,
   });
-  const { data: assignments } = useTeacherAssignments();
   const { data: units } = useUnits();
   const { data: academicYears } = useAcademicYears();
   const { data: classes } = useClasses();
 
   const activeAcademicYear = academicYears?.data?.find((ay) => ay.isActive);
 
-  const getSubjectTypeBadge = (type: SubjectType) => {
-    const colors: Record<SubjectType, string> = {
-      REQUIRED: "bg-blue-100 text-blue-800",
-      ELECTIVE: "bg-green-100 text-green-800",
-      EXTRACURRICULAR: "bg-purple-100 text-purple-800",
-    };
-    return <Badge className={colors[type]}>{SUBJECT_TYPE_LABELS[type]}</Badge>;
-  };
+  // Counted from the rows shown; the table says when those are not all.
+  const withoutPengampu =
+    subjects?.filter((s) => s.isActive && !s._count?.teacherSubjects).length ??
+    0;
 
   // Group schedules by day
   const schedulesByDay = SCHEDULE_DAYS.reduce(
@@ -121,12 +121,9 @@ export default function CurriculumPage() {
               <BookOpen className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{subjects?.length ?? 0}</div>
+              <div className="text-2xl font-bold">{subjectTotal}</div>
               <p className="text-xs text-muted-foreground">
-                {subjects?.filter((s) => s.type === "REQUIRED").length ?? 0}{" "}
-                wajib,{" "}
-                {subjects?.filter((s) => s.type === "ELECTIVE").length ?? 0}{" "}
-                pilihan
+                {subjects?.filter((s) => s.isActive).length ?? 0} aktif
               </p>
             </CardContent>
           </Card>
@@ -161,15 +158,15 @@ export default function CurriculumPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">
-                Penugasan Guru
+                Tanpa Guru Pengampu
               </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <UserX className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {assignments?.length ?? 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Guru mengajar</p>
+              <div className="text-2xl font-bold">{withoutPengampu}</div>
+              <p className="text-xs text-muted-foreground">
+                Mata pelajaran aktif yang belum ada gurunya
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -223,11 +220,11 @@ export default function CurriculumPage() {
                       setTypeFilter(v as SubjectType | "ALL")
                     }
                   >
-                    <SelectTrigger className="w-full md:w-[150px]">
-                      <SelectValue placeholder="Semua Tipe" />
+                    <SelectTrigger className="w-full md:w-[160px]">
+                      <SelectValue placeholder="Semua Jenis" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ALL">Semua Tipe</SelectItem>
+                      <SelectItem value="ALL">Semua Jenis</SelectItem>
                       {SUBJECT_TYPES.map((type) => (
                         <SelectItem key={type} value={type}>
                           {SUBJECT_TYPE_LABELS[type]}
@@ -235,12 +232,14 @@ export default function CurriculumPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button asChild>
-                    <Link href="/curriculum/subjects/new">
-                      <Plus className="mr-2 h-4 w-4" />
-                      Tambah
-                    </Link>
-                  </Button>
+                  {canManageSubjects && (
+                    <Button asChild>
+                      <Link href="/curriculum/subjects/new">
+                        <Plus className="mr-2 h-4 w-4" />
+                        Tambah
+                      </Link>
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -252,9 +251,10 @@ export default function CurriculumPage() {
                     <TableHead>Kode</TableHead>
                     <TableHead>Nama</TableHead>
                     <TableHead>Unit</TableHead>
-                    <TableHead>Tipe</TableHead>
-                    <TableHead>SKS</TableHead>
-                    <TableHead>Jam/Minggu</TableHead>
+                    <TableHead>Jenis</TableHead>
+                    <TableHead>JP/Minggu</TableHead>
+                    <TableHead>KKM</TableHead>
+                    <TableHead>Guru Pengampu</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Aksi</TableHead>
                   </TableRow>
@@ -262,7 +262,7 @@ export default function CurriculumPage() {
                 <TableBody>
                   {loadingSubjects ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8">
+                      <TableCell colSpan={9} className="text-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
@@ -284,10 +284,17 @@ export default function CurriculumPage() {
                         </TableCell>
                         <TableCell>{subject.unit?.name ?? "-"}</TableCell>
                         <TableCell>
-                          {getSubjectTypeBadge(subject.type)}
+                          <Badge
+                            className={SUBJECT_TYPE_BADGE_CLASS[subject.type]}
+                          >
+                            {SUBJECT_TYPE_LABELS[subject.type]}
+                          </Badge>
                         </TableCell>
                         <TableCell>{subject.credits}</TableCell>
-                        <TableCell>{subject.hoursPerWeek} jam</TableCell>
+                        <TableCell>{passingScoreOf(subject)}</TableCell>
+                        <TableCell>
+                          {subject._count?.teacherSubjects ?? 0}
+                        </TableCell>
                         <TableCell>
                           <Badge
                             variant={subject.isActive ? "default" : "secondary"}
@@ -297,18 +304,30 @@ export default function CurriculumPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              asChild
+                              aria-label={`Lihat ${subject.name}`}
+                            >
                               <Link href={`/curriculum/subjects/${subject.id}`}>
                                 <Eye className="h-4 w-4" />
                               </Link>
                             </Button>
-                            <Button variant="ghost" size="icon" asChild>
-                              <Link
-                                href={`/curriculum/subjects/${subject.id}/edit`}
+                            {canManageSubjects && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                asChild
+                                aria-label={`Edit ${subject.name}`}
                               >
-                                <Edit className="h-4 w-4" />
-                              </Link>
-                            </Button>
+                                <Link
+                                  href={`/curriculum/subjects/${subject.id}/edit`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -316,7 +335,7 @@ export default function CurriculumPage() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={8}
+                        colSpan={9}
                         className="text-center py-8 text-muted-foreground"
                       >
                         Belum ada mata pelajaran
@@ -325,6 +344,12 @@ export default function CurriculumPage() {
                   )}
                 </TableBody>
               </Table>
+              {subjects && subjectTotal > subjects.length && (
+                <p className="border-t px-4 py-3 text-sm text-muted-foreground">
+                  Menampilkan {subjects.length} dari {subjectTotal} mata
+                  pelajaran. Persempit dengan unit, jenis, atau pencarian.
+                </p>
+              )}
             </Card>
           </TabsContent>
 

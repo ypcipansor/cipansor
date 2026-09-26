@@ -9,3 +9,4 @@ export * from "./planning";
 export * from "./permits";
 export * from "./musyrif-assignments";
 export * from "./dormitories";
+export * from "./curriculum";

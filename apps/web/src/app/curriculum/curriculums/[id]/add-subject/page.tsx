@@ -41,16 +41,12 @@ import {
   useSubjects,
   useAddSubjectToCurriculum,
   SUBJECT_TYPE_LABELS,
+  SUBJECT_TYPE_BADGE_CLASS,
   SubjectType,
 } from "@/hooks/use-curriculum";
 
 function getTypeBadgeColor(type: SubjectType) {
-  const colors: Record<SubjectType, string> = {
-    REQUIRED: "bg-blue-100 text-blue-800",
-    ELECTIVE: "bg-green-100 text-green-800",
-    EXTRACURRICULAR: "bg-purple-100 text-purple-800",
-  };
-  return colors[type];
+  return SUBJECT_TYPE_BADGE_CLASS[type];
 }
 
 const addSubjectSchema = z.object({
@@ -224,10 +220,7 @@ function AddSubjectToCurriculumPageContent({
                             {SUBJECT_TYPE_LABELS[selectedSubject.type]}
                           </Badge>
                           <Badge variant="outline">
-                            {selectedSubject.credits} SKS
-                          </Badge>
-                          <Badge variant="outline">
-                            {selectedSubject.hoursPerWeek} jam/minggu
+                            {selectedSubject.credits} JP/minggu
                           </Badge>
                         </div>
                         {selectedSubject.description && (
