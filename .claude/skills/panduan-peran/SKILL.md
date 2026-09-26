@@ -115,6 +115,13 @@ hijau karena membuka halaman lewat URL. Diperbaiki dengan `roleCodeRouteAccess`
 di `rbac.ts`: halaman tambahan per kode peran, di atas bucket, supaya halaman
 dibuka untuk satu peran tanpa ikut terbuka bagi seluruh bucket.
 
+**Lapis 4 bisa bergantung pada baris, bukan peran.** "Bisakah wali kelas
+menyetujui izin?" tidak punya jawaban per peran sejak #568: izin santri
+diputuskan musyrif santri itu (santri mukim) atau wali kelasnya, jadi guru yang
+sama boleh untuk satu anak dan 403 untuk anak lain. Jawab dengan menyebut
+aturannya ([`pemutus-izin-santri`](../../memory/decisions/pemutus-izin-santri.md)),
+dan di layar lihat baris "Diputuskan oleh …" pada izin itu.
+
 ## Celah yang diketahui
 
 Di `.claude/memory/known-issues.md` → "Access that is too narrow": halaman

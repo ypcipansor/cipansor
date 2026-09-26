@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-25**. What a new session needs to pick up the thread, newest
+Updated **2026-09-26**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -11,7 +11,12 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `24068dc9` on 2026-09-25.
+  on which CI and E2E (Chromium) pass. At `140633b0` on 2026-09-26
+  (#565, #566); #568 and #569 deploy when `main`'s CI and E2E finish.
+- **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
+  `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
+  may be dropped if the repository goes private and code scanning would need
+  a paid licence.
 
 ## Waiting on the user
 
@@ -22,10 +27,22 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
-- **Who decides a learner's leave.** Since #564: unit admin, kepala sekolah,
-  Pimpinan Pesantren and super admin — no yayasan organ. Open: should the
-  musyrif decide leave from the asrama? (One line in
-  `packages/shared/src/schemas/permits.ts`.)
+- **Three parameters of the permit rule** (`decisions/pemutus-izin-santri.md`,
+  built in #568): the 7-day threshold; whether a boarder going home or
+  staying overnight goes to the koordinator asrama or the Pimpinan Pesantren;
+  whether a staff-filed request needs the wali's "setuju" (a schema change).
+- **Musyrif assignments in production.** Until the yayasan enters them
+  (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record and
+  their leave goes to the unit head, visibly so.
+- **"Santri" on every screen?** On 2026-09-25 the user said they were
+  considering calling every learner santri. Researched the same day and
+  recommended: *santri* in everything the app writes itself (the yayasan's own
+  site already does, and so does the TK Al-Qur'an tradition; UU 18/2019 knows
+  santri who do not board), and the state's word only inside a name or format
+  copied from the state (SPMB = *Sistem Penerimaan Murid Baru*, Dapodik's
+  *peserta didik*, ministry templates). Not decided yet;
+  `decisions/istilah-dan-penamaan.md` still says murid in the schools and
+  changes only when the user agrees.
 - **Two facts for the ZIS and wakaf build:** the yayasan's zakat status (UPZ
   of which BAZNAS, a licensed LAZ, or none) and whether it is a registered
   nazhir. The law decides what the app may offer on each
@@ -33,11 +50,10 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## In flight
 
-- **Audit phase 1, area by area.** Perizinan done (#564). Next: Kurikulum, HR
-  employees, Sertifikat, then the dead calls, `services/` and the `api-client`
-  alias. Open PRs: #565 (the Prisma client omits user credentials by default)
-  and #566 (plain notification text escaped in e-mail bodies — CodeQL flagged
-  the sink on #564).
+- **Audit phase 1, area by area.** Perizinan done (#564, then #568 moved the
+  decision to the mentor); Asrama's kamar list and labels fixed in #569.
+  Next: Kurikulum, HR employees, Sertifikat, then the dead calls, `services/`
+  and the `api-client` alias.
 - **Naming, endpoint and architecture audit — done 2026-09-25**; the user
   widened it the same day to every module without exception, every API
   endpoint and web route, the repository structure, the architecture and
@@ -73,7 +89,25 @@ backlog to [`roadmap.md`](roadmap.md).
   after 2026-10-01 (the VM is the rollback target until then, and a guard test
   reads it).
 
-## Recently done (2026-09-24 → 25)
+## Recently done (2026-09-24 → 26)
+
+- **A santri's leave is decided by their own mentor (#568, merged
+  2026-09-26):** the musyrif of their kamar or asrama for a boarder, the wali
+  kelas otherwise; the unit head for more than seven days, for a santri with
+  no mentor on record, or as a recorded takeover. Admins no longer decide.
+  Every permit carries `decision`; **Perizinan → Perlu keputusan saya**; the
+  wali kelas menu gained Perizinan; migration `20260926000000_permit_decider`
+  (additive). The demo wali kelas and musyrif personas now have classes and
+  kamar. Rule and sources: `decisions/pemutus-izin-santri.md`.
+- **Musyrif assigned from the asrama page (#569, merged 2026-09-26):** nothing
+  could write `musyrif_assignments` before; **Asrama → an asrama → Musyrif →
+  Tugaskan musyrif** (Pimpinan Pesantren and super admin). Same PR: the kamar
+  list called a path the API never served, and every asrama read "Putri" and
+  "Tidak Aktif". #568 and #569 were gated together (rule 9) before merging.
+  Before/after for both: <https://claude.ai/artifact/HRLjvCfZu1c9Z9hHM9ftQp>.
+- **User credentials leave the database only when a query names them (#565)**
+  and **plain notification text is escaped in e-mail bodies (#566)**, both
+  merged 2026-09-25.
 
 - **Perizinan end to end (#564, merged 2026-09-25, on staging):** one contract
   in `@cipansor/shared` (`schemas/permits.ts`: types, Zod, and the role lists
@@ -82,8 +116,8 @@ backlog to [`roadmap.md`](roadmap.md).
   from `/reception/gate`); wali, staff dashboard and musyrif card on the same
   hooks; e2e `permits.spec.ts` (wali files → kepala approves → keamanan out and
   back → bendahara refused). Before/after on staging:
-  <https://claude.ai/artifact/HQPwoVwwzJzuAxUHZrxs4M>. **#564 merged with the
-  CodeQL check red — CodeQL is not a required check**; #566 fixes what it found.
+  <https://claude.ai/artifact/HQPwoVwwzJzuAxUHZrxs4M>. #564 merged with the
+  CodeQL check red, which is why CodeQL became required; #566 fixed the sink.
 - **Web ↔ API contract guard (#563):** `utils/web-api-contract.guard.test.ts`
   asks the real router about every web call; a baseline that only shrinks.
 - **Naming decisions and `AGENTS.md` conventions (#562)**; records (#561).

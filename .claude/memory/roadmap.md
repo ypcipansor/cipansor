@@ -1,6 +1,6 @@
 # Roadmap — what to do next, in order
 
-Ordered backlog as of **2026-09-25**. Defects in detail are in
+Ordered backlog as of **2026-09-26**. Defects in detail are in
 [`known-issues.md`](./known-issues.md); where the work stands (environments,
 what waits on the user, what is in flight) is in [`progress.md`](./progress.md).
 
@@ -16,10 +16,12 @@ items before 2026-09-25 is in the history of this file and of
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
    on 2026-09-25, so it runs first). Phases, each releasable alone:
    0. guards — done (#560, #562, #563);
-   1. reconnect the broken calls area by area (Perizinan done in #564; next
-      Kurikulum, HR employees, Sertifikat), delete the 84 dead ones,
-      `services/` and the `api-client` alias;
-   2. glossary from the user's eight decisions;
+   1. reconnect the broken calls area by area (Perizinan done in #564 and
+      #568; Asrama partly in #569 — its kamar writes are next to it in
+      `known-issues.md`; next Kurikulum, HR employees, Sertifikat), delete the
+      84 dead ones, `services/` and the `api-client` alias;
+   2. glossary from the user's eight decisions (murid vs santri may change:
+      the user is weighing "santri" everywhere — `progress.md`);
    3. consolidate duplicates (tahfidz, report cards, lesson plans,
       P5 → kokurikuler, accounting, depreciation, daily logs, duplicate pages,
       dashboards);
