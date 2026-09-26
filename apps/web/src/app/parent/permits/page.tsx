@@ -38,6 +38,7 @@ import {
   PERMIT_TYPE_LABELS,
   PERMIT_PHASES,
   permitPhase,
+  whoDecides,
   type PermitType,
 } from "@/hooks/use-permits";
 
@@ -318,6 +319,14 @@ export default function ParentPermitsPage() {
                           oleh{" "}
                           <span className="font-medium">
                             {permit.approvedBy.name}
+                          </span>
+                        </p>
+                      )}
+                      {permit.status === "PENDING" && (
+                        <p className="text-muted-foreground">
+                          Diputuskan oleh{" "}
+                          <span className="font-medium">
+                            {whoDecides(permit.decision)}
                           </span>
                         </p>
                       )}

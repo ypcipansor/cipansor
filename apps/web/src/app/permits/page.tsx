@@ -33,11 +33,24 @@ import {
   PERMIT_TYPE_LABELS,
   PERMIT_STATUS_FILTERS,
   PERMIT_PHASES,
+  PERMIT_DECIDER_LABELS,
   permitPhase,
+  whoDecides,
+  type Permit,
   type PermitStatus,
   type PermitType,
 } from "@/hooks/use-permits";
 import { RejectPermitDialog } from "./reject-permit-dialog";
+
+/** Under the status: who decides it, or who did and in what capacity. */
+function decidedLine(permit: Permit): string | null {
+  if (permit.status === "PENDING") return whoDecides(permit.decision);
+  if (!permit.approvedBy) return null;
+  const as = permit.decidedAs
+    ? ` (${PERMIT_DECIDER_LABELS[permit.decidedAs]}${permit.tookOver ? ", ambil alih" : ""})`
+    : "";
+  return `${permit.approvedBy.name}${as}`;
+}
 
 const formatDateTime = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", {
@@ -52,17 +65,19 @@ function PermitsPageContent() {
   const [type, setType] = useState<PermitType | "">("");
   const [status, setStatus] = useState<PermitStatus | "">("");
   const [outside, setOutside] = useState(false);
+  const [mine, setMine] = useState(false);
   const [approveId, setApproveId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const limit = 20;
 
-  const { isStaff, canDecide } = usePermitAbilities();
+  const { isStaff, mayDecideSome } = usePermitAbilities();
   const { data: permitsData, isLoading } = usePermits({
     page,
     limit,
     type: type || undefined,
     status: status || undefined,
     outside: outside ? "true" : undefined,
+    awaitingMe: mine ? "true" : undefined,
   });
   const { data: summary } = usePermitSummary(isStaff);
   const approveMutation = useApprovePermit();
@@ -78,7 +93,7 @@ function PermitsPageContent() {
     }
   };
 
-  const filtered = !!(type || status || outside);
+  const filtered = !!(type || status || outside || mine);
   const permits = permitsData?.data ?? [];
 
   return (
@@ -112,7 +127,9 @@ function PermitsPageContent() {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {(
             [
-              ["Menunggu keputusan", summary.pending],
+              mayDecideSome
+                ? ["Menunggu keputusan Anda", summary.awaitingMe]
+                : ["Menunggu keputusan", summary.pending],
               ["Disetujui, belum berangkat", summary.approved],
               ["Sedang di luar", summary.outside],
               ["Terlambat kembali", summary.overdue],
@@ -177,6 +194,18 @@ function PermitsPageContent() {
               </SelectContent>
             </Select>
 
+            {mayDecideSome && (
+              <Button
+                variant={mine ? "default" : "outline"}
+                onClick={() => {
+                  setMine(!mine);
+                  setPage(1);
+                }}
+              >
+                Perlu keputusan saya
+              </Button>
+            )}
+
             <Button
               variant={outside ? "default" : "outline"}
               onClick={() => {
@@ -194,6 +223,7 @@ function PermitsPageContent() {
                   setType("");
                   setStatus("");
                   setOutside(false);
+                  setMine(false);
                   setPage(1);
                 }}
               >
@@ -215,9 +245,11 @@ function PermitsPageContent() {
               <CalendarClock className="h-12 w-12 text-muted-foreground" />
               <h3 className="mt-4 text-lg font-semibold">Tidak ada izin</h3>
               <p className="text-muted-foreground">
-                {filtered
-                  ? "Tidak ada izin untuk filter yang dipilih"
-                  : "Belum ada izin yang diajukan"}
+                {mine
+                  ? "Tidak ada izin yang menunggu keputusan Anda"
+                  : filtered
+                    ? "Tidak ada izin untuk filter yang dipilih"
+                    : "Belum ada izin yang diajukan"}
               </p>
             </div>
           ) : (
@@ -236,6 +268,11 @@ function PermitsPageContent() {
                 <TableBody>
                   {permits.map((permit) => {
                     const phase = PERMIT_PHASES[permitPhase(permit)];
+                    const decided = decidedLine(permit);
+                    // A head's takeover is made on the permit's own page,
+                    // where it says whose decision it was; not from a list.
+                    const decidesHere =
+                      permit.decision.canDecide && !permit.decision.asTakeover;
                     return (
                       <TableRow key={permit.id}>
                         <TableCell>
@@ -260,10 +297,15 @@ function PermitsPageContent() {
                           <Badge className={phase.className}>
                             {phase.label}
                           </Badge>
+                          {decided && (
+                            <p className="mt-1 max-w-[240px] whitespace-normal text-xs text-muted-foreground">
+                              {decided}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-1">
-                            {canDecide && permit.status === "PENDING" && (
+                            {decidesHere && (
                               <>
                                 <Button
                                   size="sm"

@@ -17,6 +17,7 @@ import {
   Ban,
   LogOut,
   LogIn,
+  UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,14 +35,28 @@ import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
 import {
   usePermit,
-  usePermitAbilities,
   useApprovePermit,
   useCancelPermit,
+  PERMIT_DECIDER_LABELS,
   PERMIT_TYPE_LABELS,
   PERMIT_PHASES,
   permitPhase,
+  whoDecides,
+  type Permit,
 } from "@/hooks/use-permits";
 import { RejectPermitDialog } from "../reject-permit-dialog";
+
+/** "Oleh X sebagai musyrif", with the takeover said out loud. */
+function byWhom(permit: Permit): string {
+  if (!permit.approvedBy) return "";
+  const as = permit.decidedAs
+    ? ` sebagai ${PERMIT_DECIDER_LABELS[permit.decidedAs]}`
+    : "";
+  const mentor =
+    permit.decision.mentorKind === "MUSYRIF" ? "musyrif" : "wali kelas";
+  const over = permit.tookOver ? `, mengambil alih keputusan ${mentor}` : "";
+  return `Oleh ${permit.approvedBy.name}${as}${over}`;
+}
 
 const when = (iso: string) =>
   safeFormat(new Date(iso), "dd MMMM yyyy HH:mm", { locale: localeId });
@@ -81,7 +96,6 @@ function PermitDetailPageContent() {
   const [rejecting, setRejecting] = useState(false);
 
   const { data: permit, isLoading, error } = usePermit(permitId);
-  const { canDecide } = usePermitAbilities();
   const approveMutation = useApprovePermit();
   const cancelMutation = useCancelPermit();
 
@@ -134,6 +148,14 @@ function PermitDetailPageContent() {
 
   const isPending = permit.status === "PENDING";
   const phase = PERMIT_PHASES[permitPhase(permit)];
+  const { canDecide, asTakeover } = permit.decision;
+  const mentor =
+    permit.decision.mentorKind === "MUSYRIF" ? "musyrif" : "wali kelas";
+  const takeoverNote = `Izin ini keputusan ${mentor} santri (${permit.decision.mentors
+    .map((m) => m.name)
+    .join(
+      ", ",
+    )}). Anda memutuskannya sebagai kepala unit: tercatat sebagai ambil alih, dan ${mentor}nya diberi tahu.`;
 
   return (
     <div className="space-y-6">
@@ -158,7 +180,7 @@ function PermitDetailPageContent() {
 
         {isPending && (
           <div className="flex flex-wrap items-center gap-2">
-            {canDecide && (
+            {canDecide && !asTakeover && (
               <>
                 <Button
                   variant="outline"
@@ -177,6 +199,40 @@ function PermitDetailPageContent() {
                   <X className="mr-2 h-4 w-4" />
                   Tolak
                 </Button>
+              </>
+            )}
+            {canDecide && asTakeover && (
+              <>
+                <ConfirmDialog
+                  title="Setujui sebagai kepala unit"
+                  description={takeoverNote}
+                  confirmLabel="Setujui (ambil alih)"
+                  onConfirm={handleApprove}
+                  loading={approveMutation.isPending}
+                >
+                  <Button
+                    variant="outline"
+                    className="text-green-600 hover:text-green-700"
+                  >
+                    <Check className="mr-2 h-4 w-4" />
+                    Setujui (ambil alih)
+                  </Button>
+                </ConfirmDialog>
+                <ConfirmDialog
+                  title="Tolak sebagai kepala unit"
+                  description={takeoverNote}
+                  confirmLabel="Lanjut menolak"
+                  variant="destructive"
+                  onConfirm={() => setRejecting(true)}
+                >
+                  <Button
+                    variant="outline"
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <X className="mr-2 h-4 w-4" />
+                    Tolak (ambil alih)
+                  </Button>
+                </ConfirmDialog>
               </>
             )}
             <Button variant="outline" asChild>
@@ -237,6 +293,24 @@ function PermitDetailPageContent() {
             <div>
               <p className="text-sm text-muted-foreground">Alasan</p>
               <p className="mt-1">{permit.reason}</p>
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                <UserCheck className="h-5 w-5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  {isPending ? "Diputuskan oleh" : "Keputusan"}
+                </p>
+                <p className="font-medium" data-testid="permit-decider">
+                  {isPending
+                    ? whoDecides(permit.decision)
+                    : byWhom(permit) || "—"}
+                </p>
+              </div>
             </div>
 
             {permit.destination && (
@@ -315,7 +389,7 @@ function PermitDetailPageContent() {
               icon={<Check className="h-4 w-4" />}
               title="Disetujui"
               at={permit.approvedAt ? when(permit.approvedAt) : "-"}
-              detail={permit.approvedBy ? `Oleh ${permit.approvedBy.name}` : ""}
+              detail={byWhom(permit)}
               tone="bg-green-500 text-white"
             />
           ) : permit.status === "REJECTED" ? (
@@ -323,7 +397,7 @@ function PermitDetailPageContent() {
               icon={<X className="h-4 w-4" />}
               title="Ditolak"
               at={when(permit.updatedAt)}
-              detail={permit.approvedBy ? `Oleh ${permit.approvedBy.name}` : ""}
+              detail={byWhom(permit)}
               tone="bg-red-500 text-white"
             />
           ) : permit.status === "CANCELLED" ? (

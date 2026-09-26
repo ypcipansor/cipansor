@@ -75,15 +75,63 @@ export const PERMIT_REQUESTER_ROLE_CODES: readonly string[] = [
 ];
 
 /**
- * Approve or reject: the unit's head and its administrator. Until 2026-09-25
- * the API let every yayasan organ approve a learner's leave — Pengawas
- * included, who audits exactly these decisions — and no unit head at all.
+ * Who decides a learner's leave — decided 2026-09-25, after the first version
+ * put it with the kepala sekolah and the unit admin.
+ *
+ * The learner's own mentor decides: for a boarder (an active kamar), the
+ * musyrif assigned to that kamar or its asrama; otherwise the wali kelas of
+ * their class. That is the practice of pesantren (musyrif / pengasuhan),
+ * boarding schools (the housemaster, with parental consent) and day schools
+ * (the wali kelas). The wali's own request is the parent's consent; the wali
+ * does not decide, because the institution holds the child's care while they
+ * are in it.
+ *
+ * The unit head — the kepala sekolah of the learner's unit, and for a boarder
+ * or a Takhosus santri the Pimpinan Pesantren — decides leave longer than
+ * `PERMIT_HEAD_AFTER_DAYS`, decides when no mentor is on record, and may take
+ * a pending permit over (recorded as such). Admins do not decide: they run the
+ * system, they do not look after the child.
+ *
+ * These lists are only the route guard. Whether *this* caller decides *this*
+ * permit is `permit.decision.canDecide`, worked out by the API per permit.
  */
-export const PERMIT_DECIDER_ROLE_CODES: readonly string[] = [
-  ...ADMIN_ROLE_CODES,
+export const PERMIT_MENTOR_ROLE_CODES: readonly string[] = [
+  ...SCHOOL_TEACHER_ROLE_CODES,
+  ...PESANTREN_EDUCATOR_ROLE_CODES,
+];
+
+export const PERMIT_HEAD_ROLE_CODES: readonly string[] = [
   ...PRINCIPAL_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
 ];
+
+export const PERMIT_DECIDER_ROLE_CODES: readonly string[] = [
+  ...PERMIT_MENTOR_ROLE_CODES,
+  ...PERMIT_HEAD_ROLE_CODES,
+];
+
+/**
+ * Leave covering more calendar days than this goes to the unit head. A week,
+ * after the day-school practice of asking the kepala sekolah for more than a
+ * week (tata tertib SMA 1 Sukawati); the yayasan may set another number.
+ */
+export const PERMIT_HEAD_AFTER_DAYS = 7;
+
+/** The capacity a permit was decided in — the Prisma enum `PermitDecider`. */
+export const PERMIT_DECIDER_VALUES = [
+  "MUSYRIF",
+  "WALI_KELAS",
+  "KEPALA_SEKOLAH",
+  "PIMPINAN_PESANTREN",
+] as const;
+export type PermitDecider = (typeof PERMIT_DECIDER_VALUES)[number];
+
+/**
+ * Where a pending permit goes: to the learner's mentor, or to the unit head
+ * because it is long (`LONG`) or because no mentor is on record (`NO_MENTOR`).
+ */
+export const PERMIT_ROUTE_VALUES = ["MENTOR", "LONG", "NO_MENTOR"] as const;
+export type PermitRoute = (typeof PERMIT_ROUTE_VALUES)[number];
 
 /** A date-time with offset (`2026-09-26T13:00:00+07:00`) or a calendar date. */
 const moment = z.union([z.iso.datetime({ offset: true }), z.iso.date()]);
@@ -139,6 +187,11 @@ export const listPermitsQuerySchema = z.object({
     .optional(),
   from: z.iso.date().optional(),
   to: z.iso.date().optional(),
+  /** Only pending permits that are the caller's own to decide. */
+  awaitingMe: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
@@ -176,12 +229,35 @@ export interface Permit {
   };
   /** Who approved or rejected it. */
   approvedBy: { id: string; name: string } | null;
+  /** In what capacity they did; null for permits decided before 2026-09-26. */
+  decidedAs: PermitDecider | null;
+  /** A unit head decided what was the mentor's to decide. */
+  tookOver: boolean;
+  /** Who decides it, worked out for the learner and the caller. */
+  decision: PermitDecision;
+}
+
+/**
+ * Who decides a permit, as of now. The mentors are the learner's musyrif (a
+ * boarder) or wali kelas (otherwise), whoever is on record today.
+ */
+export interface PermitDecision {
+  route: PermitRoute;
+  /** Which kind of mentor the learner has: a boarder's is the musyrif. */
+  mentorKind: "MUSYRIF" | "WALI_KELAS";
+  mentors: { id: string; name: string }[];
+  /** The caller may approve or reject it now. */
+  canDecide: boolean;
+  /** …and would be doing so as a unit head over the mentor. */
+  asTakeover: boolean;
 }
 
 /** GET /permits/summary — counts over the permits the caller may see. */
 export interface PermitSummary {
   /** Waiting for a decision. */
   pending: number;
+  /** Of those, the ones that are the caller's own to decide (not a takeover). */
+  awaitingMe: number;
   /** Approved, still valid, not yet through the gate. */
   approved: number;
   /** Through the gate and not back. */

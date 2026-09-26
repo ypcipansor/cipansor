@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_HEAD_AFTER_DAYS,
   PERMIT_STAFF_ROLE_CODES,
   type CreatePermitInput,
   type ListPermitsQuery,
   type PageResponse,
   type Permit,
+  type PermitDecider,
+  type PermitDecision,
   type PermitStatus,
   type PermitSummary,
   type PermitType,
@@ -17,7 +20,7 @@ import { useAuthStore } from "@/stores/auth";
 
 // The contract (types, schemas, who may do what) is @cipansor/shared's
 // schemas/permits.ts, which the API validates with. Only labels live here.
-export type { Permit, PermitStatus, PermitSummary, PermitType };
+export type { Permit, PermitDecision, PermitStatus, PermitSummary, PermitType };
 
 export const PERMIT_TYPE_LABELS: Record<PermitType, string> = {
   PULANG: "Pulang",
@@ -80,9 +83,37 @@ export const PERMIT_STATUS_FILTERS: { value: PermitStatus; label: string }[] = [
   { value: "CANCELLED", label: "Dibatalkan" },
 ];
 
+/** The capacity a permit was decided in, as it reads after "sebagai". */
+export const PERMIT_DECIDER_LABELS: Record<PermitDecider, string> = {
+  MUSYRIF: "musyrif",
+  WALI_KELAS: "wali kelas",
+  KEPALA_SEKOLAH: "kepala sekolah",
+  PIMPINAN_PESANTREN: "Pimpinan Pesantren",
+};
+
+const MENTOR_LABELS = { MUSYRIF: "musyrif", WALI_KELAS: "wali kelas" } as const;
+
 /**
- * What the signed-in role may do — the same lists the API's route guards
- * read, so a button is shown exactly when its request is allowed.
+ * Who decides a pending permit, in one line: the santri's own musyrif or wali
+ * kelas, or the unit head for long leave or when no mentor is on record.
+ */
+export function whoDecides(d: PermitDecision): string {
+  const mentor = MENTOR_LABELS[d.mentorKind];
+  if (d.route === "LONG") {
+    return `Kepala unit — izin lebih dari ${PERMIT_HEAD_AFTER_DAYS} hari`;
+  }
+  if (d.route === "NO_MENTOR") {
+    return `Kepala unit — santri ini belum punya ${mentor} tercatat`;
+  }
+  const names = d.mentors.map((m) => m.name).join(", ");
+  return `${mentor[0].toUpperCase()}${mentor.slice(1)}: ${names}`;
+}
+
+/**
+ * What the signed-in role may do in general — the same lists the API's route
+ * guards read. Whether they may decide a *given* permit is not a role
+ * question: it is `permit.decision.canDecide`, which the API works out from
+ * the santri's kamar and class.
  */
 export function usePermitAbilities() {
   const user = useAuthStore((s) => s.user);
@@ -90,8 +121,8 @@ export function usePermitAbilities() {
   return {
     /** Read every permit in scope, file for a learner, record the gate. */
     isStaff: PERMIT_STAFF_ROLE_CODES.includes(code),
-    /** Approve or reject. */
-    canDecide: PERMIT_DECIDER_ROLE_CODES.includes(code),
+    /** Could be someone's musyrif, wali kelas or unit head. */
+    mayDecideSome: PERMIT_DECIDER_ROLE_CODES.includes(code),
   };
 }
 

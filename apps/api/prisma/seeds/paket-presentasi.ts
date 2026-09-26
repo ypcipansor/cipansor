@@ -60,6 +60,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   PaymentVerificationStatus,
+  PermitDecider,
   PermitStatus,
   PermitType,
   Prisma,
@@ -3651,6 +3652,8 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
       status,
       approvedById: decided ? approver : null,
       approvedAt: decided ? atWib(addDays(start, -1), 20) : null,
+      // Boarders: their musyrif decides (2026-09-25).
+      decidedAs: decided ? PermitDecider.MUSYRIF : null,
       rejectionNote:
         status === PermitStatus.REJECTED ? 'Bertepatan dengan Penilaian Tengah Semester' : null,
       departedAt: status === PermitStatus.COMPLETED ? atWib(start, 13, 30) : null,

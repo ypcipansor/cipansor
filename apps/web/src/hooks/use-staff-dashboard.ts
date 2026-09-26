@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
 import {
+  PERMIT_DECIDER_ROLE_CODES,
   PERMIT_STAFF_ROLE_CODES,
   STUDENT_STATUS,
   type PageResponse,
@@ -18,8 +19,15 @@ import { PERMIT_TYPE_LABELS } from "./use-permits";
 // ============================================
 
 export interface StaffDashboardStats {
-  /** Null for a role that has no part in permits (bendahara, pustakawan…). */
+  /**
+   * Pending permits: for a role that decides some (wali kelas, musyrif,
+   * kepala), the ones that are the caller's own to decide; for other permit
+   * staff, all pending in their scope. Null for a role that has no part in
+   * permits (bendahara, pustakawan…).
+   */
   pendingPermits: number | null;
+  /** `pendingPermits` counts the caller's own decisions. */
+  permitsAwaitMe: boolean;
   sickStudents: number;
   todayViolations: number;
   todayRewards: number;
@@ -82,6 +90,11 @@ function readsPermits(user: Parameters<typeof getActiveRoleCode>[0]) {
   return PERMIT_STAFF_ROLE_CODES.includes(getActiveRoleCode(user) ?? "");
 }
 
+/** Could be a santri's musyrif, wali kelas or unit head. */
+function decidesPermits(user: Parameters<typeof getActiveRoleCode>[0]) {
+  return PERMIT_DECIDER_ROLE_CODES.includes(getActiveRoleCode(user) ?? "");
+}
+
 // ============================================
 // DASHBOARD STATS HOOK
 // ============================================
@@ -109,7 +122,11 @@ export function useStaffDashboardStats() {
               .get<ApiResponse<PermitSummary>>("/permits/summary", {
                 skipErrorToast: true,
               })
-              .then((res) => res.data.data.pending)
+              .then((res) =>
+                decidesPermits(user)
+                  ? res.data.data.awaitingMe
+                  : res.data.data.pending,
+              )
               .catch(() => null)
           : Promise.resolve(null),
 
@@ -172,6 +189,7 @@ export function useStaffDashboardStats() {
 
       return {
         pendingPermits,
+        permitsAwaitMe: decidesPermits(user),
         sickStudents: (healthRes.data as any)?.meta?.pagination?.total || 0,
         todayViolations:
           (violationsRes.data as any)?.meta?.pagination?.total || 0,
@@ -208,7 +226,10 @@ export function useStaffPendingTasks(limit: number = 10) {
       const pendingPermits = readsPermits(user)
         ? await api
             .get<PageResponse<Permit>>("/permits", {
-              params: { status: "PENDING", limit: 5 },
+              // A decider's task list is their own decisions, oldest first.
+              params: decidesPermits(user)
+                ? { awaitingMe: "true", limit: 5 }
+                : { status: "PENDING", limit: 5 },
               skipErrorToast: true,
             })
             .then((res) => res.data.data)

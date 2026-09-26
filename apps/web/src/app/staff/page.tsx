@@ -185,7 +185,9 @@ function StaffDashboardContent() {
                     {stats?.pendingPermits ?? 0}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    menunggu persetujuan
+                    {stats?.permitsAwaitMe
+                      ? "menunggu keputusan Anda"
+                      : "menunggu keputusan"}
                   </p>
                 </>
               )}
