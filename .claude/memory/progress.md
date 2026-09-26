@@ -32,8 +32,8 @@ backlog to [`roadmap.md`](roadmap.md).
   staying overnight goes to the koordinator asrama or the Pimpinan Pesantren;
   whether a staff-filed request needs the wali's "setuju" (a schema change).
 - **Who manages asrama** — adds asrama and kamar, places santri. Today: the
-  super admin, every school's admin and the yayasan organs (unchanged by the
-  asrama PR, which made those pages work). Recommended: the Pimpinan
+  super admin, every school's admin and the yayasan organs (unchanged by #571,
+  which made those pages work). Recommended: the Pimpinan
   Pesantren and TU Pesantren (pengasuhan), plus the super admin; not the
   organs, not TK. One list in `packages/shared/src/schemas/dormitories.ts`.
 - **Musyrif assignments in production.** Until the yayasan enters them
@@ -96,6 +96,15 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Recently done (2026-09-24 → 26)
 
+- **Asrama end to end (#571, merged 2026-09-26):** adding and editing an
+  asrama, adding, changing and deleting a kamar, and placing a santri all
+  failed before (wrong field, PATCH to a PUT route, the facilities module's
+  rooms); "Terisi" was always 0. One contract in
+  `packages/shared/src/schemas/dormitories.ts`; the API keeps kamar capacity,
+  occupied kamar/asrama cannot be deleted, placements move in one
+  transaction, placement reads carry four student fields instead of the row.
+  Who writes is unchanged (question above). Before/after:
+  <https://claude.ai/artifact/BeJwFwWPbtFdo4NhJAicT1>.
 - **A santri's leave is decided by their own mentor (#568, merged
   2026-09-26):** the musyrif of their kamar or asrama for a boarder, the wali
   kelas otherwise; the unit head for more than seven days, for a santri with
