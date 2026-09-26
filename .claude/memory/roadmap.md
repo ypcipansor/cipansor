@@ -17,8 +17,9 @@ items before 2026-09-25 is in the history of this file and of
    on 2026-09-25, so it runs first). Phases, each releasable alone:
    0. guards — done (#560, #562, #563);
    1. reconnect the broken calls area by area (Perizinan done in #564 and
-      #568; Asrama in #569 and the asrama PR after it; next Kurikulum, HR employees, Sertifikat), delete the
-      84 dead ones, `services/` and the `api-client` alias;
+      #568; Asrama in #569 and the asrama PR after it; next Kurikulum, HR
+      employees, Sertifikat), delete the 84 dead ones, `services/` and the
+      `api-client` alias;
    2. glossary from the user's eight decisions (murid vs santri may change:
       the user is weighing "santri" everywhere — `progress.md`);
    3. consolidate duplicates (tahfidz, report cards, lesson plans,
