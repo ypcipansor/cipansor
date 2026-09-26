@@ -19,7 +19,7 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 - **The web calls API paths that do not exist — 200 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
-  in #569 and the asrama PR after it; the list is
+  in #569 and #571; the list is
   `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
   keeps honest — it only shrinks; staging answers them "Route … not found").
   Worst felt now: the Kurikulum list
