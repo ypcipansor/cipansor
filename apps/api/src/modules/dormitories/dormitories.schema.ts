@@ -19,11 +19,12 @@ export {
 
 /**
  * `z.coerce.boolean()` turns the string "false" into true, so `?isActive=false`
- * listed the active rows. A query flag is the literal "true" or "false".
+ * listed the active rows. A query flag is the literal "true" or "false" — or
+ * the boolean it already became: validateQuery() parses the query and the
+ * controller parses the result again.
  */
 const queryFlag = z
-  .enum(['true', 'false'])
-  .transform((v) => v === 'true')
+  .union([z.boolean(), z.enum(['true', 'false']).transform((v) => v === 'true')])
   .optional();
 
 export const queryDormitorySchema = z.object({

@@ -30,7 +30,7 @@ import {
   useAssignRoom,
   useCanManageDormitories,
   useDormitory,
-  useRoom,
+  useDormitoryRooms,
 } from "@/hooks/use-dormitory";
 import { useStudents } from "@/hooks/use-students";
 import { NotADormitoryManager } from "../../../../dormitory-form";
@@ -51,7 +51,11 @@ function AssignRoomPageContent({
 
   const canManage = useCanManageDormitories();
   const { data: dormitory, isLoading: dormitoryLoading } = useDormitory(id);
-  const { data: room, isLoading: roomLoading } = useRoom(roomId);
+  // From the asrama's kamar list, which is all this page needs (name,
+  // capacity, how many live there). It read the facilities module's rooms
+  // until 2026-09-26 and never found the kamar.
+  const { data: rooms, isLoading: roomLoading } = useDormitoryRooms(id);
+  const room = rooms?.find((r) => r.id === roomId);
   // Only santri who may sleep here: active, and of the asrama's gender. The
   // API checks both (and the unit, and the kamar's capacity) on its own.
   const { data: studentsData, isLoading: studentsLoading } = useStudents({

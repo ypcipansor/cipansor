@@ -216,25 +216,6 @@ export function useDeleteDormitory() {
 }
 
 /**
- * One kamar, with how many santri live in it. This read the facilities
- * module's rooms (`/facilities/rooms/:id`), a different table, so the
- * "Tambah Penghuni" page never found the kamar it was opened for.
- */
-export function useRoom(id: string) {
-  return useQuery({
-    queryKey: ["dormitories", "room", id],
-    queryFn: async (): Promise<Room> => {
-      const response = await api.get<
-        ApiResponse<Room & { assignments?: unknown[] }>
-      >(`/dormitories/rooms/${id}`);
-      const { assignments, ...room } = response.data.data;
-      return { ...room, currentOccupancy: assignments?.length ?? 0 };
-    },
-    enabled: !!id,
-  });
-}
-
-/**
  * The kamar of one asrama, with how many santri live in each. Until
  * 2026-09-26 this called `GET /dormitories/{id}/rooms`, which the API never
  * served: the asrama page's room list was always empty.

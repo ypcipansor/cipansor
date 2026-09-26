@@ -27,6 +27,8 @@ vi.mock('../dormitories.service', () => ({
   createRoomAssignment: vi.fn(async () => ({ id: 'a1' })),
   updateRoomAssignment: vi.fn(async () => ({ id: 'a1' })),
   endRoomAssignment: vi.fn(async () => undefined),
+  getRoomAssignments: vi.fn(async () => ({ data: [], meta: {} })),
+  getRooms: vi.fn(async () => ({ data: [], meta: {} })),
 }));
 
 import { verifyToken } from '@/lib/jwt';
@@ -163,5 +165,25 @@ describe('asrama writes — the contract at the edge', () => {
       'p1',
       { notes: 'pindah lantai' },
     ]);
+  });
+});
+
+describe('asrama reads — query flags', () => {
+  // The query is parsed twice (validateQuery, then the controller), and the
+  // asrama page asks for `isActive=true`; the flag has to survive both.
+  it.each([
+    ['/dormitories/assignments/list', 'getRoomAssignments'],
+    ['/dormitories/rooms/list', 'getRooms'],
+  ] as const)('%s reads isActive as the boolean it says', async (path, fn) => {
+    for (const [flag, value] of [
+      ['true', true],
+      ['false', false],
+    ] as const) {
+      const res = await request(app)
+        .get(`${path}?isActive=${flag}&limit=100`)
+        .set('Authorization', 'Bearer superAdmin');
+      expect(res.status, `${path} isActive=${flag}`).toBe(200);
+      expect(vi.mocked(service[fn]).mock.calls.at(-1)?.[0]).toMatchObject({ isActive: value });
+    }
   });
 });

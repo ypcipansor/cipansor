@@ -150,7 +150,9 @@ test.describe("Asrama — tambah, kamar, penghuni, hapus", () => {
     await expect(page.getByText("Kamar ditambahkan")).toBeVisible();
 
     const row = page.getByRole("row", { name: new RegExp(KAMAR) });
-    await expect(row.getByRole("cell", { name: KAMAR })).toBeVisible();
+    await expect(
+      row.getByRole("cell", { name: KAMAR, exact: true }),
+    ).toBeVisible();
 
     await row.getByRole("button", { name: `Ubah ${KAMAR}` }).click();
     dialog = page.getByRole("dialog");
@@ -203,7 +205,9 @@ test.describe("Asrama — tambah, kamar, penghuni, hapus", () => {
       .click();
 
     await expect(page.getByText(/masih dihuni 1 santri/).first()).toBeVisible();
-    await expect(page.getByRole("cell", { name: KAMAR })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: KAMAR, exact: true }),
+    ).toBeVisible();
   });
 
   test("a musyrif reads the asrama without the buttons, and the API agrees", async ({
@@ -211,7 +215,9 @@ test.describe("Asrama — tambah, kamar, penghuni, hapus", () => {
   }) => {
     const musyrif = await signIn(page, "MUSYRIF");
     await page.goto(`/dormitories/${dormitoryId}`);
-    await expect(page.getByRole("cell", { name: KAMAR })).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: KAMAR, exact: true }),
+    ).toBeVisible();
     await expect(page.getByTestId("dormitory-occupied")).toHaveText("1");
     await expect(page.getByRole("link", { name: "Edit" })).toHaveCount(0);
     await expect(
@@ -262,7 +268,9 @@ test.describe("Asrama — tambah, kamar, penghuni, hapus", () => {
       .getByRole("button", { name: "Hapus" })
       .click();
     await expect(page.getByText("Kamar berhasil dihapus")).toBeVisible();
-    await expect(page.getByRole("cell", { name: KAMAR })).toHaveCount(0);
+    await expect(
+      page.getByRole("cell", { name: KAMAR, exact: true }),
+    ).toHaveCount(0);
 
     await page.goto("/dormitories");
     await page.getByRole("button", { name: `Hapus ${ASRAMA}` }).click();
