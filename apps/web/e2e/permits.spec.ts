@@ -35,6 +35,13 @@ function demoLogin(roleCode: string) {
   return { email: account.email, password: account.password };
 }
 
+/** The guru the seed makes wali kelas of the unit's demo class. */
+function homeroomLogin(group: string) {
+  const account = DEMO_ACCOUNTS.find((a) => a.homeroom && a.group === group);
+  if (!account) throw new Error(`No wali kelas persona in ${group}`);
+  return { email: account.email, password: account.password };
+}
+
 async function signIn(page: Page, roleCode: string): Promise<AuthSession> {
   const session = await apiLogin(demoLogin(roleCode));
   await injectSession(page, session);
@@ -127,7 +134,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     const permit = mine.data.find((p) => p.reason === reason);
     expect(permit).toBeTruthy();
 
-    const waliKelas = await apiLogin(demoLogin("SMPIT_WALI_KELAS"));
+    const waliKelas = await apiLogin(homeroomLogin("SMP_IT"));
     await expect(
       apiRequest(waliKelas, "POST", `/permits/${permit!.id}/approve`),
     ).rejects.toThrow(/→ 403.*musyrif/);
@@ -218,7 +225,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
       apiRequest(guru, "POST", `/permits/${first.data.id}/approve`),
     ).rejects.toThrow(/→ 403.*wali kelas/);
 
-    const waliKelas = await apiLogin(demoLogin("SDIT_WALI_KELAS"));
+    const waliKelas = await apiLogin(homeroomLogin("SD_IT"));
     const approved = await apiRequest<{
       data: { decidedAs: string; tookOver: boolean };
     }>(waliKelas, "POST", `/permits/${first.data.id}/approve`);

@@ -48,7 +48,7 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SMPIT_ADMIN: "UNIT_ADMIN",
   SMAQ_ADMIN: "UNIT_ADMIN",
 
-  // Teachers + kepala sekolah/wakasek/wali kelas/guru BK + pesantren
+  // Teachers + kepala sekolah/guru BK + pesantren
   // educators (incl. gender-segregated variants) + PT academics → TEACHER
   TKQ_GURU: "TEACHER",
   SDIT_GURU: "TEACHER",
@@ -58,14 +58,6 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SDIT_KEPALA_SEKOLAH: "TEACHER",
   SMPIT_KEPALA_SEKOLAH: "TEACHER",
   SMAQ_KEPALA_SEKOLAH: "TEACHER",
-  TKQ_WAKASEK: "TEACHER",
-  SDIT_WAKASEK: "TEACHER",
-  SMPIT_WAKASEK: "TEACHER",
-  SMAQ_WAKASEK: "TEACHER",
-  TKQ_WALI_KELAS: "TEACHER",
-  SDIT_WALI_KELAS: "TEACHER",
-  SMPIT_WALI_KELAS: "TEACHER",
-  SMAQ_WALI_KELAS: "TEACHER",
   SMPIT_GURU_BK: "TEACHER",
   SMAQ_GURU_BK: "TEACHER",
   PESANTREN_PENGASUH: "TEACHER",

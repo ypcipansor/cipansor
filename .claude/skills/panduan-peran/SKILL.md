@@ -5,7 +5,7 @@ description: Panduan per peran pengguna Cipansor — siapa tiap peran di yayasan
 
 # Panduan per peran
 
-Sistem ini punya 61 kode peran (2026-09-25). Kebanyakan adalah fungsi yang sama yang
+Sistem ini punya 53 kode peran (2026-09-26). Kebanyakan adalah fungsi yang sama yang
 diulang per unit (`TKQ_`, `SDIT_`, `SMPIT_`, `SMAQ_` × Admin, Kepala Sekolah,
 Guru, TU, …), dan semuanya jatuh ke **13 keluarga menu**. Skill ini memuat
 yang *tidak* tertulis di kode: peran itu siapa di yayasan, dan cara memeriksa
@@ -71,7 +71,7 @@ Pada 2026-09-25 jumlahnya **0**, sejalan dengan uji kontrak menu↔RBAC
 | Admin unit (SMP, SMA) | `SMPIT_ADMIN`, `SMAQ_ADMIN` | sama | Sama; menunya berbeda dari TK/SD pada butir yang ber-`roleCodes`. |
 | Organ yayasan | `YAYASAN_PEMBINA`, `_KETUA`, `_SEKRETARIS`, `_BENDAHARA`, `_ANGGOTA`, `_PENGAWAS` | `/dashboard` · UNIT_ADMIN | Pembina, Pengurus, Pengawas (UU 16/2001) — skill `tata-kelola-yayasan`. Lingkup seluruh yayasan. |
 | Kepala sekolah | `*_KEPALA_SEKOLAH` | `/dashboard` · TEACHER | Kepala unit: menyusun RKA Unit, menandatangani naskah unit, atasan penilai PK guru. |
-| Guru | `*_GURU`, `*_WALI_KELAS`, `*_WAKASEK`, `*_GURU_BK` | `/teacher` · TEACHER | Satu menu untuk semuanya; grup Wali Kelas ada di menu itu. |
+| Guru | `*_GURU`, `*_GURU_BK` | `/teacher` · TEACHER | Satu menu untuk semuanya; grup Wali Kelas ada di menu itu. Wakasek dan wali kelas adalah tugas tambahan seorang guru, bukan kode peran (digabung ke `*_GURU` 2026-09-26); wali kelas = `Class.homeroomTeacherId`. |
 | Pimpinan Pesantren | `PESANTREN_PENGASUH` | `/teacher` · TEACHER | Kiai, kepala unit pesantren — skill `tata-kelola-yayasan`. |
 | Pendidik pesantren | `USTADZ`, `MUSYRIF`, `MUHAFIDZ` | `/teacher` · TEACHER | Satu peran per tugas, bukan per jenis kelamin (musyrif = wali kamar + murabbi). |
 | Staf | `*_TATA_USAHA`, `*_BENDAHARA`, `PESANTREN_TATA_USAHA`, `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_*` | `/staff` · STAFF | **Satu menu bersama** untuk sembilan fungsi. Butir layanan di grup *Sarana & Layanan* (Perpustakaan, Inventaris, Kantin & Koperasi, Laundry, Unit Usaha) hanya tampil untuk peran yang menjalankannya. |

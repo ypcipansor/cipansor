@@ -44,7 +44,8 @@ const ROLES = {
   admin: 'SMPIT_ADMIN',
   kepala: 'SMPIT_KEPALA_SEKOLAH',
   pengasuh: 'PESANTREN_PENGASUH',
-  waliKelas: 'SMPIT_WALI_KELAS',
+  // A guru who is wali kelas of the pupil's class: a relation, not a role.
+  waliKelas: 'SMPIT_GURU',
   musyrif: 'MUSYRIF',
   tu: 'SMPIT_TATA_USAHA',
   keamanan: 'KEAMANAN',

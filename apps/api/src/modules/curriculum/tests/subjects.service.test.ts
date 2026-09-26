@@ -81,7 +81,7 @@ describe('mata pelajaran — unit scope', () => {
 
   it('an account with no unit is not a unit’s manager', async () => {
     await expect(
-      service.createSubject({ roleCode: 'SMPIT_WAKASEK', unitId: null }, body)
+      service.createSubject({ roleCode: 'SMPIT_KEPALA_SEKOLAH', unitId: null }, body)
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 });

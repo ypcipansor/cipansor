@@ -53,7 +53,7 @@ const fatUser = {
   profile: { bio: "x".repeat(800), phone: "0812000000" },
   userRoles: [
     assignment("SDIT_GURU", false),
-    assignment("SDIT_WALI_KELAS", true),
+    assignment("SDIT_KEPALA_SEKOLAH", true),
     assignment("SDIT_KOMITE", false),
     assignment("SMPIT_GURU", false),
   ],

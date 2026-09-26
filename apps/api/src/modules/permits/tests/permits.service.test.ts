@@ -45,7 +45,8 @@ const WALI = { sub: 'u-wali', roleCode: 'SMPIT_ORANG_TUA', unitId: 'unit-smp' };
 const KEPALA = { sub: 'u-kepala', roleCode: 'SMPIT_KEPALA_SEKOLAH', unitId: 'unit-smp' };
 const MUSYRIF = { sub: 'u-musyrif', roleCode: 'MUSYRIF', unitId: 'unit-smp' };
 const SUPER = { sub: 'u-super', roleCode: 'SUPER_ADMIN', unitId: null };
-const WALI_KELAS = { sub: 'u-walikelas', roleCode: 'SMPIT_WALI_KELAS', unitId: 'unit-smp' };
+// Wali kelas of the pupil's class (Class.homeroomTeacherId); by role a guru.
+const WALI_KELAS = { sub: 'u-walikelas', roleCode: 'SMPIT_GURU', unitId: 'unit-smp' };
 const GURU_LAIN = { sub: 'u-guru', roleCode: 'SMPIT_GURU', unitId: 'unit-smp' };
 const ADMIN = { sub: 'u-admin', roleCode: 'SMPIT_ADMIN', unitId: 'unit-smp' };
 const PIMPINAN = { sub: 'u-kiai', roleCode: 'PESANTREN_PENGASUH', unitId: 'unit-pes' };

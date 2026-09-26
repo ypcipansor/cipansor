@@ -31,9 +31,8 @@ const ROLES = {
   superAdmin: 'SUPER_ADMIN',
   adminSmp: 'SMPIT_ADMIN',
   kepala: 'SMPIT_KEPALA_SEKOLAH',
-  wakasek: 'SMPIT_WAKASEK',
   guru: 'SMPIT_GURU',
-  waliKelas: 'SMPIT_WALI_KELAS',
+  guruBk: 'SMPIT_GURU_BK',
   ketua: 'YAYASAN_KETUA',
   tu: 'SMPIT_TATA_USAHA',
   santri: 'SMPIT_SISWA',
@@ -67,7 +66,7 @@ const send = (who: Who, [method, path, body]: Call) => {
 };
 
 const everyone = Object.keys(ROLES) as Who[];
-const MANAGERS: Who[] = ['superAdmin', 'adminSmp', 'kepala', 'wakasek'];
+const MANAGERS: Who[] = ['superAdmin', 'adminSmp', 'kepala'];
 
 const WRITES: Array<[string, Call]> = [
   ['add a subject', ['post', '/curriculum/subjects', MAPEL]],

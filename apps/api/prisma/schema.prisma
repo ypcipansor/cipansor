@@ -46,6 +46,12 @@ enum Realm {
 }
 
 // RoleCode - All possible role codes in the system
+//
+// A role code is a function a person holds (guru, kepala sekolah, tata usaha,
+// …). Duties added on top of a function are not role codes: wali kelas is
+// `Class.homeroomTeacherId`, and wakasek and the other tugas tambahan are not
+// modelled yet. `*_WAKASEK` and `*_WALI_KELAS` were merged into `*_GURU` on
+// 2026-09-26 (migration 20260926120000_teacher_duties_not_roles).
 enum RoleCode {
   // Global
   SUPER_ADMIN
@@ -67,9 +73,7 @@ enum RoleCode {
   // TK Qur'an roles
   TKQ_ADMIN
   TKQ_KEPALA_SEKOLAH
-  TKQ_WAKASEK // Wakil kepala sekolah
   TKQ_GURU
-  TKQ_WALI_KELAS // Wali kelas
   // No TKQ_GURU_BK: a dedicated counselling teacher is not part of the TK
   // Qur'an establishment.
   TKQ_TATA_USAHA
@@ -85,9 +89,7 @@ enum RoleCode {
   // SD IT (Islam Terpadu) roles
   SDIT_ADMIN
   SDIT_KEPALA_SEKOLAH
-  SDIT_WAKASEK
   SDIT_GURU
-  SDIT_WALI_KELAS
   // No SDIT_GURU_BK: counselling at SD IT is handled by the wali kelas.
   SDIT_TATA_USAHA
   SDIT_BENDAHARA
@@ -100,9 +102,7 @@ enum RoleCode {
   // SMP IT (Islam Terpadu) roles
   SMPIT_ADMIN
   SMPIT_KEPALA_SEKOLAH
-  SMPIT_WAKASEK
   SMPIT_GURU
-  SMPIT_WALI_KELAS
   SMPIT_GURU_BK
   SMPIT_TATA_USAHA
   SMPIT_BENDAHARA
@@ -114,9 +114,7 @@ enum RoleCode {
   // SMA Qur'an roles
   SMAQ_ADMIN
   SMAQ_KEPALA_SEKOLAH
-  SMAQ_WAKASEK
   SMAQ_GURU
-  SMAQ_WALI_KELAS
   SMAQ_GURU_BK
   SMAQ_TATA_USAHA
   SMAQ_BENDAHARA
