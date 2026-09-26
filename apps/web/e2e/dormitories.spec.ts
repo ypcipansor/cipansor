@@ -121,6 +121,9 @@ test.describe("Asrama — tambah, kamar, penghuni, hapus", () => {
   }) => {
     await signIn(page, "SMPIT_ADMIN");
     await page.goto("/dormitories");
+    // Both filters rendered empty: their "" value matched no option.
+    await expect(page.getByRole("combobox").nth(0)).toHaveText("Semua Unit");
+    await expect(page.getByRole("combobox").nth(1)).toHaveText("Semua Tipe");
     await page.getByRole("link", { name: "Tambah Asrama" }).first().click();
     await page.waitForURL("**/dormitories/new");
 

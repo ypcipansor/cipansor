@@ -111,7 +111,9 @@ function DormitoriesPageContent() {
         <CardContent>
           <div className="flex flex-col gap-4 sm:flex-row">
             <Select
-              value={unitId}
+              // "" matches no item, and Radix then shows neither a value nor
+              // the placeholder: both filters looked empty.
+              value={unitId || "ALL"}
               onValueChange={(v) => setUnitId(v === "ALL" ? "" : v)}
             >
               <SelectTrigger className="w-full sm:w-[200px]">
@@ -128,7 +130,7 @@ function DormitoriesPageContent() {
             </Select>
 
             <Select
-              value={type}
+              value={type || "ALL"}
               onValueChange={(v) =>
                 setType(v === "ALL" ? "" : (v as DormitoryType))
               }
