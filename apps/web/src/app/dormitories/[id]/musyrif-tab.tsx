@@ -252,8 +252,7 @@ function AssignDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="musyrif-person">Musyrif</Label>
-            {/* Radix shows the placeholder only for an undefined value, not "". */}
-            <Select value={userId || undefined} onValueChange={setUserId}>
+            <Select value={userId} onValueChange={setUserId}>
               <SelectTrigger id="musyrif-person">
                 <SelectValue
                   placeholder={

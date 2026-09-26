@@ -9,13 +9,25 @@ import { cn } from "@/lib/utils";
 /**
  * Radix Select forbids a SelectItem `value=""` (it reserves the empty string to
  * clear the selection) and throws, crashing the page. Many filters here use an
- * empty-string "All" option, so we transparently map "" to a private sentinel
- * at the boundary (Root value/defaultValue/onValueChange and Item value) and map
- * it back on the way out. Callers keep using "" and never see the sentinel.
+ * empty-string "All" option, so an item's "" is mapped to a private sentinel
+ * at the boundary and back on the way out. Callers keep using "" and never see
+ * the sentinel.
+ *
+ * The Root sends a controlled "" as the sentinel only while the Select has
+ * such an item: then "" means "All is chosen". Without one, "" means nothing
+ * is chosen, and Radix shows the placeholder for it. (Mapping it regardless
+ * left those Selects with an empty box instead of their placeholder.) Never
+ * pass `undefined` to get the placeholder: that makes the Select
+ * uncontrolled, and a later reset to "" leaves the old choice on screen.
+ * `defaultValue` is read once, before any item has mounted, so it keeps the
+ * sentinel.
  */
 const EMPTY_VALUE = "__empty__";
 const toRadix = (v: string | undefined) => (v === "" ? EMPTY_VALUE : v);
 const fromRadix = (v: string) => (v === EMPTY_VALUE ? "" : v);
+
+/** Lets an item whose value is "" tell its Select that it exists. */
+const EmptyItemContext = React.createContext<(() => () => void) | null>(null);
 
 function Select({
   value,
@@ -23,16 +35,23 @@ function Select({
   onValueChange,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [emptyItems, setEmptyItems] = React.useState(0);
+  const registerEmptyItem = React.useCallback(() => {
+    setEmptyItems((n) => n + 1);
+    return () => setEmptyItems((n) => n - 1);
+  }, []);
   return (
-    <SelectPrimitive.Root
-      data-slot="select"
-      value={toRadix(value)}
-      defaultValue={toRadix(defaultValue)}
-      onValueChange={
-        onValueChange ? (v) => onValueChange(fromRadix(v)) : undefined
-      }
-      {...props}
-    />
+    <EmptyItemContext.Provider value={registerEmptyItem}>
+      <SelectPrimitive.Root
+        data-slot="select"
+        value={emptyItems > 0 ? toRadix(value) : value}
+        defaultValue={toRadix(defaultValue)}
+        onValueChange={
+          onValueChange ? (v) => onValueChange(fromRadix(v)) : undefined
+        }
+        {...props}
+      />
+    </EmptyItemContext.Provider>
   );
 }
 
@@ -130,6 +149,14 @@ function SelectItem({
   value,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item>) {
+  const registerEmptyItem = React.useContext(EmptyItemContext);
+  const isEmpty = value === "";
+  // Layout effect: registered before paint, so an "All" item never flashes
+  // the placeholder first.
+  React.useLayoutEffect(
+    () => (isEmpty && registerEmptyItem ? registerEmptyItem() : undefined),
+    [isEmpty, registerEmptyItem],
+  );
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
