@@ -76,6 +76,7 @@ describe('CounselingService', () => {
         counselorId: 'teacher-1',
         status: CounselingStatus.SCHEDULED,
         scheduledAt: new Date(input.scheduledAt),
+        student: { id: 'student-1', enrollments: [] },
       };
 
       mockPrisma.counselingSession.create.mockResolvedValue(mockSession);
@@ -87,7 +88,12 @@ describe('CounselingService', () => {
       });
       expect(mockPrisma.teacher.findFirst).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
       expect(mockPrisma.counselingSession.create).toHaveBeenCalled();
-      expect(result).toEqual(mockSession);
+      // The creator is the session's counsellor, so reads it in full.
+      expect(result).toMatchObject({
+        id: 'session-1',
+        title: 'Test Session',
+        viewerAccess: 'FULL',
+      });
     });
 
     it('should throw error if student not found', async () => {
@@ -156,9 +162,9 @@ describe('CounselingService', () => {
 
       const result = await counselingService.addNote('session-1', noteInput, mockUser);
 
-      expect(mockPrisma.counselingSession.findUnique).toHaveBeenCalledWith({
-        where: { id: 'session-1' },
-      });
+      expect(mockPrisma.counselingSession.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'session-1' } })
+      );
       expect(mockPrisma.counselingNote.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

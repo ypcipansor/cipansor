@@ -62,7 +62,7 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
-import { PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
+import { GURU_BK_ROLE_CODES, PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
 
 export interface NavItem {
   title: string;
@@ -210,6 +210,13 @@ const teacherNavigation: NavGroup[] = [
         title: "Portfolio Siswa",
         href: "/portfolio",
         icon: FolderOpen,
+      },
+      {
+        // The school counsellors: the readers of confidential sessions.
+        title: "Bimbingan Konseling",
+        href: "/counseling",
+        icon: HeartHandshake,
+        roleCodes: [...GURU_BK_ROLE_CODES],
       },
     ],
   },
@@ -1677,6 +1684,12 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: FileText,
       },
       {
+        // A confidential session reaches the kepala sekolah as its referrals.
+        title: "Bimbingan Konseling",
+        href: "/counseling",
+        icon: HeartHandshake,
+      },
+      {
         title: "Violations",
         href: "/violations",
         icon: AlertTriangle,
@@ -2129,9 +2142,15 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return alumniNavigation;
   }
 
-  // Teacher roles
+  // Teacher roles — one menu for guru, wali kelas, wakasek and guru BK, with
+  // the entries only some of them use ("Bimbingan Konseling": guru BK).
   if (isTeacherRole(roleCode)) {
-    return teacherNavigation;
+    return teacherNavigation
+      .map((group) => ({
+        ...group,
+        items: filterNavItemsByRoleCode(group.items, roleCode),
+      }))
+      .filter((group) => group.items.length > 0);
   }
 
   // Staff roles
