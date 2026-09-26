@@ -102,6 +102,10 @@ test.describe("Penugasan musyrif — tugaskan, berlaku, akhiri", () => {
     await page.getByRole("button", { name: "Tugaskan musyrif" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Cari nama").fill("Salman");
+    // An empty pick read as a blank box: Radix shows no placeholder for "".
+    await expect(dialog.getByLabel("Musyrif", { exact: true })).toHaveText(
+      "Pilih orang",
+    );
     await dialog.getByLabel("Musyrif", { exact: true }).click();
     await page.getByRole("option", { name: /Salman Alfarisi/ }).click();
     await dialog.getByLabel("Cakupan").click();

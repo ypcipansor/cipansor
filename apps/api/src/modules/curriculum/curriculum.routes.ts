@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import * as controller from './curriculum.controller';
-import { authenticate, isTeacherOrAbove } from '@/middleware/auth';
+import {
+  assignTeacherSubjectSchema,
+  createSubjectSchema,
+  CURRICULUM_MANAGER_ROLE_CODES,
+} from '@cipansor/shared';
+import { authenticate, authorize, isTeacherOrAbove } from '@/middleware/auth';
+import { validate } from '@/middleware/error';
+import { updateSubjectSchema } from './curriculum.schema';
 
 const router = Router();
 
@@ -12,6 +19,13 @@ router.use(authenticate);
 // accepted any signed-in account, santri and wali included. Reads stay open:
 // the santri dashboard shows its timetable from /schedules.
 router.use((req, res, next) => (req.method === 'GET' ? next() : isTeacherOrAbove(req, res, next)));
+
+/**
+ * A unit's subjects and their guru pengampu are kept by its admin, kepala
+ * sekolah and wakasek (and the super admin); the service holds each of them to
+ * their own unit. One list, which the web reads to show its buttons.
+ */
+const manageSubjects = authorize(...CURRICULUM_MANAGER_ROLE_CODES);
 
 // ==================== SUBJECTS ====================
 
@@ -91,7 +105,7 @@ router.get('/subjects/:id', controller.getSubjectById);
  *       201:
  *         description: Subject created
  */
-router.post('/subjects', controller.createSubject);
+router.post('/subjects', manageSubjects, validate(createSubjectSchema), controller.createSubject);
 
 /**
  * @swagger
@@ -111,7 +125,12 @@ router.post('/subjects', controller.createSubject);
  *       200:
  *         description: Subject updated
  */
-router.patch('/subjects/:id', controller.updateSubject);
+router.patch(
+  '/subjects/:id',
+  manageSubjects,
+  validate(updateSubjectSchema),
+  controller.updateSubject
+);
 
 /**
  * @swagger
@@ -131,7 +150,7 @@ router.patch('/subjects/:id', controller.updateSubject);
  *       204:
  *         description: Subject deleted
  */
-router.delete('/subjects/:id', controller.deleteSubject);
+router.delete('/subjects/:id', manageSubjects, controller.deleteSubject);
 
 // ==================== TEACHER SUBJECTS ====================
 
@@ -166,7 +185,12 @@ router.delete('/subjects/:id', controller.deleteSubject);
  *       201:
  *         description: Teacher assigned to subject
  */
-router.post('/teacher-subjects', controller.assignTeacherToSubject);
+router.post(
+  '/teacher-subjects',
+  manageSubjects,
+  validate(assignTeacherSubjectSchema),
+  controller.assignTeacherToSubject
+);
 
 /**
  * @swagger
@@ -186,7 +210,7 @@ router.post('/teacher-subjects', controller.assignTeacherToSubject);
  *       204:
  *         description: Assignment removed
  */
-router.delete('/teacher-subjects/:id', controller.removeTeacherFromSubject);
+router.delete('/teacher-subjects/:id', manageSubjects, controller.removeTeacherFromSubject);
 
 /**
  * @swagger

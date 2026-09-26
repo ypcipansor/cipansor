@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { TEACHER_SAFE_SELECT } from '@/utils/student-scope';
 import { Prisma } from '@prisma/client';
+import { Errors } from '@/middleware/error';
 import type {
   CreateSubjectInput,
   UpdateSubjectInput,
@@ -18,11 +19,31 @@ import type {
 // SUBJECT SERVICES
 // =====================================
 
+/** Who is writing: the fields of the token the unit scope needs. */
+export interface CurriculumActor {
+  roleCode: string;
+  unitId: string | null;
+}
+
+/**
+ * A subject belongs to one unit, and only the super admin writes across units.
+ */
+function assertUnit(actor: CurriculumActor, unitId: string) {
+  if (actor.roleCode === 'SUPER_ADMIN') return;
+  if (!actor.unitId || actor.unitId !== unitId) {
+    throw Errors.forbidden('Mata pelajaran ini milik unit lain');
+  }
+}
+
+const SUBJECT_UNIT = { unit: { select: { id: true, name: true } } } as const;
+
 export async function getSubjects(query: SubjectQuery) {
   const { page, limit, unitId, type, search, isActive } = query;
   const skip = (page - 1) * limit;
 
-  const where: Prisma.SubjectWhereInput = {};
+  // A deleted subject is kept for the grades and schedules that name it, but
+  // it is not offered anywhere any more.
+  const where: Prisma.SubjectWhereInput = { deletedAt: null };
   if (unitId) where.unitId = unitId;
   if (type) where.type = type;
   if (isActive !== undefined) where.isActive = isActive;
@@ -39,8 +60,15 @@ export async function getSubjects(query: SubjectQuery) {
       skip,
       take: limit,
       include: {
-        unit: { select: { id: true, name: true } },
-        _count: { select: { lessonPlans: true, schedules: true, exams: true } },
+        ...SUBJECT_UNIT,
+        _count: {
+          select: {
+            lessonPlans: true,
+            schedules: true,
+            exams: true,
+            teacherSubjects: { where: { isActive: true } },
+          },
+        },
       },
       orderBy: { name: 'asc' },
     }),
@@ -59,70 +87,161 @@ export async function getSubjects(query: SubjectQuery) {
 }
 
 export async function getSubjectById(id: string) {
-  return prisma.subject.findUnique({
-    where: { id },
+  return prisma.subject.findFirst({
+    where: { id, deletedAt: null },
     include: {
-      unit: { select: { id: true, name: true } },
+      ...SUBJECT_UNIT,
       teacherSubjects: {
+        where: { isActive: true },
         include: {
           teacher: { select: TEACHER_SAFE_SELECT },
+          class: { select: { id: true, name: true } },
         },
+        orderBy: { createdAt: 'asc' },
       },
       _count: { select: { lessonPlans: true, schedules: true, exams: true, grades: true } },
     },
   });
 }
 
-export async function createSubject(data: CreateSubjectInput) {
-  return prisma.subject.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: data as any,
-    include: {
-      unit: { select: { id: true, name: true } },
-    },
+async function findLiveSubject(id: string) {
+  const subject = await prisma.subject.findFirst({
+    where: { id, deletedAt: null },
+    select: { id: true, unitId: true, code: true },
   });
+  if (!subject) throw Errors.notFound('Mata pelajaran tidak ditemukan');
+  return subject;
 }
 
-export async function updateSubject(id: string, data: UpdateSubjectInput) {
-  return prisma.subject.update({
-    where: { id },
-    data,
-    include: {
-      unit: { select: { id: true, name: true } },
-    },
+/**
+ * The code is unique within a unit, deleted subjects included
+ * (`@@unique([unitId, code])`). Adding a code that a deleted subject held
+ * brings that subject back, with the grades and schedules that name it,
+ * rather than failing on a code nobody can see.
+ */
+export async function createSubject(actor: CurriculumActor, data: CreateSubjectInput) {
+  assertUnit(actor, data.unitId);
+  const existing = await prisma.subject.findUnique({
+    where: { unitId_code: { unitId: data.unitId, code: data.code } },
+    select: { id: true, deletedAt: true },
   });
+  if (existing && !existing.deletedAt) {
+    throw Errors.conflict(`Kode ${data.code} sudah dipakai di unit ini`);
+  }
+  if (existing) {
+    return prisma.subject.update({
+      where: { id: existing.id },
+      data: { ...data, deletedAt: null },
+      include: SUBJECT_UNIT,
+    });
+  }
+  return prisma.subject.create({ data, include: SUBJECT_UNIT });
 }
 
-export async function deleteSubject(id: string) {
-  return prisma.subject.update({
-    where: { id },
-    data: { deletedAt: new Date(), isActive: false },
-  });
+export async function updateSubject(actor: CurriculumActor, id: string, data: UpdateSubjectInput) {
+  const subject = await findLiveSubject(id);
+  assertUnit(actor, subject.unitId);
+  if (data.code && data.code !== subject.code) {
+    const clash = await prisma.subject.findUnique({
+      where: { unitId_code: { unitId: subject.unitId, code: data.code } },
+      select: { id: true },
+    });
+    if (clash) throw Errors.conflict(`Kode ${data.code} sudah dipakai di unit ini`);
+  }
+  return prisma.subject.update({ where: { id }, data, include: SUBJECT_UNIT });
+}
+
+/** Soft delete: grades, exams and schedules still name the subject. */
+export async function deleteSubject(actor: CurriculumActor, id: string) {
+  const subject = await findLiveSubject(id);
+  assertUnit(actor, subject.unitId);
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.subject.update({ where: { id }, data: { deletedAt: now, isActive: false } }),
+    prisma.teacherSubject.updateMany({
+      where: { subjectId: id, isActive: true },
+      data: { isActive: false },
+    }),
+  ]);
 }
 
 // =====================================
-// TEACHER SUBJECT SERVICES
+// TEACHER SUBJECT SERVICES (guru pengampu)
 // =====================================
 
-export async function assignTeacherToSubject(data: AssignTeacherSubjectInput) {
+const PENGAMPU_INCLUDE = {
+  teacher: { select: TEACHER_SAFE_SELECT },
+  subject: { select: { id: true, name: true, code: true } },
+  class: { select: { id: true, name: true } },
+} as const;
+
+/**
+ * Makes a teacher the guru pengampu of a subject, for one class of the
+ * subject's unit or for all of them. The class must belong to that unit — the
+ * API took any class before. The same assignment twice is a conflict; an
+ * ended one is taken up again.
+ */
+export async function assignTeacherToSubject(
+  actor: CurriculumActor,
+  data: AssignTeacherSubjectInput
+) {
+  const subject = await findLiveSubject(data.subjectId);
+  assertUnit(actor, subject.unitId);
+  const classId = data.classId ?? null;
+  const [teacher, klass] = await Promise.all([
+    prisma.teacher.findFirst({
+      where: { id: data.teacherId, deletedAt: null },
+      select: { id: true },
+    }),
+    classId
+      ? prisma.class.findFirst({
+          where: { id: classId, unitId: subject.unitId, deletedAt: null },
+          select: { id: true },
+        })
+      : null,
+  ]);
+  if (!teacher) throw Errors.badRequest('Guru tidak ditemukan');
+  if (classId && !klass) throw Errors.badRequest('Kelas itu bukan kelas unit mata pelajaran ini');
+
+  const existing = await prisma.teacherSubject.findFirst({
+    where: { teacherId: data.teacherId, subjectId: data.subjectId, classId },
+    select: { id: true, isActive: true },
+  });
+  if (existing?.isActive) {
+    throw Errors.conflict('Guru ini sudah menjadi pengampu untuk cakupan itu');
+  }
+  if (existing) {
+    return prisma.teacherSubject.update({
+      where: { id: existing.id },
+      data: { isActive: true },
+      include: PENGAMPU_INCLUDE,
+    });
+  }
   return prisma.teacherSubject.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: data as any,
-    include: {
-      teacher: { select: TEACHER_SAFE_SELECT },
-      subject: { select: { id: true, name: true, code: true } },
-      class: { select: { id: true, name: true } },
-    },
+    data: { teacherId: data.teacherId, subjectId: data.subjectId, classId },
+    include: PENGAMPU_INCLUDE,
   });
 }
 
-export async function removeTeacherFromSubject(id: string) {
-  return prisma.teacherSubject.delete({ where: { id } });
+/**
+ * Ends an assignment. The row stays (inactive): who taught what is history
+ * that report cards and the teacher's record read.
+ */
+export async function removeTeacherFromSubject(actor: CurriculumActor, id: string) {
+  const assignment = await prisma.teacherSubject.findUnique({
+    where: { id },
+    select: { id: true, isActive: true, subject: { select: { unitId: true } } },
+  });
+  if (!assignment || !assignment.isActive) {
+    throw Errors.notFound('Penugasan guru pengampu tidak ditemukan');
+  }
+  assertUnit(actor, assignment.subject.unitId);
+  await prisma.teacherSubject.update({ where: { id }, data: { isActive: false } });
 }
 
 export async function getTeacherSubjects(teacherId: string) {
   return prisma.teacherSubject.findMany({
-    where: { teacherId, isActive: true },
+    where: { teacherId, isActive: true, subject: { deletedAt: null } },
     include: {
       subject: { select: { id: true, name: true, code: true, type: true } },
       class: { select: { id: true, name: true } },
@@ -237,6 +356,7 @@ export async function getSchedules(query: ScheduleQuery) {
     classId,
     teacherId,
     studentId,
+    subjectId,
     dayOfWeek,
     isActive,
   } = query;
@@ -246,6 +366,7 @@ export async function getSchedules(query: ScheduleQuery) {
   if (unitId) where.unitId = unitId;
   if (academicYearId) where.academicYearId = academicYearId;
   if (classId) where.classId = classId;
+  if (subjectId) where.subjectId = subjectId;
   // Resolve a student to the class(es) they are actively enrolled in — a
   // student's timetable is their class's timetable. A student with no active
   // enrolment must return nothing rather than fall through to an unfiltered

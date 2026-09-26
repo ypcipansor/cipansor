@@ -1,14 +1,16 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   BookOpen,
-  Trash2,
-  Edit,
   Calendar,
+  Edit,
+  Trash2,
+  UserMinus,
+  UserPlus,
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,23 +35,17 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
 import {
-  useSubject,
-  useDeleteSubject,
-  useSchedules,
-  useTeacherAssignments,
-  SUBJECT_TYPE_LABELS,
   SCHEDULE_DAY_LABELS,
-  SubjectType,
+  SUBJECT_TYPE_BADGE_CLASS,
+  SUBJECT_TYPE_LABELS,
+  passingScoreOf,
+  useCanManageSubjects,
+  useDeleteSubject,
+  useRemoveTeacherFromSubject,
+  useSubject,
+  useSubjectSchedules,
 } from "@/hooks/use-curriculum";
-
-function getTypeBadgeColor(type: SubjectType) {
-  const colors: Record<SubjectType, string> = {
-    REQUIRED: "bg-blue-100 text-blue-800",
-    ELECTIVE: "bg-green-100 text-green-800",
-    EXTRACURRICULAR: "bg-purple-100 text-purple-800",
-  };
-  return colors[type];
-}
+import { PengampuDialog } from "./pengampu-dialog";
 
 function SubjectDetailPageContent({
   params,
@@ -58,19 +54,36 @@ function SubjectDetailPageContent({
 }) {
   const { id } = use(params);
   const router = useRouter();
+  const canManage = useCanManageSubjects();
+  const [assigning, setAssigning] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [ending, setEnding] = useState<string | null>(null);
 
   const { data: subject, isLoading } = useSubject(id);
-  const { data: schedules } = useSchedules({ subjectId: id });
-  const { data: assignments } = useTeacherAssignments({ subjectId: id });
+  const { data: schedules } = useSubjectSchedules(id);
   const deleteMutation = useDeleteSubject();
+  const removeMutation = useRemoveTeacherFromSubject();
 
+  // On failure the API client has already shown the server's message.
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(id);
-      toast.success("Mata pelajaran berhasil dihapus");
+      toast.success("Mata pelajaran dihapus");
       router.push("/curriculum");
     } catch {
-      toast.error("Gagal menghapus mata pelajaran");
+      setDeleting(false);
+    }
+  };
+
+  const handleEnd = async () => {
+    if (!ending) return;
+    try {
+      await removeMutation.mutateAsync(ending);
+      toast.success("Penugasan guru pengampu diakhiri");
+    } catch {
+      // shown already
+    } finally {
+      setEnding(null);
     }
   };
 
@@ -96,170 +109,147 @@ function SubjectDetailPageContent({
     );
   }
 
+  const pengampu = subject.teacherSubjects ?? [];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/curriculum">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">
-              {subject.name}
-            </h1>
-            <Badge className={getTypeBadgeColor(subject.type)}>
-              {SUBJECT_TYPE_LABELS[subject.type]}
-            </Badge>
-            <Badge variant={subject.isActive ? "default" : "secondary"}>
-              {subject.isActive ? "Aktif" : "Nonaktif"}
-            </Badge>
-          </div>
-          <p className="text-muted-foreground">Kode: {subject.code}</p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" asChild>
-            <Link href={`/curriculum/subjects/${id}/edit`}>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex flex-1 items-center gap-4">
+          <Button variant="ghost" size="icon" asChild>
+            <Link href="/curriculum">
+              <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <ConfirmDialog
-            title="Hapus Mata Pelajaran"
-            description={`Apakah Anda yakin ingin menghapus "${subject.name}"? Tindakan ini tidak dapat dibatalkan.`}
-            onConfirm={handleDelete}
-            loading={deleteMutation.isPending}
-          >
-            <Button variant="destructive">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight">
+                {subject.name}
+              </h1>
+              <Badge className={SUBJECT_TYPE_BADGE_CLASS[subject.type]}>
+                {SUBJECT_TYPE_LABELS[subject.type]}
+              </Badge>
+              {!subject.isActive && <Badge variant="secondary">Nonaktif</Badge>}
+            </div>
+            <p className="text-muted-foreground">
+              {subject.code} · {subject.unit?.name}
+            </p>
+          </div>
+        </div>
+        {canManage && (
+          <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link href={`/curriculum/subjects/${id}/edit`}>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+            <Button variant="destructive" onClick={() => setDeleting(true)}>
               <Trash2 className="mr-2 h-4 w-4" />
               Hapus
             </Button>
-          </ConfirmDialog>
-        </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Subject Info */}
         <Card className="lg:col-span-1">
           <CardHeader>
-            <CardTitle>Informasi Mata Pelajaran</CardTitle>
+            <CardTitle>Informasi</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-center">
-              <div className="h-24 w-24 flex items-center justify-center rounded-full bg-primary/10">
-                <BookOpen className="h-12 w-12 text-primary" />
-              </div>
+          <CardContent className="space-y-3 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Kode</span>
+              <span className="font-mono font-medium">{subject.code}</span>
             </div>
-
-            <Separator />
-
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Kode</span>
-                <span className="font-mono font-medium">{subject.code}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Unit</span>
-                <span className="font-medium">{subject.unit?.name || "-"}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tipe</span>
-                <Badge className={getTypeBadgeColor(subject.type)}>
-                  {SUBJECT_TYPE_LABELS[subject.type]}
-                </Badge>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">SKS</span>
-                <span className="font-medium">{subject.credits}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Jam/Minggu</span>
-                <span className="font-medium">{subject.hoursPerWeek} jam</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Status</span>
-                <Badge variant={subject.isActive ? "default" : "secondary"}>
-                  {subject.isActive ? "Aktif" : "Nonaktif"}
-                </Badge>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Unit</span>
+              <span className="font-medium">{subject.unit?.name ?? "-"}</span>
             </div>
-
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">JP per minggu</span>
+              <span className="font-medium" data-testid="subject-credits">
+                {subject.credits}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Kelas</span>
+              <span className="font-medium">{subject.level || "-"}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">KKM</span>
+              <span className="font-medium">{passingScoreOf(subject)}</span>
+            </div>
             {subject.description && (
               <>
                 <Separator />
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    Deskripsi
-                  </p>
-                  <p className="text-sm">{subject.description}</p>
-                </div>
+                <p>{subject.description}</p>
               </>
             )}
           </CardContent>
         </Card>
 
-        {/* Schedules & Assignments */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Teacher Assignments */}
+        <div className="space-y-6 lg:col-span-2">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Guru Pengajar
-              </CardTitle>
-              <CardDescription>
-                Daftar guru yang mengajar mata pelajaran ini
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+              <div className="space-y-1.5">
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  Guru Pengampu
+                </CardTitle>
+                <CardDescription>
+                  Guru yang mengajar mata pelajaran ini, untuk semua kelas atau
+                  satu kelas.
+                </CardDescription>
+              </div>
+              {canManage && (
+                <Button size="sm" onClick={() => setAssigning(true)}>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Tugaskan guru
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              {assignments && assignments.length > 0 ? (
+              {pengampu.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Guru</TableHead>
                       <TableHead>Kelas</TableHead>
-                      <TableHead>Tahun Ajaran</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {assignments.map((assignment) => (
-                      <TableRow key={assignment.id}>
+                    {pengampu.map((a) => (
+                      <TableRow key={a.id}>
                         <TableCell className="font-medium">
-                          {assignment.teacher?.name || "-"}
+                          {a.teacher.user.name}
                         </TableCell>
-                        <TableCell>{assignment.class?.name || "-"}</TableCell>
-                        <TableCell>
-                          {assignment.academicYear?.name || "-"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              assignment.isActive ? "default" : "secondary"
-                            }
-                          >
-                            {assignment.isActive ? "Aktif" : "Nonaktif"}
-                          </Badge>
+                        <TableCell>{a.class?.name ?? "Semua kelas"}</TableCell>
+                        <TableCell className="text-right">
+                          {canManage && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEnding(a.id)}
+                            >
+                              <UserMinus className="mr-1 h-4 w-4" />
+                              Akhiri
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               ) : (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <Users className="h-12 w-12 text-muted-foreground" />
-                  <p className="mt-4 text-muted-foreground">
-                    Belum ada guru yang ditugaskan
-                  </p>
-                </div>
+                <p className="py-8 text-center text-muted-foreground">
+                  Belum ada guru pengampu
+                </p>
               )}
             </CardContent>
           </Card>
 
-          {/* Schedules */}
-          <Card>
+          <Card data-testid="subject-schedule">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="h-5 w-5" />
@@ -285,33 +275,59 @@ function SubjectDetailPageContent({
                     {schedules.map((schedule) => (
                       <TableRow key={schedule.id}>
                         <TableCell className="font-medium">
-                          {SCHEDULE_DAY_LABELS[schedule.day]}
+                          {SCHEDULE_DAY_LABELS[schedule.dayOfWeek]}
                         </TableCell>
                         <TableCell>
                           {schedule.startTime} - {schedule.endTime}
                         </TableCell>
-                        <TableCell>{schedule.class?.name || "-"}</TableCell>
-                        <TableCell>{schedule.teacher?.name || "-"}</TableCell>
+                        <TableCell>{schedule.class?.name ?? "-"}</TableCell>
+                        <TableCell>
+                          {schedule.teacher?.user.name ?? "-"}
+                        </TableCell>
                         <TableCell>{schedule.room || "-"}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               ) : (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <Calendar className="h-12 w-12 text-muted-foreground" />
-                  <p className="mt-4 text-muted-foreground">Belum ada jadwal</p>
-                  <Button asChild className="mt-4" variant="outline">
-                    <Link href={`/curriculum/schedules/new?subjectId=${id}`}>
-                      Tambah Jadwal
-                    </Link>
-                  </Button>
-                </div>
+                <p className="py-8 text-center text-muted-foreground">
+                  Belum ada jadwal
+                </p>
               )}
             </CardContent>
           </Card>
         </div>
       </div>
+
+      {canManage && (
+        <PengampuDialog
+          subject={subject}
+          open={assigning}
+          onOpenChange={setAssigning}
+        />
+      )}
+
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title="Hapus Mata Pelajaran"
+        description={`"${subject.name}" tidak lagi ditawarkan untuk jadwal dan penilaian baru, dan guru pengampunya diakhiri. Nilai dan jadwal lama tetap menyebutnya. Menambah kode ${subject.code} lagi akan memulihkannya.`}
+        confirmLabel="Hapus"
+        onConfirm={handleDelete}
+        isLoading={deleteMutation.isPending}
+        variant="destructive"
+      />
+
+      <ConfirmDialog
+        open={!!ending}
+        onOpenChange={(open) => !open && setEnding(null)}
+        title="Akhiri Guru Pengampu"
+        description="Guru ini tidak lagi tercatat mengajar mata pelajaran ini untuk cakupan tersebut. Riwayatnya tetap tersimpan."
+        confirmLabel="Akhiri"
+        onConfirm={handleEnd}
+        isLoading={removeMutation.isPending}
+        variant="destructive"
+      />
     </div>
   );
 }
