@@ -88,7 +88,17 @@ export interface CounselingSession {
     notes: number;
     referrals: number;
   };
+
+  /**
+   * What the caller may read of this session. A confidential session is read
+   * in full only by its counsellor and the unit's guru BK; the unit's kepala
+   * sekolah gets it with its content withheld and its referrals kept
+   * (REFERRALS_ONLY); nobody else receives it at all.
+   */
+  viewerAccess?: CounselingViewerAccess;
 }
+
+export type CounselingViewerAccess = "FULL" | "REFERRALS_ONLY";
 
 export interface CounselingNote {
   id: string;

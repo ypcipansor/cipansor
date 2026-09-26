@@ -79,6 +79,27 @@ describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
   });
 });
 
+describe("navigasi — Bimbingan Konseling untuk pembacanya", () => {
+  // Guru BK membaca sesi rahasia unitnya, kepala sekolah rujukannya; sampai
+  // 2026-09-26 keduanya tak punya butir menu ke /counseling. Menu guru dulu
+  // juga tidak menyaring roleCodes sama sekali.
+  it("guru BK dan kepala sekolah punya menunya", () => {
+    for (const role of [
+      "SMPIT_GURU_BK",
+      "SMAQ_GURU_BK",
+      "SMPIT_KEPALA_SEKOLAH",
+    ]) {
+      expect(navHrefs(role), role).toContain("/counseling");
+    }
+  });
+
+  it("guru, wali kelas dan wakasek tidak", () => {
+    for (const role of ["SMPIT_GURU", "SMPIT_WALI_KELAS", "SMPIT_WAKASEK"]) {
+      expect(navHrefs(role), role).not.toContain("/counseling");
+    }
+  });
+});
+
 describe("rbac — legacy bucket derivation", () => {
   it("identifies the six legacy buckets", () => {
     for (const role of [

@@ -63,14 +63,22 @@ export const PRINCIPAL_ROLE_CODES: readonly string[] =
 export const VICE_PRINCIPAL_ROLE_CODES: readonly string[] =
   perSchool("WAKASEK");
 
+/**
+ * Guru BK — the school counsellors. They exist only at the secondary units
+ * (TK Qur'an and SD IT have none), matching the RoleCode enum. Besides a
+ * session's own counsellor, they are the only readers of a unit's
+ * confidential counselling sessions (decided 2026-09-26).
+ */
+export const GURU_BK_ROLE_CODES: readonly string[] = [
+  "SMPIT_GURU_BK",
+  "SMAQ_GURU_BK",
+];
+
 /** Classroom teachers, homeroom teachers, and BK counselors. */
 export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
   ...perSchool("GURU"),
   ...perSchool("WALI_KELAS"),
-  // BK counselors exist only at the secondary units (TK Qur'an and SD IT
-  // have none), matching the RoleCode enum.
-  "SMPIT_GURU_BK",
-  "SMAQ_GURU_BK",
+  ...GURU_BK_ROLE_CODES,
 ];
 
 /**

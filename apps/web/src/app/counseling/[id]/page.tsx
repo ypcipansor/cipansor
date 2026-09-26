@@ -19,6 +19,8 @@ import {
   AlertCircle,
   FileText,
   MessageSquare,
+  Lock,
+  Send,
 } from "lucide-react";
 
 import { MainLayout } from "@/components/layout/main-layout";
@@ -49,6 +51,7 @@ import {
   getCounselingCategoryConfig,
   getCounselingStatusConfig,
   getCounselingPriorityConfig,
+  REFERRAL_TYPE_LABELS,
 } from "@/hooks/use-counseling";
 
 interface CounselingDetailPageProps {
@@ -62,7 +65,7 @@ export default function CounselingDetailPage({
 }: CounselingDetailPageProps) {
   const { id } = use(params);
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState("overview");
+  const [activeTab, setActiveTab] = useState<string | null>(null);
 
   const { data: record, isLoading, error } = useCounselingRecord(id);
   const deleteMutation = useDeleteCounselingRecord();
@@ -112,6 +115,12 @@ export default function CounselingDetailPage({
     );
   }
 
+  // Content withheld: the kepala sekolah on a confidential session.
+  const withheld = record.viewerAccess === "REFERRALS_ONLY";
+  const tab = activeTab ?? (withheld ? "referrals" : "notes");
+  const notes = record.notes ?? [];
+  const referrals = record.referrals ?? [];
+
   const catConfig = getCounselingCategoryConfig(record.category);
   const statusConfig = getCounselingStatusConfig(record.status);
   const priorityConfig = getCounselingPriorityConfig(record.priority);
@@ -135,29 +144,31 @@ export default function CounselingDetailPage({
         description={`Sesi untuk ${record.student?.user?.name}`}
         backHref="/counseling"
         action={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon">
-                <MoreVertical className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem asChild>
-                <Link href={`/counseling/${id}/edit`}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Detail
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Hapus Sesi
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          !withheld && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href={`/counseling/${id}/edit`}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit Detail
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onClick={handleDelete}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Hapus Sesi
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )
         }
       />
 
@@ -250,14 +261,28 @@ export default function CounselingDetailPage({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-muted-foreground">
-                  Deskripsi Masalah
-                </p>
-                <div className="p-4 bg-muted/30 rounded-lg text-sm leading-relaxed whitespace-pre-wrap">
-                  {record.description}
+              {withheld ? (
+                <div
+                  className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
+                  data-testid="counseling-withheld"
+                >
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+                  <p>
+                    Isi sesi ini rahasia: hanya konselornya dan guru BK unit ini
+                    yang dapat membacanya. Sebagai kepala sekolah, Anda melihat
+                    rujukannya.
+                  </p>
                 </div>
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Deskripsi Masalah
+                  </p>
+                  <div className="p-4 bg-muted/30 rounded-lg text-sm leading-relaxed whitespace-pre-wrap">
+                    {record.description || "-"}
+                  </div>
+                </div>
+              )}
 
               {record.summary && (
                 <div className="space-y-2">
@@ -283,29 +308,107 @@ export default function CounselingDetailPage({
             </CardContent>
           </Card>
 
-          {/* Notes & Actions Tabs */}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
+          {/* Notes & Referrals */}
+          <Tabs value={tab} onValueChange={setActiveTab}>
             <TabsList>
-              <TabsTrigger value="overview">Ringkasan</TabsTrigger>
-              <TabsTrigger value="notes">
-                Catatan ({record._count?.notes || 0})
+              {!withheld && (
+                <TabsTrigger value="notes">
+                  Catatan ({notes.length})
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="referrals">
+                Rujukan ({referrals.length})
               </TabsTrigger>
             </TabsList>
-            <TabsContent value="overview" className="mt-4">
-              {/* Additional content could go here */}
-            </TabsContent>
-            <TabsContent value="notes" className="mt-4">
+            {!withheld && (
+              <TabsContent value="notes" className="mt-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <FileText className="h-4 w-4" />
+                      Catatan Konseling
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {notes.length === 0 ? (
+                      <p className="py-6 text-center text-sm text-muted-foreground">
+                        Belum ada catatan.
+                      </p>
+                    ) : (
+                      notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="rounded-lg border p-3 text-sm"
+                        >
+                          <p className="whitespace-pre-wrap">{note.content}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">
+                            {note.createdBy?.name ?? "-"} ·{" "}
+                            {safeFormat(
+                              new Date(note.createdAt),
+                              "dd MMM yyyy, HH:mm",
+                              { locale: localeId },
+                            )}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+            <TabsContent value="referrals" className="mt-4">
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Catatan Konseling
+                    <Send className="h-4 w-4" />
+                    Rujukan
                   </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    <p>Fitur catatan detail akan segera tersedia.</p>
-                  </div>
+                <CardContent className="space-y-4">
+                  {referrals.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-muted-foreground">
+                      Belum ada rujukan.
+                    </p>
+                  ) : (
+                    referrals.map((referral) => (
+                      <div
+                        key={referral.id}
+                        className="space-y-1 rounded-lg border p-3 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">
+                            {REFERRAL_TYPE_LABELS[referral.type] ??
+                              referral.type}
+                          </Badge>
+                          <span className="font-medium">
+                            {referral.referredTo}
+                          </span>
+                          {referral.institution && (
+                            <span className="text-muted-foreground">
+                              · {referral.institution}
+                            </span>
+                          )}
+                        </div>
+                        <p className="whitespace-pre-wrap">{referral.reason}</p>
+                        {referral.outcome && (
+                          <p className="text-muted-foreground">
+                            Hasil: {referral.outcome}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Dirujuk{" "}
+                          {safeFormat(
+                            new Date(referral.referredAt),
+                            "dd MMM yyyy",
+                            { locale: localeId },
+                          )}
+                          {referral.createdBy?.name
+                            ? ` oleh ${referral.createdBy.name}`
+                            : ""}
+                        </p>
+                      </div>
+                    ))
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -352,30 +455,32 @@ export default function CounselingDetailPage({
             </CardContent>
           </Card>
 
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Aksi Cepat</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {record.status === "SCHEDULED" && (
+          {/* Quick Actions — changes, so not for a withheld session */}
+          {!withheld && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Aksi Cepat</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {record.status === "SCHEDULED" && (
+                  <Button className="w-full justify-start" variant="outline">
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Mulai Sesi
+                  </Button>
+                )}
+                {record.status === "IN_PROGRESS" && (
+                  <Button className="w-full justify-start" variant="outline">
+                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                    Selesaikan Sesi
+                  </Button>
+                )}
                 <Button className="w-full justify-start" variant="outline">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Mulai Sesi
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Hubungi Orang Tua
                 </Button>
-              )}
-              {record.status === "IN_PROGRESS" && (
-                <Button className="w-full justify-start" variant="outline">
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Selesaikan Sesi
-                </Button>
-              )}
-              <Button className="w-full justify-start" variant="outline">
-                <MessageSquare className="h-4 w-4 mr-2" />
-                Hubungi Orang Tua
-              </Button>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </MainLayout>
