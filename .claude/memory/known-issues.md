@@ -17,9 +17,9 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **The web calls API paths that do not exist — 202 distinct calls left**
-  (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama kamar
-  list in #569; the list is
+- **The web calls API paths that do not exist — 200 distinct calls left**
+  (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
+  in #569 and the asrama PR after it; the list is
   `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
   keeps honest — it only shrinks; staging answers them "Route … not found").
   Worst felt now: the Kurikulum list
@@ -37,17 +37,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 - **`/musyrif/boarding-center` is still mostly sample data** (Social Harmony,
   "4 Musyrif on Duty", alerts, health counts); only the dormitory list and,
   since #564, the permit card and tab are live. The page says so.
-- **Asrama page: adding or deleting a kamar writes the wrong module.**
-  `useCreateRoom` / `useDeleteRoom` in `hooks/use-dormitory.ts` call
-  `/facilities/rooms` — the facilities module's `FacilityRoom` — while a kamar
-  is a `Room` (`POST /dormitories/rooms`, `DELETE /dormitories/rooms/:id`).
-  "Tambah Kamar" on Asrama → an asrama therefore creates no kamar. Editing an
-  asrama calls `PATCH /dormitories/{id}` and a kamar `PATCH /facilities/rooms/{id}`;
-  the API serves `PUT` (both are in the contract baseline).
-- **Asrama "Terisi" reads 0.** The asrama pages read `currentOccupancy` on a
-  dormitory, which the API does not send (`GET /dormitories/:id` sends each
-  kamar's active count, which could be summed); the kamar list's per-kamar
-  count is right since #569.
 - **Permits without a gate code.** Older seeded permits have `code` null, so the
   gate cannot find them once approved. New permits always get one; approving a
   code-less permit should assign one.
@@ -110,10 +99,14 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Access that is too narrow, or needs review
 
-- **Tata Usaha Pesantren has no Asrama menu**, and the musyrif assignment
-  endpoints (#569) admit only the Pimpinan Pesantren and the super admin.
-  Whether TU Pesantren should keep asrama and kamar records is the yayasan's
-  call.
+- **Who manages asrama is undecided.** Adding asrama and kamar and placing
+  santri admits the super admin, every school's admin (TK's included, whose
+  pupils never board) and the yayasan organs — the legacy `UNIT_ADMIN`
+  bucket, now named once as `DORMITORY_MANAGER_ROLE_CODES`. The Pimpinan
+  Pesantren, who assigns the musyrif (#569), cannot add a kamar, and TU
+  Pesantren has no Asrama menu. For the yayasan (`progress.md`).
+- **The dormitories module needs a read-scope review.** Its read routes do not
+  all apply the same scope check; see the module before widening who reads it.
 
 - **Page gates (`allowedRoles`) disagree with `rbac.ts` on 23 pages.** Most are
   deliberate (`/settings` for one's own profile, `/settings/roles` for Super

@@ -31,6 +31,11 @@ backlog to [`roadmap.md`](roadmap.md).
   built in #568): the 7-day threshold; whether a boarder going home or
   staying overnight goes to the koordinator asrama or the Pimpinan Pesantren;
   whether a staff-filed request needs the wali's "setuju" (a schema change).
+- **Who manages asrama** — adds asrama and kamar, places santri. Today: the
+  super admin, every school's admin and the yayasan organs (unchanged by the
+  asrama PR, which made those pages work). Recommended: the Pimpinan
+  Pesantren and TU Pesantren (pengasuhan), plus the super admin; not the
+  organs, not TK. One list in `packages/shared/src/schemas/dormitories.ts`.
 - **Musyrif assignments in production.** Until the yayasan enters them
   (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record and
   their leave goes to the unit head, visibly so.
