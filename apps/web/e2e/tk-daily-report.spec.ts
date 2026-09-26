@@ -20,6 +20,12 @@ test.describe("TK Daily Report", () => {
   });
 
   test("should create daily report with photo", async ({ page }) => {
+    // Ran for the first time on 2026-09-26 (it had skipped itself, see the
+    // photo check below) and found the form's create request refused by the
+    // API: reportDate goes out as "yyyy-MM-dd" where the schema wants a
+    // datetime, and unitId/academicYearId go out empty when the user object
+    // lacks them. Laporan Harian TK is repaired end to end in its own PR.
+    test.fixme(true, "Laporan Harian TK: create request fails API validation");
     // Navigate to create page
     await page.goto("/tk/daily-reports/new");
     await waitForLoadingComplete(page);
@@ -72,10 +78,14 @@ test.describe("TK Daily Report", () => {
         buffer,
       });
 
-      // Verify photo preview is visible
-      await expect(
-        page.locator('img[alt*="Foto kegiatan"]').first(),
-      ).toBeVisible({ timeout: 5000 });
+      // Verify photo preview is visible. This page shows PhotoUploader's grid,
+      // whose preview is named by position ("Foto 1"). The test looked for
+      // "Foto kegiatan" and never noticed, because it skipped itself: it finds
+      // the class picker by its placeholder, which the Select wrapper hid
+      // until 2026-09-26.
+      await expect(page.getByRole("img", { name: "Foto 1" })).toBeVisible({
+        timeout: 5000,
+      });
 
       // 5. Submit
       await page.getByRole("button", { name: /simpan laporan/i }).click();

@@ -93,8 +93,7 @@ export function PengampuDialog({
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="pengampu-teacher">Guru</Label>
-            {/* Radix shows the placeholder only for an undefined value, not "". */}
-            <Select value={teacherId || undefined} onValueChange={setTeacherId}>
+            <Select value={teacherId} onValueChange={setTeacherId}>
               <SelectTrigger id="pengampu-teacher" className="w-full">
                 <SelectValue
                   placeholder={

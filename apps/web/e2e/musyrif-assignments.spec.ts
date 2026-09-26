@@ -102,7 +102,15 @@ test.describe("Penugasan musyrif — tugaskan, berlaku, akhiri", () => {
     await page.getByRole("button", { name: "Tugaskan musyrif" }).click();
     const dialog = page.getByRole("dialog");
     await dialog.getByLabel("Cari nama").fill("Salman");
-    // An empty pick read as a blank box: Radix shows no placeholder for "".
+    // An empty pick read as a blank box (see components/ui/select.tsx).
+    await expect(dialog.getByLabel("Musyrif", { exact: true })).toHaveText(
+      "Pilih orang",
+    );
+    await dialog.getByLabel("Musyrif", { exact: true }).click();
+    await page.getByRole("option", { name: /Salman Alfarisi/ }).click();
+    // Changing the search clears the choice, and the picker has to say so: it
+    // went on showing the cleared person while "Tugaskan" was disabled.
+    await dialog.getByLabel("Cari nama").fill("Salma");
     await expect(dialog.getByLabel("Musyrif", { exact: true })).toHaveText(
       "Pilih orang",
     );
