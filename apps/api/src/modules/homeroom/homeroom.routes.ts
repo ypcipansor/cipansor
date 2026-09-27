@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
+import { HOMEROOM_ROUTE_ROLE_CODES } from '@cipansor/shared';
 import { homeroomController } from './homeroom.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 
@@ -8,16 +9,17 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Teachers, and the unit's kepala sekolah and operator. Which classes each
+// reaches is the class's wali kelas relation, in the service
+// (homeroom.access.ts): the wali kelas reads and writes, the overseers read.
+const homeroomRoles = authorize(...HOMEROOM_ROUTE_ROLE_CODES);
+
 // ======================
 // MY CLASSES ROUTES
 // ======================
 
-// GET /homeroom/my-classes - Get classes where user is homeroom teacher
-router.get(
-  '/my-classes',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  homeroomController.getMyClasses.bind(homeroomController)
-);
+// GET /homeroom/my-classes - Classes the caller is wali kelas of, the current year's first
+router.get('/my-classes', homeroomRoles, homeroomController.getMyClasses.bind(homeroomController));
 
 // GET /homeroom/performance-overview - Cross-class wali kelas performance
 // (teacher evaluation data — admins only)
@@ -34,35 +36,35 @@ router.get(
 // GET /homeroom/:classId/dashboard - Get class dashboard (Simplified route for frontend)
 router.get(
   '/:classId/dashboard',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getClassDashboard.bind(homeroomController)
 );
 
 // GET /homeroom/class/:classId/dashboard - Get class dashboard (Legacy/Alternative)
 router.get(
   '/class/:classId/dashboard',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getClassDashboard.bind(homeroomController)
 );
 
 // GET /homeroom/class/:classId/students - Get students in class
 router.get(
   '/class/:classId/students',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getHomeroomStudents.bind(homeroomController)
 );
 
 // GET /homeroom/class/:classId/attendance - Get attendance summary
 router.get(
   '/class/:classId/attendance',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getAttendanceSummary.bind(homeroomController)
 );
 
 // GET /homeroom/class/:classId/academic - Get academic monitoring
 router.get(
   '/class/:classId/academic',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getAcademicMonitoring.bind(homeroomController)
 );
 
@@ -73,14 +75,14 @@ router.get(
 // GET /homeroom/student/:studentId - Get student detail
 router.get(
   '/student/:studentId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getStudentDetail.bind(homeroomController)
 );
 
 // GET /homeroom/student/:studentId/notes - Get student notes
 router.get(
   '/student/:studentId/notes',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getStudentNotes.bind(homeroomController)
 );
 
@@ -89,23 +91,19 @@ router.get(
 // ======================
 
 // POST /homeroom/notes - Create student note
-router.post(
-  '/notes',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  homeroomController.createStudentNote.bind(homeroomController)
-);
+router.post('/notes', homeroomRoles, homeroomController.createStudentNote.bind(homeroomController));
 
 // PUT /homeroom/notes/:noteId - Update student note
 router.put(
   '/notes/:noteId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.updateStudentNote.bind(homeroomController)
 );
 
 // DELETE /homeroom/notes/:noteId - Delete student note
 router.delete(
   '/notes/:noteId',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.deleteStudentNote.bind(homeroomController)
 );
 
@@ -116,15 +114,11 @@ router.delete(
 // GET /homeroom/behavior - Get behavior records
 router.get(
   '/behavior',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  homeroomRoles,
   homeroomController.getBehaviorRecords.bind(homeroomController)
 );
 
 // POST /homeroom/behavior - Record behavior
-router.post(
-  '/behavior',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  homeroomController.recordBehavior.bind(homeroomController)
-);
+router.post('/behavior', homeroomRoles, homeroomController.recordBehavior.bind(homeroomController));
 
 export default router;

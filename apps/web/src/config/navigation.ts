@@ -77,6 +77,22 @@ export interface NavItem {
 export interface NavGroup {
   title: string;
   items: NavItem[];
+  /**
+   * Shown only to someone who holds this duty. A duty is a relation, not a
+   * role (decisions/peran-dan-tugas-tambahan.md), so the role code cannot
+   * tell: `homeroom` is the wali kelas of a class in the current academic
+   * year (`Class.homeroomTeacherId`), which the sidebar asks
+   * GET /homeroom/my-classes for.
+   */
+  duty?: "homeroom";
+}
+
+/** The menu without the groups of duties the user does not hold. */
+export function withDutiesHeld(
+  navigation: NavGroup[],
+  held: { homeroom: boolean },
+): NavGroup[] {
+  return navigation.filter((group) => !group.duty || held[group.duty]);
 }
 
 // Role codes by category for navigation permissions
@@ -214,6 +230,7 @@ const teacherNavigation: NavGroup[] = [
   },
   {
     title: "Wali Kelas",
+    duty: "homeroom",
     items: [
       {
         title: "Dashboard Wali Kelas",

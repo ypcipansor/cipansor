@@ -58,7 +58,9 @@ function printRole(roleCode: string, label?: string): void {
     `Dashboard: \`${getDashboardForRole(bucketOf(roleCode), roleCode)}\` · bucket: ${bucketOf(roleCode)}\n`,
   );
   for (const group of nav) {
-    console.log(`**${group.title}**`);
+    // A duty group (e.g. Wali Kelas) is shown only to those who hold the duty.
+    const duty = group.duty ? ` _(only with the ${group.duty} duty)_` : "";
+    console.log(`**${group.title}**${duty}`);
     printItems(roleCode, group.items, 0);
   }
 }

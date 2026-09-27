@@ -1512,6 +1512,8 @@ async function main() {
   const demoUnitClasses = new Map<string, string>([
     [smpIt.id, class7A.id],
     [sdIt.id, class1A.id],
+    // TK Qur'an has no demo student; its pupils are all in TK A.
+    [tkQuran.id, classTkA.id],
   ]);
 
   /** One class per unit, so students of every realm can be enrolled. */
@@ -1614,10 +1616,10 @@ async function main() {
   }
 
   // The wali kelas persona is the wali kelas of the class its unit's demo
-  // santri sits in. A day pupil's leave is the wali kelas's to decide
-  // (2026-09-25), and a persona that is wali kelas of no class could decide
-  // nothing and saw an empty homeroom page. TK Qur'an's demo pupil is a real
-  // pupil in a real class, so that class is left as it is.
+  // santri sits in (TK A for TK Qur'an). A day pupil's leave is the wali
+  // kelas's to decide (2026-09-25), and since 2026-09-27 the Wali Kelas menu
+  // and the homeroom pages follow this relation, not a role: a persona that is
+  // wali kelas of no class would have neither.
   for (const [unitId, teacherId] of demoHomeroomByUnit) {
     const classId = demoUnitClasses.get(unitId);
     if (!classId) continue;

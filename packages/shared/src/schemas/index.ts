@@ -11,3 +11,4 @@ export * from "./musyrif-assignments";
 export * from "./dormitories";
 export * from "./curriculum";
 export * from "./daily-report";
+export * from "./homeroom";

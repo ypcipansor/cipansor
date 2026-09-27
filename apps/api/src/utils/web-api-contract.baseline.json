@@ -44,7 +44,6 @@
     "GET /finance/reports  apps/web/src/services/finance.service.ts",
     "GET /finance/students/{id}/summary  apps/web/src/services/finance.service.ts",
     "GET /health/alerts  apps/web/src/hooks/use-musyrif-dashboard.ts",
-    "GET /homeroom/classes/{id}  apps/web/src/hooks/use-homeroom.ts",
     "GET /homeroom/classes/{id}/attendance/export  apps/web/src/hooks/use-homeroom.ts",
     "GET /homeroom/classes/{id}/messages  apps/web/src/hooks/use-homeroom.ts",
     "GET /homeroom/classes/{id}/progress/export  apps/web/src/hooks/use-homeroom.ts",
