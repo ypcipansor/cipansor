@@ -67,17 +67,33 @@ export interface AppNotification {
   updatedAt: string | Date;
 }
 
-export interface UserNotification {
+/**
+ * One notification in the caller's own inbox (GET /notifications), as the API
+ * sends it: a `Notification` row. `type` is the type it was sent as — the
+ * API stores ATTENDANCE as ACADEMIC and hands the original back. (The type
+ * this replaced described a per-recipient link row that does not exist.)
+ */
+export interface MyNotification {
   id: string;
-  notificationId: string;
-  notification?: AppNotification;
-  userId: string;
-  isRead: boolean;
-  readAt?: string | Date;
-  isDelivered: boolean;
-  deliveredAt?: string | Date;
-  channel: NotificationChannel;
-  createdAt: string | Date;
+  type: string;
+  title: string;
+  message: string;
+  link: string | null;
+  status: "UNREAD" | "READ" | "ARCHIVED";
+  readAt: string | null;
+  data: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+export interface MyNotificationsPage {
+  data: MyNotification[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    unreadCount: number;
+  };
 }
 
 export interface NotificationTemplate {

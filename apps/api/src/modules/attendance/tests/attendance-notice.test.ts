@@ -81,7 +81,9 @@ describe('telling', () => {
   });
 
   it('saving the day again with the same mark tells no one', async () => {
-    await tellAbsences(CLASS, TODAY, [{ studentId: 'boarder', status: 'ABSENT', before: 'ABSENT' }]);
+    await tellAbsences(CLASS, TODAY, [
+      { studentId: 'boarder', status: 'ABSENT', before: 'ABSENT' },
+    ]);
     expect(createNotification).not.toHaveBeenCalled();
     expect(prisma.student.findMany).not.toHaveBeenCalled();
   });

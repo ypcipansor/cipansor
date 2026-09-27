@@ -406,15 +406,28 @@ test("a pupil marked Alpa today: their wali is told at once, and only once", asy
   await page.waitForTimeout(2_000);
   expect(await alpaNotices()).toBe(before + 1);
 
-  // What the wali sees: the notice in their notifications.
+  // What the wali sees: the bell says there is something unread, and opens
+  // their own notifications (not the management page) with the notice in it.
   await injectSession(page, ortu);
-  await page.goto("/notifications");
-  await waitForLoadingComplete(page);
+  await page.goto("/parent");
+  const bell = page.getByRole("link", {
+    name: /^Notifikasi, \d+ belum dibaca$/,
+  });
+  await expect(bell).toBeVisible();
+  await bell.click();
+  await expect(page).toHaveURL(/\/notifications\/me$/);
   await expect(
-    page
-      .getByText(`${child!.name} tidak hadir tanpa keterangan (Alpa)`)
-      .first(),
+    page.getByRole("heading", { name: "Notifikasi Saya" }),
   ).toBeVisible();
+  const notice = page
+    .getByRole("listitem")
+    .filter({ hasText: `${child!.name} tidak hadir tanpa keterangan (Alpa)` })
+    .first();
+  await expect(notice).toBeVisible();
+  await notice.getByRole("button", { name: /^Tandai dibaca/ }).click();
+  await expect(
+    notice.getByRole("button", { name: /^Tandai dibaca/ }),
+  ).toHaveCount(0);
 });
 
 test("a santri mukim marked Alpa: the musyrif of their asrama is told", async () => {
@@ -430,7 +443,11 @@ test("a santri mukim marked Alpa: the musyrif of their asrama is told", async ()
   for (const id of enrolled) {
     const placed = await apiRequest<{
       data: { room: { dormitory: { name: string } } }[];
-    }>(admin, "GET", `/dormitories/assignments/list?studentId=${id}&isActive=true`);
+    }>(
+      admin,
+      "GET",
+      `/dormitories/assignments/list?studentId=${id}&isActive=true`,
+    );
     if (placed.data[0]) {
       boarder = { id, asrama: placed.data[0].room.dormitory.name };
       break;

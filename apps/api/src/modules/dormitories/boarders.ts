@@ -80,7 +80,10 @@ export async function musyrifOfBoarders(studentIds: string[]): Promise<Map<strin
         .filter((a) => coversRoom(a, room))
         .map((a) => a.musyrif.user)
         .filter((u) => u.isActive);
-      return [studentId, [...new Map(people.map((p) => [p.id, { id: p.id, name: p.name }])).values()]];
+      return [
+        studentId,
+        [...new Map(people.map((p) => [p.id, { id: p.id, name: p.name }])).values()],
+      ];
     })
   );
 }

@@ -47,7 +47,12 @@ describe('coversRoom', () => {
 describe('musyrifOfBoarders', () => {
   it('each boarder gets the kamar musyrif and the whole-asrama musyrif, active ones only', async () => {
     const map = await musyrifOfBoarders(['in-k1', 'in-k2', 'in-b', 'day-pupil']);
-    expect(map.get('in-k1')?.map((p) => p.id).sort()).toEqual(['kamar-k1', 'whole-a']);
+    expect(
+      map
+        .get('in-k1')
+        ?.map((p) => p.id)
+        .sort()
+    ).toEqual(['kamar-k1', 'whole-a']);
     expect(map.get('in-k2')?.map((p) => p.id)).toEqual(['whole-a']);
     expect(map.get('in-b')).toEqual([]);
     expect(map.has('day-pupil')).toBe(false);
