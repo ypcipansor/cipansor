@@ -58,8 +58,18 @@ relasinya, bukan perannya.
    kesehatan dan data anak adalah data pribadi yang bersifat spesifik (UU
    27/2022 Ps. 4). Hitungan di kartu memakai saringan yang sama dengan daftar.
 
+## Guru wali dijalankan — dijawab pengguna 2026-09-27
+
+SMP IT dan SMA Qur'an **sudah menjalankan guru wali, dengan SK**. Ia dibangun
+seperti wali kelas: relasi guru → murid dampingan yang berlaku per tahun
+ajaran, catatan pendampingan, dan menu yang muncul hanya bagi guru yang punya
+dampingan — bukan kode peran. Berbeda dari wali kelas: dampingannya lintas
+kelas dan berlanjut sampai lulus (Permendikdasmen 11/2025 Ps. 9, 2 JTM per
+minggu, tugas pokok guru SMP/SMA sejak TA 2025/2026 —
+[Disdik KBB](https://disdikkbb.org/perbedaan-guru-wali-dengan-guru-wali-kelas/)).
+Belum dibangun; urutannya di `roadmap.md`.
+
 ## Masih terbuka
 
-- Apakah **guru wali** dijalankan di SMP IT dan SMA Qur'an (pertanyaan untuk yayasan).
 - Wakasek per bidang, kepala perpustakaan/lab dan panitia SPMB sebagai
   penugasan berbatas waktu — bagian dari Model A.

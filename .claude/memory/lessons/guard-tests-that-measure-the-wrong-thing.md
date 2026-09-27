@@ -192,3 +192,18 @@ ditemukan*. Teachers had never been able to open the form from their menu.
 Widened in #577 (`href:` props; `new`/`create`/`edit` never match a
 `[param]`), which surfaced five more. Ask what a dead link looks like **in this
 codebase**, not in the scanner's model of it.
+
+## A suite that signs in as someone who cannot be refused
+
+`attendance.spec.ts` and `attendance-module.spec.ts` signed in as the super
+admin. The write routes admitted admins only, so every teacher, wali kelas
+and kepala sekolah got *Admin access required* when saving a register — the
+daily task of every teacher — and the suite stayed green. The swagger text
+even said "(Admin/Teacher)". Found on 2026-09-27 by calling the route as each
+role on a local stack; fixed in #580, whose e2e signs in as the wali kelas, a
+teacher of the class, a teacher of none, and the kepala sekolah.
+
+**Test a flow as the role that does it**, and add at least one role that
+must be refused. An account that passes every guard proves only that the
+page renders.
+

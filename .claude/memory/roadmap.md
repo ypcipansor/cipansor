@@ -1,6 +1,6 @@
 # Roadmap — what to do next, in order
 
-Ordered backlog as of **2026-09-26**. Defects in detail are in
+Ordered backlog as of **2026-09-27**. Defects in detail are in
 [`known-issues.md`](./known-issues.md); where the work stands (environments,
 what waits on the user, what is in flight) is in [`progress.md`](./progress.md).
 
@@ -10,7 +10,30 @@ item is done, delete it — git keeps the history. (The long record of closed
 items before 2026-09-25 is in the history of this file and of
 `docs/ROADMAP.md`.)
 
-## 1. Now — in this order (decided 2026-09-23 → 25)
+## 1. Now — in this order (decided 2026-09-23 → 27)
+
+00. **The user's answers of 2026-09-27**, smallest and most exposed first
+    (each is its own PR, wired end to end, with tests and before/after):
+    1. the public donation form offers what the yayasan offers — Zakat Maal
+       and Zakat Fitrah off it, in the form and in the public API's accepted
+       types, until the zakat status is known (`istilah-dan-penamaan.md` §7);
+    2. daily attendance per `decisions/absensi-harian.md`: one page (the Wali
+       Kelas item opens `/attendance/record` on the homeroom class,
+       `/homeroom/attendance` 308s), then the automatic follow-up — register
+       reminder, Alpa/Terlambat notice to the wali (and the musyrif for a
+       boarder), the end-of-day follow-up task, the pattern flag;
+    3. one TK daily-report page: a *Laporan Harian* item for the TK guru
+       (writes for their class) and the TK kepala sekolah (reads); the other
+       two page trees 308 to it (removal approved);
+    4. `/curriculum/curriculums` removed, 308 to Kurikulum Merdeka (approved);
+    5. the permit rule's three parameters (`pemutus-izin-santri.md`): an
+       optional attachment, the koordinator asrama for going home or staying
+       overnight, the wali's approval for staff-filed leave off the pondok
+       (schema change);
+    6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
+       the koordinator's placement in their own asrama;
+    7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid
+       dampingan (`peran-dan-tugas-tambahan.md`).
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
@@ -18,12 +41,13 @@ items before 2026-09-25 is in the history of this file and of
    0. guards — done (#560, #562, #563);
    1. reconnect the broken calls area by area (Perizinan done in #564 and
       #568; Asrama in #569 and #571; mata pelajaran in #573; laporan harian
-      in #577; next the schedules, the Kurikulum list — waits on the user —
-      HR employees, Sertifikat, and counselling's remaining gaps in
+      in #577; wali kelas in #579–#581; next the schedules, HR employees,
+      Sertifikat, and counselling's remaining gaps in
       `known-issues.md`), delete the 84 dead ones, `services/` and the
       `api-client` alias;
-   2. glossary from the user's eight decisions (murid vs santri may change:
-      the user is weighing "santri" everywhere — `progress.md`);
+   2. glossary from the user's eight decisions, with *santri* on every
+      portal screen (decided 2026-09-27, `istilah-dan-penamaan.md` §1) — a
+      label sweep; state formats keep *murid* / *peserta didik*;
    3. consolidate duplicates (tahfidz, report cards, lesson plans,
       P5 → kokurikuler, accounting, depreciation, daily logs, duplicate pages,
       dashboards);
@@ -43,9 +67,10 @@ items before 2026-09-25 is in the history of this file and of
 1. **Finish the role catalogue.** The pesantren part shipped in #552. Left:
    - wakasek per bidang as a timed assignment — wakasek is no longer a role
      code (#575, `decisions/peran-dan-tugas-tambahan.md`);
-   - the wali kelas behaviour: the Wali Kelas menu only for a class's
-     homeroom teacher in the current year, homeroom pages scoped to that
-     class;
+   - the rest of the homeroom pages — *Pesan Orang Tua*, the pupil page's
+     figures, the kepala sekolah's path to a class (known-issues). The
+     relation itself shipped in #579; attendance in #580; behaviour notes in
+     #581;
    - `PESANTREN_ADMIN` — needs a pesantren unit first (see known-issues,
      "Takhosus as a fifth unit");
    - a Panitia SPMB assignment that expires — needs writers of `expires_at`,

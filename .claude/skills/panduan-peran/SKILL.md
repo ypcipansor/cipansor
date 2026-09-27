@@ -71,7 +71,7 @@ Pada 2026-09-25 jumlahnya **0**, sejalan dengan uji kontrak menu↔RBAC
 | Admin unit (SMP, SMA) | `SMPIT_ADMIN`, `SMAQ_ADMIN` | sama | Sama; menunya berbeda dari TK/SD pada butir yang ber-`roleCodes`. |
 | Organ yayasan | `YAYASAN_PEMBINA`, `_KETUA`, `_SEKRETARIS`, `_BENDAHARA`, `_ANGGOTA`, `_PENGAWAS` | `/dashboard` · UNIT_ADMIN | Pembina, Pengurus, Pengawas (UU 16/2001) — skill `tata-kelola-yayasan`. Lingkup seluruh yayasan. |
 | Kepala sekolah | `*_KEPALA_SEKOLAH` | `/dashboard` · TEACHER | Kepala unit: menyusun RKA Unit, menandatangani naskah unit, atasan penilai PK guru. |
-| Guru | `*_GURU`, `*_GURU_BK` | `/teacher` · TEACHER | Satu menu untuk semuanya; grup Wali Kelas ada di menu itu. Wakasek dan wali kelas adalah tugas tambahan seorang guru, bukan kode peran (digabung ke `*_GURU` 2026-09-26); wali kelas = `Class.homeroomTeacherId` ([`peran-dan-tugas-tambahan`](../../memory/decisions/peran-dan-tugas-tambahan.md)). |
+| Guru | `*_GURU`, `*_GURU_BK` | `/teacher` · TEACHER | Satu menu untuk semuanya. Grup Wali Kelas di menu itu tampil hanya bagi wali kelas sebuah kelas tahun ajaran berjalan (#579; `role-menus.ts` menandainya *only with the homeroom duty*). Wakasek dan wali kelas adalah tugas tambahan seorang guru, bukan kode peran (digabung ke `*_GURU` 2026-09-26); wali kelas = `Class.homeroomTeacherId` ([`peran-dan-tugas-tambahan`](../../memory/decisions/peran-dan-tugas-tambahan.md)). |
 | Pimpinan Pesantren | `PESANTREN_PENGASUH` | `/teacher` · TEACHER | Kiai, kepala unit pesantren — skill `tata-kelola-yayasan`. |
 | Pendidik pesantren | `USTADZ`, `MUSYRIF`, `MUHAFIDZ` | `/teacher` · TEACHER | Satu peran per tugas, bukan per jenis kelamin (musyrif = wali kamar + murabbi). |
 | Staf | `*_TATA_USAHA`, `*_BENDAHARA`, `PESANTREN_TATA_USAHA`, `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_*` | `/staff` · STAFF | **Satu menu bersama** untuk sembilan fungsi. Butir layanan di grup *Sarana & Layanan* (Perpustakaan, Inventaris, Kantin & Koperasi, Laundry, Unit Usaha) hanya tampil untuk peran yang menjalankannya. |
@@ -121,6 +121,13 @@ diputuskan musyrif santri itu (santri mukim) atau wali kelasnya, jadi guru yang
 sama boleh untuk satu anak dan 403 untuk anak lain. Jawab dengan menyebut
 aturannya ([`pemutus-izin-santri`](../../memory/decisions/pemutus-izin-santri.md)),
 dan di layar lihat baris "Diputuskan oleh …" pada izin itu.
+
+Hal yang sama berlaku untuk **data perwalian** dan **absensi harian**
+(#579, #580). Data perwalian sebuah kelas dibaca oleh wali kelasnya, serta
+kepala sekolah dan operator unitnya; guru lain mendapat 404. Absensi harian
+sebuah kelas dicatat oleh wali kelasnya, guru yang punya jadwal di kelas itu,
+dan operator unit; kepala sekolah membaca. Untuk "bisakah guru X mengisi
+absensi kelas Y", lihat `GET /attendance/me/classes` atas nama guru itu.
 
 ## Celah yang diketahui
 
