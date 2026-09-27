@@ -11,9 +11,10 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `7d429a00` (#580) on 2026-09-27,
-  verified read-only (each account's register scope; the kepala sekolah
-  passes the route and writes nothing); #581 deploys when `main`'s E2E finishes.
+  on which CI and E2E (Chromium) pass. At `e177f527` (#581) on 2026-09-27,
+  verified read-only (#580: each account's register scope; #581: notes come
+  back as one list, a note without text is 400). #584 and #585 deploy as
+  `main`'s E2E passes.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -55,7 +56,10 @@ pengembangannya"), who asked to keep being reminded.
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
-  daily attendance (#580), behaviour notes (#581). 184 broken calls left.
+  daily attendance (#580, one page in #585), behaviour notes (#581). 184
+  broken calls left. In flight: the Alpa/Terlambat notice to the wali and a
+  boarder's musyrif, with a personal notification inbox (none exists yet —
+  known-issues).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, the Kurikulum list (waits on the user), HR employees,
   Sertifikat, then the dead calls, `services/` and the `api-client` alias.
@@ -99,7 +103,21 @@ pengembangannya"), who asked to keep being reminded.
   after 2026-10-01 (the VM is the rollback target until then, and a guard test
   reads it).
 
-## Recently done (2026-09-24 → 27)
+## Recently done (2026-09-24 → 28)
+
+- **The donation forms offer what the yayasan offers (#584, merged
+  2026-09-28):** Zakat Maal and Zakat Fitrah are off the public *Wakaf &
+  Infaq* form and staff entry (*Keuangan → Donation/ZIS → Catat Donasi*), and
+  the API refuses them on both create routes; one list in shared
+  (`OFFERED_DONATION_TYPES`). Before/after:
+  <https://claude.ai/artifact/5h545yrMwLAuvtc9HmnRcE>.
+- **One register, one page (#585, merged 2026-09-28):** *Wali Kelas →
+  Absensi Harian* opens `/attendance/record` on the homeroom class;
+  `/homeroom/attendance` 308s and its copy is gone; the sidebar lights one
+  entry (`activeNavHref`). Before/after:
+  <https://claude.ai/artifact/Xpvzges8nGMSjSxCEMwHXh>.
+- **Golden rule 12 (#583):** a decision that is the user's is researched
+  first, then offered as a multiple-choice question.
 
 - **Wali kelas is a relation, not a role (#579, merged and on staging
   2026-09-27):** the *Wali Kelas* menu group shows for the wali kelas of a
