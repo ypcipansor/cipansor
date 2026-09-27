@@ -197,7 +197,7 @@ function HomeroomDashboardPageContent() {
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/homeroom/attendance">
+          <Link href="/attendance/record">
             <Button>
               <ClipboardList className="h-4 w-4 mr-2" />
               Absensi
@@ -432,7 +432,7 @@ function HomeroomDashboardPageContent() {
                   </div>
                 </div>
                 <div className="mt-4">
-                  <Link href="/homeroom/attendance">
+                  <Link href="/attendance/record">
                     <Button variant="outline" className="w-full">
                       Detail Absensi
                       <ChevronRight className="h-4 w-4 ml-2" />

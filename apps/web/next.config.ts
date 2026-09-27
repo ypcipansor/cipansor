@@ -122,6 +122,14 @@ const nextConfig: NextConfig = {
         destination: "/permits/gate",
         permanent: true,
       },
+      // One register, one page (decided 2026-09-27): Wali Kelas → Absensi
+      // Harian had its own copy of the daily register. The page it opens now
+      // starts on the wali kelas's own class.
+      {
+        source: "/homeroom/attendance",
+        destination: "/attendance/record",
+        permanent: true,
+      },
     ];
   },
 
