@@ -25,9 +25,12 @@ vi.mock('@/lib/prisma', () => {
   return { prisma };
 });
 
+vi.mock('../attendance.notice', () => ({ tellAbsences: vi.fn() }));
+
 import { prisma } from '@/lib/prisma';
 import { AttendanceStatus } from '@cipansor/shared';
 import { attendanceService } from '../attendance.service';
+import { tellAbsences } from '../attendance.notice';
 import { todayWib } from '../attendance.access';
 
 type Mocked = Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -174,6 +177,17 @@ describe('saving a day again', () => {
     expect(sick.update).toEqual({ status: 'SICK', notes: 'Demam', recordedById: 'u-wali' });
   });
 
+  it('hands every mark to the notice with what the day had before', async () => {
+    db.attendance.findMany.mockResolvedValue([{ studentId: P2, status: 'ABSENT' }]);
+
+    await attendanceService.bulkCreate(register(), wali);
+
+    expect(tellAbsences).toHaveBeenCalledWith('c-1a', today, [
+      { studentId: P1, status: 'PRESENT', before: undefined },
+      { studentId: P2, status: 'SICK', before: 'ABSENT' },
+    ]);
+  });
+
   it('refuses a pupil who is not in the class, and one listed twice', async () => {
     db.classEnrollment.findMany.mockResolvedValue([{ studentId: P1 }]);
     expect(await status(attendanceService.bulkCreate(register(), wali))).toBe(400);
@@ -234,6 +248,33 @@ describe("one pupil's day", () => {
 
     await attendanceService.update('a-1', { status: AttendanceStatus.SICK }, pengampu);
     expect(db.attendance.update.mock.calls[0][0].data.recordedById).toBe('u-pengampu');
+  });
+
+  it("a change to one pupil's day reaches the notice with the mark it replaced", async () => {
+    db.attendance.findUnique.mockResolvedValue({
+      classId: 'c-1a',
+      date: new Date(`${today}T00:00:00.000Z`),
+      studentId: P1,
+      status: 'PRESENT',
+    });
+    db.attendance.update.mockResolvedValue({ id: 'a-1', status: 'ABSENT' });
+
+    await attendanceService.update('a-1', { status: AttendanceStatus.ABSENT }, wali);
+
+    expect(tellAbsences).toHaveBeenCalledWith('c-1a', today, [
+      { studentId: P1, status: 'ABSENT', before: 'PRESENT' },
+    ]);
+  });
+
+  it('a refused change tells no one', async () => {
+    db.attendance.findUnique.mockResolvedValue({
+      classId: 'c-1a',
+      date: new Date(`${today}T00:00:00.000Z`),
+      studentId: P1,
+      status: 'PRESENT',
+    });
+    await status(attendanceService.update('a-1', { status: AttendanceStatus.ABSENT }, guruLain));
+    expect(tellAbsences).not.toHaveBeenCalled();
   });
 });
 
