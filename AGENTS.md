@@ -96,6 +96,16 @@ monorepo**:
     **on a branch**, **merged to `main`**, **on staging**, or **in
     production**. A page on an unmerged branch is not "built" to the person
     looking for it in the app.
+12. **A decision that is the user's: research first, then offer choices.**
+    Before asking, look up how the matter is settled in practice —
+    regulation, the pesantren's and schools' own practice, established
+    standards — and cite the sources. Question the premise too: include
+    "not needed at all" or "let the system do it" when that is a real
+    option. Then give the user a multiple-choice question, recommended
+    option first with the reason, never an open question and never a
+    decision taken on their behalf (Claude: the `AskUserQuestion` window).
+    Research already recorded in `.claude/memory/decisions/` is not
+    repeated. The user asked for this twice (2026-09-27).
 
 ## Commands
 
