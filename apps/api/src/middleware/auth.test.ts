@@ -51,8 +51,7 @@ describe('middleware/auth RBAC', () => {
 
     it('deriveLegacyRole maps the expanded hierarchy roles (rebuilt #319)', () => {
       // Granular school roles
-      expect(deriveLegacyRole(RoleCode.SDIT_WAKASEK)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.SMPIT_WALI_KELAS)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.SMPIT_GURU_BK)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.SMAQ_GURU_BK)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.TKQ_BENDAHARA)).toBe('STAFF');
       // Pesantren leadership + pembina
@@ -191,8 +190,8 @@ describe('middleware/auth RBAC', () => {
 
     it('isTeacherOrAbove admits the expanded educator roles, denies business staff', () => {
       for (const code of [
-        RoleCode.SDIT_WAKASEK,
-        RoleCode.SMPIT_WALI_KELAS,
+        RoleCode.SDIT_GURU,
+        RoleCode.SMPIT_GURU_BK,
         RoleCode.SMAQ_GURU_BK,
         RoleCode.USTADZ,
         RoleCode.MUSYRIF,

@@ -551,7 +551,6 @@ export default function KurikulumMerdekaPage() {
         description="Kelola Capaian Pembelajaran (CP) dan Projek Penguatan Profil Pelajar Pancasila (P5)"
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Kurikulum", href: "/curriculum" },
           { label: "Kurikulum Merdeka" },
         ]}
       />

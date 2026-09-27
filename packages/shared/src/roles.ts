@@ -59,18 +59,25 @@ export const PENGURUS_ROLE_CODES: readonly string[] = [
 export const PRINCIPAL_ROLE_CODES: readonly string[] =
   perSchool("KEPALA_SEKOLAH");
 
-/** Wakil kepala sekolah. */
-export const VICE_PRINCIPAL_ROLE_CODES: readonly string[] =
-  perSchool("WAKASEK");
-
-/** Classroom teachers, homeroom teachers, and BK counselors. */
-export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
-  ...perSchool("GURU"),
-  ...perSchool("WALI_KELAS"),
-  // BK counselors exist only at the secondary units (TK Qur'an and SD IT
-  // have none), matching the RoleCode enum.
+/**
+ * Guru BK — the school counsellors. They exist only at the secondary units
+ * (TK Qur'an and SD IT have none), matching the RoleCode enum. Besides a
+ * session's own counsellor, they are the only readers of a unit's
+ * confidential counselling sessions (decided 2026-09-26).
+ */
+export const GURU_BK_ROLE_CODES: readonly string[] = [
   "SMPIT_GURU_BK",
   "SMAQ_GURU_BK",
+];
+
+/**
+ * Teachers and BK counsellors. Wakasek and wali kelas are duties a guru holds,
+ * not role codes of their own (merged into `*_GURU` on 2026-09-26): wali kelas
+ * is `Class.homeroomTeacherId`.
+ */
+export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
+  ...perSchool("GURU"),
+  ...GURU_BK_ROLE_CODES,
 ];
 
 /**
@@ -214,7 +221,6 @@ export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
   ...GOVERNANCE_ROLE_CODES,
   ...PRINCIPAL_ROLE_CODES,
-  ...VICE_PRINCIPAL_ROLE_CODES,
   ...SCHOOL_TEACHER_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
   ...PESANTREN_EDUCATOR_ROLE_CODES,
@@ -258,7 +264,6 @@ export const LEGACY_ROLE_EXPANSION: Record<LegacyRole, string[]> = {
   TEACHER: [
     ...SCHOOL_TEACHER_ROLE_CODES,
     ...PRINCIPAL_ROLE_CODES,
-    ...VICE_PRINCIPAL_ROLE_CODES,
     ...PESANTREN_LEADER_ROLE_CODES,
     ...PESANTREN_EDUCATOR_ROLE_CODES,
   ],

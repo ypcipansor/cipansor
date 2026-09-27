@@ -15,6 +15,7 @@ import {
   useDailyReports,
   useDeleteDailyReport,
   DailyReport,
+  type DailyMood,
 } from "@/hooks/use-daily-report";
 import { useClasses } from "@/hooks/use-classes";
 import { Badge } from "@/components/ui/badge";
@@ -52,22 +53,6 @@ import { cn } from "@/lib/utils";
 import { DateRange } from "react-day-picker";
 import { getEffectiveRole } from "@/lib/rbac";
 
-const ATTENDANCE_LABELS: Record<string, string> = {
-  PRESENT: "Hadir",
-  ABSENT: "Alpha",
-  LATE: "Terlambat",
-  SICK: "Sakit",
-  EXCUSED: "Izin",
-};
-
-const ATTENDANCE_COLORS: Record<string, string> = {
-  PRESENT: "bg-green-100 text-green-800",
-  ABSENT: "bg-red-100 text-red-800",
-  LATE: "bg-yellow-100 text-yellow-800",
-  SICK: "bg-orange-100 text-orange-800",
-  EXCUSED: "bg-blue-100 text-blue-800",
-};
-
 const MOOD_LABELS: Record<string, string> = {
   HAPPY: "😊 Senang",
   NEUTRAL: "😐 Biasa",
@@ -98,7 +83,7 @@ export default function DailyReportListPage() {
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState<string>("ALL");
-  const [attendanceFilter, setAttendanceFilter] = useState<string>("ALL");
+  const [moodFilter, setMoodFilter] = useState<string>("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -109,7 +94,7 @@ export default function DailyReportListPage() {
     limit: pageSize,
     search: search || undefined,
     classId: classFilter !== "ALL" ? classFilter : undefined,
-    attendanceStatus: attendanceFilter !== "ALL" ? attendanceFilter : undefined,
+    mood: moodFilter !== "ALL" ? (moodFilter as DailyMood) : undefined,
     dateFrom: dateRange?.from
       ? format(dateRange.from, "yyyy-MM-dd")
       : undefined,
@@ -224,7 +209,7 @@ export default function DailyReportListPage() {
           <DropdownMenuContent align="end">
             <DropdownMenuItem
               onClick={() =>
-                router.push(`/paud/daily-reports/${row.original.id}`)
+                router.push(`/tk/daily-reports/${row.original.id}`)
               }
             >
               <Eye className="mr-2 h-4 w-4" />
@@ -232,7 +217,7 @@ export default function DailyReportListPage() {
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
-                router.push(`/paud/daily-reports/${row.original.id}/edit`)
+                router.push(`/tk/daily-reports/${row.original.id}/edit`)
               }
             >
               <Pencil className="mr-2 h-4 w-4" />
@@ -262,12 +247,12 @@ export default function DailyReportListPage() {
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={() => router.push("/paud/daily-reports/check-in")}
+                onClick={() => router.push("/tk/daily-reports/check-in")}
               >
                 <Users className="mr-2 h-4 w-4" />
                 Check-in Kelas
               </Button>
-              <Button onClick={() => router.push("/paud/daily-reports/new")}>
+              <Button onClick={() => router.push("/tk/daily-reports/new")}>
                 <Plus className="mr-2 h-4 w-4" />
                 Buat Laporan
               </Button>
@@ -297,13 +282,13 @@ export default function DailyReportListPage() {
             </SelectContent>
           </Select>
 
-          <Select value={attendanceFilter} onValueChange={setAttendanceFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="Semua Status" />
+          <Select value={moodFilter} onValueChange={setMoodFilter}>
+            <SelectTrigger aria-label="Suasana hati">
+              <SelectValue placeholder="Semua Suasana Hati" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">Semua Status</SelectItem>
-              {Object.entries(ATTENDANCE_LABELS).map(([value, label]) => (
+              <SelectItem value="ALL">Semua Suasana Hati</SelectItem>
+              {Object.entries(MOOD_LABELS).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>

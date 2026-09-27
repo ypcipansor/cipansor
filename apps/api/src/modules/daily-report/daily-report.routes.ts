@@ -1,21 +1,32 @@
 import { Router } from 'express';
-import { authenticate } from '@/middleware/auth';
+import {
+  DAILY_REPORT_CONFIRMER_ROLE_CODES,
+  DAILY_REPORT_READER_ROLE_CODES,
+  DAILY_REPORT_STAFF_ROLE_CODES,
+} from '@cipansor/shared';
+import { authenticate, authorize } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/validate';
 import * as controller from './daily-report.controller';
 import {
   listDailyReportsQuerySchema,
   createDailyReportSchema,
   updateDailyReportSchema,
-  confirmReportSchema,
+  confirmDailyReportSchema,
   bulkCreateDailyReportsSchema,
-  studentDailySummarySchema,
-  classDailySummarySchema,
+  studentDailySummaryQuerySchema,
+  classDailySummaryQuerySchema,
 } from './daily-report.schema';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Staff write and read; a wali reads and acknowledges their own child's. Which
+// rows each reaches is `studentScope`, in the service.
+const staff = authorize(...DAILY_REPORT_STAFF_ROLE_CODES);
+const readers = authorize(...DAILY_REPORT_READER_ROLE_CODES);
+const confirmers = authorize(...DAILY_REPORT_CONFIRMER_ROLE_CODES);
 
 // ============================================
 // DAILY REPORT ROUTES
@@ -65,7 +76,7 @@ router.use(authenticate);
  *         name: mood
  *         schema:
  *           type: string
- *           enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED]
+ *           enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED, EXCITED]
  *       - in: query
  *         name: isConfirmedByParent
  *         schema:
@@ -84,7 +95,7 @@ router.use(authenticate);
  *       200:
  *         description: List of daily reports
  */
-router.get('/', validateQuery(listDailyReportsQuerySchema), controller.listDailyReports);
+router.get('/', readers, validateQuery(listDailyReportsQuerySchema), controller.listDailyReports);
 
 /**
  * @swagger
@@ -97,11 +108,6 @@ router.get('/', validateQuery(listDailyReportsQuerySchema), controller.listDaily
  *     parameters:
  *       - in: query
  *         name: studentId
- *         required: true
- *         schema:
- *           type: string
- *       - in: query
- *         name: academicYearId
  *         required: true
  *         schema:
  *           type: string
@@ -119,7 +125,8 @@ router.get('/', validateQuery(listDailyReportsQuerySchema), controller.listDaily
  */
 router.get(
   '/summary/student',
-  validateQuery(studentDailySummarySchema),
+  readers,
+  validateQuery(studentDailySummaryQuerySchema),
   controller.getStudentMonthlySummary
 );
 
@@ -134,16 +141,11 @@ router.get(
  *     parameters:
  *       - in: query
  *         name: unitId
- *         required: true
+ *         description: Ignored for an account bound to a unit.
  *         schema:
  *           type: string
  *       - in: query
  *         name: classId
- *         schema:
- *           type: string
- *       - in: query
- *         name: academicYearId
- *         required: true
  *         schema:
  *           type: string
  *       - in: query
@@ -157,7 +159,8 @@ router.get(
  */
 router.get(
   '/summary/class',
-  validateQuery(classDailySummarySchema),
+  staff,
+  validateQuery(classDailySummaryQuerySchema),
   controller.getClassDailySummary
 );
 
@@ -181,7 +184,7 @@ router.get(
  *       404:
  *         description: Report not found
  */
-router.get('/:id', controller.getDailyReportById);
+router.get('/:id', readers, controller.getDailyReportById);
 
 /**
  * @swagger
@@ -199,25 +202,19 @@ router.get('/:id', controller.getDailyReportById);
  *             type: object
  *             required:
  *               - studentId
- *               - unitId
- *               - academicYearId
  *               - reportDate
  *             properties:
  *               studentId:
- *                 type: string
- *               unitId:
- *                 type: string
- *               academicYearId:
  *                 type: string
  *               reportDate:
  *                 type: string
  *                 format: date
  *               morningMood:
  *                 type: string
- *                 enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED]
+ *                 enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED, EXCITED]
  *               afternoonMood:
  *                 type: string
- *                 enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED]
+ *                 enum: [HAPPY, NEUTRAL, SAD, SICK, TIRED, EXCITED]
  *               healthNotes:
  *                 type: string
  *               breakfastConsumption:
@@ -228,19 +225,34 @@ router.get('/:id', controller.getDailyReportById);
  *                 enum: [HABIS, SETENGAH, SEDIKIT, TIDAK_MAU]
  *               activitiesSummary:
  *                 type: string
- *               ibadahNotes:
+ *               surahPractice:
  *                 type: string
+ *               arrivalTime:
+ *                 type: string
+ *                 description: Time of day in WIB, "HH:mm".
  *               parentNotes:
  *                 type: string
- *               photoUrls:
+ *               photos:
  *                 type: array
+ *                 maxItems: 5
+ *                 description: Files stored through POST /upload.
  *                 items:
- *                   type: string
+ *                   type: object
+ *                   required: [url]
+ *                   properties:
+ *                     url:
+ *                       type: string
+ *                     caption:
+ *                       type: string
  *     responses:
  *       201:
  *         description: Daily report created
+ *       404:
+ *         description: The pupil is not in the caller's scope
+ *       409:
+ *         description: The pupil already has a report that day
  */
-router.post('/', validate(createDailyReportSchema), controller.createDailyReport);
+router.post('/', staff, validate(createDailyReportSchema), controller.createDailyReport);
 
 /**
  * @swagger
@@ -257,15 +269,9 @@ router.post('/', validate(createDailyReportSchema), controller.createDailyReport
  *           schema:
  *             type: object
  *             required:
- *               - unitId
- *               - academicYearId
  *               - reportDate
  *               - reports
  *             properties:
- *               unitId:
- *                 type: string
- *               academicYearId:
- *                 type: string
  *               reportDate:
  *                 type: string
  *                 format: date
@@ -286,7 +292,12 @@ router.post('/', validate(createDailyReportSchema), controller.createDailyReport
  *       201:
  *         description: Daily reports created
  */
-router.post('/bulk', validate(bulkCreateDailyReportsSchema), controller.bulkCreateDailyReports);
+router.post(
+  '/bulk',
+  staff,
+  validate(bulkCreateDailyReportsSchema),
+  controller.bulkCreateDailyReports
+);
 
 /**
  * @swagger
@@ -319,7 +330,7 @@ router.post('/bulk', validate(bulkCreateDailyReportsSchema), controller.bulkCrea
  *       200:
  *         description: Daily report updated
  */
-router.put('/:id', validate(updateDailyReportSchema), controller.updateDailyReport);
+router.put('/:id', staff, validate(updateDailyReportSchema), controller.updateDailyReport);
 
 /**
  * @swagger
@@ -347,7 +358,12 @@ router.put('/:id', validate(updateDailyReportSchema), controller.updateDailyRepo
  *       200:
  *         description: Daily report confirmed
  */
-router.post('/:id/confirm', validate(confirmReportSchema), controller.confirmDailyReport);
+router.post(
+  '/:id/confirm',
+  confirmers,
+  validate(confirmDailyReportSchema),
+  controller.confirmDailyReport
+);
 
 /**
  * @swagger
@@ -367,6 +383,6 @@ router.post('/:id/confirm', validate(confirmReportSchema), controller.confirmDai
  *       200:
  *         description: Daily report deleted
  */
-router.delete('/:id', controller.deleteDailyReport);
+router.delete('/:id', staff, controller.deleteDailyReport);
 
 export default router;

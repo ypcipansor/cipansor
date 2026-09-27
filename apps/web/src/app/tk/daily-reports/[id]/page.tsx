@@ -50,6 +50,7 @@ import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { authFileUrl } from "@/lib/files";
 import { useState } from "react";
 
 const ATTENDANCE_LABELS: Record<string, string> = {
@@ -136,7 +137,7 @@ export default function DailyReportDetailPage() {
           <p className="text-muted-foreground mb-4">
             Laporan harian yang Anda cari tidak ada atau telah dihapus.
           </p>
-          <Button onClick={() => router.push("/paud/daily-reports")}>
+          <Button onClick={() => router.push("/tk/daily-reports")}>
             Kembali ke Daftar
           </Button>
         </div>
@@ -171,7 +172,7 @@ export default function DailyReportDetailPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  router.push(`/paud/daily-reports/${reportId}/edit`)
+                  router.push(`/tk/daily-reports/${reportId}/edit`)
                 }
               >
                 <Pencil className="mr-2 h-4 w-4" />
@@ -484,7 +485,7 @@ export default function DailyReportDetailPage() {
                     {photos.map((photo: any) => (
                       <div key={photo.id} className="group relative">
                         <img
-                          src={photo.photoUrl}
+                          src={authFileUrl(photo.photoUrl)}
                           alt={photo.caption || "Kegiatan"}
                           className="aspect-square object-cover rounded-lg border"
                         />

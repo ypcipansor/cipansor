@@ -21,11 +21,19 @@ import { ArrowLeft, Save, Loader2, Smile, Meh, Frown } from "lucide-react";
 import { toast } from "sonner";
 import { useClasses } from "@/hooks/use-classes";
 import { useStudents } from "@/hooks/use-students";
-import { useBulkCreateDailyReport } from "@/hooks/use-daily-report";
+import {
+  describeBulkResult,
+  useBulkCreateDailyReport,
+} from "@/hooks/use-daily-report";
 import { format } from "date-fns";
+import { getErrorMessage } from "@/lib/api-error";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/lib/api";
-import type { BulkCreateDailyReportsInput } from "@cipansor/shared";
+import type {
+  BulkCreateDailyReportsInput,
+  DailyMood,
+  MealConsumption,
+} from "@cipansor/shared";
 import { STUDENT_STATUS } from "@cipansor/shared";
 
 const MOODS = [
@@ -45,9 +53,9 @@ const MEALS = [
 interface StudentReportDraft {
   studentId: string;
   isPresent: boolean;
-  morningMood: string;
+  morningMood: DailyMood;
   healthNotes: string;
-  lunchConsumption: string;
+  lunchConsumption: MealConsumption;
   surahPractice: string; // Tahfidz note (summary)
   sholatDhuha: boolean;
   sholatDzuhur: boolean;
@@ -216,11 +224,11 @@ export default function BulkCreateDailyReportPage() {
         presentStudents.map((r) => {
           const reportPayload: BulkCreateDailyReportsInput["reports"][0] = {
             studentId: r.studentId,
-            morningMood: r.morningMood as any, // Cast as needed if shared type enum mismatch
+            morningMood: r.morningMood,
             healthNotes: r.healthNotes,
             lunchConsumption: r.lunchConsumption,
             activitiesSummary: r.activitiesSummary,
-            ibadahNotes: r.surahPractice,
+            surahPractice: r.surahPractice,
             sholatDhuha: r.sholatDhuha,
             sholatDzuhur: r.sholatDzuhur,
             sholatAshar: false,
@@ -253,20 +261,18 @@ export default function BulkCreateDailyReportPage() {
           return reportPayload;
         });
 
-      await bulkMutation.mutateAsync({
-        unitId: user?.unitId || "",
-        academicYearId: user?.academicYearId || "",
-        reportDate: new Date().toISOString(),
+      // Today's calendar day; the unit and the academic year follow from
+      // each pupil and the date.
+      const result = await bulkMutation.mutateAsync({
+        reportDate: format(new Date(), "yyyy-MM-dd"),
         reports: reportsData,
       });
-
-      toast.success(
-        `Berhasil membuat ${presentStudents.length} laporan harian`,
-      );
+      const message = describeBulkResult(result);
+      toast.success(message.created);
+      if (message.skipped) toast.warning(message.skipped);
       router.push("/tk");
     } catch (error) {
-      console.error(error);
-      toast.error("Gagal membuat laporan massal");
+      toast.error(getErrorMessage(error));
     }
   };
 

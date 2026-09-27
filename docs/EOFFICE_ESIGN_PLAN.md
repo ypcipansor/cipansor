@@ -7,6 +7,11 @@ too large to carry in a conversation.
 Read [`roadmap.md`](../.claude/memory/roadmap.md) §6 for where this sits against everything
 else outstanding.
 
+> **How the feature works today is the [`naskah-dinas`](../.claude/skills/naskah-dinas/SKILL.md)
+> skill.** This file is the record behind it: what the audit found, why each
+> PR was shaped as it was, and the sources. §0 and §2 describe the state on
+> 2026-09-02 and are history; the "SHIPPED" marks say which PRs have landed.
+
 ---
 
 ## 0. Read this first — where the code actually is

@@ -10,7 +10,7 @@ router.use(authenticate);
 
 // Reusable authorizers for counseling routes.
 //
-// Legacy UserRole strings ('UNIT_ADMIN', 'TEACHER', 'PARENT') are included
+// Legacy UserRole strings ('UNIT_ADMIN', 'TEACHER') are included
 // alongside the new RoleCode values so that pre-migration JWT tokens (whose
 // roleCode is the legacy enum string) continue to work. The authorize()
 // middleware expands both directions via LEGACY_ROLE_EXPANSION — see
@@ -36,42 +36,6 @@ const teacherAndAbove = () =>
     'TEACHER' // Legacy pre-migration token values
   );
 
-const adminOnly = () =>
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    RoleCode.TKQ_ADMIN,
-    RoleCode.SDIT_ADMIN,
-    RoleCode.SMPIT_ADMIN,
-    RoleCode.SMAQ_ADMIN,
-    'UNIT_ADMIN' // Legacy pre-migration token value
-  );
-
-const teacherOrParent = () =>
-  authorize(
-    RoleCode.SUPER_ADMIN,
-    RoleCode.TKQ_ADMIN,
-    RoleCode.SDIT_ADMIN,
-    RoleCode.SMPIT_ADMIN,
-    RoleCode.SMAQ_ADMIN,
-    RoleCode.TKQ_GURU,
-    RoleCode.SDIT_GURU,
-    RoleCode.SMPIT_GURU,
-    RoleCode.SMAQ_GURU,
-    RoleCode.TKQ_KEPALA_SEKOLAH,
-    RoleCode.SDIT_KEPALA_SEKOLAH,
-    RoleCode.SMPIT_KEPALA_SEKOLAH,
-    RoleCode.SMAQ_KEPALA_SEKOLAH,
-    RoleCode.MUSYRIF,
-    RoleCode.MUHAFIDZ,
-    RoleCode.TKQ_ORANG_TUA,
-    RoleCode.SDIT_ORANG_TUA,
-    RoleCode.SMPIT_ORANG_TUA,
-    RoleCode.SMAQ_ORANG_TUA,
-    'UNIT_ADMIN',
-    'TEACHER',
-    'PARENT' // Legacy pre-migration token values
-  );
-
 // ======================
 // SESSION ROUTES
 // ======================
@@ -86,14 +50,18 @@ router.get(
 // Get statistics
 router.get(
   '/statistics',
-  adminOnly(),
+  // Counted as listed (see getStatistics), so whoever reads the list reads
+  // its counts: the cards and the table never disagree.
+  teacherAndAbove(),
   counselingController.getStatistics.bind(counselingController)
 );
 
 // Get student counseling history
+// Staff only: a wali reads their own child's shared sessions through
+// /parent/children/:studentId/counseling, which checks the relationship.
 router.get(
   '/students/:studentId/history',
-  teacherOrParent(),
+  teacherAndAbove(),
   counselingController.getStudentHistory.bind(counselingController)
 );
 

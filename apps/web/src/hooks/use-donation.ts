@@ -1,4 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  OFFERED_DONATION_TYPES,
+  type OfferedDonationType,
+} from "@cipansor/shared";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
 // =====================================
@@ -101,6 +105,16 @@ export const DONATION_TYPES: { value: DonationType; label: string }[] = [
   { value: "BEASISWA", label: "Beasiswa" },
   { value: "OTHERS", label: "Lainnya" },
 ];
+
+/**
+ * The types a new donation may be given as — every type above minus zakat,
+ * which the yayasan does not offer (see `OFFERED_DONATION_TYPES` in shared).
+ * `DONATION_TYPES` stays whole: it names donations recorded before.
+ */
+export const OFFERED_DONATION_TYPE_OPTIONS = DONATION_TYPES.filter(
+  (t): t is { value: OfferedDonationType; label: string } =>
+    (OFFERED_DONATION_TYPES as readonly string[]).includes(t.value),
+);
 
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CASH", label: "Tunai" },
@@ -330,7 +344,7 @@ export interface CreateDonationData {
   donorEmail?: string;
   donorAddress?: string;
   isAnonymous?: boolean;
-  type: DonationType;
+  type: OfferedDonationType;
   amount: number;
   paymentMethod: PaymentMethod;
   paymentProof?: string;

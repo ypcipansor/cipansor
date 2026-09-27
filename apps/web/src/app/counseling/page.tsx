@@ -357,7 +357,10 @@ export default function CounselingPage() {
                   );
 
                   return (
-                    <TableRow key={record.id}>
+                    <TableRow
+                      key={record.id}
+                      data-testid={`counseling-row-${record.id}`}
+                    >
                       <TableCell>
                         <div>
                           <p className="font-medium flex items-center gap-2">
@@ -424,20 +427,24 @@ export default function CounselingPage() {
                                 Lihat Detail
                               </Link>
                             </DropdownMenuItem>
-                            <DropdownMenuItem asChild>
-                              <Link href={`/counseling/${record.id}/edit`}>
-                                <Edit className="h-4 w-4 mr-2" />
-                                Edit
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => handleDelete(record.id)}
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Hapus
-                            </DropdownMenuItem>
+                            {record.viewerAccess !== "REFERRALS_ONLY" && (
+                              <>
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/counseling/${record.id}/edit`}>
+                                    <Edit className="h-4 w-4 mr-2" />
+                                    Edit
+                                  </Link>
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive"
+                                  onClick={() => handleDelete(record.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Hapus
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

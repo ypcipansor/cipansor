@@ -1,144 +1,71 @@
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response } from 'express';
+import { asyncHandler } from '@/middleware/error';
+import { requireUser } from '@/middleware/auth';
+import { ApiResponse } from '@/utils/response';
 import * as permitService from './permits.service';
-import {
-  createPermitSchema,
-  updatePermitStatusSchema,
-  markReturnedSchema,
-  queryPermitSchema,
-} from './permits.schema';
-import { Errors } from '../../middleware/error';
+import type { ListPermitsQueryParsed } from './permits.schema';
 
-export async function createPermit(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createPermitSchema.parse(req.body);
-    const permit = await permitService.createPermit(data);
-    res.status(201).json({
-      success: true,
-      message: 'Permit request created successfully',
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+// Bodies and queries arrive already parsed by validate()/validateQuery() in
+// permits.routes.ts; the caller always comes from the verified token.
 
-export async function getPermits(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = queryPermitSchema.parse(res.locals.validatedQuery || req.query);
-    const result = await permitService.getPermits(query);
-    res.json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const list = asyncHandler(async (req: Request, res: Response) => {
+  const query = res.locals.validatedQuery as ListPermitsQueryParsed;
+  const { data, page, limit, total } = await permitService.listPermits(query, requireUser(req));
+  res.json(ApiResponse.paginated(data, page, limit, total));
+});
 
-export async function getPermitById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const permit = await permitService.getPermitById(id);
-    if (!permit) {
-      throw Errors.notFound('Permit');
-    }
-    res.json({
-      success: true,
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const summary = asyncHandler(async (req: Request, res: Response) => {
+  res.json(ApiResponse.success(await permitService.getSummary(requireUser(req))));
+});
 
-export async function updatePermitStatus(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = updatePermitStatusSchema.parse(req.body);
-    const userId = req.user?.sub;
+export const getByCode = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.getPermitByCode(req.params.code, requireUser(req));
+  res.json(ApiResponse.success(permit));
+});
 
-    if (!userId) {
-      throw Errors.unauthorized();
-    }
+export const getById = asyncHandler(async (req: Request, res: Response) => {
+  res.json(ApiResponse.success(await permitService.getPermit(req.params.id, requireUser(req))));
+});
 
-    const permit = await permitService.updatePermitStatus(id, data, userId);
-    res.json({
-      success: true,
-      message: `Permit ${data.status.toLowerCase()} successfully`,
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const create = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.createPermit(req.body, requireUser(req));
+  res.status(201).json(ApiResponse.success(permit, 'Izin diajukan'));
+});
 
-export async function markReturned(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = markReturnedSchema.parse(req.body);
-    const permit = await permitService.markReturned(id, data.returnedAt);
-    res.json({
-      success: true,
-      message: 'Student marked as returned',
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const update = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.updatePermit(req.params.id, req.body, requireUser(req));
+  res.json(ApiResponse.success(permit, 'Izin diperbarui'));
+});
 
-export async function markDeparted(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const permit = await permitService.markDeparted(id);
-    res.json({
-      success: true,
-      message: 'Student marked as departed',
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const approve = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.approvePermit(req.params.id, requireUser(req));
+  res.json(ApiResponse.success(permit, 'Izin disetujui'));
+});
 
-export async function getPermitByCode(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { code } = req.params;
-    const permit = await permitService.getPermitByCode(code);
-    if (!permit) {
-      throw Errors.notFound('Permit not found');
-    }
-    res.json({
-      success: true,
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const reject = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.rejectPermit(
+    req.params.id,
+    req.body.rejectionNote,
+    requireUser(req)
+  );
+  res.json(ApiResponse.success(permit, 'Izin ditolak'));
+});
 
-export async function getStudentActivePermit(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { studentId } = req.params;
-    const permit = await permitService.getStudentActivePermit(studentId);
-    res.json({
-      success: true,
-      data: permit,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const cancel = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.cancelPermit(req.params.id, requireUser(req));
+  res.json(ApiResponse.success(permit, 'Izin dibatalkan'));
+});
 
-export async function getPermitStats(req: Request, res: Response, next: NextFunction) {
-  try {
-    const unitId = req.query.unitId as string | undefined;
-    const stats = await permitService.getPermitStats(unitId);
-    res.json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const depart = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.departPermit(req.params.id, requireUser(req));
+  res.json(ApiResponse.success(permit, 'Keberangkatan dicatat'));
+});
+
+export const markReturned = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await permitService.returnPermit(
+    req.params.id,
+    req.body.returnedAt,
+    requireUser(req)
+  );
+  res.json(ApiResponse.success(permit, 'Kepulangan dicatat'));
+});

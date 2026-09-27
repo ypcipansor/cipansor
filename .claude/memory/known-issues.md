@@ -1,6 +1,8 @@
 # Known issues — open defects
 
-Open defects only, each rechecked against the code on **2026-09-25**. The
+Open defects only, each rechecked against the code on **2026-09-25**
+(asrama and schema entries on 2026-09-26; daily report, schedules,
+counselling and growth on 2026-09-27). The
 ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 [`progress.md`](./progress.md); the system overview is
 [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
@@ -16,6 +18,54 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **The web calls API paths that do not exist — 184 distinct calls left**
+  (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
+  in #569 and #571, mata pelajaran in #573, laporan harian in #577, the
+  homeroom pages in #579–#581; the list is
+  `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
+  keeps honest — it only shrinks; staging answers them "Route … not found").
+  Worst felt now: the Kurikulum list
+  (`/curriculum/curriculums`), HR employees (`/hr/employees`), every
+  Sertifikat page (`/certificates`), parent messages (`/parent/messages`),
+  and three pages that write `/api/…` and so call `/api/api/…`
+  (`analytics/grc`, `talenta/analytics`, `perencanaan/[id]/activity-dialog`).
+  84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
+  Types entries below are part of this. Phase 1 of the audit plan fixes it area
+  by area; the guard (#563) stops new ones.
+- **Homeroom pages that still do not work** (after #579–#581).
+  *Wali Kelas → Pesan Orang Tua* calls `/homeroom/classes/{id}/messages` and
+  `POST /homeroom/messages`, which do not exist; the `messages` module
+  (`/messages`, a recipient per message) is the place to wire it, with the
+  pupils' wali as recipients. The pupil page (`/homeroom/students/[id]`)
+  shows figures that are not data: *Pramuka — Aktif* for every pupil, rank
+  #0, average 0, "0 / 30 Juz", *Invalid Date*. The kepala sekolah reads a
+  class's dashboard through the API but has no menu path to it.
+- **Class and teacher schedules.** The web calls
+  `/curriculum/schedules/class/{id}`, `/curriculum/schedules/teacher/{id}`
+  and `PUT /curriculum/schedules/{id}`; the API serves
+  `/classes/:classId/schedule` and `PATCH`, and names the day `dayOfWeek`
+  where the web sends `day`. And `createSchedule`
+  (`curriculum.service.ts`) checks only for a clash in time: a slot accepts
+  any teacher, not only the subject's guru pengampu for that class
+  (`teacherSubject`, #573). Its error message is English.
+- **Counselling: the quick actions do nothing.** On a session's page (#574
+  made the notes and referrals tabs real), "Mulai Sesi", "Selesaikan Sesi" and
+  "Hubungi Orang Tua" are buttons with no handler, and there is no form to add
+  a note or a referral from the web.
+- **The staff dashboard's other counters are always 0.** `use-staff-dashboard.ts`
+  reads `meta.pagination.total` for health, violations, rewards and students;
+  those APIs send other shapes (#564 fixed only the permit counter). The API has
+  three pagination shapes (`pagination`, `meta.pagination`, `meta`) — phase 6.
+- **`/musyrif/boarding-center` is still mostly sample data** (Social Harmony,
+  "4 Musyrif on Duty", alerts, health counts); only the dormitory list and,
+  since #564, the permit card and tab are live. The page says so.
+- **Permits without a gate code.** Older seeded permits have `code` null, so the
+  gate cannot find them once approved. New permits always get one; approving a
+  code-less permit should assign one.
+- **2FA recovery codes are stored but never accepted.** Enrolment writes
+  `twoFactorRecoveryCodes`; no login path reads them, so a user who loses the
+  authenticator cannot use them.
+
 - **Tagihan & SPP — the write screens call an API that does not exist.** The
   read screens were fixed in #540; the writes still use the imagined contract
   (`apps/web/src/hooks/use-finance.ts`): "Buat Tagihan" sends `billType` (the
@@ -23,6 +73,21 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   `/finance/invoices/bulk` (no such route), "Catat Pembayaran" sends
   `billId`/`paymentMethod` (API: `invoiceId`/`method`), and deleting a payment
   calls `DELETE /finance/payments/:id` (no such route).
+- **The notifications management page opens for any role** that types
+  `/notifications`; its calls are admin-only, so a non-admin sees an empty
+  page. (Everyone's own inbox is `/notifications/me` since #587.) The admin
+  menu's *Notifications* item also lights on `/notifications/me` (prefix
+  match).
+- **A unit's operator sees every unit's subjects.** *Classes → Mata
+  Pelajaran & Jadwal* for Admin SD IT lists SMP IT's subjects (seen
+  2026-09-28), and its *Tanpa Guru Pengampu* card counts them.
+- **Small wrong labels and filters seen 2026-09-28:** the Kehadiran list
+  (`/attendance`) offers teachers a "Semua Unit" filter and its pager is in
+  English; *Catat Donasi* shows an English date format and "Campaign"; the
+  TK daily-report table and check-in say "No results found", "Pick a date",
+  "Apply"; *Kurikulum Merdeka* raises a "Route GET /api/hr/employees not
+  found" toast on load; `GET /parent/children` still uses
+  `include: { student }` (see `lessons/prisma-include-leaks-pii.md`).
 - **Notification settings save nothing, and say they did.**
   `apps/web/src/app/notifications/settings/page.tsx` loads a constant
   (`DEFAULT_PREFERENCES`), and its save mutation waits 500 ms and toasts
@@ -71,6 +136,16 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Access that is too narrow, or needs review
 
+- **Who manages asrama — decided 2026-09-27, not built.** Adding asrama and
+  kamar and placing santri still admits the super admin, every school's admin
+  (TK's included, whose pupils never board) and the yayasan organs — the
+  legacy `UNIT_ADMIN` bucket, named once as `DORMITORY_MANAGER_ROLE_CODES`.
+  Decided: Pimpinan Pesantren, TU Pesantren and the super admin; the
+  koordinator asrama places santri in their own asrama
+  (`decisions/unit-vs-asrama-vs-takhosus.md`; `roadmap.md` 00.6).
+- **The dormitories module needs a read-scope review.** Its read routes do not
+  all apply the same scope check; see the module before widening who reads it.
+
 - **Page gates (`allowedRoles`) disagree with `rbac.ts` on 23 pages.** Most are
   deliberate (`/settings` for one's own profile, `/settings/roles` for Super
   Admin only). To review: `/homeroom/performance` and
@@ -79,6 +154,27 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 - **Some modules still admit whole legacy buckets** (`STAFF` in particular),
   where a feature permission would be narrower. Review module by module under
   Model A; the list is kept outside the repository.
+- **"Roles & Permissions" edits a list almost nothing reads** (measured
+  2026-09-25). Super Admin can create a role and tick permissions, stored in
+  `roles.permissions`, but only 13 API routes check a permission
+  (`hasPermission`); 670 check a legacy bucket (`authorize`), menus come from
+  `navigation.ts` by role code, and web routes from `rbac.ts` by bucket. A new
+  role gets the fallback menu, and unticking a permission does not remove the
+  access a bucket grants. Model A (roadmap §1.2) is the fix. Until it lands
+  the page says so itself (`PermissionScopeNotice`, 2026-09-25): deactivating
+  the account is what revokes access, within the 15-minute token life.
+
+- **Laporan harian: the TK guru and kepala sekolah have no path to it.**
+  A TK guru's menu has *Mutabaah Yaumiyah* only; the *TK / PAUD* group
+  (Laporan Harian, its class and parent views, check-in, edit) is the unit
+  admin's, and the middleware sends TEACHER away from `/tk`. The TK kepala
+  sekolah has no daily-report item at all, though the API lets principals
+  read and write. `/homeroom/daily-report` (a class's day, for the wali kelas)
+  is linked from nowhere. The user chose one page on 2026-09-27 — the TK guru
+  writes for their class, the TK kepala sekolah reads, the other page trees
+  308 (`roadmap.md` item 00.3).
+- **Pantau Tumbuh Kembang (`/health/growth`) has no menu item** and no link
+  from any page; it is reached only by typing the address.
 
 ## Waiting on a decision
 
@@ -106,6 +202,56 @@ decision.
    survives.
 
 ## Design gaps
+
+- **Names that say something other than what the module does** (audit
+  2026-09-25, every module): `practicum` is Amaliyah Tadris, `research` is
+  Fathul Kutub (shown as "Turats Lab"), `inventory` is fixed assets,
+  `student-`/`teacher-compliance` are data completeness,
+  `finance-`/`dashboard-enhancement` name their history, `pengawasan`
+  (internal audit) reads as the Pengawas organ, `non-formal` is courses,
+  `/api/health` is the UKS module while `/health` is the server check, and
+  `/assessment/skhun` prints a document not issued since the national exam was
+  abolished (2021). 50 English menu labels in an Indonesian UI; 27 paths with
+  more than one label. Full table: the audit report linked in `progress.md`.
+- **One concept, several modules** (audit 2026-09-25): tahfidz across five
+  modules (`takhosus` re-exposes murojaah, simaan, sanad and halaqoh on the same
+  tables), report cards in five places, lesson plans in three models, P5 in two
+  modules (the term was retired by Permendikdasmen 13/2025 — now
+  *kokurikuler*), chart of accounts and journals in `finance` and
+  `finance-enhancement`, two monthly-depreciation implementations
+  (`jobs/asset-depreciation.job.ts` runs; `inventory/depreciation.service.ts`
+  never did), three daily santri logs (`daily-report`, `ibadah`, `muhasabah`),
+  and duplicate pages: `/payroll` + `/hr/payroll`, `/wallet` +
+  `/finance/wallet`, `/tahfidz/simaan` + `/takhosus/simaan`, three certificate
+  pages. Laporan harian alone has three ways to write one
+  (`/daily-report/new`, `/tk/daily-reports/new`, `/tk/daily-reports/create`
+  for a class) plus check-in, the wali kelas page and Mutabaah bulk, and two
+  pages for the wali (`/parent/daily-report`, and the list in
+  `/parent/buku-penghubung`).
+- **A wali's reply to a daily report is appended to `homeActivity`**
+  ("[Tanggapan Orang Tua]: …"). There is no column for it, so it cannot be
+  shown apart from the teacher's suggestion for home.
+- **The daily-report photo rule knows only local uploads.**
+  `dailyReportPhotoSchema` accepts `…/uploads/<file>`; when stored files move
+  to blob storage (#441, to be split), widen it in the same change.
+- **The module standard is not followed.**
+  22 of 93 modules have all five parts; 12 call Prisma from a route or
+  controller; 23 import other modules directly (the rule is the event bus);
+  1,457 bare `res.json` against 399 `ApiResponse`; 349 of 562 POST/PUT/PATCH
+  routes carry no `validate()`. (`AGENTS.md` and `docs/ARCHITECTURE.md` were
+  corrected on 2026-09-25; the code itself is phase 6 of the plan.)
+- **Schema and migrations disagree on two points** (measured 2026-09-26 with
+  `prisma migrate diff` from a database built by `migrate deploy` to
+  `schema.prisma`): `admission_waves.full_by_capacity` is `Boolean?` in the
+  schema but `NOT NULL DEFAULT false` in its migration, and the migrations
+  create `exam_grade_duplicates_backup`, a one-off backup table the schema
+  does not model. Neither came from recent work; a new migration's diff shows
+  both and nothing is wrong with it. Make the field `Boolean` and decide
+  whether the backup table can be dropped.
+- **Scheduled jobs assume one instance.** Ten `node-cron` jobs run inside the
+  API process with no lock; scaling the App Service to two instances would send
+  SPP reminders twice. Add a `pg_try_advisory_lock` (or a separate worker)
+  before any scale-out.
 
 - **Ratification by the yayasan is not modelled collectively.** One Pembina
   account decides, not a meeting. And the header of an `IN_PROGRESS` plan can
@@ -141,6 +287,18 @@ decision.
   are safe; the regex ones are not. Sweep file by file.
 - **Firefox and WebKit fail `page-state-helper.spec.ts:33`** deterministically.
   The matrix is `continue-on-error`, so it does not block; it is not a flake.
+
+- **`teacher-management.spec.ts` skips all 12 of its tests** ("Teachers page
+  not available"): the page it looks for does not exist (HR employees is on
+  the broken-calls list). It is green because it asserts nothing; rewrite it
+  when the employees page is wired.
+- **Two e2e specs fail at random under the full suite and pass alone.**
+  `certificates.spec.ts` (preview/print number, lines 118 and 153 on
+  different runs) failed after its retry in two full Chromium runs on
+  2026-09-27 and passed 3/3 on its own each time; `cbt.spec.ts` (create and
+  delete an exam) needed a retry once. Suspect the print popup's timing under
+  load. See `lessons/guard-tests-that-measure-the-wrong-thing.md`, "E2E that
+  fails on a random spec each run".
 
 ## Unverified
 

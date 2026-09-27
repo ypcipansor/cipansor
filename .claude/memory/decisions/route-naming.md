@@ -30,3 +30,5 @@ app's predominantly-English route vocabulary, but visible labels stay
 Indonesian.
 
 The app-shell convention is in [`apps/web/AGENTS.md`](../../../apps/web/AGENTS.md).
+
+Extended on 2026-09-25 by [`istilah-dan-penamaan.md`](istilah-dan-penamaan.md): the glossary, the portal/public-site language split, `/api/v1`, and the target name of every module.

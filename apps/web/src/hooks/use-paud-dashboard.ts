@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import { useAuthStore } from "@/stores/auth";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { STUDENT_STATUS, type DailyReport } from "@cipansor/shared";
+import { format, startOfMonth } from "date-fns";
 import { useActiveAcademicYear } from "./use-academic-years";
 
 // ============================================
@@ -134,18 +135,13 @@ export function usePAUDDashboardStats() {
             })
             .catch(() => ({ data: { meta: { pagination: { total: 0 } } } })),
 
+          // Calendar days in the browser's zone (WIB), not UTC's.
           api
             .get<PaginatedResponse<unknown>>("/daily-report", {
               params: {
                 unitId: tkUnitId,
-                startDate: new Date(
-                  new Date().getFullYear(),
-                  new Date().getMonth(),
-                  1,
-                )
-                  .toISOString()
-                  .split("T")[0],
-                endDate: new Date().toISOString().split("T")[0],
+                dateFrom: format(startOfMonth(new Date()), "yyyy-MM-dd"),
+                dateTo: format(new Date(), "yyyy-MM-dd"),
                 limit: 1,
               },
             })
@@ -273,24 +269,11 @@ export function usePAUDRecentDailyReports(limit: number = 5) {
   return useQuery({
     queryKey: ["paud-recent-daily-reports", user?.unitId, limit],
     queryFn: async () => {
-      const response = await api.get<
-        PaginatedResponse<{
-          id: string;
-          date: string;
-          student: { name: string };
-          teacher?: { name: string };
-          activities: string[];
-          mood?: string;
-          healthNotes?: string;
-        }>
-      >("/daily-report", {
-        params: {
-          unitId: user?.unitId,
-          limit,
-          sortBy: "date",
-          sortOrder: "desc",
-        },
-      });
+      // Newest first is the list's own order.
+      const response = await api.get<PaginatedResponse<DailyReport>>(
+        "/daily-report",
+        { params: { unitId: user?.unitId, limit } },
+      );
       return response.data.data;
     },
     enabled: !!user?.unitId,

@@ -62,21 +62,23 @@ const KNOWN_MISSING = new Set([
    * that was (`/e-office/archive`, on the module's own landing page) is a page
    * now, not a list entry.
    *
-   * Worth reading as a group rather than a list. Thirteen of them are
+   * Worth reading as a group rather than a list. Eight of them are
    * `/paud/...` targets pushed from pages that live under `/tk/...` — a whole
    * module navigating to a route tree that does not exist under that name.
    */
   "/attendance/create",
+  /**
+   * Revealed on 2026-09-26, when the scanner learned `href:` props and that
+   * "new"/"create"/"edit" are page names a `[param]` must not swallow. Four
+   * others it found pointed at `…/create` where the page is `…/new`, and were
+   * repointed; this breadcrumb has no page to point at yet.
+   */
+  "/hr/teachers",
   "/certificates/X/edit",
   "/ibadah/bulk",
   "/paud/assessment",
   "/paud/assessment/X",
   "/paud/assessment/X/edit",
-  "/paud/daily-reports",
-  "/paud/daily-reports/X",
-  "/paud/daily-reports/X/edit",
-  "/paud/daily-reports/check-in",
-  "/paud/daily-reports/new",
   "/paud/reports",
   "/paud/reports/X",
   "/paud/reports/X/edit",
@@ -114,6 +116,13 @@ function collectRoutes(dir: string, prefix = ""): Set<string> {
   return routes;
 }
 
+/**
+ * Names of pages, never ids. `/daily-report/new` "existed" for as long as
+ * `/daily-report/[id]` did, and opened the detail page with "new" for an id,
+ * while the form sat at `/daily-report/create` with no link to it.
+ */
+const PAGE_NAMES = new Set(["new", "create", "edit"]);
+
 /** `X` stands in for an interpolated segment, so it matches any `[param]`. */
 function routeExists(pathname: string, routes: Set<string>): boolean {
   if (routes.has(pathname)) return true;
@@ -123,7 +132,9 @@ function routeExists(pathname: string, routes: Set<string>): boolean {
     if (actual.length !== wanted.length) continue;
     const matches = actual.every(
       (segment, i) =>
-        (segment.startsWith("[") && segment.endsWith("]")) ||
+        (segment.startsWith("[") &&
+          segment.endsWith("]") &&
+          !PAGE_NAMES.has(wanted[i])) ||
         segment === wanted[i],
     );
     if (matches) return true;
@@ -153,8 +164,10 @@ function collectHrefs(dir: string): Map<string, Set<string>> {
        * the module's own landing page, invisible to this test for as long as it
        * existed. `router.replace` and `redirect()` navigate just as really.
        */
+      // `href:` too: a PageHeader action or a menu entry is an object, and
+      // Mutabaah's "Buat Laporan" was one.
       const pattern =
-        /(?:href=|router\.(?:push|replace)\(|\bredirect\()\s*(?:"([^"]+)"|`([^`]+)`|\{`([^`]+)`\})/g;
+        /(?:href=|href:|router\.(?:push|replace)\(|\bredirect\()\s*(?:"([^"]+)"|`([^`]+)`|\{`([^`]+)`\})/g;
       let match: RegExpExecArray | null;
       while ((match = pattern.exec(source))) {
         let href = (match[1] ?? match[2] ?? match[3]).replace(

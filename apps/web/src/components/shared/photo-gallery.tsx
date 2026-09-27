@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { authFileUrl } from "@/lib/files";
 
 export interface PhotoGalleryItem {
   id: string;
@@ -197,7 +198,7 @@ export function PhotoGallery({
             onClick={() => setSelectedPhoto(photo)}
           >
             <Image
-              src={photo.thumbnail || photo.url}
+              src={authFileUrl(photo.thumbnail || photo.url)}
               alt={photo.caption || "Photo"}
               fill
               className="object-cover group-hover:scale-105 transition-transform"
@@ -251,7 +252,7 @@ export function PhotoGallery({
           {selectedPhoto && (
             <div className="relative aspect-video bg-black">
               <Image
-                src={selectedPhoto.url}
+                src={authFileUrl(selectedPhoto.url)}
                 alt={selectedPhoto.caption || "Photo"}
                 fill
                 className="object-contain"
@@ -351,7 +352,7 @@ export function DailyReportPhotoPreview({
           }
         >
           <Image
-            src={photo.thumbnail || photo.url}
+            src={authFileUrl(photo.thumbnail || photo.url)}
             alt=""
             fill
             className="object-cover"

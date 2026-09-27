@@ -12,35 +12,8 @@ export const listAttendanceQuerySchema = z.object({
   status: z.nativeEnum(AttendanceStatus).optional(),
 });
 
-// Single attendance record
-export const createAttendanceSchema = z.object({
-  studentId: z.string().uuid('Invalid student ID'),
-  classId: z.string().uuid('Invalid class ID'),
-  date: z.coerce.date(),
-  status: z.nativeEnum(AttendanceStatus),
-  notes: z.string().max(500).optional(),
-});
-
-// Bulk attendance (for class)
-export const bulkAttendanceSchema = z.object({
-  classId: z.string().uuid('Invalid class ID'),
-  date: z.coerce.date(),
-  records: z
-    .array(
-      z.object({
-        studentId: z.string().uuid('Invalid student ID'),
-        status: z.nativeEnum(AttendanceStatus),
-        notes: z.string().max(500).optional(),
-      })
-    )
-    .min(1, 'At least one record is required'),
-});
-
-// Update attendance
-export const updateAttendanceSchema = z.object({
-  status: z.nativeEnum(AttendanceStatus).optional(),
-  notes: z.string().max(500).optional().nullable(),
-});
+// Create, bulk and update bodies are shared with the web: @cipansor/shared
+// schemas/attendance.ts.
 
 // ID param
 export const attendanceIdParamSchema = z.object({

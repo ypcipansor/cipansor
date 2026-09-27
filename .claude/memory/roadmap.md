@@ -1,6 +1,6 @@
 # Roadmap — what to do next, in order
 
-Ordered backlog as of **2026-09-25**. Defects in detail are in
+Ordered backlog as of **2026-09-27**. Defects in detail are in
 [`known-issues.md`](./known-issues.md); where the work stands (environments,
 what waits on the user, what is in flight) is in [`progress.md`](./progress.md).
 
@@ -10,10 +10,65 @@ item is done, delete it — git keeps the history. (The long record of closed
 items before 2026-09-25 is in the history of this file and of
 `docs/ROADMAP.md`.)
 
-## 1. Now — in this order (decided 2026-09-23 → 25)
+## 1. Now — in this order (decided 2026-09-23 → 27)
+
+00. **The user's answers of 2026-09-27**, smallest and most exposed first
+    (each is its own PR, wired end to end, with tests and before/after):
+    1. (done: zakat off the donation forms, #584);
+    2. daily attendance per `decisions/absensi-harian.md` — the one page
+       (#585), the Alpa/Terlambat notice with a personal inbox (#587), the
+       follow-up task with a contact log (#588) and the register reminder
+       (#590) are done; left: the pattern flag, whose parameters go to the
+       user first (`progress.md`, "Waiting on the user");
+    3. one TK daily-report page: a *Laporan Harian* item for the TK guru
+       (writes for their class) and the TK kepala sekolah (reads); the other
+       two page trees 308 to it (removal approved);
+    4. (done: the Kurikulum list removed, 308 to Kurikulum Merdeka, #589);
+    5. the permit rule's three parameters (`pemutus-izin-santri.md`): an
+       optional attachment, the koordinator asrama for going home or staying
+       overnight, the wali's approval for staff-filed leave off the pondok
+       (schema change);
+    6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
+       the koordinator's placement in their own asrama;
+    7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid
+       dampingan (`peran-dan-tugas-tambahan.md`).
+
+0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
+   decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
+   on 2026-09-25, so it runs first). Phases, each releasable alone:
+   0. guards — done (#560, #562, #563);
+   1. reconnect the broken calls area by area (Perizinan done in #564 and
+      #568; Asrama in #569 and #571; mata pelajaran in #573; laporan harian
+      in #577; wali kelas in #579–#581; next the schedules, HR employees,
+      Sertifikat, and counselling's remaining gaps in
+      `known-issues.md`), delete the 84 dead ones, `services/` and the
+      `api-client` alias;
+   2. glossary from the user's eight decisions, with *santri* on every
+      portal screen (decided 2026-09-27, `istilah-dan-penamaan.md` §1) — a
+      label sweep; state formats keep *murid* / *peserta didik*;
+   3. consolidate duplicates (tahfidz, report cards, lesson plans,
+      P5 → kokurikuler, accounting, depreciation, daily logs, duplicate pages,
+      dashboards);
+   4. API grouped by context under `/api/v1`, Zod contracts in
+      `packages/shared` → `zod-to-openapi` → `openapi-typescript` client, one
+      style for actions (`POST /{id}/{verb}`), updates (`PATCH`), aggregates
+      (`/summary`) and self (`/me`); Prisma models renamed; multi-file schema;
+   5. web route groups, URLs that follow the API, 308s, Indonesian labels;
+      the portal becomes Indonesian-only and every public page gets complete
+      Indonesian, English and Arabic;
+   5b. donations, zakat and wakaf rebuilt to UU 23/2011, UU 41/2004, PSAK 409
+      and PSAK 412 — after the yayasan answers the two facts in `progress.md`;
+   6. module boundaries enforced by lint, Zod on every mutation, one test
+      location, a cron lock, dead models dropped once proven dead;
+   7. `docs/ARCHITECTURE.md` rewritten from the result.
 
 1. **Finish the role catalogue.** The pesantren part shipped in #552. Left:
-   - a *bidang* attribute for Wakasek;
+   - wakasek per bidang as a timed assignment — wakasek is no longer a role
+     code (#575, `decisions/peran-dan-tugas-tambahan.md`);
+   - the rest of the homeroom pages — *Pesan Orang Tua*, the pupil page's
+     figures, the kepala sekolah's path to a class (known-issues). The
+     relation itself shipped in #579; attendance in #580; behaviour notes in
+     #581;
    - `PESANTREN_ADMIN` — needs a pesantren unit first (see known-issues,
      "Takhosus as a fifth unit");
    - a Panitia SPMB assignment that expires — needs writers of `expires_at`,
@@ -45,6 +100,15 @@ The checklist lives outside the repository while it is public (it concerns
 accounts and credentials). What is safe to say here: the data is demo data
 until real users are onboarded, and the real SPMB dates, fees and units for an
 actual intake are the yayasan's decision — the seed's values are placeholders.
+
+**Align with national and international standards** (asked by the user on
+2026-09-26): academic, pesantren, teaching, finance and information security.
+Per domain when that domain is next changed — name its standards and offer a
+short check — and a full pass after the audit plan and Model A, at the latest
+before the pre-launch checklist. Verify each standard is still in force when
+it is researched. Already researched, cite rather than repeat: the decisions
+in `decisions/` (roles and duties, Pimpinan Pesantren, units, e-signature,
+naming and ZIS/wakaf).
 
 ## 3. Agreed feature queue (in the order approved)
 

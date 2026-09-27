@@ -21,6 +21,7 @@ import {
 import { Plus, Shield, Pencil } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { PermissionScopeNotice } from "@/components/roles/permission-scope-notice";
 
 export default function RolesPage() {
   const { data: roles, isLoading } = useRoles();
@@ -41,6 +42,8 @@ export default function RolesPage() {
             </Link>
           </Button>
         </PageHeader>
+
+        <PermissionScopeNotice />
 
         {isLoading ? (
           <div className="space-y-4">

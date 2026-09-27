@@ -26,16 +26,21 @@ reuseable cross-cutting pieces — are documented in
 
 ```
 src/modules/<name>/
-  routes.ts      # Router: authenticate/authorize/validate -> controller
-  controller.ts  # thin; asyncHandler; returns via ApiResponse
-  service.ts     # business logic; the ONLY layer that touches Prisma
-  schema.ts      # Zod schemas (types via z.infer)
-  index.ts       # export { <name>Routes }
-  tests/         # vitest, Prisma mocked
+  <name>.routes.ts      # Router: authenticate/authorize/validate -> controller
+  <name>.controller.ts  # thin; asyncHandler; returns via ApiResponse
+  <name>.service.ts     # business logic; the ONLY layer that touches Prisma
+  <name>.schema.ts      # Zod schemas (types via z.infer)
+  index.ts              # export { <name>Routes }
+  tests/                # vitest, Prisma mocked
 ```
 
 Layering rule: **routes never call Prisma; controllers never embed business
-logic.** Modules are mounted in `src/app.ts` under `/api`.
+logic.** It is the rule, not yet the state: measured on 2026-09-25, 22 of the 93
+modules follow the layout fully, 12 call Prisma from a route or controller, and
+23 import another module directly (see `.claude/memory/known-issues.md`).
+Modules are mounted in `src/app.ts` under `/api`; the move to `/api/v1`, with
+modules grouped by domain context, is phase 4 of the audit plan in
+`.claude/memory/roadmap.md`.
 
 Cross-cutting foundations (reuse, don't reinvent):
 
@@ -50,7 +55,11 @@ Cross-cutting foundations (reuse, don't reinvent):
   don't reach into other modules' services. `notification:send` drives the
   notifications module; socket.io (`lib/realtime.ts`) pushes live updates.
 - **Scheduled work** — `src/jobs/` (node-cron): snapshots, summaries, cleanup,
-  auto-billing.
+  auto-billing, SPP reminders, identity and transcript purges. The jobs run
+  **inside the API process with no lock**, so the design assumes **one API
+  instance**: a second instance would run each job twice (SPP reminders sent
+  twice). A lock (`pg_try_advisory_lock`) or a separate worker must come before
+  any scale-out. `SCHEDULER_ENABLED=false` switches them off (staging).
 
 ### Data layer (Prisma 7)
 
@@ -152,9 +161,14 @@ is in `localStorage` (per-origin) and `auth-storage` is a host-only cookie with 
 per-unit hosts would have forced them to sign in twice. Public unit pages are
 paths: `/unit/[slug]`.
 
-nginx serves both from one `server` block each, proxying to the **same** web and
-api containers. Both need `location ^~ /socket.io/` → api: socket.io lives outside
-`/api`, so without it the handshake is answered by the web container.
+Production and staging run on **Azure App Service** as sidecar containers
+(details in [`deploy-azure.md`](deploy-azure.md)): an **nginx** main container
+(`deploy/azure/nginx/nginx.conf`, one catch-all `server` block for every
+hostname) receives all traffic and routes `/api`, `/uploads`, `/socket.io` and
+`/healthz` to the api container and everything else to web. `location ^~
+/socket.io/` → api is required: socket.io lives outside `/api`, so without it
+the handshake is answered by the web container. The root `nginx.conf` and
+`docker-compose.yml` are the earlier single-host deployment.
 
 `/verifikasi` stays on the apex permanently — those URLs are printed on paper.
 

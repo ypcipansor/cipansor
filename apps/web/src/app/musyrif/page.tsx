@@ -278,7 +278,7 @@ function MusyrifDashboardContent() {
         <Button
           variant="outline"
           className="h-auto flex-col py-4 gap-2 border-red-500/20 bg-red-500/5 hover:bg-red-500/10"
-          onClick={() => router.push("/violations/create")}
+          onClick={() => router.push("/violations/new")}
         >
           <AlertTriangle className="w-6 h-6 text-red-500" />
           <span className="text-xs font-medium">Lapor Pelanggaran</span>
@@ -286,7 +286,7 @@ function MusyrifDashboardContent() {
         <Button
           variant="outline"
           className="h-auto flex-col py-4 gap-2 border-green-500/20 bg-green-500/5 hover:bg-green-500/10"
-          onClick={() => router.push("/tahfidz/create")}
+          onClick={() => router.push("/tahfidz/new")}
         >
           <BookOpen className="w-6 h-6 text-green-500" />
           <span className="text-xs font-medium">Setoran Tahfidz</span>

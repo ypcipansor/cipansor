@@ -2,8 +2,11 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
-import { AttendanceStatus } from "@cipansor/shared";
-import type { StudentStatus } from "@cipansor/shared";
+import type {
+  HomeroomViewer,
+  MyHomeroomClass,
+  StudentStatus,
+} from "@cipansor/shared";
 
 // ======================
 // TYPES
@@ -124,12 +127,6 @@ export interface ParentMessage {
   createdAt: string;
 }
 
-export interface QuickAttendance {
-  studentId: string;
-  status: AttendanceStatus;
-  notes?: string;
-}
-
 // New Dashboard Types
 export interface UpcomingBirthday {
   student: {
@@ -176,24 +173,29 @@ export interface HomeroomDashboardSummary {
   upcomingBirthdays: UpcomingBirthday[];
 }
 
+/** A pupil as the homeroom API lists them — never the whole Student row. */
+export interface HomeroomStudentBrief {
+  id: string;
+  nis: string;
+  gender: "MALE" | "FEMALE";
+  photoUrl: string | null;
+  user: { name: string };
+}
+
 export interface HomeroomDashboardData {
   class: {
     id: string;
     name: string;
+    level?: string | null;
     unit: { id: string; name: string };
-    academicYear: {
-      id: string;
-      name: string;
-      isActive: boolean;
-      year?: string;
-      semester?: number;
-    };
-    homeroomTeacher: {
-      user: { name: string; email: string };
-    };
+    academicYear: { id: string; name: string };
+    /** A class may have no wali kelas yet; its kepala sekolah still reads it. */
+    homeroomTeacher: { id: string; user: { name: string } } | null;
   };
+  /** Whether the caller is this class's wali kelas, and may write notes. */
+  viewer: HomeroomViewer;
   studentCount: number;
-  students: HomeroomStudent[];
+  students: HomeroomStudentBrief[];
   attendanceSummary: {
     status: string;
     count: number;
@@ -205,30 +207,23 @@ export interface HomeroomDashboardData {
 // HOOKS
 // ======================
 
-// Get homeroom class (Single)
-export function useHomeroomClass(classId?: string) {
-  return useQuery<HomeroomClass>({
-    queryKey: ["homeroom", "class", classId],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<HomeroomClass>>(
-        `/homeroom/classes/${classId}`,
-      );
-      return response.data.data;
-    },
-    enabled: !!classId,
-  });
-}
-
-// Get all my homeroom classes (List)
-export function useHomeroomClasses() {
+/**
+ * The classes the signed-in teacher is wali kelas of, the current academic
+ * year's first. `isCurrent` is what makes a teacher a wali kelas *now*: the
+ * sidebar shows the Wali Kelas group only for a teacher with a current class,
+ * so pass `enabled: false` where that group is not in the menu at all.
+ */
+export function useHomeroomClasses(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["homeroom", "my-classes"],
     queryFn: async () => {
-      const { data } = await api.get<ApiResponse<HomeroomClass[]>>(
+      const { data } = await api.get<ApiResponse<MyHomeroomClass[]>>(
         "/homeroom/my-classes",
       );
       return data.data;
     },
+    enabled: options?.enabled ?? true,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -253,8 +248,8 @@ export function useHomeroomDashboard(classId: string | undefined) {
  * This used to GET /homeroom/my-class, which the API has never served — the
  * only endpoint is the plural /homeroom/my-classes. It 404'd on every render
  * of the behaviour and messages pages. Take the first class from the list
- * rather than adding a singular endpoint that would duplicate it; a wali kelas
- * normally has exactly one.
+ * rather than adding a singular endpoint that would duplicate it: the API puts
+ * the current academic year's class first, and a wali kelas holds one a year.
  */
 export function useMyHomeroomClass() {
   return useQuery<HomeroomClass | undefined>({
@@ -414,93 +409,6 @@ export function useCreateHomeroomNote() {
   });
 }
 
-// Get behavior notes for student
-export function useStudentBehaviorNotes(studentId?: string) {
-  return useQuery<BehaviorNote[]>({
-    queryKey: ["homeroom", "behavior-notes", studentId],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<BehaviorNote[]>>(
-        `/homeroom/students/${studentId}/behavior-notes`,
-      );
-      return response.data.data;
-    },
-    enabled: !!studentId,
-  });
-}
-
-// Create behavior note
-export function useCreateBehaviorNote() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (
-      data: Omit<
-        BehaviorNote,
-        "id" | "createdBy" | "createdAt" | "resolved" | "resolvedDate"
-      >,
-    ) => {
-      const response = await api.post<ApiResponse<BehaviorNote>>(
-        "/homeroom/behavior-notes",
-        data,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["homeroom", "behavior-notes", variables.studentId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["homeroom", "class"] });
-    },
-  });
-}
-
-// Update behavior note
-export function useUpdateBehaviorNote() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      noteId,
-      data,
-    }: {
-      noteId: string;
-      data: Partial<BehaviorNote>;
-    }) => {
-      const response = await api.put<ApiResponse<BehaviorNote>>(
-        `/homeroom/behavior-notes/${noteId}`,
-        data,
-      );
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["homeroom", "behavior-notes"],
-      });
-      queryClient.invalidateQueries({ queryKey: ["homeroom", "class"] });
-    },
-  });
-}
-
-// Resolve behavior note
-export function useResolveBehaviorNote() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (noteId: string) => {
-      const response = await api.post<ApiResponse<BehaviorNote>>(
-        `/homeroom/behavior-notes/${noteId}/resolve`,
-      );
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["homeroom", "behavior-notes"],
-      });
-      queryClient.invalidateQueries({ queryKey: ["homeroom", "class"] });
-    },
-  });
-}
-
 // Get parent messages
 export function useParentMessages(classId?: string) {
   return useQuery<ParentMessage[]>({
@@ -538,146 +446,19 @@ export function useSendParentMessage() {
   });
 }
 
-// Submit quick attendance
-export function useSubmitQuickAttendance() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      data,
-    }: {
-      classId: string;
-      data: {
-        date: string;
-        attendances: QuickAttendance[];
-      };
-    }) => {
-      const response = await api.post<ApiResponse<unknown>>(
-        `/homeroom/classes/${classId}/quick-attendance`,
-        data,
+/**
+ * The pupils of a class, as the homeroom API lists them to its wali kelas and
+ * the unit's kepala sekolah and operator (404 to anyone else).
+ */
+export function useHomeroomClassStudents(classId?: string) {
+  return useQuery({
+    queryKey: ["homeroom", "class", classId, "students"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<HomeroomStudentBrief[]>>(
+        `/homeroom/class/${classId}/students`,
       );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["homeroom", "attendance", variables.classId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["homeroom", "class"] });
-    },
-  });
-}
-
-// Get class attendance for date
-export function useHomeroomClassAttendance(classId?: string, date?: string) {
-  return useQuery<{
-    date: string;
-    attendances: (QuickAttendance & { student: HomeroomStudent })[];
-    summary: {
-      present: number;
-      absent: number;
-      sick: number;
-      excused: number;
-      late: number;
-    };
-  }>({
-    queryKey: ["homeroom", "attendance", classId, date],
-    queryFn: async () => {
-      const response = await api.get<
-        ApiResponse<{
-          date: string;
-          attendances: (QuickAttendance & { student: HomeroomStudent })[];
-          summary: {
-            present: number;
-            absent: number;
-            sick: number;
-            excused: number;
-            late: number;
-          };
-        }>
-      >(`/homeroom/classes/${classId}/attendance?date=${date}`);
-      return response.data.data;
-    },
-    enabled: !!classId && !!date,
-  });
-}
-
-// Get class summary statistics
-export function useClassSummary(classId?: string) {
-  return useQuery<{
-    totalStudents: number;
-    maleCount: number;
-    femaleCount: number;
-    averageAttendance: number;
-    averageAcademicScore: number;
-    pendingBehaviorNotes: number;
-    upcomingBirthdays: {
-      student: HomeroomStudent;
-      daysUntil: number;
-    }[];
-    recentAchievements: BehaviorNote[];
-    recentViolations: BehaviorNote[];
-  }>({
-    queryKey: ["homeroom", "summary", classId],
-    queryFn: async () => {
-      const response = await api.get<
-        ApiResponse<{
-          totalStudents: number;
-          maleCount: number;
-          femaleCount: number;
-          averageAttendance: number;
-          averageAcademicScore: number;
-          pendingBehaviorNotes: number;
-          upcomingBirthdays: {
-            student: HomeroomStudent;
-            daysUntil: number;
-          }[];
-          recentAchievements: BehaviorNote[];
-          recentViolations: BehaviorNote[];
-        }>
-      >(`/homeroom/classes/${classId}/summary`);
       return response.data.data;
     },
     enabled: !!classId,
-  });
-}
-
-// Export attendance report
-export function useExportAttendanceReport() {
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      month,
-      year,
-    }: {
-      classId: string;
-      month: number;
-      year: number;
-    }) => {
-      const response = await api.get(
-        `/homeroom/classes/${classId}/attendance/export?month=${month}&year=${year}`,
-        { responseType: "blob" },
-      );
-      return response.data;
-    },
-  });
-}
-
-// Export progress report
-export function useExportProgressReport() {
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      studentId,
-    }: {
-      classId: string;
-      studentId?: string;
-    }) => {
-      const url = studentId
-        ? `/homeroom/classes/${classId}/progress/export?studentId=${studentId}`
-        : `/homeroom/classes/${classId}/progress/export`;
-      const response = await api.get(url, { responseType: "blob" });
-      return response.data;
-    },
   });
 }
