@@ -40,10 +40,12 @@ export interface Attendance {
   };
 }
 
+/** Body of POST /attendance; validated by `createAttendanceSchema`. */
 export interface CreateAttendanceInput {
   studentId: string;
   classId: string;
-  date: Date | string;
+  /** A calendar day, "yyyy-MM-dd". */
+  date: string;
   status: AttendanceStatus;
   notes?: string;
 }
@@ -54,9 +56,11 @@ export interface BulkAttendanceRecord {
   notes?: string;
 }
 
+/** Body of POST /attendance/bulk; validated by `bulkAttendanceSchema`. */
 export interface BulkAttendanceInput {
   classId: string;
-  date: Date | string;
+  /** A calendar day, "yyyy-MM-dd". */
+  date: string;
   records: BulkAttendanceRecord[];
 }
 

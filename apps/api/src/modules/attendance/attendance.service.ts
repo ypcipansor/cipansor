@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { Errors } from '@/middleware/error';
+import { ApiError, ErrorCode, Errors } from '@/middleware/error';
 import { UserRole, Prisma, AttendanceStatus as PrismaAttendanceStatus } from '@prisma/client';
 import { eventBus } from '@/lib/event-bus';
 import {
@@ -10,10 +10,19 @@ import {
   Attendance,
   AttendanceCalendarResponse,
   AttendanceSummary,
+  BulkAttendanceResult,
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { STUDENT_SAFE_SELECT, studentScope, type ScopeActor } from '@/utils/student-scope';
+import {
+  assertMayRecord,
+  dayOf,
+  dayString,
+  recorderScope,
+  todayWib,
+  type AttendanceActor,
+} from './attendance.access';
 
 export class AttendanceService {
   /**
@@ -132,71 +141,43 @@ export class AttendanceService {
   }
 
   /**
-   * Create single attendance record
+   * One pupil's day, by someone who records the class's register
+   * (attendance.access.ts). A second record for the same day is a conflict;
+   * the class form (bulk) is how a day is corrected.
    */
-  async create(input: CreateAttendanceInput, recordedById: string): Promise<Attendance> {
-    // Verify student exists
-    const student = await prisma.student.findFirst({
-      where: { id: input.studentId, deletedAt: null },
-    });
+  async create(input: CreateAttendanceInput, actor: AttendanceActor): Promise<Attendance> {
+    await assertMayRecord(input.classId, input.date, actor);
 
-    if (!student) {
-      throw Errors.notFound('Student');
-    }
-
-    // Verify class exists and student is enrolled
     const enrollment = await prisma.classEnrollment.findFirst({
-      where: {
-        studentId: input.studentId,
-        classId: input.classId,
-        status: 'active',
-      },
+      where: { studentId: input.studentId, classId: input.classId, status: 'active' },
+      select: { id: true },
     });
-
     if (!enrollment) {
-      throw Errors.badRequest('Student is not enrolled in this class');
+      throw Errors.badRequest('Siswa tidak terdaftar di kelas ini');
     }
 
-    // Check for duplicate attendance on same date
-    const inputDate = new Date(input.date);
-    const startOfDay = new Date(
-      Date.UTC(inputDate.getFullYear(), inputDate.getMonth(), inputDate.getDate(), 0, 0, 0, 0)
-    );
-    const endOfDay = new Date(
-      Date.UTC(inputDate.getFullYear(), inputDate.getMonth(), inputDate.getDate(), 23, 59, 59, 999)
-    );
-
-    const existingAttendance = await prisma.attendance.findFirst({
+    const date = dayOf(input.date);
+    const existing = await prisma.attendance.findUnique({
       where: {
-        studentId: input.studentId,
-        classId: input.classId,
-        date: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
+        studentId_classId_date: { studentId: input.studentId, classId: input.classId, date },
       },
+      select: { id: true },
     });
-
-    if (existingAttendance) {
-      throw Errors.conflict('Attendance already recorded for this student on this date');
+    if (existing) {
+      throw Errors.conflict('Absensi siswa ini pada tanggal itu sudah dicatat');
     }
 
     const attendance = await prisma.attendance.create({
       data: {
         studentId: input.studentId,
         classId: input.classId,
-        date: inputDate,
+        date,
         status: input.status as unknown as PrismaAttendanceStatus,
         notes: input.notes,
-        recordedById,
+        recordedById: actor.sub,
       },
       include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true } },
-            unit: { select: { id: true, name: true } },
-          },
-        },
+        student: { select: { ...STUDENT_SAFE_SELECT, unit: { select: { id: true, name: true } } } },
         class: { select: { id: true, name: true } },
       },
     });
@@ -212,147 +193,144 @@ export class AttendanceService {
       unitName: attendance.student.unit?.name || '',
       status: attendance.status as any,
       date: attendance.date,
-      recordedById,
+      recordedById: actor.sub,
     });
 
     return this.mapToShared(attendance);
   }
 
   /**
-   * Bulk create attendance for a class
+   * A pupil's day recorded by another module on the server — the UKS marking
+   * a pupil it sent home sick. The calling module checks its own caller, so
+   * there is no class relation to check here; a day the class's teachers
+   * already recorded is left as they recorded it.
    */
-  async bulkCreate(input: BulkAttendanceInput, recordedById: string) {
-    // Verify class exists
-    const classData = await prisma.class.findFirst({
-      where: { id: input.classId, deletedAt: null },
-    });
-
-    if (!classData) {
-      throw Errors.notFound('Class');
-    }
-
-    // Get all enrolled students
-    const enrolledStudentIds = await prisma.classEnrollment
-      .findMany({
-        where: { classId: input.classId, status: 'active' },
-        select: { studentId: true },
-      })
-      .then((e) => e.map((x) => x.studentId));
-
-    // Validate all students are enrolled
-    for (const record of input.records) {
-      if (!enrolledStudentIds.includes(record.studentId)) {
-        throw Errors.badRequest(`Student ${record.studentId} is not enrolled in this class`);
-      }
-    }
-
-    // Check for existing attendance on this date
-    const targetDate = new Date(input.date);
-    const startOfDay = new Date(
-      Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate(), 0, 0, 0, 0)
-    );
-    const endOfDay = new Date(
-      Date.UTC(
-        targetDate.getFullYear(),
-        targetDate.getMonth(),
-        targetDate.getDate(),
-        23,
-        59,
-        59,
-        999
-      )
-    );
-
-    const existingAttendance = await prisma.attendance.findMany({
+  async recordFromIntegration(
+    input: {
+      studentId: string;
+      classId: string;
+      on: Date;
+      status: AttendanceStatus;
+      notes?: string;
+    },
+    recordedById: string
+  ): Promise<'created' | 'already-recorded'> {
+    const date = dayOf(todayWib(input.on));
+    const existing = await prisma.attendance.findUnique({
       where: {
-        classId: input.classId,
-        date: {
-          gte: startOfDay,
-          lte: endOfDay,
-        },
+        studentId_classId_date: { studentId: input.studentId, classId: input.classId, date },
       },
-      select: { studentId: true },
+      select: { id: true },
     });
-
-    const existingStudentIds = new Set(existingAttendance.map((a) => a.studentId));
-
-    // Filter out students who already have attendance
-    const newRecords = input.records.filter((r) => !existingStudentIds.has(r.studentId));
-
-    if (newRecords.length === 0) {
-      throw Errors.conflict('All students already have attendance recorded for this date');
-    }
-
-    // Create attendance records
-    const created = await prisma.attendance.createMany({
-      data: newRecords.map((record) => ({
-        studentId: record.studentId,
+    if (existing) return 'already-recorded';
+    await prisma.attendance.create({
+      data: {
+        studentId: input.studentId,
         classId: input.classId,
-        date: targetDate,
-        status: record.status as unknown as PrismaAttendanceStatus,
-        notes: record.notes,
+        date,
+        status: input.status as unknown as PrismaAttendanceStatus,
+        notes: input.notes,
         recordedById,
-      })),
+      },
     });
-
-    return {
-      created: created.count,
-      skipped: input.records.length - newRecords.length,
-    };
+    return 'created';
   }
 
   /**
-   * Update attendance record
+   * A class's day. Pupils already recorded that day are updated, not skipped:
+   * saving the register again is how it is corrected.
+   */
+  async bulkCreate(
+    input: BulkAttendanceInput,
+    actor: AttendanceActor
+  ): Promise<BulkAttendanceResult> {
+    await assertMayRecord(input.classId, input.date, actor);
+
+    const studentIds = input.records.map((r) => r.studentId);
+    if (new Set(studentIds).size !== studentIds.length) {
+      throw Errors.badRequest('Satu siswa tercatat lebih dari sekali');
+    }
+
+    const enrolled = new Set(
+      (
+        await prisma.classEnrollment.findMany({
+          where: { classId: input.classId, status: 'active' },
+          select: { studentId: true },
+        })
+      ).map((e) => e.studentId)
+    );
+    if (studentIds.some((id) => !enrolled.has(id))) {
+      throw Errors.badRequest('Ada siswa yang tidak terdaftar di kelas ini');
+    }
+
+    const date = dayOf(input.date);
+    const recorded = new Set(
+      (
+        await prisma.attendance.findMany({
+          where: { classId: input.classId, date, studentId: { in: studentIds } },
+          select: { studentId: true },
+        })
+      ).map((a) => a.studentId)
+    );
+
+    await prisma.$transaction(
+      input.records.map((record) => {
+        const values = {
+          status: record.status as unknown as PrismaAttendanceStatus,
+          notes: record.notes ?? null,
+          recordedById: actor.sub,
+        };
+        return prisma.attendance.upsert({
+          where: {
+            studentId_classId_date: { studentId: record.studentId, classId: input.classId, date },
+          },
+          create: { studentId: record.studentId, classId: input.classId, date, ...values },
+          update: values,
+        });
+      })
+    );
+
+    const updated = studentIds.filter((id) => recorded.has(id)).length;
+    return { created: studentIds.length - updated, updated };
+  }
+
+  /**
+   * Change one pupil's day — by someone who records the class's register, for
+   * a day they may record.
    */
   async update(
     id: string,
     input: UpdateAttendanceInput,
-    currentUser: { role: string; roleCode?: string | null; unitId: string | null }
+    actor: AttendanceActor
   ): Promise<Attendance> {
     const attendance = await prisma.attendance.findUnique({
       where: { id },
-      include: {
-        student: { select: { unitId: true } },
-      },
+      select: { classId: true, date: true },
     });
-
     if (!attendance) {
-      throw Errors.notFound('Attendance record');
+      throw new ApiError(ErrorCode.NOT_FOUND, 'Catatan absensi tidak ditemukan');
     }
-
-    // Check permission for non-super-admins
-    /*
-     * Gerbang tulis sengaja TETAP pada pemeriksaan SUPER_ADMIN.
-     *
-     * seesAllUnits() hanya boleh MELEBARKAN klausa `where` — begitu ia
-     * dipakai di sini, setiap peran lintas-unit (termasuk perawat,
-     * pustakawan, laboran) mendadak boleh mengubah absensi unit mana pun.
-     * Memperluas kewenangan menulis adalah keputusan tersendiri, bukan
-     * efek samping dari memperbaiki tampilan.
-     */
-    if (currentUser.role !== UserRole.SUPER_ADMIN) {
-      if (attendance.student.unitId !== currentUser.unitId) {
-        throw Errors.forbidden('Access denied to update attendance for this unit');
-      }
-    }
+    await assertMayRecord(attendance.classId, dayString(attendance.date), actor);
 
     const updated = await prisma.attendance.update({
       where: { id },
       data: {
         status: input.status ? (input.status as unknown as PrismaAttendanceStatus) : undefined,
         notes: input.notes,
+        recordedById: actor.sub,
       },
       include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true } },
-          },
-        },
+        student: { select: STUDENT_SAFE_SELECT },
         class: { select: { id: true, name: true } },
       },
     });
 
     return this.mapToShared(updated);
+  }
+
+  /** GET /attendance/me/classes — the classes whose register the caller takes. */
+  async myClasses(actor: AttendanceActor) {
+    return recorderScope(actor);
   }
 
   /**

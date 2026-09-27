@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { format } from "date-fns";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,7 +13,6 @@ import {
   Save,
   Users,
   Calendar,
-  Download,
   Loader2,
 } from "lucide-react";
 import {
@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -40,11 +39,14 @@ import { toast } from "sonner";
 import { AttendanceStatus } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import {
-  useMyHomeroomClass,
-  useHomeroomClassAttendance,
-  useSubmitQuickAttendance,
-  HomeroomStudent,
+  useHomeroomClasses,
+  useHomeroomClassStudents,
 } from "@/hooks/use-homeroom";
+import {
+  describeAttendanceSave,
+  useBulkCreateAttendance,
+  useClassAttendance,
+} from "@/hooks/use-attendance";
 
 // Types
 interface StudentAttendance {
@@ -54,7 +56,6 @@ interface StudentAttendance {
   gender: "MALE" | "FEMALE";
   status: AttendanceStatus;
   notes: string;
-  arrivalTime?: string;
 }
 
 const STATUS_CONFIG: Record<
@@ -93,59 +94,44 @@ const STATUS_CONFIG: Record<
 
 function QuickAttendancePageContent() {
   const router = useRouter();
-  const today = new Date().toISOString().split("T")[0];
+  // The teacher's own calendar day ("yyyy-MM-dd", browser time) — not
+  // toISOString(), which dates a 06:45 WIB register the day before.
+  const today = format(new Date(), "yyyy-MM-dd");
   const [selectedDate, setSelectedDate] = useState(today);
   const [attendances, setAttendances] = useState<StudentAttendance[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [additionalNotes, setAdditionalNotes] = useState("");
 
-  // Get homeroom class data
-  const { data: homeroomClass, isLoading: isLoadingClass } =
-    useMyHomeroomClass();
+  // This academic year's class of this wali kelas (the API lists it first).
+  const { data: classes, isLoading: isLoadingClass } = useHomeroomClasses();
+  const homeroomClass = classes?.find((c) => c.isCurrent);
 
-  // Get existing attendance data for the selected date
-  const { data: existingAttendance, isLoading: isLoadingAttendance } =
-    useHomeroomClassAttendance(homeroomClass?.id, selectedDate);
+  const { data: students } = useHomeroomClassStudents(homeroomClass?.id);
+  // The day's register as recorded so far, by anyone who records this class.
+  const { data: existingAttendance } = useClassAttendance(
+    homeroomClass?.id ?? "",
+    selectedDate,
+  );
+  const saveAttendance = useBulkCreateAttendance();
 
-  // Submit mutation
-  const submitAttendance = useSubmitQuickAttendance();
-
-  // Initialize attendances from class students
+  // Fill the list once the pupils and the day's register have both loaded:
+  // saved statuses where there are some, "Hadir" for the rest.
+  const filledFor = useRef("");
   useEffect(() => {
-    if (homeroomClass?.students && attendances.length === 0) {
-      // Initialize all students with PRESENT status by default
-      const initialAttendances: StudentAttendance[] =
-        homeroomClass.students.map((student: HomeroomStudent) => ({
-          studentId: student.id,
-          nis: student.nis,
-          name: student.name,
-          gender: student.gender,
-          status: AttendanceStatus.PRESENT,
-          notes: "",
-        }));
-      setAttendances(initialAttendances);
-    }
-  }, [homeroomClass?.students, attendances.length]);
-
-  // Update from existing attendance if available
-  useEffect(() => {
-    if (
-      existingAttendance?.attendances &&
-      existingAttendance.attendances.length > 0
-    ) {
-      const updatedAttendances: StudentAttendance[] =
-        existingAttendance.attendances.map((att) => ({
-          studentId: att.studentId,
-          nis: att.student?.nis || "",
-          name: att.student?.name || "",
-          gender: att.student?.gender || "MALE",
-          status: att.status,
-          notes: att.notes || "",
-          arrivalTime: undefined,
-        }));
-      setAttendances(updatedAttendances);
-    }
-  }, [existingAttendance]);
+    if (!students || existingAttendance === undefined) return;
+    const key = `${homeroomClass?.id}-${selectedDate}-${students.length}-${existingAttendance.length}`;
+    if (filledFor.current === key) return;
+    filledFor.current = key;
+    const saved = new Map(existingAttendance.map((a) => [a.studentId, a]));
+    setAttendances(
+      students.map((student) => ({
+        studentId: student.id,
+        nis: student.nis,
+        name: student.user.name,
+        gender: student.gender,
+        status: saved.get(student.id)?.status ?? AttendanceStatus.PRESENT,
+        notes: saved.get(student.id)?.notes ?? "",
+      })),
+    );
+  }, [students, existingAttendance, homeroomClass?.id, selectedDate]);
 
   const updateAttendance = (
     studentId: string,
@@ -190,33 +176,23 @@ function QuickAttendancePageContent() {
       return;
     }
 
-    setIsSubmitting(true);
-
     try {
-      await submitAttendance.mutateAsync({
+      const result = await saveAttendance.mutateAsync({
         classId: homeroomClass.id,
-        data: {
-          date: selectedDate,
-          attendances: attendances.map((a) => ({
-            studentId: a.studentId,
-            status: a.status,
-            notes: a.notes || undefined,
-            arrivalTime: a.arrivalTime,
-          })),
-        },
+        date: selectedDate,
+        records: attendances.map((a) => ({
+          studentId: a.studentId,
+          status: a.status,
+          notes: a.notes || undefined,
+        })),
       });
-
-      toast.success("Absensi berhasil disimpan");
+      toast.success(describeAttendanceSave(result));
       router.push("/homeroom");
     } catch (error) {
-      toast.error("Gagal menyimpan absensi");
-    } finally {
-      setIsSubmitting(false);
+      toast.error(
+        error instanceof Error ? error.message : "Gagal menyimpan absensi",
+      );
     }
-  };
-
-  const handleExport = () => {
-    toast.success("Data absensi akan diunduh");
   };
 
   // Loading state
@@ -248,7 +224,7 @@ function QuickAttendancePageContent() {
             <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
             <h2 className="text-lg font-medium">Tidak Ada Kelas Wali</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              Anda belum ditugaskan sebagai wali kelas
+              Anda bukan wali kelas kelas mana pun tahun ajaran ini
             </p>
             <Link href="/homeroom">
               <Button variant="outline" className="mt-4">
@@ -272,16 +248,12 @@ function QuickAttendancePageContent() {
           </Button>
         </Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold">Absensi Cepat</h1>
+          <h1 className="text-2xl font-bold">Absensi Harian</h1>
           <p className="text-muted-foreground">
             {homeroomClass.name} -{" "}
             {homeroomClass.unit?.name || "Pesantren Cipansor"}
           </p>
         </div>
-        <Button variant="outline" onClick={handleExport}>
-          <Download className="h-4 w-4 mr-2" />
-          Export
-        </Button>
       </div>
 
       {/* Date & Summary */}
@@ -369,6 +341,7 @@ function QuickAttendancePageContent() {
             {attendances.map((student, index) => (
               <div
                 key={student.studentId}
+                data-testid={`attendance-row-${student.studentId}`}
                 className="grid grid-cols-12 gap-2 py-2 px-3 items-center border rounded-lg hover:bg-muted/50 transition-colors"
               >
                 <div className="col-span-1 text-sm text-muted-foreground">
@@ -400,7 +373,10 @@ function QuickAttendancePageContent() {
                       updateAttendance(student.studentId, "status", value)
                     }
                   >
-                    <SelectTrigger className="h-9">
+                    <SelectTrigger
+                      className="h-9"
+                      aria-label={`Status ${student.name}`}
+                    >
                       <SelectValue>
                         <div className="flex items-center gap-2">
                           <span
@@ -443,28 +419,16 @@ function QuickAttendancePageContent() {
         </CardContent>
       </Card>
 
-      {/* Additional Notes */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Catatan Tambahan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            placeholder="Tambahkan catatan untuk absensi hari ini (opsional)..."
-            rows={3}
-            value={additionalNotes}
-            onChange={(e) => setAdditionalNotes(e.target.value)}
-          />
-        </CardContent>
-      </Card>
-
       {/* Action Buttons */}
       <div className="flex justify-end gap-3">
         <Link href="/homeroom">
           <Button variant="outline">Batal</Button>
         </Link>
-        <Button onClick={handleSubmit} disabled={isSubmitting}>
-          {isSubmitting ? (
+        <Button
+          onClick={handleSubmit}
+          disabled={saveAttendance.isPending || attendances.length === 0}
+        >
+          {saveAttendance.isPending ? (
             <>Menyimpan...</>
           ) : (
             <>

@@ -2,7 +2,6 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
-import { AttendanceStatus } from "@cipansor/shared";
 import type {
   HomeroomViewer,
   MyHomeroomClass,
@@ -126,12 +125,6 @@ export interface ParentMessage {
   reply?: string;
   repliedAt?: string;
   createdAt: string;
-}
-
-export interface QuickAttendance {
-  studentId: string;
-  status: AttendanceStatus;
-  notes?: string;
 }
 
 // New Dashboard Types
@@ -540,146 +533,19 @@ export function useSendParentMessage() {
   });
 }
 
-// Submit quick attendance
-export function useSubmitQuickAttendance() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      data,
-    }: {
-      classId: string;
-      data: {
-        date: string;
-        attendances: QuickAttendance[];
-      };
-    }) => {
-      const response = await api.post<ApiResponse<unknown>>(
-        `/homeroom/classes/${classId}/quick-attendance`,
-        data,
+/**
+ * The pupils of a class, as the homeroom API lists them to its wali kelas and
+ * the unit's kepala sekolah and operator (404 to anyone else).
+ */
+export function useHomeroomClassStudents(classId?: string) {
+  return useQuery({
+    queryKey: ["homeroom", "class", classId, "students"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<HomeroomStudentBrief[]>>(
+        `/homeroom/class/${classId}/students`,
       );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["homeroom", "attendance", variables.classId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["homeroom", "class"] });
-    },
-  });
-}
-
-// Get class attendance for date
-export function useHomeroomClassAttendance(classId?: string, date?: string) {
-  return useQuery<{
-    date: string;
-    attendances: (QuickAttendance & { student: HomeroomStudent })[];
-    summary: {
-      present: number;
-      absent: number;
-      sick: number;
-      excused: number;
-      late: number;
-    };
-  }>({
-    queryKey: ["homeroom", "attendance", classId, date],
-    queryFn: async () => {
-      const response = await api.get<
-        ApiResponse<{
-          date: string;
-          attendances: (QuickAttendance & { student: HomeroomStudent })[];
-          summary: {
-            present: number;
-            absent: number;
-            sick: number;
-            excused: number;
-            late: number;
-          };
-        }>
-      >(`/homeroom/classes/${classId}/attendance?date=${date}`);
-      return response.data.data;
-    },
-    enabled: !!classId && !!date,
-  });
-}
-
-// Get class summary statistics
-export function useClassSummary(classId?: string) {
-  return useQuery<{
-    totalStudents: number;
-    maleCount: number;
-    femaleCount: number;
-    averageAttendance: number;
-    averageAcademicScore: number;
-    pendingBehaviorNotes: number;
-    upcomingBirthdays: {
-      student: HomeroomStudent;
-      daysUntil: number;
-    }[];
-    recentAchievements: BehaviorNote[];
-    recentViolations: BehaviorNote[];
-  }>({
-    queryKey: ["homeroom", "summary", classId],
-    queryFn: async () => {
-      const response = await api.get<
-        ApiResponse<{
-          totalStudents: number;
-          maleCount: number;
-          femaleCount: number;
-          averageAttendance: number;
-          averageAcademicScore: number;
-          pendingBehaviorNotes: number;
-          upcomingBirthdays: {
-            student: HomeroomStudent;
-            daysUntil: number;
-          }[];
-          recentAchievements: BehaviorNote[];
-          recentViolations: BehaviorNote[];
-        }>
-      >(`/homeroom/classes/${classId}/summary`);
       return response.data.data;
     },
     enabled: !!classId,
-  });
-}
-
-// Export attendance report
-export function useExportAttendanceReport() {
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      month,
-      year,
-    }: {
-      classId: string;
-      month: number;
-      year: number;
-    }) => {
-      const response = await api.get(
-        `/homeroom/classes/${classId}/attendance/export?month=${month}&year=${year}`,
-        { responseType: "blob" },
-      );
-      return response.data;
-    },
-  });
-}
-
-// Export progress report
-export function useExportProgressReport() {
-  return useMutation({
-    mutationFn: async ({
-      classId,
-      studentId,
-    }: {
-      classId: string;
-      studentId?: string;
-    }) => {
-      const url = studentId
-        ? `/homeroom/classes/${classId}/progress/export?studentId=${studentId}`
-        : `/homeroom/classes/${classId}/progress/export`;
-      const response = await api.get(url, { responseType: "blob" });
-      return response.data;
-    },
   });
 }

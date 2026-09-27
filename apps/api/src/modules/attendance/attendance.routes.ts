@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { authenticate, isAdmin } from '@/middleware/auth';
+import { authenticate, authorize, isAdmin } from '@/middleware/auth';
 import { validate, validateQuery, validateParams } from '@/middleware/error';
 import * as controller from './attendance.controller';
 import {
-  createAttendanceSchema,
+  ATTENDANCE_RECORDER_ROUTE_ROLE_CODES,
   bulkAttendanceSchema,
+  createAttendanceSchema,
   updateAttendanceSchema,
+} from '@cipansor/shared';
+import {
   listAttendanceQuerySchema,
   attendanceIdParamSchema,
   attendanceSummaryQuerySchema,
@@ -15,6 +18,26 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Teachers, kepala sekolah and unit operators reach the write routes; which
+// classes each records is the class's relation to them, in the service
+// (attendance.access.ts).
+const recorders = authorize(...ATTENDANCE_RECORDER_ROUTE_ROLE_CODES);
+
+/**
+ * @swagger
+ * /api/attendance/me/classes:
+ *   get:
+ *     summary: The classes whose daily register the caller takes
+ *     description: ALL for the super admin, UNIT for a unit's operator, otherwise the current academic year's classes the caller is wali kelas of or teaches in.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: "{ scope: ALL | UNIT | ASSIGNED, unitId, classes }"
+ */
+router.get('/me/classes', controller.myClasses);
 
 /**
  * @swagger
@@ -155,7 +178,7 @@ router.get('/:id', validateParams(attendanceIdParamSchema), controller.getById);
  * @swagger
  * /api/attendance:
  *   post:
- *     summary: Record attendance (Admin/Teacher)
+ *     summary: Record one pupil's day (the class's wali kelas, a teacher with a lesson in it, or the unit's operator)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -176,22 +199,23 @@ router.get('/:id', validateParams(attendanceIdParamSchema), controller.getById);
  *               date:
  *                 type: string
  *                 format: date
+ *                 example: '2026-09-27'
  *               status:
  *                 type: string
- *                 enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                 enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *               notes:
  *                 type: string
  *     responses:
  *       201:
  *         description: Attendance recorded
  */
-router.post('/', isAdmin, validate(createAttendanceSchema), controller.create);
+router.post('/', recorders, validate(createAttendanceSchema), controller.create);
 
 /**
  * @swagger
  * /api/attendance/bulk:
  *   post:
- *     summary: Bulk record attendance (Admin/Teacher)
+ *     summary: Record a class's day; pupils already recorded that day are updated
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -219,20 +243,20 @@ router.post('/', isAdmin, validate(createAttendanceSchema), controller.create);
  *                       format: uuid
  *                     status:
  *                       type: string
- *                       enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                       enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *                     notes:
  *                       type: string
  *     responses:
  *       201:
  *         description: Attendance bulk recorded
  */
-router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCreate);
+router.post('/bulk', recorders, validate(bulkAttendanceSchema), controller.bulkCreate);
 
 /**
  * @swagger
  * /api/attendance/{id}:
  *   patch:
- *     summary: Update attendance (Admin/Teacher)
+ *     summary: Change one pupil's day (whoever records the class's register)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -251,7 +275,7 @@ router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCre
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                 enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *               notes:
  *                 type: string
  *     responses:
@@ -260,7 +284,7 @@ router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCre
  */
 router.patch(
   '/:id',
-  isAdmin,
+  recorders,
   validateParams(attendanceIdParamSchema),
   validate(updateAttendanceSchema),
   controller.update
@@ -270,7 +294,7 @@ router.patch(
  * @swagger
  * /api/attendance/{id}:
  *   delete:
- *     summary: Delete attendance (Admin/Teacher)
+ *     summary: Delete an attendance record (the unit's operator)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []

@@ -10,6 +10,8 @@ import {
   UpdateAttendanceInput,
   SharedPaginatedResponse,
   ApiResponse,
+  type AttendanceRecorderScope,
+  type BulkAttendanceResult,
 } from "@cipansor/shared";
 
 // Re-export shared types for convenience
@@ -103,6 +105,36 @@ export function useClassAttendance(classId: string, date: string) {
   });
 }
 
+/**
+ * The classes whose daily register the signed-in user takes: every class
+ * (super admin), every class of their unit (its operator), or the ones they
+ * are wali kelas of or teach in this academic year.
+ */
+export function useAttendanceRecorderScope() {
+  return useQuery({
+    queryKey: ["attendance", "me", "classes"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AttendanceRecorderScope>>(
+        "/attendance/me/classes",
+      );
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** "Kehadiran disimpan: 28 baru, 2 diperbarui" — what a save did. */
+export function describeAttendanceSave({
+  created,
+  updated,
+}: BulkAttendanceResult): string {
+  const parts = [
+    created > 0 ? `${created} baru` : null,
+    updated > 0 ? `${updated} diperbarui` : null,
+  ].filter(Boolean);
+  return `Kehadiran disimpan: ${parts.join(", ") || "tidak ada perubahan"}`;
+}
+
 export function useCreateAttendance() {
   const queryClient = useQueryClient();
 
@@ -125,9 +157,10 @@ export function useBulkCreateAttendance() {
 
   return useMutation({
     mutationFn: async (data: BulkAttendanceInput) => {
-      const response = await api.post<
-        ApiResponse<{ created: number; skipped: number }>
-      >("/attendance/bulk", data);
+      const response = await api.post<ApiResponse<BulkAttendanceResult>>(
+        "/attendance/bulk",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {
