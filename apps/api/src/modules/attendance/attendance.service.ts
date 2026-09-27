@@ -23,6 +23,7 @@ import {
   todayWib,
   type AttendanceActor,
 } from './attendance.access';
+import { tellAbsences } from './attendance.notice';
 
 export class AttendanceService {
   /**
@@ -196,6 +197,10 @@ export class AttendanceService {
       recordedById: actor.sub,
     });
 
+    void tellAbsences(input.classId, input.date, [
+      { studentId: input.studentId, status: attendance.status },
+    ]);
+
     return this.mapToShared(attendance);
   }
 
@@ -264,13 +269,13 @@ export class AttendanceService {
     }
 
     const date = dayOf(input.date);
-    const recorded = new Set(
+    const recorded = new Map(
       (
         await prisma.attendance.findMany({
           where: { classId: input.classId, date, studentId: { in: studentIds } },
-          select: { studentId: true },
+          select: { studentId: true, status: true },
         })
-      ).map((a) => a.studentId)
+      ).map((a) => [a.studentId, a.status])
     );
 
     await prisma.$transaction(
@@ -290,6 +295,16 @@ export class AttendanceService {
       })
     );
 
+    void tellAbsences(
+      input.classId,
+      input.date,
+      input.records.map((r) => ({
+        studentId: r.studentId,
+        status: r.status as unknown as PrismaAttendanceStatus,
+        before: recorded.get(r.studentId),
+      }))
+    );
+
     const updated = studentIds.filter((id) => recorded.has(id)).length;
     return { created: studentIds.length - updated, updated };
   }
@@ -305,7 +320,7 @@ export class AttendanceService {
   ): Promise<Attendance> {
     const attendance = await prisma.attendance.findUnique({
       where: { id },
-      select: { classId: true, date: true },
+      select: { classId: true, date: true, studentId: true, status: true },
     });
     if (!attendance) {
       throw new ApiError(ErrorCode.NOT_FOUND, 'Catatan absensi tidak ditemukan');
@@ -324,6 +339,10 @@ export class AttendanceService {
         class: { select: { id: true, name: true } },
       },
     });
+
+    void tellAbsences(attendance.classId, dayString(attendance.date), [
+      { studentId: attendance.studentId, status: updated.status, before: attendance.status },
+    ]);
 
     return this.mapToShared(updated);
   }

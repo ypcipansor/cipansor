@@ -28,6 +28,7 @@ import {
 import { createNotification } from '../notifications/notifications.service';
 import type { ListPermitsQueryParsed } from './permits.schema';
 import { decisionFor, whoDecides, type Guardianship } from './permits.decider';
+import { ACTIVE_ROOM_ASSIGNMENT, activeMusyrifAssignment, coversRoom } from '@/modules/dormitories';
 
 /**
  * Perizinan: a learner's leave, from request to return.
@@ -121,10 +122,8 @@ async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guard
       unitId: true,
       unit: { select: { type: true } },
       roomAssignments: {
-        where: { isActive: true, endedAt: null },
+        ...ACTIVE_ROOM_ASSIGNMENT,
         select: { room: { select: { id: true, dormitoryId: true } } },
-        orderBy: { assignedAt: 'desc' },
-        take: 1,
       },
       enrollments: {
         where: { status: 'active', class: { deletedAt: null } },
@@ -138,12 +137,7 @@ async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guard
   ];
   const musyrif = dormitoryIds.length
     ? await prisma.musyrifAssignment.findMany({
-        where: {
-          dormitoryId: { in: dormitoryIds },
-          isActive: true,
-          OR: [{ endDate: null }, { endDate: { gt: now } }],
-          musyrif: { isActive: true },
-        },
+        where: { dormitoryId: { in: dormitoryIds }, ...activeMusyrifAssignment(now) },
         select: { dormitoryId: true, roomId: true, musyrif: { select: { user: person } } },
       })
     : [];
@@ -152,12 +146,7 @@ async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guard
     students.map((s) => {
       const room = s.roomAssignments[0]?.room;
       const people = room
-        ? musyrif
-            .filter(
-              (a) =>
-                a.dormitoryId === room.dormitoryId && (a.roomId === null || a.roomId === room.id)
-            )
-            .map((a) => a.musyrif.user)
+        ? musyrif.filter((a) => coversRoom(a, room)).map((a) => a.musyrif.user)
         : s.enrollments.flatMap((e) =>
             e.class.homeroomTeacher ? [e.class.homeroomTeacher.user] : []
           );
