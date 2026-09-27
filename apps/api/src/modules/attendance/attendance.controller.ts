@@ -10,8 +10,27 @@ import {
   CreateAttendanceInput,
   BulkAttendanceInput,
   UpdateAttendanceInput,
+  BulkAttendanceResult,
+  AttendanceRecorderScope,
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
+
+/** Who is writing, as the relation checks in attendance.access.ts need it. */
+const actorOf = (req: Request) => ({
+  sub: req.user!.sub,
+  roleCode: req.user!.roleCode,
+  unitId: req.user!.unitId,
+});
+
+/**
+ * The classes whose register the caller takes
+ * GET /api/attendance/me/classes
+ */
+export const myClasses = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceRecorderScope>>) => {
+    res.json({ success: true, data: await attendanceService.myClasses(actorOf(req)) });
+  }
+);
 
 /**
  * List attendance records
@@ -54,7 +73,7 @@ export const getById = asyncHandler(
  */
 export const create = asyncHandler(async (req: Request, res: Response<ApiResponse<Attendance>>) => {
   const input: CreateAttendanceInput = req.body;
-  const attendance = await attendanceService.create(input, req.user!.sub);
+  const attendance = await attendanceService.create(input, actorOf(req));
 
   res.status(201).json({
     success: true,
@@ -67,9 +86,9 @@ export const create = asyncHandler(async (req: Request, res: Response<ApiRespons
  * POST /api/attendance/bulk
  */
 export const bulkCreate = asyncHandler(
-  async (req: Request, res: Response<ApiResponse<{ created: number; skipped: number }>>) => {
+  async (req: Request, res: Response<ApiResponse<BulkAttendanceResult>>) => {
     const input: BulkAttendanceInput = req.body;
-    const result = await attendanceService.bulkCreate(input, req.user!.sub);
+    const result = await attendanceService.bulkCreate(input, actorOf(req));
 
     res.status(201).json({
       success: true,
@@ -85,11 +104,7 @@ export const bulkCreate = asyncHandler(
 export const update = asyncHandler(async (req: Request, res: Response<ApiResponse<Attendance>>) => {
   const { id } = req.params;
   const input: UpdateAttendanceInput = req.body;
-  const attendance = await attendanceService.update(id, input, {
-    role: req.user!.role,
-    roleCode: req.user!.roleCode,
-    unitId: req.user!.unitId,
-  });
+  const attendance = await attendanceService.update(id, input, actorOf(req));
 
   res.json({
     success: true,

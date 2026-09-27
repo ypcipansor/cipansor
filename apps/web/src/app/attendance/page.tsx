@@ -318,7 +318,11 @@ export default function AttendancePage() {
                     <TableCell className="font-mono">
                       {attendance.student?.nis || "-"}
                     </TableCell>
-                    <TableCell>{attendance.student?.name || "-"}</TableCell>
+                    <TableCell>
+                      {attendance.student?.user?.name ||
+                        attendance.student?.name ||
+                        "-"}
+                    </TableCell>
                     <TableCell>{attendance.class?.name || "-"}</TableCell>
                     <TableCell>{getStatusBadge(attendance.status)}</TableCell>
                     <TableCell className="max-w-[200px] truncate">

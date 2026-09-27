@@ -16,6 +16,7 @@ import type {
   MedicalRecord,
   HealthStats,
 } from '@cipansor/shared';
+import { AttendanceStatus } from '@cipansor/shared';
 import { CreateGrowthRecordInput, QueryGrowthRecordInput } from './health.schema';
 import { Errors } from '../../middleware/error';
 
@@ -177,15 +178,14 @@ export async function createMedicalRecord(data: CreateMedicalRecordInput, record
       });
 
       if (enrollment) {
-        await attendanceService.create(
+        // The visit's own day in WIB; a register the teachers already took
+        // that day is left as it is.
+        await attendanceService.recordFromIntegration(
           {
             studentId: mainData.studentId,
             classId: enrollment.classId,
-            date:
-              mainData.visitDate instanceof Date
-                ? mainData.visitDate.toISOString()
-                : mainData.visitDate,
-            status: 'SICK' as any,
+            on: new Date(mainData.visitDate),
+            status: AttendanceStatus.SICK,
             notes: `Sakit: ${mainData.complaint} (via UKS)`,
           },
           recordedById

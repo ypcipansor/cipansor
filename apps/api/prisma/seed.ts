@@ -3293,6 +3293,26 @@ async function main() {
     { subjectIdx: 11, day: DayOfWeek.FRIDAY, startTime: '09:00', endTime: '10:30' },
   ];
 
+  // The Guru SMP IT persona teaches one lesson in 7A without being its wali
+  // kelas, so the demo has a teacher who takes a class's register by teaching
+  // in it (2026-09-27: daily attendance is recorded by the wali kelas, a
+  // teacher with a lesson in the class, or the unit's operator).
+  const smpGuruPersona = await prisma.teacher.findFirst({
+    where: { user: { email: 'smpit.guru@cipansor.or.id' }, deletedAt: null },
+    select: { id: true },
+  });
+  const PERSONA_LESSON = 5; // Monday 09:00, subjects[5]
+  if (smpGuruPersona) {
+    await prisma.teacherSubject.create({
+      data: {
+        teacherId: smpGuruPersona.id,
+        subjectId: subjects[PERSONA_LESSON].id,
+        classId: class7A.id,
+        isActive: true,
+      },
+    });
+  }
+
   for (const sched of schedulesData) {
     await prisma.schedule.create({
       data: {
@@ -3300,7 +3320,10 @@ async function main() {
         academicYearId: academicYear.id,
         classId: class7A.id,
         subjectId: subjects[sched.subjectIdx].id,
-        teacherId: teacherPesantren.id,
+        teacherId:
+          sched.subjectIdx === PERSONA_LESSON && smpGuruPersona
+            ? smpGuruPersona.id
+            : teacherPesantren.id,
         dayOfWeek: sched.day,
         startTime: sched.startTime,
         endTime: sched.endTime,
