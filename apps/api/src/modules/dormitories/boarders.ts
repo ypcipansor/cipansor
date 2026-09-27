@@ -87,3 +87,29 @@ export async function musyrifOfBoarders(studentIds: string[]): Promise<Map<strin
     })
   );
 }
+
+/**
+ * The other way round: the santri mukim a musyrif looks after — those with an
+ * active kamar that one of the musyrif's assignments in force covers.
+ */
+export async function boardersOfMusyrif(userId: string): Promise<string[]> {
+  const assignments = await prisma.musyrifAssignment.findMany({
+    where: { ...activeMusyrifAssignment(new Date()), musyrif: { userId, isActive: true } },
+    select: { dormitoryId: true, roomId: true },
+  });
+  if (!assignments.length) return [];
+  const placements = await prisma.roomAssignment.findMany({
+    where: {
+      ...ACTIVE_ROOM_ASSIGNMENT.where,
+      room: { dormitoryId: { in: [...new Set(assignments.map((a) => a.dormitoryId))] } },
+    },
+    select: { studentId: true, room: { select: { id: true, dormitoryId: true } } },
+  });
+  return [
+    ...new Set(
+      placements
+        .filter((p) => assignments.some((a) => coversRoom(a, p.room)))
+        .map((p) => p.studentId)
+    ),
+  ];
+}

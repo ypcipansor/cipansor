@@ -34,7 +34,9 @@ export const ATTENDANCE_RECORDER_ROUTE_ROLE_CODES: readonly string[] = [
 export const attendanceDay = z.iso.date("Tanggal tidak valid (yyyy-MM-dd)");
 
 const status = z.enum(AttendanceStatus);
-const notes = z.string().trim().max(500);
+/** The longest note a mark on the register carries. */
+export const ATTENDANCE_NOTES_MAX = 500;
+const notes = z.string().trim().max(ATTENDANCE_NOTES_MAX);
 
 /** POST /attendance — one pupil's day. */
 export const createAttendanceSchema = z.object({
@@ -101,4 +103,81 @@ export interface AttendanceRecorderScope {
   scope: "ALL" | "UNIT" | "ASSIGNED";
   unitId: string | null;
   classes: AttendanceRecorderClass[];
+}
+
+// ------------------------------------------------------------ follow-up
+
+/**
+ * Following up an unexplained absence (decisions/absensi-harian.md): the
+ * wali kelas of a day pupil, or the musyrif of a santri mukim, contacts the
+ * wali and records what came of it. The values are Prisma's
+ * `AttendanceFollowUpChannel` and `AttendanceFollowUpOutcome`.
+ */
+export const ATTENDANCE_FOLLOW_UP_CHANNELS = [
+  "PHONE",
+  "WHATSAPP",
+  "IN_PERSON",
+  "OTHER",
+] as const;
+export type AttendanceFollowUpChannel =
+  (typeof ATTENDANCE_FOLLOW_UP_CHANNELS)[number];
+
+/**
+ * ILL and EXCUSED give the reason — the mark becomes Sakit or Izin; NO_REASON
+ * closes the absence as Alpa; UNREACHABLE leaves it open for another try.
+ */
+export const ATTENDANCE_FOLLOW_UP_OUTCOMES = [
+  "ILL",
+  "EXCUSED",
+  "NO_REASON",
+  "UNREACHABLE",
+] as const;
+export type AttendanceFollowUpOutcome =
+  (typeof ATTENDANCE_FOLLOW_UP_OUTCOMES)[number];
+
+/**
+ * How far back an absence is still followed up: the reason should be on the
+ * register within five working days (DfE, *Working together to improve school
+ * attendance*, §42) — a calendar week.
+ */
+export const ATTENDANCE_FOLLOW_UP_WINDOW_DAYS = 7;
+
+export const recordFollowUpSchema = z.object({
+  channel: z.enum(ATTENDANCE_FOLLOW_UP_CHANNELS, {
+    message: "Pilih cara menghubungi",
+  }),
+  outcome: z.enum(ATTENDANCE_FOLLOW_UP_OUTCOMES, {
+    message: "Pilih hasilnya",
+  }),
+  note: z.string().trim().max(1000).optional(),
+});
+export type RecordFollowUpInput = z.infer<typeof recordFollowUpSchema>;
+
+export interface AttendanceFollowUpEntry {
+  id: string;
+  channel: AttendanceFollowUpChannel;
+  outcome: AttendanceFollowUpOutcome;
+  note: string | null;
+  at: string;
+  by: { id: string; name: string };
+}
+
+/**
+ * GET /attendance/follow-ups — one absence the caller is to follow up: marked
+ * Alpa within the window, not yet explained or closed. `as` says why it is
+ * theirs; `walis` are whom to contact.
+ */
+export interface AttendanceFollowUpItem {
+  attendanceId: string;
+  /** The calendar day, yyyy-MM-dd. */
+  date: string;
+  student: { id: string; name: string; nis: string | null };
+  class: { id: string; name: string };
+  as: "WALI_KELAS" | "MUSYRIF";
+  /**
+   * Linked wali accounts (`relation` father | mother | guardian), then the
+   * contact given at enrolment (`relation` "contact") when it is not one of them.
+   */
+  walis: { name: string; phone: string | null; relation: string }[];
+  followUps: AttendanceFollowUpEntry[];
 }

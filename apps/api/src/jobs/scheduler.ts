@@ -12,6 +12,7 @@ import { purgeIdentityDocuments } from './identity-purge.job';
 import { runChatbotSpendCheck } from './chatbot-spend.job';
 import { runChatbotTranscriptPurge } from './chatbot-transcript-purge.job';
 import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
+import { runAttendanceFollowUpReminder } from './attendance-follow-up.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -280,6 +281,31 @@ export function initializeScheduler(): void {
   scheduledTasks.push(chatbotEscalationTask);
   logger.info('[Scheduler] Chatbot escalation retry scheduled every 30 minutes');
 
+  /**
+   * Pengingat tindak lanjut absensi (decisions/absensi-harian.md).
+   *
+   * Pukul 15:00 WIB: sesudah jam pelajaran usai, masih di jam kerja, dan
+   * masih sempat menghubungi wali hari itu juga. Wali kelas murid pulang-pergi
+   * dan musyrif santri mukim diingatkan sekali tentang Alpa hari ini yang
+   * belum ada keterangannya; hari tanpa Alpa tidak mengirim apa pun.
+   */
+  const attendanceFollowUpTask = cron.schedule(
+    '0 15 * * *',
+    async () => {
+      try {
+        const { reminded } = await runAttendanceFollowUpReminder();
+        if (reminded) logger.info(`[Scheduler] Attendance follow-up reminders: ${reminded}`);
+      } catch (error) {
+        logger.error('[Scheduler] Attendance follow-up reminder failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(attendanceFollowUpTask);
+  logger.info('[Scheduler] Attendance follow-up reminder scheduled daily at 15:00 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -307,6 +333,7 @@ export async function runJob(
     | 'chatbot-spend'
     | 'chatbot-transcript-purge'
     | 'chatbot-escalation-retry'
+    | 'attendance-follow-up'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -340,6 +367,9 @@ export async function runJob(
       break;
     case 'chatbot-escalation-retry':
       await runChatbotEscalationRetry();
+      break;
+    case 'attendance-follow-up':
+      await runAttendanceFollowUpReminder();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

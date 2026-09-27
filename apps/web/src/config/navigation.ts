@@ -61,6 +61,7 @@ import {
   NotebookPen,
   ShieldCheck,
   type LucideIcon,
+  PhoneCall,
 } from "lucide-react";
 import { GURU_BK_ROLE_CODES, PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
 
@@ -268,6 +269,13 @@ const teacherNavigation: NavGroup[] = [
         title: "Absensi Harian",
         href: "/attendance/record",
         icon: ClipboardCheck,
+      },
+      {
+        // Alpa with no reason, for the wali kelas to follow up with the wali
+        // (decisions/absensi-harian.md); a santri mukim's is the musyrif's.
+        title: "Tindak Lanjut Absensi",
+        href: "/attendance/follow-ups",
+        icon: PhoneCall,
       },
       {
         title: "Catatan Perilaku",
@@ -1927,6 +1935,12 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
     title: "Pengasuhan",
     items: [
       { title: "Santri Binaan", href: "/students", icon: GraduationCap },
+      {
+        // A santri mukim's Alpa is followed up by their musyrif.
+        title: "Tindak Lanjut Absensi",
+        href: "/attendance/follow-ups",
+        icon: PhoneCall,
+      },
       { title: "Asrama", href: "/dormitories", icon: Home },
       { title: "Musyrif", href: "/musyrif", icon: UserCog },
       { title: "Mutabaah Yaumiyah", href: "/daily-report", icon: Activity },

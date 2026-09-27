@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { attendanceService } from './attendance.service';
+import * as followUpService from './attendance-follow-up.service';
 import {
   ApiResponse,
   SharedPaginatedResponse,
@@ -12,6 +13,8 @@ import {
   UpdateAttendanceInput,
   BulkAttendanceResult,
   AttendanceRecorderScope,
+  AttendanceFollowUpItem,
+  RecordFollowUpInput,
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
 
@@ -29,6 +32,28 @@ const actorOf = (req: Request) => ({
 export const myClasses = asyncHandler(
   async (req: Request, res: Response<ApiResponse<AttendanceRecorderScope>>) => {
     res.json({ success: true, data: await attendanceService.myClasses(actorOf(req)) });
+  }
+);
+
+/**
+ * The absences the caller follows up
+ * GET /api/attendance/follow-ups
+ */
+export const followUps = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceFollowUpItem[]>>) => {
+    res.json({ success: true, data: await followUpService.listFollowUps(actorOf(req)) });
+  }
+);
+
+/**
+ * Record one contact about an absence
+ * POST /api/attendance/:id/follow-ups
+ */
+export const recordFollowUp = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceFollowUpItem>>) => {
+    const input = req.body as RecordFollowUpInput;
+    const item = await followUpService.recordFollowUp(req.params.id, input, actorOf(req));
+    res.status(201).json({ success: true, data: item });
   }
 );
 
