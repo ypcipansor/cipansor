@@ -24,7 +24,10 @@ import type {
  *   its address answers with a 308);
  * - a teacher with a lesson in a class records it; a teacher with none cannot;
  * - the kepala sekolah reads the register and does not write it; another
- *   unit's teacher does not reach the class.
+ *   unit's teacher does not reach the class;
+ * - a pupil marked Alpa on today's register: their wali is told at once, in
+ *   the app, and saving the day again does not tell them twice; a santri
+ *   mukim's musyrif is told as well.
  *
  * Until then every one of these saves was refused: the write routes let
  * admins only, and this suite signed in as the super admin, so nobody saw it.
@@ -335,4 +338,132 @@ test("the kepala sekolah reads the register and does not write it; another unit 
     (r) => r.studentId === pupil.id,
   );
   expect(mine?.status).toBe("LATE");
+});
+
+type Notice = {
+  title: string;
+  data?: { studentId?: string; date?: string; status?: string };
+};
+
+test("a pupil marked Alpa today: their wali is told at once, and only once", async ({
+  page,
+}) => {
+  const ortu = await apiLogin(account("sdit.ortu@cipansor.or.id"));
+  const children = await apiRequest<{ data: { id: string; name: string }[] }>(
+    ortu,
+    "GET",
+    "/parent/children",
+  );
+  const inClass = new Set(
+    (
+      await apiRequest<{ data: Enrollment[] }>(
+        wali,
+        "GET",
+        `/classes/${class1A}/enrollments`,
+      )
+    ).data.map((e) => e.student.id),
+  );
+  const child = children.data.find((c) => inClass.has(c.id));
+  expect(child, "the seed's SD wali is the wali of a pupil in 1A").toBeTruthy();
+
+  const alpaNotices = async () =>
+    (
+      await apiRequest<{ data: Notice[] }>(
+        ortu,
+        "GET",
+        "/notifications?type=ATTENDANCE&limit=100",
+      )
+    ).data.filter(
+      (n) =>
+        n.data?.studentId === child!.id &&
+        n.data?.date === today() &&
+        n.data?.status === "ABSENT",
+    ).length;
+  const before = await alpaNotices();
+
+  await injectSession(page, wali);
+  await page.goto("/attendance/record");
+  await waitForLoadingComplete(page);
+  const row = page.getByTestId(`attendance-row-${child!.id}`);
+  await row.getByRole("button", { name: "Tidak Hadir", exact: true }).click();
+  let response = saved(page);
+  await page.getByRole("button", { name: "Simpan Kehadiran" }).click();
+  expect((await response).status()).toBe(201);
+
+  await expect.poll(alpaNotices, { timeout: 15_000 }).toBe(before + 1);
+
+  // The same day saved again, the mark unchanged: no second notice.
+  await page.goto("/attendance/record");
+  await waitForLoadingComplete(page);
+  await expect(
+    page
+      .getByTestId(`attendance-row-${child!.id}`)
+      .getByRole("button", { name: "Tidak Hadir", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  response = saved(page);
+  await page.getByRole("button", { name: "Simpan Kehadiran" }).click();
+  expect((await response).status()).toBe(201);
+  await page.waitForTimeout(2_000);
+  expect(await alpaNotices()).toBe(before + 1);
+
+  // What the wali sees: the notice in their notifications.
+  await injectSession(page, ortu);
+  await page.goto("/notifications");
+  await waitForLoadingComplete(page);
+  await expect(
+    page
+      .getByText(`${child!.name} tidak hadir tanpa keterangan (Alpa)`)
+      .first(),
+  ).toBeVisible();
+});
+
+test("a santri mukim marked Alpa: the musyrif of their asrama is told", async () => {
+  // A boarder in SMP 7A, the class smpit.guru teaches.
+  const enrolled = (
+    await apiRequest<{ data: Enrollment[] }>(
+      admin,
+      "GET",
+      `/classes/${class7A}/enrollments`,
+    )
+  ).data.map((e) => e.student.id);
+  let boarder: { id: string; asrama: string } | undefined;
+  for (const id of enrolled) {
+    const placed = await apiRequest<{
+      data: { room: { dormitory: { name: string } } }[];
+    }>(admin, "GET", `/dormitories/assignments/list?studentId=${id}&isActive=true`);
+    if (placed.data[0]) {
+      boarder = { id, asrama: placed.data[0].room.dormitory.name };
+      break;
+    }
+  }
+  expect(boarder, "the seed places pupils of SMP 7A in an asrama").toBeTruthy();
+  const musyrif = await apiLogin(
+    account(
+      boarder!.asrama.includes("Putri")
+        ? "pesantren.musyrifah@cipansor.or.id"
+        : "pesantren.musyrif@cipansor.or.id",
+    ),
+  );
+  const told = async () =>
+    (
+      await apiRequest<{ data: Notice[] }>(
+        musyrif,
+        "GET",
+        "/notifications?type=ATTENDANCE&limit=100",
+      )
+    ).data.filter(
+      (n) =>
+        n.data?.studentId === boarder!.id &&
+        n.data?.date === today() &&
+        n.data?.status === "ABSENT",
+    ).length;
+  const before = await told();
+
+  await apiRequest(pengampu, "POST", "/attendance/bulk", {
+    classId: class7A,
+    date: today(),
+    records: [{ studentId: boarder!.id, status: "ABSENT" }],
+  });
+
+  await expect.poll(told, { timeout: 15_000 }).toBe(before + 1);
 });
