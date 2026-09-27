@@ -25,6 +25,7 @@ import { useDailyReports } from "@/hooks/use-daily-report";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { authFileUrl } from "@/lib/files";
 import {
   Users,
   CalendarIcon,
@@ -279,7 +280,7 @@ export default function ParentDailyReportsPage() {
                               className="w-20 h-20 rounded-lg bg-muted flex-shrink-0 overflow-hidden"
                             >
                               <img
-                                src={photo.photoUrl}
+                                src={authFileUrl(photo.photoUrl)}
                                 alt={photo.caption || `Photo ${idx + 1}`}
                                 className="w-full h-full object-cover"
                               />

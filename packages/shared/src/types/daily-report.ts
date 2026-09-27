@@ -1,7 +1,11 @@
-export type DailyMood =
-  "HAPPY" | "NEUTRAL" | "SAD" | "TIRED" | "EXCITED" | "SICK";
+import type {
+  DAILY_MOOD_VALUES,
+  MEAL_CONSUMPTION_VALUES,
+} from "../schemas/daily-report";
 
-export type MealConsumption = "HABIS" | "SETENGAH" | "SEDIKIT" | "TIDAK_MAU";
+export type DailyMood = (typeof DAILY_MOOD_VALUES)[number];
+
+export type MealConsumption = (typeof MEAL_CONSUMPTION_VALUES)[number];
 
 export interface DailyReportPhoto {
   id: string;
@@ -71,71 +75,19 @@ export interface DailyReport {
   photos?: DailyReportPhoto[];
 }
 
-export interface CreateDailyReportInput {
-  studentId: string;
-  unitId: string;
-  academicYearId: string;
-  reportDate: string;
-  morningMood?: DailyMood;
-  healthNotes?: string;
-  temperature?: number;
-  sholatDhuha?: boolean;
-  sholatDzuhur?: boolean;
-  sholatAshar?: boolean;
-  sholatJamaah?: boolean;
-  breakfastConsumption?: string; // Should be stricter ideally, but mapped in service
-  lunchConsumption?: string;
-  snackConsumption?: string;
-  napDurationMinutes?: number;
-  toiletingNotes?: string;
-  activitiesSummary?: string;
-  learningAchievements?: string;
-  surahPractice?: string;
-  behaviorNotes?: string;
-  parentNotes?: string;
-  homeworkSuggestion?: string;
-  homework?: Array<{
-    subjectName: string;
-    description: string;
-    dueDate?: string | null;
-  }>;
-  photoUrls?: string[];
+/**
+ * What POST /daily-report/bulk answers. A pupil outside the caller's scope, or
+ * one who already has a report that day, is in `details.failed` and is left
+ * as it was; the others are made.
+ */
+export interface BulkCreateDailyReportsResult {
+  created: number;
+  failed: number;
+  details: {
+    success: string[];
+    failed: { studentId: string; error: string }[];
+  };
 }
 
-export interface UpdateDailyReportInput extends Partial<
-  Omit<
-    CreateDailyReportInput,
-    "studentId" | "unitId" | "academicYearId" | "reportDate"
-  >
-> {}
-
-export interface BulkCreateDailyReportsInput {
-  unitId: string;
-  academicYearId: string;
-  reportDate: string;
-  reports: Array<{
-    studentId: string;
-    arrivalTime?: string;
-    morningMood?: DailyMood;
-    healthNotes?: string;
-    breakfastConsumption?: string;
-    lunchConsumption?: string;
-    activitiesSummary?: string;
-    ibadahNotes?: string; // tahfidzActivity
-    parentNotes?: string; // teacherNotes
-    sholatDhuha?: boolean;
-    sholatDzuhur?: boolean;
-    sholatAshar?: boolean;
-    sholatJamaah?: boolean;
-    readingProgress?: {
-      bookId: string;
-      page: number;
-    };
-    tahfidzProgress?: {
-      surahName: string;
-      surahNumber: number;
-      ayahStart: number;
-      ayahEnd: number;
-    };
-  }>;
-}
+// The inputs (create, update, bulk, confirm) and their validation are in
+// `schemas/daily-report.ts`: one contract, read by the API and the web.

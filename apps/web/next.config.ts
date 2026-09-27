@@ -94,6 +94,14 @@ const nextConfig: NextConfig = {
         destination: "/public/verify-letter",
         permanent: true,
       },
+      // The Mutabaah form follows the "…/new" convention for create pages;
+      // its buttons had always pointed there, and /daily-report/new landed
+      // on the detail page with "new" taken for an id.
+      {
+        source: "/daily-report/create",
+        destination: "/daily-report/new",
+        permanent: true,
+      },
       // Manajemen Kinerja diremajakan sebagai /kinerja. Buku penanda dan hasil
       // pencarian lama masih membawa /pkg, dan halaman lamanya sudah dihapus —
       // tanpa pengalihan ini bookmark lama berakhir di 404.
