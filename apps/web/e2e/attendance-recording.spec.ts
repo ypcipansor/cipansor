@@ -326,6 +326,22 @@ test("a teacher with a lesson in a class records it; one with no class cannot", 
   await expect(page.getByText("Tidak ada kelas untuk dicatat")).toBeVisible();
 });
 
+test("the register reminder's link opens that class's register", async ({
+  page,
+}) => {
+  // The reminder 30 minutes after a class's first lesson links to
+  // /attendance/record?classId=…. The unit's operator records every class of
+  // the unit and starts on none, so the class shown comes from the link.
+  const operator = await apiLogin(SEED_USERS.adminSdit);
+  await injectSession(page, operator);
+  await page.goto(`/attendance/record?classId=${class1A}`);
+  await waitForLoadingComplete(page);
+  await expect(page.getByRole("combobox", { name: "Kelas" })).toContainText(
+    "1A",
+  );
+  await expect(page.getByTestId(`attendance-row-${pupil.id}`)).toBeVisible();
+});
+
 test("the kepala sekolah reads the register and does not write it; another unit does not reach it", async () => {
   const read = await registerOf(class1A, kepala);
   expect(read.map((r) => r.studentId)).toContain(pupil.id);
