@@ -149,7 +149,7 @@ const timeOfDay = z
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Jam tidak valid (HH:mm)");
 
 export const createDailyReportSchema = z.object({
-  studentId: z.uuid("Siswa wajib dipilih"),
+  studentId: z.uuid("Santri wajib dipilih"),
   reportDate: reportDay,
   /** When the child arrived that day. */
   arrivalTime: timeOfDay.nullish(),

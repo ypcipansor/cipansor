@@ -63,7 +63,19 @@ import {
   type LucideIcon,
   PhoneCall,
 } from "lucide-react";
-import { GURU_BK_ROLE_CODES, PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
+import {
+  GURU_BK_ROLE_CODES,
+  PERMIT_STAFF_ROLE_CODES,
+  SCHOOL_TEACHER_ROLE_CODES,
+} from "@cipansor/shared";
+
+/** TK Qur'an's teachers: their day-report item is the buku penghubung. */
+const TK_TEACHER_ROLE_CODES = SCHOOL_TEACHER_ROLE_CODES.filter((code) =>
+  code.startsWith("TKQ_"),
+);
+const NON_TK_TEACHER_ROLE_CODES = SCHOOL_TEACHER_ROLE_CODES.filter(
+  (code) => !code.startsWith("TKQ_"),
+);
 
 export interface NavItem {
   title: string;
@@ -236,9 +248,18 @@ const teacherNavigation: NavGroup[] = [
         icon: ClipboardCheck,
       },
       {
+        // The same page: a TK guru writes a child's day for the wali
+        // (buku penghubung); elsewhere it is the Mutabaah Yaumiyah.
+        title: "Laporan Harian",
+        href: "/daily-report",
+        icon: NotebookPen,
+        roleCodes: TK_TEACHER_ROLE_CODES,
+      },
+      {
         title: "Mutabaah Yaumiyah",
         href: "/daily-report",
         icon: Activity,
+        roleCodes: NON_TK_TEACHER_ROLE_CODES,
       },
       {
         title: "Portfolio Siswa",
@@ -1027,15 +1048,11 @@ const adminNavigation: NavGroup[] = [
             icon: CalendarDays,
           },
           {
+            // TK reaches the same page as TK / PAUD → Laporan Harian.
             title: "Mutabaah Yaumiyah",
             href: "/daily-report",
             icon: Activity,
-            roleCodes: [
-              "TKQ_ADMIN",
-              "SDIT_ADMIN",
-              "TKQ_KEPALA_SEKOLAH",
-              "SDIT_KEPALA_SEKOLAH",
-            ],
+            roleCodes: ["SDIT_ADMIN", "SDIT_KEPALA_SEKOLAH"],
           },
         ],
       },
@@ -1082,19 +1099,13 @@ const adminNavigation: NavGroup[] = [
             icon: BarChart3,
           },
           {
+            // One daily-report page for every unit (decided 2026-09-27); a
+            // class's day and the wali's view are on it and on /parent. SD
+            // reaches it as Attendance → Mutabaah Yaumiyah.
             title: "Laporan Harian",
-            href: "/tk/daily-reports",
+            href: "/daily-report",
             icon: NotebookPen,
-          },
-          {
-            title: "Laporan Harian (Kelas)",
-            href: "/tk/daily-reports/class",
-            icon: School,
-          },
-          {
-            title: "Laporan Harian (Orang Tua)",
-            href: "/tk/daily-reports/parent",
-            icon: Heart,
+            roleCodes: ["SUPER_ADMIN", "TKQ_ADMIN"],
           },
           {
             title: "Raport TK",
@@ -1713,6 +1724,13 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: ClipboardCheck,
       },
       {
+        // The TK kepala sekolah reads and supervises the children's days.
+        title: "Laporan Harian",
+        href: "/daily-report",
+        icon: NotebookPen,
+        roleCodes: ["TKQ_KEPALA_SEKOLAH"],
+      },
+      {
         title: "Admissions",
         href: "/admissions",
         icon: UserPlus,
@@ -2149,9 +2167,14 @@ function filterNavItemsByRoleCode(
 export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
   if (!roleCode) return [];
 
-  // Super Admin gets full admin navigation
+  // Super Admin gets the admin navigation, less what is kept for other roles
+  // only: the same page offered to two units under two names (TK's Laporan
+  // Harian, SD's Mutabaah Yaumiyah) must not appear twice in one sidebar.
   if (roleCode === "SUPER_ADMIN") {
-    return adminNavigation;
+    return adminNavigation.map((group) => ({
+      ...group,
+      items: filterNavItemsByRoleCode(group.items, roleCode),
+    }));
   }
 
   // Yayasan roles

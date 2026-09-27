@@ -146,7 +146,7 @@ export default function BulkCheckInPage() {
     const selectedStudents = students.filter((s) => s.selected);
 
     if (selectedStudents.length === 0) {
-      toast.error("Pilih minimal 1 siswa untuk check-in");
+      toast.error("Pilih minimal 1 santri untuk check-in");
       return;
     }
 
@@ -167,7 +167,7 @@ export default function BulkCheckInPage() {
       const message = describeBulkResult(result);
       toast.success(message.created);
       if (message.skipped) toast.warning(message.skipped);
-      router.push("/tk/daily-reports");
+      router.push("/daily-report");
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -180,7 +180,7 @@ export default function BulkCheckInPage() {
       <div className="space-y-6">
         <PageHeader
           title="Check-in Kelas"
-          description="Check-in kehadiran siswa satu kelas sekaligus"
+          description="Check-in kehadiran santri satu kelas sekaligus"
           actions={
             <Button variant="outline" onClick={() => router.back()}>
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -254,7 +254,7 @@ export default function BulkCheckInPage() {
                     onClick={handleApplyDefaultTime}
                     disabled={!students.length}
                   >
-                    Apply
+                    Terapkan
                   </Button>
                 </div>
               </div>
@@ -271,7 +271,7 @@ export default function BulkCheckInPage() {
                   ) : (
                     <Users className="mr-2 h-4 w-4" />
                   )}
-                  Muat Daftar Siswa ({studentData?.data?.length || 0} siswa)
+                  Muat Daftar Santri ({studentData?.data?.length || 0} santri)
                 </Button>
               </div>
             )}
@@ -284,9 +284,9 @@ export default function BulkCheckInPage() {
             <CardHeader>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <CardTitle>Daftar Siswa</CardTitle>
+                  <CardTitle>Daftar Santri</CardTitle>
                   <CardDescription>
-                    {selectedCount} dari {students.length} siswa dipilih
+                    {selectedCount} dari {students.length} santri dipilih
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -442,7 +442,7 @@ export default function BulkCheckInPage() {
               <div className="mt-6 flex items-center justify-between pt-4 border-t">
                 <div className="text-sm text-muted-foreground">
                   <Info className="inline h-4 w-4 mr-1" />
-                  Siswa yang tidak dipilih tidak akan dibuat laporan hariannya
+                  Santri yang tidak dipilih tidak dibuatkan laporan hariannya
                 </div>
                 <Button
                   onClick={handleSubmit}
@@ -454,7 +454,7 @@ export default function BulkCheckInPage() {
                   ) : (
                     <CheckCircle className="mr-2 h-4 w-4" />
                   )}
-                  Check-in {selectedCount} Siswa
+                  Check-in {selectedCount} Santri
                 </Button>
               </div>
             </CardContent>

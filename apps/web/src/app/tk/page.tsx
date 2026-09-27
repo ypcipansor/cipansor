@@ -34,7 +34,7 @@ import {
   getAchievementLabel,
   getAchievementColor,
 } from "@/hooks/use-paud-dashboard";
-import { MOOD_OPTIONS } from "./daily-reports/constants";
+import { MOOD_OPTIONS } from "../daily-report/constants";
 
 const MOOD_LABELS: Record<string, string> = Object.fromEntries(
   MOOD_OPTIONS.map((option) => [option.value, option.label]),
@@ -52,7 +52,7 @@ export default function TKPage() {
       title: "Laporan Harian",
       description: "Input mood, makan, dan ibadah harian",
       icon: Calendar,
-      href: "/tk/daily-reports/create",
+      href: "/daily-report/bulk",
       color: "text-green-600",
       bgColor: "bg-green-50",
     },
