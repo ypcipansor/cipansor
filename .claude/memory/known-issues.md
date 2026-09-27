@@ -18,9 +18,10 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **The web calls API paths that do not exist — 193 distinct calls left**
+- **The web calls API paths that do not exist — 184 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
-  in #569 and #571, mata pelajaran in #573, laporan harian in #577; the list is
+  in #569 and #571, mata pelajaran in #573, laporan harian in #577, the
+  homeroom pages in #579–#581; the list is
   `apps/api/src/utils/web-api-contract.baseline.json`, which the contract guard
   keeps honest — it only shrinks; staging answers them "Route … not found").
   Worst felt now: the Kurikulum list
@@ -31,6 +32,14 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
   Types entries below are part of this. Phase 1 of the audit plan fixes it area
   by area; the guard (#563) stops new ones.
+- **Homeroom pages that still do not work** (after #579–#581).
+  *Wali Kelas → Pesan Orang Tua* calls `/homeroom/classes/{id}/messages` and
+  `POST /homeroom/messages`, which do not exist; the `messages` module
+  (`/messages`, a recipient per message) is the place to wire it, with the
+  pupils' wali as recipients. The pupil page (`/homeroom/students/[id]`)
+  shows figures that are not data: *Pramuka — Aktif* for every pupil, rank
+  #0, average 0, "0 / 30 Juz", *Invalid Date*. The kepala sekolah reads a
+  class's dashboard through the API but has no menu path to it.
 - **Class and teacher schedules.** The web calls
   `/curriculum/schedules/class/{id}`, `/curriculum/schedules/teacher/{id}`
   and `PUT /curriculum/schedules/{id}`; the API serves
@@ -139,13 +148,15 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   the page says so itself (`PermissionScopeNotice`, 2026-09-25): deactivating
   the account is what revokes access, within the 15-minute token life.
 
-- **Laporan harian: who reaches which page is a menu decision not yet made.**
+- **Laporan harian: the TK guru and kepala sekolah have no path to it.**
   A TK guru's menu has *Mutabaah Yaumiyah* only; the *TK / PAUD* group
   (Laporan Harian, its class and parent views, check-in, edit) is the unit
   admin's, and the middleware sends TEACHER away from `/tk`. The TK kepala
   sekolah has no daily-report item at all, though the API lets principals
   read and write. `/homeroom/daily-report` (a class's day, for the wali kelas)
-  is linked from nowhere. Settle with the wali kelas behaviour (`roadmap.md`).
+  is linked from nowhere. The user chose one page on 2026-09-27 — the TK guru
+  writes for their class, the TK kepala sekolah reads, the other page trees
+  308 (`roadmap.md` item 00.3).
 - **Pantau Tumbuh Kembang (`/health/growth`) has no menu item** and no link
   from any page; it is reached only by typing the address.
 
@@ -260,6 +271,14 @@ decision.
   are safe; the regex ones are not. Sweep file by file.
 - **Firefox and WebKit fail `page-state-helper.spec.ts:33`** deterministically.
   The matrix is `continue-on-error`, so it does not block; it is not a flake.
+
+- **Two e2e specs fail at random under the full suite and pass alone.**
+  `certificates.spec.ts` (preview/print number, lines 118 and 153 on
+  different runs) failed after its retry in two full Chromium runs on
+  2026-09-27 and passed 3/3 on its own each time; `cbt.spec.ts` (create and
+  delete an exam) needed a retry once. Suspect the print popup's timing under
+  load. See `lessons/guard-tests-that-measure-the-wrong-thing.md`, "E2E that
+  fails on a random spec each run".
 
 ## Unverified
 

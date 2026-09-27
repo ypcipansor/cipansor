@@ -1,7 +1,8 @@
 # istilah-dan-penamaan
 
 > Glossary and naming decisions of 2026-09-25, taken by the user on the
-> architecture audit: murid in the schools, santri in Takhosus; the yayasan's
+> architecture audit (the learner's name revised 2026-09-27: santri on every
+> portal screen, murid only in state formats); the yayasan's
 > own spellings; the portal in Indonesian only and the public site in three
 > languages; tables renamed with their models; `/api/v1`; no laboratory module;
 > donations, ZIS and wakaf built properly. Read before naming anything.
@@ -12,22 +13,23 @@ summarised in `known-issues.md` and `progress.md`; this file keeps what was
 
 ## 1. What the learner is called
 
+**Revised by the user on 2026-09-27: *santri* on every portal screen.** The
+2026-09-25 rule (murid in the schools, santri in Takhosus) followed the
+regulations; the user chose the yayasan's own word instead. The reasons: the
+public site already calls its learners *santri* (18 times in `site.i18n.ts`,
+*murid* never), and a label should be the word its readers use. The state's
+terms stay wherever the state defines the format.
+
 | Where | On screen | In code | Why |
 |---|---|---|---|
-| A school unit — TK Qur'an, SD IT, SMP IT, SMA Qur'an (rapor, kelas, SPMB, presensi) | **Murid** | `student` | Kemendikdasmen replaced "peserta didik" with *murid* in 2025 (Permendikdasmen 3/2025, SPMB = Sistem Penerimaan **Murid** Baru) |
-| Takhosus — the pesantren programme, `UnitType.PESANTREN`, whose learners attend none of the schools | **Santri** | `student` | UU 18/2019 Pasal 1: *santri* is a learner who studies at a pesantren |
-| A screen that lists both at once (yayasan-wide data, EMIS/Dapodik export headers) | **Peserta didik** | `student` | the umbrella term of UU 20/2003 and UU 18/2019 |
-| The parent | **Wali murid** / **wali santri** by the same rule; **orang tua/wali** where both | `parent` | follows the learner's term |
+| Every portal screen, in every unit (lists, forms, menus, dashboards, notifications) | **Santri** | `student` | the yayasan's word; UU 18/2019 Pasal 1 |
+| A document or format the state defines: rapor, SPMB forms and letters, Dapodik/EMIS exports, ijazah/SKL | **Murid** (school units) / **peserta didik** (both, or where the format says so) | `student` | Permendikdasmen 3/2025 (*Sistem Penerimaan **Murid** Baru*), UU 20/2003 |
+| The parent | **Wali santri** on screen; the state format's own term in its documents | `parent` | follows the learner's term |
 
-The label follows the **unit of the page or the record**, not the person: a
-learner enrolled in a school and in Takhosus is a murid on the school's rapor
-and a santri on the halaqoh sheet. The code keeps one word, `student`,
-everywhere — the label is a presentation choice made from the unit type.
-
-*Open nuance (raised, not decided):* a school pupil who boards in the asrama is
-a *santri mukim* in UU 18/2019's sense; asrama pages may later want "santri".
-Until the user says so, the rule above applies (murid unless enrolled in
-Takhosus).
+The code keeps one word, `student`, everywhere. The name of a state system
+stays as the state spells it: SPMB is still *Sistem Penerimaan Murid Baru*.
+Relabelling the existing screens is a sweep in `roadmap.md`, not a reason to
+rename code.
 
 ## 2. Spellings
 
@@ -109,6 +111,19 @@ what the design must respect (researched 2026-09-25 — do not repeat):
 
 Before any code, the design needs two facts from the yayasan: its zakat status
 (UPZ of which BAZNAS, a LAZ, or none) and whether it is a registered nazhir.
+
+**Checked 2026-09-27, still unknown.** The yayasan (Kadipaten, Kab.
+Tasikmalaya) answers to BAZNAS Kab. Tasikmalaya for zakat and KUA Kadipaten /
+BWI for wakaf; the registers to search are Kemenag's SIMZAT (LAZ) and
+[SIWAK](https://siwak.kemenag.go.id/web/data_nwu) (nazhir wakaf uang). The
+yayasan's own site, pesantrencipansor.com → Wakaf & Infaq, offers three
+programmes — **Wakaf Sarana Pendidikan, Beasiswa Santri Takhosus, Infaq
+Operasional** — and no zakat. The user's rule until the facts are in: *offer
+what the yayasan itself offers.* So the portal's public donation form drops
+Zakat Maal and Zakat Fitrah (added by the app, never offered by the yayasan),
+and keeps wakaf. BWI treats money given to build a facility as *wakaf melalui
+uang* ([BWI](https://www.bwi.go.id/literasiwakaf/perbedaan-wakaf-uang-dan-wakaf-melalui-uang/)),
+which also runs through a registered nazhir and an LKS-PWU account.
 
 ## 8. Module names
 

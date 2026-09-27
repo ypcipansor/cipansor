@@ -22,7 +22,7 @@ the mechanical cases.
 - [pk-organ-yayasan-tanpa-kontrak](decisions/pk-organ-yayasan-tanpa-kontrak.md) — Pembina, Pengurus and Pengawas make no PK; a unit head's PK hangs on the unit's ratified RKA
 - [pengesahan-dokumen-yayasan](decisions/pengesahan-dokumen-yayasan.md) — who drafts, reviews and ratifies RPJP/Renstra/RKA; ratified documents freeze
 - [rka-dua-tingkat](decisions/rka-dua-tingkat.md) — four planning levels (RPJP → Renstra → RKA Yayasan → RKA Unit); never propose three
-- [unit-vs-asrama-vs-takhosus](decisions/unit-vs-asrama-vs-takhosus.md) — a unit issues its own graduation; asrama is not a unit; takhosus is `UnitType.PESANTREN`
+- [unit-vs-asrama-vs-takhosus](decisions/unit-vs-asrama-vs-takhosus.md) — a unit issues its own graduation; asrama is not a unit; takhosus is `UnitType.PESANTREN`; who manages asrama (Pimpinan + TU Pesantren + SA; koordinator places)
 - [menu-ia-tiga-tingkat](decisions/menu-ia-tiga-tingkat.md) — at most three menu levels, nine groups by discipline; no sub-sub-menus
 - [eoffice-revocation-authority](decisions/eoffice-revocation-authority.md) — who may revoke a naskah dinas; Pengawas, not Ketua; never Super Admin
 - [eoffice-revocation-mechanics](decisions/eoffice-revocation-mechanics.md) — revocation is a signed statement; the DICABUT stamp; requesting ≠ deciding
@@ -30,14 +30,15 @@ the mechanical cases.
 - [esign-standards-ceiling](decisions/esign-standards-ceiling.md) — AATL/eIDAS/PP 71 ceiling; Ed25519 blocks PAdES; no PSrE for now; research not to repeat
 - [chatbot-retrieval-settled](decisions/chatbot-retrieval-settled.md) — the whole corpus goes into every prompt; what was rejected; when to revisit
 - [route-naming](decisions/route-naming.md) — PPDB/PSB → SPMB with permanent redirects; pesantren terms are never translated
-- [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — murid/santri/peserta didik, spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law, target module names
-- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only for long leave, no mentor, or takeover; three parameters open
+- [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — santri on every screen (murid only in state formats), spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law + what the yayasan offers, target module names
+- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
-- [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; who reads a confidential counselling session
+- [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
+- [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket
 
 ## Lessons — traps that already cost time
 
-- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape
+- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape; a suite that signs in as someone who cannot be refused
 - [teacher-dashboard-fake-stats](lessons/teacher-dashboard-fake-stats.md) — four kinds of figures that lie, and how to find each
 - [breadth-over-depth](lessons/breadth-over-depth.md) — built wider than used; walk a real journey end to end
 - [student-status-case-mismatch](lessons/student-status-case-mismatch.md) — `'active'` vs `'ACTIVE'`: 43 queries returned zero; one vocabulary + CHECK + scanner

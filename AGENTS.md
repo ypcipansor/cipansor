@@ -151,8 +151,9 @@ name of every module are in
 - **Language.** URL paths, API paths and identifiers are **English** for general
   concepts; **pesantren and regulatory terms are never translated** (`tahfidz`,
   `takhosus`, `muhadhoroh`, `spmb`, `emis`, `dapodik`); **every label a person
-  reads is Indonesian**. Learners are *murid* in the school units, *santri* in
-  Takhosus, *peserta didik* where both appear; the code says `student`.
+  reads is Indonesian**. Learners are *santri* on every portal screen (decided
+  2026-09-27); *murid* / *peserta didik* only in formats the state defines
+  (rapor, SPMB, Dapodik/EMIS exports); the code says `student`.
 - **Names say what the thing is**, never its history: no `-enhancement`,
   `-v2`, `new-`, `unified-`. A module is named after its content
   (`practicum` holding Amaliyah Tadris is the example not to repeat).

@@ -106,3 +106,22 @@ jadi pindah setingkat mustahil hari ini. Begitu Takhasus jadi unit: SMP IT →
 Takhasus (berhenti sekolah formal, bisa di tengah tahun, karena takhasus tak
 punya siklus kelulusan kaku) dan Takhasus → SMP IT (setelah kesetaraan Ula).
 Itu `PINDAH_UNIT` yang sah; naik jenjang antar tahun tetap `LULUS`.
+
+## Siapa yang mengelola asrama — diputuskan pengguna 2026-09-27
+
+Pimpinan Pesantren, TU Pesantren dan Super Admin mengelola asrama dan kamar
+(menambah, mengubah, menonaktifkan). **Koordinator asrama**
+(`MusyrifAssignment.role = KOORDINATOR`) menempatkan dan memindahkan santri di
+asrama yang ia koordinasikan. Admin sekolah (termasuk TK) dan organ yayasan
+tidak lagi mengelolanya.
+
+Dasarnya: di pondok, asrama, penempatan kamar dan perizinan dipegang bagian
+pengasuhan atau kepala asrama atas nama kiai
+([Ummul Quro](https://ummulquroprob.sch.id/page/tugas-pokok-dan-fungsi-pengurus),
+[Gontor](https://gontor.ac.id/struktur/),
+[Nurul Jadid](https://www.nuruljadid.net/struktur-pesantren)). Sejalan dengan
+"asrama bukan unit" di atas: sekolah tidak memiliki kamar.
+
+Kodenya satu daftar: `DORMITORY_MANAGER_ROLE_CODES` di
+`packages/shared/src/schemas/dormitories.ts`, ditambah penjaga per asrama untuk
+koordinator. Belum dibangun; urutannya di `roadmap.md`.

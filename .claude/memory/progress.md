@@ -11,8 +11,9 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `75d64c11` (#576) on 2026-09-27;
-  #577 deploys when `main`'s CI and E2E finish.
+  on which CI and E2E (Chromium) pass. At `7d429a00` (#580) on 2026-09-27,
+  verified read-only (each account's register scope; the kepala sekolah
+  passes the route and writes nothing); #581 deploys when `main`'s E2E finishes.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -20,62 +21,47 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Waiting on the user
 
-- Approval for the next production release. (Which fixes production still
-  lacks is for the machine-local memory, not here — see "Where things live".)
+- Approval for the next production release — deferred by the user on
+  2026-09-27; ask again at the end of every report. (Which fixes production
+  still lacks is for the machine-local memory, not here — see "Where things
+  live".)
 - Role catalogue items decided but not built: wakasek per bidang as a
   timed assignment (Model A; wakasek is no longer a role code —
   `decisions/peran-dan-tugas-tambahan.md`), `PESANTREN_ADMIN` (needs a pesantren unit first — every pesantren role is
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
-- **Three parameters of the permit rule** (`decisions/pemutus-izin-santri.md`,
-  built in #568): the 7-day threshold; whether a boarder going home or
-  staying overnight goes to the koordinator asrama or the Pimpinan Pesantren;
-  whether a staff-filed request needs the wali's "setuju" (a schema change).
-- **Who manages asrama** — adds asrama and kamar, places santri. Today: the
-  super admin, every school's admin and the yayasan organs (unchanged by #571,
-  which made those pages work). Recommended: the Pimpinan
-  Pesantren and TU Pesantren (pengasuhan), plus the super admin; not the
-  organs, not TK. One list in `packages/shared/src/schemas/dormitories.ts`.
 - **Musyrif assignments in production.** Until the yayasan enters them
   (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record and
   their leave goes to the unit head, visibly so.
-- **"Santri" on every screen?** On 2026-09-25 the user said they were
-  considering calling every learner santri. Researched the same day and
-  recommended: *santri* in everything the app writes itself (the yayasan's own
-  site already does, and so does the TK Al-Qur'an tradition; UU 18/2019 knows
-  santri who do not board), and the state's word only inside a name or format
-  copied from the state (SPMB = *Sistem Penerimaan Murid Baru*, Dapodik's
-  *peserta didik*, ministry templates). Not decided yet;
-  `decisions/istilah-dan-penamaan.md` still says murid in the schools and
-  changes only when the user agrees.
-- **Guru wali at SMP IT and SMA Qur'an?** Permendikdasmen 11/2025 Ps. 9 has
-  a subject teacher accompany the same pupils from entry to graduation. If the
-  yayasan runs it, it is a relation guru → murid, not a role
-  (`decisions/peran-dan-tugas-tambahan.md`, "Masih terbuka").
-- **The Kurikulum list page (`/curriculum/curriculums`).** Its calls reach
-  no route and no model: the kurikulum the yayasan keeps is the
-  `kurikulum-merdeka` module. Folding the page into it removes a page, so it
-  waits for the user's go-ahead (asked 2026-09-26).
-- **Who opens the daily-report pages** — a TK guru has no TK / PAUD group,
-  the TK kepala sekolah no daily-report item, and the wali kelas page no link
-  (known-issues). To settle with the wali kelas menu work.
-- **Two facts for the ZIS and wakaf build:** the yayasan's zakat status (UPZ
-  of which BAZNAS, a licensed LAZ, or none) and whether it is a registered
-  nazhir. The law decides what the app may offer on each
-  (`decisions/istilah-dan-penamaan.md` §7).
+- **ZIS and wakaf facts** (asked 2026-09-27; the user does not know yet and
+  will check): the yayasan's zakat status (UPZ of BAZNAS Kab. Tasikmalaya, a
+  licensed LAZ, or none) and whether it is a registered nazhir (KUA / SIWAK /
+  BWI). What the web shows, and the interim rule the user set, are in
+  `decisions/istilah-dan-penamaan.md` §7.
+
+**Answered on 2026-09-27** (recorded in the decisions; the work is in
+`roadmap.md`): the three permit parameters (`pemutus-izin-santri`); who
+manages asrama (`unit-vs-asrama-vs-takhosus`); *santri* on every screen
+(`istilah-dan-penamaan` §1); guru wali runs at SMP IT and SMA Qur'an
+(`peran-dan-tugas-tambahan`); daily attendance — one page, automatic
+follow-up, no guru piket (`absensi-harian`); one TK daily-report page and the
+Kurikulum list page folded away (both removals approved). The next production
+release was **deferred** by the user ("tunda dulu … kumpul dulu perbaikan dan
+pengembangannya"), who asked to keep being reminded.
 
 ## In flight
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
-  pengampu (#573), laporan harian (#577). 193 broken calls left. Next: the
-  class and teacher schedules, the Kurikulum list (waits on the user), HR
-  employees, Sertifikat, then the dead calls, `services/` and the `api-client`
-  alias.
-- **Wali kelas as a relation, its behaviour** (decided 2026-09-26; the role
-  codes went in #575): the Wali Kelas menu only for the homeroom teacher of a
-  class in the current year, and the homeroom pages scoped to that class.
+  pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
+  daily attendance (#580), behaviour notes (#581). 184 broken calls left.
+  Next: the rest of the homeroom pages (below), the class and teacher
+  schedules, the Kurikulum list (waits on the user), HR employees,
+  Sertifikat, then the dead calls, `services/` and the `api-client` alias.
+- **Homeroom, what is left** (known-issues, "Homeroom pages that still do
+  not work"): *Pesan Orang Tua*, the pupil page's figures, the kepala
+  sekolah's way to a class's dashboard.
 - **Naming, endpoint and architecture audit — done 2026-09-25**; the user
   widened it the same day to every module without exception, every API
   endpoint and web route, the repository structure, the architecture and
@@ -114,6 +100,27 @@ backlog to [`roadmap.md`](roadmap.md).
   reads it).
 
 ## Recently done (2026-09-24 → 27)
+
+- **Wali kelas is a relation, not a role (#579, merged and on staging
+  2026-09-27):** the *Wali Kelas* menu group shows for the wali kelas of a
+  class this academic year (`Class.homeroomTeacherId`); a class's homeroom
+  data is read by its wali kelas and the unit's kepala sekolah and operator,
+  written by the wali kelas in the current year, 404 to other teachers; notes
+  are changed by their author only; responses carry five pupil columns. The TK
+  wali kelas persona now holds TK A. Before/after:
+  <https://claude.ai/artifact/6fki1HjBDZcqigUKE8W9cR>.
+- **Daily attendance is taken by the people who teach the class (#580,
+  merged 2026-09-27):** until then every teacher, wali kelas and kepala
+  sekolah got 403 saving a register (**Mengajar → Absensi → Input
+  Kehadiran**; **Wali Kelas → Absensi Harian** called routes that did not
+  exist). Now the class's wali kelas, a teacher with a lesson in it, and the
+  unit's operator; the day is a calendar day; saving again corrects it;
+  `GET /attendance/me/classes` tells the page which registers the user takes.
+  Before/after: <https://claude.ai/artifact/7SjEhmVqzSwxxrDvpGardr>.
+- **Behaviour notes (#581):** **Wali Kelas → Catatan Perilaku** lists and
+  writes the class's notes; a positive note is no longer stored as a
+  violation; a note needing attention keeps its action. Before/after:
+  <https://claude.ai/artifact/WxamzJEDT1AKdjpsGfwMDJ>.
 
 - **Laporan harian end to end (#577, merged 2026-09-27):** a TK guru writes a
   child's day with a photo (**Mengajar → Mutabaah Yaumiyah → Buat Laporan**;
