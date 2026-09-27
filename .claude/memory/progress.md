@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-26**. What a new session needs to pick up the thread, newest
+Updated **2026-09-27**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -11,8 +11,8 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `140633b0` on 2026-09-26
-  (#565, #566); #568 and #569 deploy when `main`'s CI and E2E finish.
+  on which CI and E2E (Chromium) pass. At `75d64c11` (#576) on 2026-09-27;
+  #577 deploys when `main`'s CI and E2E finish.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -22,8 +22,9 @@ backlog to [`roadmap.md`](roadmap.md).
 
 - Approval for the next production release. (Which fixes production still
   lacks is for the machine-local memory, not here — see "Where things live".)
-- Role catalogue items decided but not built: a *bidang* attribute for Wakasek,
-  `PESANTREN_ADMIN` (needs a pesantren unit first — every pesantren role is
+- Role catalogue items decided but not built: wakasek per bidang as a
+  timed assignment (Model A; wakasek is no longer a role code —
+  `decisions/peran-dan-tugas-tambahan.md`), `PESANTREN_ADMIN` (needs a pesantren unit first — every pesantren role is
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
@@ -48,6 +49,17 @@ backlog to [`roadmap.md`](roadmap.md).
   *peserta didik*, ministry templates). Not decided yet;
   `decisions/istilah-dan-penamaan.md` still says murid in the schools and
   changes only when the user agrees.
+- **Guru wali at SMP IT and SMA Qur'an?** Permendikdasmen 11/2025 Ps. 9 has
+  a subject teacher accompany the same pupils from entry to graduation. If the
+  yayasan runs it, it is a relation guru → murid, not a role
+  (`decisions/peran-dan-tugas-tambahan.md`, "Masih terbuka").
+- **The Kurikulum list page (`/curriculum/curriculums`).** Its calls reach
+  no route and no model: the kurikulum the yayasan keeps is the
+  `kurikulum-merdeka` module. Folding the page into it removes a page, so it
+  waits for the user's go-ahead (asked 2026-09-26).
+- **Who opens the daily-report pages** — a TK guru has no TK / PAUD group,
+  the TK kepala sekolah no daily-report item, and the wali kelas page no link
+  (known-issues). To settle with the wali kelas menu work.
 - **Two facts for the ZIS and wakaf build:** the yayasan's zakat status (UPZ
   of which BAZNAS, a licensed LAZ, or none) and whether it is a registered
   nazhir. The law decides what the app may offer on each
@@ -55,10 +67,15 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## In flight
 
-- **Audit phase 1, area by area.** Perizinan done (#564, then #568 moved the
-  decision to the mentor); Asrama's kamar list and labels fixed in #569.
-  Next: Kurikulum, HR employees, Sertifikat, then the dead calls, `services/`
-  and the `api-client` alias.
+- **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
+  the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
+  pengampu (#573), laporan harian (#577). 193 broken calls left. Next: the
+  class and teacher schedules, the Kurikulum list (waits on the user), HR
+  employees, Sertifikat, then the dead calls, `services/` and the `api-client`
+  alias.
+- **Wali kelas as a relation, its behaviour** (decided 2026-09-26; the role
+  codes went in #575): the Wali Kelas menu only for the homeroom teacher of a
+  class in the current year, and the homeroom pages scoped to that class.
 - **Naming, endpoint and architecture audit — done 2026-09-25**; the user
   widened it the same day to every module without exception, every API
   endpoint and web route, the repository structure, the architecture and
@@ -84,7 +101,9 @@ backlog to [`roadmap.md`](roadmap.md).
   that need a real Postgres (`decommission-pt-session.integration`,
   `database-migrations`); the Playwright suite has data guards
   (`test.skip` when the seed lacks rows) and firefox/webkit run with
-  `continue-on-error`.
+  `continue-on-error`. The Chromium run reports 41 skipped (2026-09-27);
+  one of them, `tk-daily-report`, had been hiding a broken flow for months
+  (`lessons/guard-tests-that-measure-the-wrong-thing.md`).
 - **Model A design document** — approved to draft on 2026-09-25: a permission
   per feature and action, data scope from the assignment, menus derived from
   permissions, separation-of-duty rules locked in code, and the account
@@ -94,7 +113,33 @@ backlog to [`roadmap.md`](roadmap.md).
   after 2026-10-01 (the VM is the rollback target until then, and a guard test
   reads it).
 
-## Recently done (2026-09-24 → 26)
+## Recently done (2026-09-24 → 27)
+
+- **Laporan harian end to end (#577, merged 2026-09-27):** a TK guru writes a
+  child's day with a photo (**Mengajar → Mutabaah Yaumiyah → Buat Laporan**;
+  the button used to open "Laporan tidak ditemukan"), the wali reads and
+  acknowledges it (**Anak Saya → Laporan Harian**; it used to say "Data Siswa
+  Tidak Ditemukan"), and the TK admin's form, edit page and check-in save.
+  One contract in `packages/shared/src/schemas/daily-report.ts` (calendar
+  day; unit and year derived from the pupil and date; photos are uploads);
+  who reads and writes is set per role and per child; forms no longer fill in
+  meals, health or mood nobody recorded. Before/after:
+  <https://claude.ai/artifact/JwabzXL9oGAKLJ8iXhxkEk>.
+- **An empty Select shows its placeholder (#576):** the wrapper's `""`
+  sentinel only applies when an "All" item exists
+  (`lessons/select-empty-value-sentinel.md`). Before/after:
+  <https://claude.ai/artifact/7aRTpH1sy1WKiHTyaFhTkJ>.
+- **Wakasek and wali kelas are duties of a guru, not role codes (#575):**
+  every `*_WAKASEK` and `*_WALI_KELAS` assignment moved to `*_GURU` of the
+  same unit (migration replayed on a copy of production first); 53 role codes.
+  Decision: `decisions/peran-dan-tugas-tambahan.md`. Before/after:
+  <https://claude.ai/artifact/3p6XhHyASGZYNH4uWSxuYs>.
+- **Confidential counselling sessions (#574, on staging, verified):** read in
+  full by their counsellor and the unit's guru BK; the kepala sekolah sees
+  that they exist and their referrals; nobody else receives them.
+  Before/after: <https://claude.ai/artifact/Q6hbYf2fEzfo9W51h2E3p4>.
+- **Mata pelajaran and guru pengampu work end to end, within the unit
+  (#573).** Before/after: <https://claude.ai/artifact/HpkA1erLZGkdZb47QJBJVd>.
 
 - **Asrama end to end (#571, merged 2026-09-26):** adding and editing an
   asrama, adding, changing and deleting a kamar, and placing a santri all

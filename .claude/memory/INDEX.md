@@ -33,10 +33,11 @@ the mechanical cases.
 - [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — murid/santri/peserta didik, spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law, target module names
 - [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only for long leave, no mentor, or takeover; three parameters open
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
+- [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; who reads a confidential counselling session
 
 ## Lessons — traps that already cost time
 
-- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants
+- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape
 - [teacher-dashboard-fake-stats](lessons/teacher-dashboard-fake-stats.md) — four kinds of figures that lie, and how to find each
 - [breadth-over-depth](lessons/breadth-over-depth.md) — built wider than used; walk a real journey end to end
 - [student-status-case-mismatch](lessons/student-status-case-mismatch.md) — `'active'` vs `'ACTIVE'`: 43 queries returned zero; one vocabulary + CHECK + scanner
@@ -59,6 +60,7 @@ the mechanical cases.
 - [nextjs-loading-boundary-commits-200](lessons/nextjs-loading-boundary-commits-200.md) — a root `loading.tsx` turns every 404 into a 200
 - [mobile-layout-audit](lessons/mobile-layout-audit.md) — `scrollWidth` lies here; the ancestor-walk test that works
 - [radix-scrollarea-thumb-stalls](lessons/radix-scrollarea-thumb-stalls.md) — the thumb that stops at 3%; measuring at end of frame
+- [select-empty-value-sentinel](lessons/select-empty-value-sentinel.md) — `""` vs the wrapper's sentinel; never `value={x || undefined}`; build a form of Selects after its data, do not reset it
 
 Update a file in place — one subject, one file — on a branch and through a PR,
 like any other change. Keep this index to one line per file.
