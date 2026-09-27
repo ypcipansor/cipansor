@@ -103,7 +103,7 @@ function SubjectDetailPageContent({
           Mata pelajaran tidak ditemukan
         </p>
         <Button asChild className="mt-4">
-          <Link href="/curriculum">Kembali ke Kurikulum</Link>
+          <Link href="/curriculum">Kembali ke Mata Pelajaran &amp; Jadwal</Link>
         </Button>
       </div>
     );

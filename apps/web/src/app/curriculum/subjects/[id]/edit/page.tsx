@@ -44,7 +44,7 @@ function EditSubjectPageContent({
           Mata pelajaran tidak ditemukan
         </h3>
         <Button asChild>
-          <Link href="/curriculum">Kembali ke Kurikulum</Link>
+          <Link href="/curriculum">Kembali ke Mata Pelajaran &amp; Jadwal</Link>
         </Button>
       </div>
     );
