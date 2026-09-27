@@ -3,13 +3,7 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -30,7 +24,6 @@ import {
 } from "@/components/ui/select";
 import {
   useSubjectList,
-  useCurriculums,
   useSchedules,
   useCanManageSubjects,
   passingScoreOf,
@@ -52,7 +45,6 @@ import {
   Calendar,
   Clock,
   UserX,
-  GraduationCap,
   Loader2,
 } from "lucide-react";
 import Link from "next/link";
@@ -72,9 +64,6 @@ export default function CurriculumPage() {
   });
   const subjects = subjectList?.rows;
   const subjectTotal = subjectList?.total ?? 0;
-  const { data: curriculums, isLoading: loadingCurriculums } = useCurriculums({
-    unitId: unitFilter !== "ALL" ? unitFilter : undefined,
-  });
   const { data: schedules, isLoading: loadingSchedules } = useSchedules({
     classId: classFilter !== "ALL" ? classFilter : undefined,
   });
@@ -104,15 +93,25 @@ export default function CurriculumPage() {
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Kurikulum</h1>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Mata Pelajaran &amp; Jadwal
+            </h1>
             <p className="text-muted-foreground">
-              Kelola mata pelajaran, kurikulum, dan jadwal
+              Kelola mata pelajaran dan jadwal pelajaran. Kurikulum yang berlaku
+              ada di{" "}
+              <Link
+                href="/curriculum/merdeka"
+                className="font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Kurikulum Merdeka
+              </Link>
+              .
             </p>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">
@@ -124,20 +123,6 @@ export default function CurriculumPage() {
               <div className="text-2xl font-bold">{subjectTotal}</div>
               <p className="text-xs text-muted-foreground">
                 {subjects?.filter((s) => s.isActive).length ?? 0} aktif
-              </p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Kurikulum</CardTitle>
-              <GraduationCap className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {curriculums?.length ?? 0}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {curriculums?.filter((c) => c.isActive).length ?? 0} aktif
               </p>
             </CardContent>
           </Card>
@@ -176,10 +161,6 @@ export default function CurriculumPage() {
             <TabsTrigger value="subjects">
               <BookOpen className="mr-2 h-4 w-4" />
               Mata Pelajaran
-            </TabsTrigger>
-            <TabsTrigger value="curriculum">
-              <GraduationCap className="mr-2 h-4 w-4" />
-              Kurikulum
             </TabsTrigger>
             <TabsTrigger value="schedule">
               <Calendar className="mr-2 h-4 w-4" />
@@ -351,109 +332,6 @@ export default function CurriculumPage() {
                 </p>
               )}
             </Card>
-          </TabsContent>
-
-          {/* Curriculum Tab */}
-          <TabsContent value="curriculum" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Select value={unitFilter} onValueChange={setUnitFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Semua Unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">Semua Unit</SelectItem>
-                  {units?.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button asChild>
-                <Link href="/curriculum/curriculums/new">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Buat Kurikulum
-                </Link>
-              </Button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {loadingCurriculums ? (
-                <div className="col-span-full text-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin mx-auto" />
-                </div>
-              ) : curriculums?.length ? (
-                curriculums.map((curriculum) => (
-                  <Card key={curriculum.id}>
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <CardTitle className="text-lg">
-                            {curriculum.name}
-                          </CardTitle>
-                          <CardDescription>{curriculum.code}</CardDescription>
-                        </div>
-                        <Badge
-                          variant={
-                            curriculum.isActive ? "default" : "secondary"
-                          }
-                        >
-                          {curriculum.isActive ? "Aktif" : "Nonaktif"}
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Unit</span>
-                          <span>{curriculum.unit?.name}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Tahun Ajaran
-                          </span>
-                          <span>{curriculum.academicYear?.name}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Tingkat</span>
-                          <span>Kelas {curriculum.gradeLevel}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Mata Pelajaran
-                          </span>
-                          <span>{curriculum.subjects?.length ?? 0}</span>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex justify-end gap-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <Link
-                            href={`/curriculum/curriculums/${curriculum.id}`}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Detail
-                          </Link>
-                        </Button>
-                        <Button variant="outline" size="sm" asChild>
-                          <Link
-                            href={`/curriculum/curriculums/${curriculum.id}/edit`}
-                          >
-                            <Edit className="mr-2 h-4 w-4" />
-                            Edit
-                          </Link>
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              ) : (
-                <Card className="col-span-full">
-                  <CardContent className="py-8 text-center text-muted-foreground">
-                    Belum ada kurikulum
-                  </CardContent>
-                </Card>
-              )}
-            </div>
           </TabsContent>
 
           {/* Schedule Tab */}

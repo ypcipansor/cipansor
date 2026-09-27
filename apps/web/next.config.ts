@@ -130,6 +130,18 @@ const nextConfig: NextConfig = {
         destination: "/attendance/record",
         permanent: true,
       },
+      // The Kurikulum list had no table and no API behind it; the curriculum
+      // in force is Kurikulum Merdeka (removal approved 2026-09-27).
+      {
+        source: "/curriculum/curriculums",
+        destination: "/curriculum/merdeka",
+        permanent: true,
+      },
+      {
+        source: "/curriculum/curriculums/:path*",
+        destination: "/curriculum/merdeka",
+        permanent: true,
+      },
     ];
   },
 

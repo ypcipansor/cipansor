@@ -173,7 +173,7 @@ function EditSchedulePageContent({
         <Calendar className="h-12 w-12 text-muted-foreground" />
         <p className="mt-4 text-muted-foreground">Jadwal tidak ditemukan</p>
         <Button asChild className="mt-4">
-          <Link href="/curriculum">Kembali ke Kurikulum</Link>
+          <Link href="/curriculum">Kembali ke Mata Pelajaran &amp; Jadwal</Link>
         </Button>
       </div>
     );

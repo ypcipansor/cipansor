@@ -232,3 +232,60 @@ test.describe("Mata pelajaran — jadwal di halaman mapel", () => {
     ).toHaveCount(own.data.length);
   });
 });
+
+/**
+ * The Kurikulum list is gone (approved 2026-09-27): it had no table and no
+ * API behind it — the tab showed "Belum ada kurikulum" over a 404 and its
+ * form posted to nothing. The curriculum in force is Kurikulum Merdeka, the
+ * old addresses answer with a permanent redirect there, and the page that
+ * stays is named after what it holds.
+ */
+test.describe("Kurikulum list removed — Mata Pelajaran & Jadwal stays", () => {
+  test("the old addresses redirect permanently to Kurikulum Merdeka", async ({
+    page,
+  }) => {
+    await signIn(page, "SMPIT_ADMIN");
+    for (const path of [
+      "/curriculum/curriculums",
+      "/curriculum/curriculums/new",
+      "/curriculum/curriculums/00000000-0000-4000-8000-000000000000/edit",
+    ]) {
+      const res = await page.request.get(path, { maxRedirects: 0 });
+      expect(res.status(), path).toBe(308);
+      expect(res.headers()["location"], path).toMatch(/\/curriculum\/merdeka$/);
+    }
+    await page.goto("/curriculum/curriculums/new");
+    await expect(page).toHaveURL(/\/curriculum\/merdeka$/);
+    // Kurikulum Merdeka is not a child of the renamed page.
+    const trail = page.getByRole("navigation", { name: "Jejak halaman" });
+    await expect(trail).toContainText("Kurikulum Merdeka");
+    await expect(trail.getByRole("link")).toHaveText(["", "Dashboard"]);
+  });
+
+  test("the menu item and the page say Mata Pelajaran & Jadwal, and nothing asks for the list", async ({
+    page,
+  }) => {
+    await signIn(page, "SMPIT_ADMIN");
+    const asked: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().includes("/curriculum/curriculums")) asked.push(r.url());
+    });
+    await page.goto("/dashboard");
+    const menu = page.getByRole("complementary", { name: "Menu utama" });
+    await menu.getByRole("button", { name: "Buka submenu Classes" }).click();
+    await menu.getByRole("link", { name: "Mata Pelajaran & Jadwal" }).click();
+    await expect(page).toHaveURL(/\/curriculum$/);
+    await expect(
+      page.getByRole("heading", { name: "Mata Pelajaran & Jadwal" }),
+    ).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveText([
+      "Mata Pelajaran",
+      "Jadwal",
+    ]);
+    await expect(
+      page.getByRole("link", { name: "Kurikulum Merdeka" }).last(),
+    ).toHaveAttribute("href", "/curriculum/merdeka");
+    await page.waitForLoadState("networkidle");
+    expect(asked).toEqual([]);
+  });
+});

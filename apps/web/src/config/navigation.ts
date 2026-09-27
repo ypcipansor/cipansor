@@ -973,7 +973,7 @@ const adminNavigation: NavGroup[] = [
             icon: Calendar,
           },
           {
-            title: "Curriculum",
+            title: "Mata Pelajaran & Jadwal",
             href: "/curriculum",
             icon: BookMarked,
           },
@@ -1691,7 +1691,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: BookOpen,
         children: [
           {
-            title: "Curriculum",
+            title: "Mata Pelajaran & Jadwal",
             href: "/curriculum",
             icon: BookMarked,
           },
