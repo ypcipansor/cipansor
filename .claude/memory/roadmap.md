@@ -17,8 +17,10 @@ items before 2026-09-25 is in the history of this file and of
    on 2026-09-25, so it runs first). Phases, each releasable alone:
    0. guards — done (#560, #562, #563);
    1. reconnect the broken calls area by area (Perizinan done in #564 and
-      #568; Asrama in #569 and #571; next Kurikulum, HR
-      employees, Sertifikat), delete the 84 dead ones, `services/` and the
+      #568; Asrama in #569 and #571; mata pelajaran in #573; laporan harian
+      in #577; next the schedules, the Kurikulum list — waits on the user —
+      HR employees, Sertifikat, and counselling's remaining gaps in
+      `known-issues.md`), delete the 84 dead ones, `services/` and the
       `api-client` alias;
    2. glossary from the user's eight decisions (murid vs santri may change:
       the user is weighing "santri" everywhere — `progress.md`);
@@ -39,7 +41,11 @@ items before 2026-09-25 is in the history of this file and of
    7. `docs/ARCHITECTURE.md` rewritten from the result.
 
 1. **Finish the role catalogue.** The pesantren part shipped in #552. Left:
-   - a *bidang* attribute for Wakasek;
+   - wakasek per bidang as a timed assignment — wakasek is no longer a role
+     code (#575, `decisions/peran-dan-tugas-tambahan.md`);
+   - the wali kelas behaviour: the Wali Kelas menu only for a class's
+     homeroom teacher in the current year, homeroom pages scoped to that
+     class;
    - `PESANTREN_ADMIN` — needs a pesantren unit first (see known-issues,
      "Takhosus as a fifth unit");
    - a Panitia SPMB assignment that expires — needs writers of `expires_at`,
@@ -71,6 +77,15 @@ The checklist lives outside the repository while it is public (it concerns
 accounts and credentials). What is safe to say here: the data is demo data
 until real users are onboarded, and the real SPMB dates, fees and units for an
 actual intake are the yayasan's decision — the seed's values are placeholders.
+
+**Align with national and international standards** (asked by the user on
+2026-09-26): academic, pesantren, teaching, finance and information security.
+Per domain when that domain is next changed — name its standards and offer a
+short check — and a full pass after the audit plan and Model A, at the latest
+before the pre-launch checklist. Verify each standard is still in force when
+it is researched. Already researched, cite rather than repeat: the decisions
+in `decisions/` (roles and duties, Pimpinan Pesantren, units, e-signature,
+naming and ZIS/wakaf).
 
 ## 3. Agreed feature queue (in the order approved)
 

@@ -1,6 +1,6 @@
 # guard-tests-that-measure-the-wrong-thing
 
-> A green test that measures a proxy instead of the property: presence instead of function, a walker that skips the root, pinned copy, the fix instead of the effect, a test that asserts the bug, text against text, fuzzing against a reference that shares the bug. The one question that catches all of them.
+> A green test that measures a proxy instead of the property: presence instead of function, a walker that skips the root, pinned copy, the fix instead of the effect, a test that asserts the bug, text against text, fuzzing against a reference that shares the bug, a test that skips itself when its data is missing, a scanner blind to the shape the defect takes. The one question that catches all of them.
 
 **The question to ask of every guard: what would have to change in the world
 for this test to go red?** If the answer is "a comment", "a line of source" or
@@ -165,3 +165,30 @@ git stash pop -q
 Or read the old tree without touching yours: run the predicates over
 `git show main:<path>`. See [git-checkout-path-destroys-uncommitted](./git-checkout-path-destroys-uncommitted.md)
 before restoring anything.
+
+## A test that skips itself when its data is missing
+
+`tk-daily-report.spec.ts` found the class picker by its placeholder, and when
+the picker was not visible it called `test.skip("No classes available")`. The
+Select wrapper had hidden that placeholder, so the test skipped itself on every
+run — for as long as the TK form's create request was refused by the API, and
+the photos went to an endpoint that did not exist. Nothing went red; a skip
+reads as "not applicable". Found on 2026-09-26, when a Select fix (#576) made
+the placeholder visible and the test ran for the first time; repaired in #577.
+
+**A missing precondition is something to set up, not a reason to pass.** Make
+the data (seed it, or create it through the API in `beforeAll`) and assert it
+is there; skip only on a condition that is really out of scope (the production
+API), and say which. The e2e run reported 41 skipped tests on 2026-09-27 —
+each is a candidate for this.
+
+## A scanner blind to the shape the defect takes
+
+`dead-links.test.ts` scanned `href=` and `router.push(`, and matched a literal
+segment against any `[param]`. Mutabaah's "Buat Laporan" was an `href:` prop
+(a PageHeader action), and pointed at `/daily-report/new` — which "existed",
+because `/daily-report/[id]` took "new" for an id and rendered *Laporan tidak
+ditemukan*. Teachers had never been able to open the form from their menu.
+Widened in #577 (`href:` props; `new`/`create`/`edit` never match a
+`[param]`), which surfaced five more. Ask what a dead link looks like **in this
+codebase**, not in the scanner's model of it.
