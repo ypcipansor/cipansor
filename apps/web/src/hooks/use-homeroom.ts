@@ -3,7 +3,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse } from "@/lib/api";
 import { AttendanceStatus } from "@cipansor/shared";
-import type { StudentStatus } from "@cipansor/shared";
+import type {
+  HomeroomViewer,
+  MyHomeroomClass,
+  StudentStatus,
+} from "@cipansor/shared";
 
 // ======================
 // TYPES
@@ -176,24 +180,29 @@ export interface HomeroomDashboardSummary {
   upcomingBirthdays: UpcomingBirthday[];
 }
 
+/** A pupil as the homeroom API lists them — never the whole Student row. */
+export interface HomeroomStudentBrief {
+  id: string;
+  nis: string;
+  gender: "MALE" | "FEMALE";
+  photoUrl: string | null;
+  user: { name: string };
+}
+
 export interface HomeroomDashboardData {
   class: {
     id: string;
     name: string;
+    level?: string | null;
     unit: { id: string; name: string };
-    academicYear: {
-      id: string;
-      name: string;
-      isActive: boolean;
-      year?: string;
-      semester?: number;
-    };
-    homeroomTeacher: {
-      user: { name: string; email: string };
-    };
+    academicYear: { id: string; name: string };
+    /** A class may have no wali kelas yet; its kepala sekolah still reads it. */
+    homeroomTeacher: { id: string; user: { name: string } } | null;
   };
+  /** Whether the caller is this class's wali kelas, and may write notes. */
+  viewer: HomeroomViewer;
   studentCount: number;
-  students: HomeroomStudent[];
+  students: HomeroomStudentBrief[];
   attendanceSummary: {
     status: string;
     count: number;
@@ -205,30 +214,23 @@ export interface HomeroomDashboardData {
 // HOOKS
 // ======================
 
-// Get homeroom class (Single)
-export function useHomeroomClass(classId?: string) {
-  return useQuery<HomeroomClass>({
-    queryKey: ["homeroom", "class", classId],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<HomeroomClass>>(
-        `/homeroom/classes/${classId}`,
-      );
-      return response.data.data;
-    },
-    enabled: !!classId,
-  });
-}
-
-// Get all my homeroom classes (List)
-export function useHomeroomClasses() {
+/**
+ * The classes the signed-in teacher is wali kelas of, the current academic
+ * year's first. `isCurrent` is what makes a teacher a wali kelas *now*: the
+ * sidebar shows the Wali Kelas group only for a teacher with a current class,
+ * so pass `enabled: false` where that group is not in the menu at all.
+ */
+export function useHomeroomClasses(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["homeroom", "my-classes"],
     queryFn: async () => {
-      const { data } = await api.get<ApiResponse<HomeroomClass[]>>(
+      const { data } = await api.get<ApiResponse<MyHomeroomClass[]>>(
         "/homeroom/my-classes",
       );
       return data.data;
     },
+    enabled: options?.enabled ?? true,
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -253,8 +255,8 @@ export function useHomeroomDashboard(classId: string | undefined) {
  * This used to GET /homeroom/my-class, which the API has never served — the
  * only endpoint is the plural /homeroom/my-classes. It 404'd on every render
  * of the behaviour and messages pages. Take the first class from the list
- * rather than adding a singular endpoint that would duplicate it; a wali kelas
- * normally has exactly one.
+ * rather than adding a singular endpoint that would duplicate it: the API puts
+ * the current academic year's class first, and a wali kelas holds one a year.
  */
 export function useMyHomeroomClass() {
   return useQuery<HomeroomClass | undefined>({

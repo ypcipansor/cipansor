@@ -11,9 +11,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   getNavigationForRole,
   getNavigationForRoleCode,
+  withDutiesHeld,
   type NavGroup,
   type NavItem,
 } from "@/config/navigation";
+import { useHomeroomClasses } from "@/hooks/use-homeroom";
 import { useAuthStore } from "@/stores/auth";
 import { demoPhotoForEmail } from "@/lib/demo-avatar";
 import { ChevronDown, ChevronLeft, LogOut } from "lucide-react";
@@ -58,11 +60,21 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const activeRole = userRoles?.find((r) => r.isPrimary) || userRoles?.[0];
 
   // Get navigation based on active role code or fallback to legacy role
-  const navigation = activeRole
+  const roleNavigation = activeRole
     ? getNavigationForRoleCode(activeRole.role.code)
     : user
       ? getNavigationForRole(getEffectiveRole(user) ?? user.role)
       : [];
+  // The Wali Kelas group is for the wali kelas of a class this year — a
+  // relation the role code cannot tell. Asked only when the menu has it, and
+  // left out until the answer is in.
+  const hasHomeroomGroup = roleNavigation.some((g) => g.duty === "homeroom");
+  const { data: homeroomClasses } = useHomeroomClasses({
+    enabled: hasHomeroomGroup,
+  });
+  const navigation = withDutiesHeld(roleNavigation, {
+    homeroom: !!homeroomClasses?.some((c) => c.isCurrent),
+  });
 
   return (
     <aside

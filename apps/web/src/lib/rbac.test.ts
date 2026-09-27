@@ -11,7 +11,11 @@ import {
   roleRouteAccess,
   type LegacyRole,
 } from "./rbac";
-import { getNavigationForRoleCode, type NavGroup } from "@/config/navigation";
+import {
+  getNavigationForRoleCode,
+  withDutiesHeld,
+  type NavGroup,
+} from "@/config/navigation";
 import { DEMO_ACCOUNTS, PRINCIPAL_ROLE_CODES } from "@cipansor/shared";
 
 /**
@@ -96,6 +100,40 @@ describe("navigasi — Bimbingan Konseling untuk pembacanya", () => {
   it("guru lain tidak", () => {
     for (const role of ["TKQ_GURU", "SDIT_GURU", "SMPIT_GURU", "SMAQ_GURU"]) {
       expect(navHrefs(role), role).not.toContain("/counseling");
+    }
+  });
+});
+
+describe("navigasi — grup Wali Kelas hanya bagi pemegang tugasnya", () => {
+  // Wali kelas adalah tugas guru atas satu kelas pada satu tahun ajaran, bukan
+  // peran (2026-09-26). Sidebar menanyakan GET /homeroom/my-classes; grupnya
+  // tampil hanya bila guru itu wali kelas sebuah kelas tahun ajaran berjalan.
+  const titles = (groups: NavGroup[]) => groups.map((g) => g.title);
+
+  it("menu guru menandai grup Wali Kelas sebagai tugas", () => {
+    for (const role of ["TKQ_GURU", "SDIT_GURU", "SMPIT_GURU", "SMAQ_GURU"]) {
+      const group = getNavigationForRoleCode(role).find(
+        (g) => g.title === "Wali Kelas",
+      );
+      expect(group?.duty, role).toBe("homeroom");
+    }
+  });
+
+  it("tampil bagi wali kelas, hilang bagi guru lain", () => {
+    const menu = getNavigationForRoleCode("SDIT_GURU");
+    expect(titles(withDutiesHeld(menu, { homeroom: true }))).toContain(
+      "Wali Kelas",
+    );
+    const other = withDutiesHeld(menu, { homeroom: false });
+    expect(titles(other)).not.toContain("Wali Kelas");
+    // Grup lain tidak tersentuh.
+    expect(other).toHaveLength(menu.length - 1);
+  });
+
+  it("peran tanpa grup tugas tidak berubah", () => {
+    for (const role of ["SDIT_KEPALA_SEKOLAH", "MUSYRIF", "SDIT_TATA_USAHA"]) {
+      const menu = getNavigationForRoleCode(role);
+      expect(withDutiesHeld(menu, { homeroom: false }), role).toEqual(menu);
     }
   });
 });
