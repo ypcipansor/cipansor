@@ -6,6 +6,7 @@ import {
   ATTENDANCE_RECORDER_ROUTE_ROLE_CODES,
   bulkAttendanceSchema,
   createAttendanceSchema,
+  recordFollowUpSchema,
   updateAttendanceSchema,
 } from '@cipansor/shared';
 import {
@@ -38,6 +39,21 @@ const recorders = authorize(...ATTENDANCE_RECORDER_ROUTE_ROLE_CODES);
  *         description: "{ scope: ALL | UNIT | ASSIGNED, unitId, classes }"
  */
 router.get('/me/classes', controller.myClasses);
+
+/**
+ * @swagger
+ * /api/attendance/follow-ups:
+ *   get:
+ *     summary: The Alpa marks the caller follows up
+ *     description: Alpa within the last 7 days with no explanation yet — the santri mukim of the asrama the caller is musyrif of, and the other pupils of the caller's homeroom classes (a santri mukim among them only when no musyrif covers them) — with whom to contact and what was tried.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The open absences, newest first
+ */
+router.get('/follow-ups', recorders, controller.followUps);
 
 /**
  * @swagger
@@ -288,6 +304,50 @@ router.patch(
   validateParams(attendanceIdParamSchema),
   validate(updateAttendanceSchema),
   controller.update
+);
+
+/**
+ * @swagger
+ * /api/attendance/{id}/follow-ups:
+ *   post:
+ *     summary: Record one contact about an Alpa the caller follows up
+ *     description: ILL makes the mark Sakit, EXCUSED makes it Izin, NO_REASON closes it as Alpa, UNREACHABLE leaves it open. 404 for an absence the caller does not follow up; 409 once it is no longer Alpa, is closed, or is older than 7 days.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [channel, outcome]
+ *             properties:
+ *               channel:
+ *                 type: string
+ *                 enum: [PHONE, WHATSAPP, IN_PERSON, OTHER]
+ *               outcome:
+ *                 type: string
+ *                 enum: [ILL, EXCUSED, NO_REASON, UNREACHABLE]
+ *               note:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: The absence with its follow-ups
+ */
+router.post(
+  '/:id/follow-ups',
+  recorders,
+  validateParams(attendanceIdParamSchema),
+  validate(recordFollowUpSchema),
+  controller.recordFollowUp
 );
 
 /**

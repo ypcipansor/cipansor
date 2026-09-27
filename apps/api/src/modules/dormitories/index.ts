@@ -8,6 +8,7 @@ export {
   ACTIVE_ROOM_ASSIGNMENT,
   activeMusyrifAssignment,
   coversRoom,
+  boardersOfMusyrif,
   musyrifOfBoarders,
   type Person,
 } from './boarders';

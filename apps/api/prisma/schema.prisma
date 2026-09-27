@@ -376,6 +376,7 @@ model User {
   parentOf                          StudentParent[]
   recordedTahfidz                   TahfidzRecord[]             @relation("TahfidzRecorder")
   recordedAttendance                Attendance[]                @relation("AttendanceRecorder")
+  attendanceFollowUps               AttendanceFollowUp[]        @relation("AttendanceFollowUpBy")
   approvedPermits                   Permit[]                    @relation("PermitApprover")
   reportedViolations                Violation[]                 @relation("ViolationReporter")
   givenRewards                      Reward[]                    @relation("RewardGiver")
@@ -1349,14 +1350,52 @@ model Attendance {
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class      Class   @relation(fields: [classId], references: [id])
-  recordedBy User    @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+  student    Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class      Class                @relation(fields: [classId], references: [id])
+  recordedBy User                 @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+  followUps  AttendanceFollowUp[]
 
   @@unique([studentId, classId, date])
   @@index([date])
   @@index([status])
   @@map("attendances")
+}
+
+/// How an unexplained absence was followed up (decisions/absensi-harian.md):
+/// the wali kelas (a day pupil) or the musyrif (a santri mukim) contacts the
+/// wali and records what came of it. One absence may take several contacts.
+enum AttendanceFollowUpChannel {
+  PHONE
+  WHATSAPP
+  IN_PERSON
+  OTHER
+}
+
+/// What a contact found. ILL and EXCUSED give the reason, and the mark becomes
+/// SICK or EXCUSED; NO_REASON closes the absence as Alpa; UNREACHABLE leaves
+/// it open for another try.
+enum AttendanceFollowUpOutcome {
+  ILL
+  EXCUSED
+  NO_REASON
+  UNREACHABLE
+}
+
+model AttendanceFollowUp {
+  id            String                    @id @default(uuid())
+  attendanceId  String                    @map("attendance_id")
+  contactedById String                    @map("contacted_by_id")
+  channel       AttendanceFollowUpChannel
+  outcome       AttendanceFollowUpOutcome
+  note          String?                   @db.Text
+  createdAt     DateTime                  @default(now()) @map("created_at")
+
+  attendance  Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  contactedBy User       @relation("AttendanceFollowUpBy", fields: [contactedById], references: [id])
+
+  @@index([attendanceId])
+  @@index([contactedById])
+  @@map("attendance_follow_ups")
 }
 
 /// TahfidzRecord - Quran memorization records

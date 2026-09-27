@@ -27,7 +27,11 @@ import type {
  *   unit's teacher does not reach the class;
  * - a pupil marked Alpa on today's register: their wali is told at once, in
  *   the app, and saving the day again does not tell them twice; a santri
- *   mukim's musyrif is told as well.
+ *   mukim's musyrif is told as well;
+ * - an Alpa with no reason waits in *Wali Kelas → Tindak Lanjut Absensi*: the
+ *   wali kelas contacts the wali and records what came of it — "could not
+ *   reach" keeps it there, a reason puts it on the register; a santri mukim's
+ *   Alpa is their musyrif's to follow up, not the wali kelas's.
  *
  * Until then every one of these saves was refused: the write routes let
  * admins only, and this suite signed in as the super admin, so nobody saw it.
@@ -90,12 +94,16 @@ const registerOf = async (classId: string, session = admin) =>
     )
   ).data;
 
-/** Today's records of the two classes written by the accounts in this file. */
+/** Accounts and classes the follow-up tests write to, beyond the above. */
+const followers: AuthSession[] = [];
+const followUpClasses: string[] = [];
+
+/** Today's records of the classes written by the accounts in this file. */
 const purge = async () => {
   const writers = new Set(
-    [wali, pengampu].map((s) => (s.user as { id: string }).id),
+    [wali, pengampu, ...followers].map((s) => (s.user as { id: string }).id),
   );
-  for (const classId of [class1A, class7A]) {
+  for (const classId of [class1A, class7A, ...followUpClasses]) {
     for (const row of await registerOf(classId)) {
       if (row.recordedBy && writers.has(row.recordedBy.id)) {
         await apiRequest(admin, "DELETE", `/attendance/${row.id}`);
@@ -483,4 +491,180 @@ test("a santri mukim marked Alpa: the musyrif of their asrama is told", async ()
   });
 
   await expect.poll(told, { timeout: 15_000 }).toBe(before + 1);
+});
+
+type FollowUpItem = {
+  attendanceId: string;
+  student: { id: string; name: string };
+  as: "WALI_KELAS" | "MUSYRIF";
+  walis: { phone: string | null }[];
+};
+
+const followUpsOf = async (session: AuthSession) =>
+  (
+    await apiRequest<{ data: FollowUpItem[] }>(
+      session,
+      "GET",
+      "/attendance/follow-ups",
+    )
+  ).data;
+
+/** A class's pupils, split by whether they live in an asrama. */
+const pupilsOf = async (classId: string) => {
+  const enrolled = (
+    await apiRequest<{ data: Enrollment[] }>(
+      admin,
+      "GET",
+      `/classes/${classId}/enrollments`,
+    )
+  ).data;
+  const day: { id: string; name: string }[] = [];
+  const boarding: { id: string; name: string; asrama: string }[] = [];
+  for (const e of enrolled) {
+    const placed = await apiRequest<{
+      data: { room: { dormitory: { name: string } } }[];
+    }>(
+      admin,
+      "GET",
+      `/dormitories/assignments/list?studentId=${e.student.id}&isActive=true`,
+    );
+    const who = { id: e.student.id, name: e.student.user?.name ?? "" };
+    if (placed.data[0]) {
+      boarding.push({ ...who, asrama: placed.data[0].room.dormitory.name });
+    } else day.push(who);
+  }
+  return { day, boarding };
+};
+
+const markAbsent = (studentId: string, classId = class1A, by = wali) =>
+  apiRequest(by, "POST", "/attendance/bulk", {
+    classId,
+    date: today(),
+    records: [{ studentId, status: "ABSENT" }],
+  });
+
+test("an Alpa with no reason waits in Tindak Lanjut Absensi; a reason puts it on the register", async ({
+  page,
+}) => {
+  const { day } = await pupilsOf(class1A);
+  const dayPupil = day[0];
+  expect(dayPupil, "SD 1A has a pupil who goes home daily").toBeTruthy();
+  await markAbsent(dayPupil.id);
+  const mark = (await registerOf(class1A)).find(
+    (r) => r.studentId === dayPupil.id,
+  )!;
+  expect(mark.status).toBe("ABSENT");
+
+  await injectSession(page, wali);
+  await page.goto("/homeroom");
+  await page
+    .getByRole("complementary", { name: "Menu utama" })
+    .getByRole("link", { name: "Tindak Lanjut Absensi" })
+    .click();
+  await expect(page).toHaveURL(/\/attendance\/follow-ups$/);
+  await expect(
+    page.getByRole("heading", { name: "Tindak Lanjut Absensi" }),
+  ).toBeVisible();
+
+  const card = page.getByTestId(`follow-up-${mark.id}`);
+  await expect(card).toContainText(dayPupil.name);
+  await expect(card).toContainText("Perwalian");
+  // Someone to call: every pupil has at least the contact given at enrolment.
+  await expect(
+    card.getByRole("link", { name: /^WhatsApp / }).first(),
+  ).toHaveAttribute("href", /^https:\/\/wa\.me\/\d+$/);
+
+  // The wali did not answer: tried, still open.
+  await card.getByRole("button", { name: "Catat hasil" }).click();
+  let dialog = page.getByRole("dialog", { name: "Catat hasil tindak lanjut" });
+  await expect(dialog.getByRole("button", { name: "Simpan" })).toBeDisabled();
+  await dialog.getByRole("radio", { name: /Wali tidak terhubungi/ }).check();
+  await dialog.getByRole("button", { name: "Simpan" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(card).toContainText("Wali tidak terhubungi lewat telepon");
+
+  // Reached on WhatsApp: ill. The mark becomes Sakit and leaves the list.
+  await card.getByRole("button", { name: "Catat hasil" }).click();
+  dialog = page.getByRole("dialog", { name: "Catat hasil tindak lanjut" });
+  await dialog.getByRole("radio", { name: "WhatsApp" }).check();
+  await dialog.getByRole("radio", { name: /^Sakit/ }).check();
+  await dialog.getByLabel("Catatan (opsional)").fill("Demam sejak semalam");
+  await dialog.getByRole("button", { name: "Simpan" }).click();
+  await expect(
+    page.getByText(`${dayPupil.name}: Absensi diubah menjadi Sakit`),
+  ).toBeVisible();
+  await expect(card).toHaveCount(0);
+
+  const after = (await registerOf(class1A)).find(
+    (r) => r.studentId === dayPupil.id,
+  ) as Row & { notes?: string };
+  expect(after.status).toBe("SICK");
+  expect(after.notes).toBe("Tindak lanjut: sakit — Demam sejak semalam");
+  // No longer Alpa: nothing more to follow up.
+  expect(
+    await statusOf(
+      apiRequest(wali, "POST", `/attendance/${mark.id}/follow-ups`, {
+        channel: "PHONE",
+        outcome: "NO_REASON",
+      }),
+    ),
+  ).toBe(409);
+});
+
+test("a santri mukim's Alpa is their musyrif's to follow up, not the wali kelas's", async () => {
+  // Boarding is compulsory at SMP IT, so the SMP wali kelas's class is where
+  // the seed has santri mukim.
+  const classSmp = (await scopeOf(waliSmp)).classes.find(
+    (c) => c.as === "HOMEROOM",
+  )?.id;
+  expect(classSmp, "the seed makes smpit.walikelas a wali kelas").toBeTruthy();
+  followUpClasses.push(classSmp!);
+  followers.push(waliSmp);
+  const boarder = (await pupilsOf(classSmp!)).boarding[0];
+  expect(
+    boarder,
+    "the seed places the SMP wali kelas's pupils in an asrama",
+  ).toBeTruthy();
+  const musyrif = await apiLogin(
+    account(
+      boarder.asrama.includes("Putri")
+        ? "pesantren.musyrifah@cipansor.or.id"
+        : "pesantren.musyrif@cipansor.or.id",
+    ),
+  );
+  followers.push(musyrif);
+  await markAbsent(boarder.id, classSmp!, waliSmp);
+  const mark = (await registerOf(classSmp!)).find(
+    (r) => r.studentId === boarder.id,
+  )!;
+
+  const theirs = (await followUpsOf(musyrif)).find(
+    (i) => i.attendanceId === mark.id,
+  );
+  expect(theirs?.as).toBe("MUSYRIF");
+  // The class's own wali kelas neither sees it nor can record it.
+  expect((await followUpsOf(waliSmp)).map((i) => i.attendanceId)).not.toContain(
+    mark.id,
+  );
+  expect(
+    await statusOf(
+      apiRequest(waliSmp, "POST", `/attendance/${mark.id}/follow-ups`, {
+        channel: "PHONE",
+        outcome: "NO_REASON",
+      }),
+    ),
+  ).toBe(404);
+
+  // No reason given: closed, and it stays Alpa.
+  await apiRequest(musyrif, "POST", `/attendance/${mark.id}/follow-ups`, {
+    channel: "IN_PERSON",
+    outcome: "NO_REASON",
+  });
+  expect((await followUpsOf(musyrif)).map((i) => i.attendanceId)).not.toContain(
+    mark.id,
+  );
+  expect(
+    (await registerOf(classSmp!)).find((r) => r.studentId === boarder.id)
+      ?.status,
+  ).toBe("ABSENT");
 });
