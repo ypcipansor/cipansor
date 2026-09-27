@@ -13,3 +13,4 @@ export * from "./curriculum";
 export * from "./daily-report";
 export * from "./homeroom";
 export * from "./attendance";
+export * from "./donation";

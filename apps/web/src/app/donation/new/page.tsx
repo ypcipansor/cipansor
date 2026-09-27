@@ -4,6 +4,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
+import {
+  offeredDonationTypeSchema,
+  type OfferedDonationType,
+} from "@cipansor/shared";
 import { format } from "date-fns";
 import { ArrowLeft, Heart, CalendarIcon, User } from "lucide-react";
 import { toast } from "sonner";
@@ -39,10 +43,9 @@ import { cn } from "@/lib/utils";
 import {
   useCampaigns,
   useCreateDonation,
-  DONATION_TYPES,
+  OFFERED_DONATION_TYPE_OPTIONS,
   PAYMENT_METHODS,
   formatCurrency,
-  DonationType,
   PaymentMethod,
 } from "@/hooks/use-donation";
 
@@ -56,17 +59,7 @@ const donationSchema = z.object({
     .or(z.literal("")),
   donorPhone: z.string().optional(),
   amount: z.coerce.number().min(1000, "Minimal donasi Rp 1.000"),
-  type: z.enum([
-    "INFAK",
-    "INFAK_BULANAN",
-    "ZAKAT_MAAL",
-    "ZAKAT_FITRAH",
-    "WAKAF",
-    "SEDEKAH_JARIYAH",
-    "PEMBANGUNAN",
-    "BEASISWA",
-    "OTHERS",
-  ] as const),
+  type: offeredDonationTypeSchema,
   paymentMethod: z.enum([
     "CASH",
     "BANK_TRANSFER",
@@ -131,7 +124,7 @@ export default function NewDonationPage() {
         donorEmail: data.donorEmail || undefined,
         donorPhone: data.donorPhone || undefined,
         amount: data.amount,
-        type: data.type as DonationType,
+        type: data.type,
         paymentMethod: data.paymentMethod as PaymentMethod,
         notes: data.notes || undefined,
         isAnonymous: data.isAnonymous,
@@ -317,14 +310,14 @@ export default function NewDonationPage() {
                 <Select
                   value={selectedType}
                   onValueChange={(value) =>
-                    setValue("type", value as DonationType)
+                    setValue("type", value as OfferedDonationType)
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger aria-label="Tipe Donasi">
                     <SelectValue placeholder="Pilih tipe" />
                   </SelectTrigger>
                   <SelectContent>
-                    {DONATION_TYPES.map((type) => (
+                    {OFFERED_DONATION_TYPE_OPTIONS.map((type) => (
                       <SelectItem key={type.value} value={type.value}>
                         {type.label}
                       </SelectItem>
