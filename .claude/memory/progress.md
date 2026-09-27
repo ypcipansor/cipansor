@@ -11,9 +11,9 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `e177f527` (#581) on 2026-09-27,
-  verified read-only (#580: each account's register scope; #581: notes come
-  back as one list, a note without text is 400). #584 and #585 deploy as
+  on which CI and E2E (Chromium) pass. At `cf7c4fd2` (#587) on 2026-09-28,
+  verified read-only (the inbox API answers each role with its own
+  notifications; #584's public form offers no zakat). #588 onward deploy as
   `main`'s E2E passes.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
@@ -32,9 +32,15 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
+- **The attendance pattern flag's parameters** (roadmap 00.2): what counts
+  toward the 10% (every absence, as Attendance Works and the DfE count it, or
+  Alpa only), over which period, what "often late" is (Indonesian school
+  rules commonly say 3 times a month), and whether a boarder's musyrif is
+  flagged too. Researched 2026-09-28; the question has not been put yet.
 - **Musyrif assignments in production.** Until the yayasan enters them
-  (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record and
-  their leave goes to the unit head, visibly so.
+  (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record:
+  their leave goes to the unit head, visibly so, and their Alpa is followed
+  up by the wali kelas (#588).
 - **ZIS and wakaf facts** (asked 2026-09-27; the user does not know yet and
   will check): the yayasan's zakat status (UPZ of BAZNAS Kab. Tasikmalaya, a
   licensed LAZ, or none) and whether it is a registered nazhir (KUA / SIWAK /
@@ -56,13 +62,13 @@ pengembangannya"), who asked to keep being reminded.
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
-  daily attendance (#580, one page in #585), behaviour notes (#581). 184
-  broken calls left. In flight: the Alpa/Terlambat notice to the wali and a
-  boarder's musyrif, with a personal notification inbox (none exists yet —
-  known-issues).
+  daily attendance (#580, one page in #585, its follow-up in #587, #588 and
+  #590), behaviour notes (#581), the Kurikulum list (#589, open). 184 broken
+  calls left, 177 once #589 merges. In flight: one daily-report page (roadmap 00.3), then the pattern
+  flag (its parameters wait on the user — see below).
   Next: the rest of the homeroom pages (below), the class and teacher
-  schedules, the Kurikulum list (waits on the user), HR employees,
-  Sertifikat, then the dead calls, `services/` and the `api-client` alias.
+  schedules, HR employees, Sertifikat, then the dead calls, `services/` and
+  the `api-client` alias.
 - **Homeroom, what is left** (known-issues, "Homeroom pages that still do
   not work"): *Pesan Orang Tua*, the pupil page's figures, the kepala
   sekolah's way to a class's dashboard.
@@ -104,6 +110,26 @@ pengembangannya"), who asked to keep being reminded.
   reads it).
 
 ## Recently done (2026-09-24 → 28)
+
+- **Absence follow-up, tier 2 (#588, merged 2026-09-28):** *Wali Kelas →
+  Tindak Lanjut Absensi* (and *Pengasuhan → Tindak Lanjut Absensi* for the
+  musyrif) lists the last 7 days' Alpa with no reason, whom to call (linked
+  walis, then the enrolment contact; tel and WhatsApp links) and what was
+  tried. *Catat hasil* logs a contact (`attendance_follow_ups`, additive
+  migration): Sakit/Izin change the mark, "tanpa keterangan" closes it,
+  "tidak terhubungi" keeps it open. A santri mukim's Alpa is their
+  musyrif's; everyone else's — a boarder with no musyrif on record included —
+  the wali kelas's. 15:00 WIB reminder, in the app and by email. Before/after:
+  <https://claude.ai/artifact/Pf6E87kiXVtoWY5zVMi3Yk>.
+- **Alpa/Terlambat told at once, and a personal inbox (#587, on staging):**
+  the wali in the app and by email, a boarder's musyrif in the app; only a
+  change, only today's register. The header bell opens *Notifikasi Saya*
+  (`/notifications/me`) for every role. Before/after:
+  <https://claude.ai/artifact/U8v1GvscgBToGn5JbyfY34>.
+- **Open (auto-merge):** #589 the Kurikulum list removed, its addresses 308
+  to Kurikulum Merdeka, the page renamed *Mata Pelajaran & Jadwal*
+  (<https://claude.ai/artifact/A2DxB8CfdYucgp7Swwdeuy>); #590 the register
+  reminder 30 minutes after a class's first lesson (in-app, holidays silent).
 
 - **The donation forms offer what the yayasan offers (#584, merged
   2026-09-28):** Zakat Maal and Zakat Fitrah are off the public *Wakaf &
