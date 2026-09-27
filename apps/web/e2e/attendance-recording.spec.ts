@@ -17,9 +17,11 @@ import type {
 /**
  * A class's daily register, taken by the people who take it (2026-09-27):
  *
- * - the wali kelas saves the day from *Mengajar → Absensi → Input Kehadiran*,
- *   and saving it again corrects it;
- * - *Wali Kelas → Absensi Harian* saves to the same register;
+ * - the wali kelas saves the day from *Mengajar → Absensi → Isi Absensi
+ *   Harian*, and saving it again corrects it;
+ * - *Wali Kelas → Absensi Harian* opens that same page, on their own class —
+ *   one register, one page (the copy at /homeroom/attendance is gone, and
+ *   its address answers with a 308);
  * - a teacher with a lesson in a class records it; a teacher with none cannot;
  * - the kepala sekolah reads the register and does not write it; another
  *   unit's teacher does not reach the class.
@@ -146,12 +148,12 @@ test.afterAll(async () => {
   if (admin) await purge().catch(() => undefined);
 });
 
-test("the wali kelas takes the register (Mengajar → Absensi → Input Kehadiran)", async ({
+test("the wali kelas takes the register (Mengajar → Absensi → Isi Absensi Harian)", async ({
   page,
 }) => {
   await injectSession(page, wali);
   await page.goto("/attendance");
-  await page.getByRole("link", { name: "Input Kehadiran" }).click();
+  await page.getByRole("link", { name: "Isi Absensi Harian" }).click();
   await expect(page).toHaveURL(/\/attendance\/record/);
   await waitForLoadingComplete(page);
 
@@ -219,7 +221,7 @@ test("saving the day again corrects it, and the form opens on what was saved", a
   expect(mine?.status).toBe("PRESENT");
 });
 
-test("Wali Kelas → Absensi Harian saves to the same register", async ({
+test("Wali Kelas → Absensi Harian opens the same register, on their own class", async ({
   page,
 }) => {
   await injectSession(page, wali);
@@ -228,27 +230,49 @@ test("Wali Kelas → Absensi Harian saves to the same register", async ({
     .getByRole("complementary", { name: "Menu utama" })
     .getByRole("link", { name: "Absensi Harian" })
     .click();
-  await expect(page).toHaveURL(/\/homeroom\/attendance$/);
+  await expect(page).toHaveURL(/\/attendance\/record$/);
   await expect(
     page.getByRole("heading", { name: "Absensi Harian" }),
   ).toBeVisible();
+  // One entry lit, not Mengajar → Absensi as well.
+  const current = page
+    .getByRole("complementary", { name: "Menu utama" })
+    .locator('[aria-current="page"]');
+  await expect(current).toHaveCount(1);
+  await expect(current).toHaveText("Absensi Harian");
+  await waitForLoadingComplete(page);
+  await expect(page.getByRole("combobox", { name: "Kelas" })).toContainText(
+    "Wali Kelas",
+  );
 
   const row = page.getByTestId(`attendance-row-${pupil.id}`);
-  const status = row.getByRole("combobox", { name: `Status ${pupil.name}` });
-  await expect(status).toContainText("Hadir");
-  await status.click();
-  await page.getByRole("option", { name: "Terlambat" }).click();
-
+  await row.getByRole("button", { name: "Terlambat" }).click();
   const response = saved(page);
-  await page.getByRole("button", { name: "Simpan Absensi" }).click();
+  await page.getByRole("button", { name: "Simpan Kehadiran" }).click();
   const res = await response;
   expect(res.status(), await res.text()).toBe(201);
-  await expect(page).toHaveURL(/\/homeroom$/);
 
   const mine = (await registerOf(class1A)).find(
     (r) => r.studentId === pupil.id,
   );
   expect(mine?.status).toBe("LATE");
+});
+
+test("the old Wali Kelas address answers with the one page", async ({
+  page,
+}) => {
+  await injectSession(page, wali);
+  const response = await page.request.get("/homeroom/attendance", {
+    maxRedirects: 0,
+  });
+  expect(response.status()).toBe(308);
+  expect(response.headers()["location"]).toMatch(/\/attendance\/record$/);
+
+  await page.goto("/homeroom/attendance");
+  await expect(page).toHaveURL(/\/attendance\/record$/);
+  await expect(
+    page.getByRole("heading", { name: "Absensi Harian" }),
+  ).toBeVisible();
 });
 
 test("a teacher with a lesson in a class records it; one with no class cannot", async ({

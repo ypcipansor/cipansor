@@ -12,6 +12,7 @@ import {
   getNavigationForRole,
   getNavigationForRoleCode,
   withDutiesHeld,
+  activeNavHref,
   type NavGroup,
   type NavItem,
 } from "@/config/navigation";
@@ -75,6 +76,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const navigation = withDutiesHeld(roleNavigation, {
     homeroom: !!homeroomClasses?.some((c) => c.isCurrent),
   });
+  const activeHref = activeNavHref(navigation, pathname);
 
   return (
     <aside
@@ -145,7 +147,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           <NavGroupComponent
             key={group.title}
             group={group}
-            pathname={pathname}
+            activeHref={activeHref}
             collapsed={collapsed}
             showSeparator={index > 0}
           />
@@ -211,14 +213,14 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
 
 interface NavGroupComponentProps {
   group: NavGroup;
-  pathname: string;
+  activeHref: string | null;
   collapsed: boolean;
   showSeparator: boolean;
 }
 
 function NavGroupComponent({
   group,
-  pathname,
+  activeHref,
   collapsed,
   showSeparator,
 }: NavGroupComponentProps) {
@@ -235,17 +237,13 @@ function NavGroupComponent({
           <NavItemComponent
             key={item.href}
             item={item}
-            pathname={pathname}
+            activeHref={activeHref}
             collapsed={collapsed}
           />
         ))}
       </nav>
     </div>
   );
-}
-
-function isWithin(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
@@ -258,19 +256,19 @@ function isWithin(pathname: string, href: string): boolean {
  */
 function NavItemComponent({
   item,
-  pathname,
+  activeHref,
   collapsed,
 }: {
   item: NavItem;
-  pathname: string;
+  activeHref: string | null;
   collapsed: boolean;
 }) {
   const children = item.children ?? [];
   const hasChildren = children.length > 0;
   // Aktif bila halamannya sendiri atau salah satu anaknya sedang dibuka.
+  // Only the one entry the page belongs to (activeNavHref) is lit.
   const branchActive =
-    isWithin(pathname, item.href) ||
-    children.some((c) => isWithin(pathname, c.href));
+    item.href === activeHref || children.some((c) => c.href === activeHref);
   const [open, setOpen] = useState(branchActive);
   const Icon = item.icon;
 
@@ -278,7 +276,10 @@ function NavItemComponent({
   // ditiadakan dan induknya kembali menjadi tautan biasa.
   if (!hasChildren || collapsed) {
     return (
-      <Link href={item.href}>
+      <Link
+        href={item.href}
+        aria-current={item.href === activeHref ? "page" : undefined}
+      >
         <Button
           variant={branchActive ? "secondary" : "ghost"}
           className={cn(
@@ -300,7 +301,11 @@ function NavItemComponent({
   return (
     <div>
       <div className="flex items-center">
-        <Link href={item.href} className="min-w-0 flex-1">
+        <Link
+          href={item.href}
+          className="min-w-0 flex-1"
+          aria-current={item.href === activeHref ? "page" : undefined}
+        >
           <Button
             variant={branchActive ? "secondary" : "ghost"}
             className={cn(
@@ -330,10 +335,14 @@ function NavItemComponent({
 
       <div id={panelId} hidden={!open} className="mt-1 space-y-1 pl-4">
         {children.map((child) => {
-          const childActive = isWithin(pathname, child.href);
+          const childActive = child.href === activeHref;
           const ChildIcon = child.icon;
           return (
-            <Link key={child.href} href={child.href}>
+            <Link
+              key={child.href}
+              href={child.href}
+              aria-current={childActive ? "page" : undefined}
+            >
               <Button
                 variant={childActive ? "secondary" : "ghost"}
                 size="sm"

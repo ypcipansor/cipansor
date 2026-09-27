@@ -87,6 +87,31 @@ export interface NavGroup {
   duty?: "homeroom";
 }
 
+/**
+ * The one menu entry the page belongs to: the entry whose address is the
+ * longest one the page sits at or under. "Inside its path" alone lit two
+ * entries at once — Mengajar → Absensi (`/attendance`) and Wali Kelas →
+ * Absensi Harian (`/attendance/record`) on the same page. A page with no entry
+ * of its own still lights the section it sits in, as before.
+ */
+export function activeNavHref(
+  groups: NavGroup[],
+  pathname: string,
+): string | null {
+  let best: string | null = null;
+  const consider = (href: string) => {
+    const within = pathname === href || pathname.startsWith(`${href}/`);
+    if (within && (best === null || href.length > best.length)) best = href;
+  };
+  for (const group of groups) {
+    for (const item of group.items) {
+      consider(item.href);
+      for (const child of item.children ?? []) consider(child.href);
+    }
+  }
+  return best;
+}
+
 /** The menu without the groups of duties the user does not hold. */
 export function withDutiesHeld(
   navigation: NavGroup[],
@@ -238,8 +263,10 @@ const teacherNavigation: NavGroup[] = [
         icon: Home,
       },
       {
+        // The same register as Absensi → Isi Absensi Harian; the page opens
+        // on the class the user is wali kelas of (listed first by the API).
         title: "Absensi Harian",
-        href: "/homeroom/attendance",
+        href: "/attendance/record",
         icon: ClipboardCheck,
       },
       {

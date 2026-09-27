@@ -107,7 +107,7 @@ export default function AttendancePage() {
         title="Kehadiran"
         description="Kelola data kehadiran siswa"
         action={{
-          label: "Input Kehadiran",
+          label: "Isi Absensi Harian",
           icon: <Plus className="h-4 w-4" />,
           href: "/attendance/record",
         }}

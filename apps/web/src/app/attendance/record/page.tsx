@@ -226,13 +226,13 @@ function RecordAttendanceContent() {
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/attendance">
+            <Link href="/attendance" aria-label="Kembali ke Kehadiran">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Input Kehadiran
+              Absensi Harian
             </h1>
             <p className="text-muted-foreground">
               Catat kehadiran siswa per kelas
