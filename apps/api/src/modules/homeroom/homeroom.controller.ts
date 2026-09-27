@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { homeroomService } from './homeroom.service';
+import { Errors } from '@/middleware/error';
 
 export class HomeroomController {
   async getMyClasses(req: Request, res: Response, next: NextFunction) {
@@ -169,7 +170,10 @@ export class HomeroomController {
   async deleteStudentNote(req: Request, res: Response, next: NextFunction) {
     try {
       const { noteId } = req.params;
-      const noteType = (req.query.noteType as 'violation' | 'reward') || 'violation';
+      const noteType = req.query.noteType ?? 'violation';
+      if (noteType !== 'violation' && noteType !== 'reward') {
+        throw Errors.badRequest('noteType harus violation atau reward');
+      }
       const user = {
         sub: req.user!.sub,
         role: req.user!.role,

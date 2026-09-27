@@ -11,6 +11,9 @@ vi.mock('@/lib/prisma', () => {
     class: { findFirst: vi.fn(), findMany: vi.fn() },
     teacher: { findFirst: vi.fn() },
     student: { findFirst: vi.fn(), findMany: vi.fn() },
+    classEnrollment: {
+      findMany: vi.fn(async () => [{ studentId: '22222222-2222-4222-8222-222222222222' }]),
+    },
     attendance: { groupBy: vi.fn() },
     grade: { findMany: vi.fn() },
     violation: {
@@ -282,5 +285,84 @@ describe('my classes', () => {
     db.teacher.findFirst.mockResolvedValue(null);
     expect(await homeroomService.getMyClasses(kepala)).toEqual([]);
     expect(db.class.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("a class's notes (GET /homeroom/behavior)", () => {
+  const brief = { id: PUPIL, nis: '1', user: { name: 'Ahmad' } };
+
+  beforeEach(() => {
+    db.violation.findMany.mockResolvedValue([
+      {
+        id: 'v-1',
+        category: 'Kedisiplinan',
+        description: 'Terlambat',
+        action: 'Dinasihati',
+        occurredAt: new Date('2026-09-20T01:00:00Z'),
+        student: brief,
+        reportedBy: { id: 'u-wali', name: 'Wali' },
+      },
+    ]);
+    db.reward.findMany.mockResolvedValue([
+      {
+        id: 'r-1',
+        category: 'Akhlak',
+        description: 'Membantu teman',
+        givenAt: new Date('2026-09-22T01:00:00Z'),
+        student: brief,
+        givenBy: { id: 'u-guru-bk', name: 'Guru BK' },
+      },
+    ]);
+  });
+
+  it('is one list, newest first, and says which notes the caller may change', async () => {
+    const notes = await homeroomService.getBehaviorRecords('c-1a', wali);
+
+    expect(notes.map((n) => [n.id, n.kind, n.canChange])).toEqual([
+      ['r-1', 'reward', false], // written by someone else
+      ['v-1', 'violation', true], // the wali kelas's own
+    ]);
+    expect(notes[1]).toMatchObject({ action: 'Dinasihati', at: '2026-09-20T01:00:00.000Z' });
+  });
+
+  it('the kepala sekolah reads it and changes nothing', async () => {
+    const notes = await homeroomService.getBehaviorRecords('c-1a', kepala);
+    expect(notes.every((n) => !n.canChange)).toBe(true);
+  });
+
+  it('needs the class', async () => {
+    expect(await status(homeroomService.getBehaviorRecords('', wali))).toBe(400);
+  });
+});
+
+describe('what a note stores', () => {
+  it('a note needing attention keeps what was done about it, and no points', async () => {
+    await homeroomService.createStudentNote(
+      {
+        studentId: PUPIL,
+        type: 'NEGATIVE',
+        description: 'Tidak membawa buku',
+        category: 'Kedisiplinan',
+        action: 'Dinasihati',
+      },
+      wali
+    );
+    expect(db.violation.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        description: 'Tidak membawa buku',
+        action: 'Dinasihati',
+        points: 0,
+        reportedById: 'u-wali',
+      }),
+    });
+  });
+
+  it('a positive note is a reward, never a violation', async () => {
+    await homeroomService.recordBehavior(
+      { studentId: PUPIL, type: 'POSITIVE', description: 'Rajin' },
+      wali
+    );
+    expect(db.reward.create).toHaveBeenCalled();
+    expect(db.violation.create).not.toHaveBeenCalled();
   });
 });

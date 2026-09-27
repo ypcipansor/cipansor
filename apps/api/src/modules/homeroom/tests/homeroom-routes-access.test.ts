@@ -18,6 +18,7 @@ vi.mock('../homeroom.service', () => ({
     getClassDashboard: vi.fn(async () => ({})),
     getStudentDetail: vi.fn(async () => ({})),
     createStudentNote: vi.fn(async () => ({})),
+    recordBehavior: vi.fn(async () => ({})),
     deleteStudentNote: vi.fn(async () => ({})),
   },
 }));
@@ -90,5 +91,29 @@ describe.each([
     expect(res.status).toBe(403);
     expect(homeroomService.getMyClasses).not.toHaveBeenCalled();
     expect(homeroomService.createStudentNote).not.toHaveBeenCalled();
+  });
+});
+
+describe('a note is checked at the edge', () => {
+  it.each([
+    ['without a type', { studentId: PUPIL, description: 'Rajin' }],
+    [
+      'with a type the API does not store',
+      { studentId: PUPIL, type: 'ACHIEVEMENT', description: 'Juara' },
+    ],
+    ['with no text', { studentId: PUPIL, type: 'POSITIVE' }],
+  ])('%s: 400', async (_what, body) => {
+    const res = await send('SDIT_GURU', ['post', '/homeroom/behavior', body]);
+    expect(res.status).toBe(400);
+    expect(homeroomService.recordBehavior).not.toHaveBeenCalled();
+  });
+
+  it('a removal names what it removes: 400 for an unknown kind', async () => {
+    const res = await send('SDIT_GURU', [
+      'delete',
+      `/homeroom/notes/${CLASS}?noteType=achievement`,
+    ]);
+    expect(res.status).toBe(400);
+    expect(homeroomService.deleteStudentNote).not.toHaveBeenCalled();
   });
 });

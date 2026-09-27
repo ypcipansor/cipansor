@@ -3,6 +3,7 @@ import { ApiError, ErrorCode, Errors } from '@/middleware/error';
 import { Prisma, ViolationType } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import { assertMayWrite, classAccess, notFound, studentAccess, viewerOf } from './homeroom.access';
+import type { HomeroomNote, HomeroomNoteInput } from '@cipansor/shared';
 
 /**
  * A pupil as the homeroom pages show them. Never the whole row: a Student
@@ -427,24 +428,16 @@ export class HomeroomService {
    * Create student note - using violation/reward system. Written by the
    * pupil's wali kelas, in the current academic year.
    */
-  async createStudentNote(
-    input: {
-      studentId: string;
-      type: 'POSITIVE' | 'NEGATIVE';
-      title: string;
-      description?: string;
-      category?: string;
-    },
-    currentUser: AuthenticatedUser
-  ) {
+  async createStudentNote(input: HomeroomNoteInput, currentUser: AuthenticatedUser) {
     assertMayWrite(await studentAccess(input.studentId, currentUser));
 
+    const text = (input.description || input.title) as string;
     if (input.type === 'POSITIVE') {
       const reward = await prisma.reward.create({
         data: {
           studentId: input.studentId,
           category: input.category || 'general',
-          description: input.description || input.title,
+          description: text,
           points: 0,
           givenById: currentUser.sub,
           givenAt: new Date(),
@@ -457,7 +450,8 @@ export class HomeroomService {
           studentId: input.studentId,
           type: ViolationType.MINOR,
           category: input.category || 'general',
-          description: input.description || input.title,
+          description: text,
+          action: input.action || null,
           points: 0,
           reportedById: currentUser.sub,
           occurredAt: new Date(),
@@ -541,38 +535,73 @@ export class HomeroomService {
   /**
    * Get behavior records
    */
-  async getBehaviorRecords(classId: string, currentUser: AuthenticatedUser) {
+  async getBehaviorRecords(
+    classId: string,
+    currentUser: AuthenticatedUser
+  ): Promise<HomeroomNote[]> {
     if (!classId) throw Errors.badRequest('classId wajib diisi');
-    await classAccess(classId, currentUser);
+    const { canWrite } = viewerOf(await classAccess(classId, currentUser));
 
     const enrollments = await prisma.classEnrollment.findMany({
       where: { classId, status: 'active' },
       select: { studentId: true },
     });
-
     const studentIds = enrollments.map((e: { studentId: string }) => e.studentId);
 
+    const pupil = { select: { id: true, nis: true, user: { select: { name: true } } } } as const;
+    const author = { select: { id: true, name: true } } as const;
     const [violations, rewards] = await Promise.all([
       prisma.violation.findMany({
         where: { studentId: { in: studentIds } },
-        include: { student: { select: STUDENT_BRIEF } },
+        select: {
+          id: true,
+          category: true,
+          description: true,
+          action: true,
+          occurredAt: true,
+          student: pupil,
+          reportedBy: author,
+        },
         orderBy: { occurredAt: 'desc' },
         take: 50,
       }),
       prisma.reward.findMany({
         where: { studentId: { in: studentIds } },
-        include: { student: { select: STUDENT_BRIEF } },
+        select: {
+          id: true,
+          category: true,
+          description: true,
+          givenAt: true,
+          student: pupil,
+          givenBy: author,
+        },
         orderBy: { givenAt: 'desc' },
         take: 50,
       }),
     ]);
 
-    return { violations, rewards };
+    // One list, newest first. Only its author, while they still write for the
+    // class, may change or remove a note — as updateStudentNote enforces.
+    const mine = (authorId: string | undefined) => canWrite && authorId === currentUser.sub;
+    return [
+      ...violations.map(({ occurredAt, reportedBy, ...v }) => ({
+        ...v,
+        kind: 'violation' as const,
+        at: occurredAt.toISOString(),
+        author: reportedBy,
+        canChange: mine(reportedBy?.id),
+      })),
+      ...rewards.map(({ givenAt, givenBy, ...r }) => ({
+        ...r,
+        kind: 'reward' as const,
+        action: null,
+        at: givenAt.toISOString(),
+        author: givenBy,
+        canChange: mine(givenBy?.id),
+      })),
+    ].sort((a, b) => b.at.localeCompare(a.at));
   }
 
-  /**
-   * Record behavior
-   */
   /**
    * Cross-class homeroom (wali kelas) performance overview.
    * Composite of measurable signals only: attendance quality + recording
@@ -777,27 +806,9 @@ export class HomeroomService {
     return { items, averageScore };
   }
 
-  async recordBehavior(
-    input: {
-      studentId: string;
-      type: 'POSITIVE' | 'NEGATIVE';
-      title: string;
-      description?: string;
-      category?: string;
-      points?: number;
-    },
-    currentUser: AuthenticatedUser
-  ) {
-    return this.createStudentNote(
-      {
-        studentId: input.studentId,
-        type: input.type,
-        title: input.title,
-        description: input.description,
-        category: input.category,
-      },
-      currentUser
-    );
+  /** POST /homeroom/behavior — the behaviour page's name for a note. */
+  async recordBehavior(input: HomeroomNoteInput, currentUser: AuthenticatedUser) {
+    return this.createStudentNote(input, currentUser);
   }
 }
 
