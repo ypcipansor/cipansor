@@ -73,6 +73,14 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   `/finance/invoices/bulk` (no such route), "Catat Pembayaran" sends
   `billId`/`paymentMethod` (API: `invoiceId`/`method`), and deleting a payment
   calls `DELETE /finance/payments/:id` (no such route).
+- **Nobody but an admin can read their own notifications in the app.** The
+  header bell links everyone to `/notifications`, the management page
+  (broadcasts, templates), which lists `/notifications/admin`; a wali,
+  teacher or musyrif sees "Belum ada notifikasi" there whatever they were
+  sent. The personal hooks (`useUserNotifications`, mark-as-read) exist and
+  no page uses them. Being fixed with the attendance notice (a personal
+  inbox the bell opens). The management page also opens for any role that
+  types its address; its calls are admin-only.
 - **Notification settings save nothing, and say they did.**
   `apps/web/src/app/notifications/settings/page.tsx` loads a constant
   (`DEFAULT_PREFERENCES`), and its save mutation waits 500 ms and toasts
@@ -121,12 +129,13 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Access that is too narrow, or needs review
 
-- **Who manages asrama is undecided.** Adding asrama and kamar and placing
-  santri admits the super admin, every school's admin (TK's included, whose
-  pupils never board) and the yayasan organs — the legacy `UNIT_ADMIN`
-  bucket, now named once as `DORMITORY_MANAGER_ROLE_CODES`. The Pimpinan
-  Pesantren, who assigns the musyrif (#569), cannot add a kamar, and TU
-  Pesantren has no Asrama menu. For the yayasan (`progress.md`).
+- **Who manages asrama — decided 2026-09-27, not built.** Adding asrama and
+  kamar and placing santri still admits the super admin, every school's admin
+  (TK's included, whose pupils never board) and the yayasan organs — the
+  legacy `UNIT_ADMIN` bucket, named once as `DORMITORY_MANAGER_ROLE_CODES`.
+  Decided: Pimpinan Pesantren, TU Pesantren and the super admin; the
+  koordinator asrama places santri in their own asrama
+  (`decisions/unit-vs-asrama-vs-takhosus.md`; `roadmap.md` 00.6).
 - **The dormitories module needs a read-scope review.** Its read routes do not
   all apply the same scope check; see the module before widening who reads it.
 

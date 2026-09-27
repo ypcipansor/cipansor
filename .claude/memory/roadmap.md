@@ -14,13 +14,11 @@ items before 2026-09-25 is in the history of this file and of
 
 00. **The user's answers of 2026-09-27**, smallest and most exposed first
     (each is its own PR, wired end to end, with tests and before/after):
-    1. the public donation form offers what the yayasan offers — Zakat Maal
-       and Zakat Fitrah off it, in the form and in the public API's accepted
-       types, until the zakat status is known (`istilah-dan-penamaan.md` §7);
+    1. (done: zakat off the donation forms, #584);
     2. daily attendance per `decisions/absensi-harian.md` — the one page is
-       done (#585); left, the automatic follow-up: Alpa/Terlambat notice to
-       the wali (and the musyrif for a boarder), the end-of-day follow-up
-       task, the pattern flag, the register reminder;
+       done (#585); in flight, the Alpa/Terlambat notice to the wali (and the
+       musyrif for a boarder) with a personal inbox; then the end-of-day
+       follow-up task, the pattern flag, the register reminder;
     3. one TK daily-report page: a *Laporan Harian* item for the TK guru
        (writes for their class) and the TK kepala sekolah (reads); the other
        two page trees 308 to it (removal approved);
