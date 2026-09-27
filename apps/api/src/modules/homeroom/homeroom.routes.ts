@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
-import { HOMEROOM_ROUTE_ROLE_CODES } from '@cipansor/shared';
+import {
+  HOMEROOM_ROUTE_ROLE_CODES,
+  homeroomNoteSchema,
+  updateHomeroomNoteSchema,
+} from '@cipansor/shared';
+import { validate } from '@/middleware/error';
 import { homeroomController } from './homeroom.controller';
 import { authenticate, authorize } from '@/middleware/auth';
 
@@ -91,12 +96,18 @@ router.get(
 // ======================
 
 // POST /homeroom/notes - Create student note
-router.post('/notes', homeroomRoles, homeroomController.createStudentNote.bind(homeroomController));
+router.post(
+  '/notes',
+  homeroomRoles,
+  validate(homeroomNoteSchema),
+  homeroomController.createStudentNote.bind(homeroomController)
+);
 
 // PUT /homeroom/notes/:noteId - Update student note
 router.put(
   '/notes/:noteId',
   homeroomRoles,
+  validate(updateHomeroomNoteSchema),
   homeroomController.updateStudentNote.bind(homeroomController)
 );
 
@@ -119,6 +130,11 @@ router.get(
 );
 
 // POST /homeroom/behavior - Record behavior
-router.post('/behavior', homeroomRoles, homeroomController.recordBehavior.bind(homeroomController));
+router.post(
+  '/behavior',
+  homeroomRoles,
+  validate(homeroomNoteSchema),
+  homeroomController.recordBehavior.bind(homeroomController)
+);
 
 export default router;
