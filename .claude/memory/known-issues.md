@@ -73,14 +73,21 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   `/finance/invoices/bulk` (no such route), "Catat Pembayaran" sends
   `billId`/`paymentMethod` (API: `invoiceId`/`method`), and deleting a payment
   calls `DELETE /finance/payments/:id` (no such route).
-- **Nobody but an admin can read their own notifications in the app.** The
-  header bell links everyone to `/notifications`, the management page
-  (broadcasts, templates), which lists `/notifications/admin`; a wali,
-  teacher or musyrif sees "Belum ada notifikasi" there whatever they were
-  sent. The personal hooks (`useUserNotifications`, mark-as-read) exist and
-  no page uses them. Being fixed with the attendance notice (a personal
-  inbox the bell opens). The management page also opens for any role that
-  types its address; its calls are admin-only.
+- **The notifications management page opens for any role** that types
+  `/notifications`; its calls are admin-only, so a non-admin sees an empty
+  page. (Everyone's own inbox is `/notifications/me` since #587.) The admin
+  menu's *Notifications* item also lights on `/notifications/me` (prefix
+  match).
+- **A unit's operator sees every unit's subjects.** *Classes → Mata
+  Pelajaran & Jadwal* for Admin SD IT lists SMP IT's subjects (seen
+  2026-09-28), and its *Tanpa Guru Pengampu* card counts them.
+- **Small wrong labels and filters seen 2026-09-28:** the Kehadiran list
+  (`/attendance`) offers teachers a "Semua Unit" filter and its pager is in
+  English; *Catat Donasi* shows an English date format and "Campaign"; the
+  TK daily-report table and check-in say "No results found", "Pick a date",
+  "Apply"; *Kurikulum Merdeka* raises a "Route GET /api/hr/employees not
+  found" toast on load; `GET /parent/children` still uses
+  `include: { student }` (see `lessons/prisma-include-leaks-pii.md`).
 - **Notification settings save nothing, and say they did.**
   `apps/web/src/app/notifications/settings/page.tsx` loads a constant
   (`DEFAULT_PREFERENCES`), and its save mutation waits 500 ms and toasts
@@ -281,6 +288,10 @@ decision.
 - **Firefox and WebKit fail `page-state-helper.spec.ts:33`** deterministically.
   The matrix is `continue-on-error`, so it does not block; it is not a flake.
 
+- **`teacher-management.spec.ts` skips all 12 of its tests** ("Teachers page
+  not available"): the page it looks for does not exist (HR employees is on
+  the broken-calls list). It is green because it asserts nothing; rewrite it
+  when the employees page is wired.
 - **Two e2e specs fail at random under the full suite and pass alone.**
   `certificates.spec.ts` (preview/print number, lines 118 and 153 on
   different runs) failed after its retry in two full Chromium runs on

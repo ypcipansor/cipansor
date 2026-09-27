@@ -15,14 +15,15 @@ items before 2026-09-25 is in the history of this file and of
 00. **The user's answers of 2026-09-27**, smallest and most exposed first
     (each is its own PR, wired end to end, with tests and before/after):
     1. (done: zakat off the donation forms, #584);
-    2. daily attendance per `decisions/absensi-harian.md` — the one page is
-       done (#585); in flight, the Alpa/Terlambat notice to the wali (and the
-       musyrif for a boarder) with a personal inbox; then the end-of-day
-       follow-up task, the pattern flag, the register reminder;
+    2. daily attendance per `decisions/absensi-harian.md` — the one page
+       (#585), the Alpa/Terlambat notice with a personal inbox (#587), the
+       follow-up task with a contact log (#588) and the register reminder
+       (#590) are done; left: the pattern flag, whose parameters go to the
+       user first (`progress.md`, "Waiting on the user");
     3. one TK daily-report page: a *Laporan Harian* item for the TK guru
        (writes for their class) and the TK kepala sekolah (reads); the other
        two page trees 308 to it (removal approved);
-    4. `/curriculum/curriculums` removed, 308 to Kurikulum Merdeka (approved);
+    4. (done: the Kurikulum list removed, 308 to Kurikulum Merdeka, #589);
     5. the permit rule's three parameters (`pemutus-izin-santri.md`): an
        optional attachment, the koordinator asrama for going home or staying
        overnight, the wali's approval for staff-filed leave off the pondok
