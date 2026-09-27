@@ -48,10 +48,10 @@ import { uploadApi } from "@/lib/api";
 import { useUnits } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
 import { useClassEnrollments } from "@/hooks/use-class-enrollments";
-import { useAcademicYears } from "@/hooks/use-academic-years";
 import { useCreateDailyReport } from "@/hooks/use-daily-report";
+import { getErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
-import type { DailyMood } from "@cipansor/shared";
+import type { DailyMood, MealConsumption } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 
 const MOOD_OPTIONS: { value: DailyMood; label: string; emoji: string }[] = [
@@ -63,11 +63,11 @@ const MOOD_OPTIONS: { value: DailyMood; label: string; emoji: string }[] = [
   { value: "SICK", label: "Sakit", emoji: "🤒" },
 ];
 
-const MEAL_OPTIONS = [
-  { value: "FULL", label: "Habis" },
-  { value: "HALF", label: "Setengah" },
-  { value: "QUARTER", label: "Sedikit" },
-  { value: "NONE", label: "Tidak Mau" },
+const MEAL_OPTIONS: { value: MealConsumption; label: string }[] = [
+  { value: "HABIS", label: "Habis" },
+  { value: "SETENGAH", label: "Setengah" },
+  { value: "SEDIKIT", label: "Sedikit" },
+  { value: "TIDAK_MAU", label: "Tidak Mau" },
 ];
 
 function CreateDailyReportPageContent() {
@@ -78,7 +78,6 @@ function CreateDailyReportPageContent() {
   const [unitId, setUnitId] = useState<string>("");
   const [classId, setClassId] = useState<string>("");
   const [studentId, setStudentId] = useState<string>("");
-  const [academicYearId, setAcademicYearId] = useState<string>("");
   const [date, setDate] = useState<Date>(new Date());
 
   // Report Data
@@ -88,15 +87,17 @@ function CreateDailyReportPageContent() {
   const [healthNotes, setHealthNotes] = useState("");
 
   // Meals
-  const [breakfast, setBreakfast] = useState("FULL");
-  const [lunch, setLunch] = useState("FULL");
-  const [snack, setSnack] = useState("FULL");
+  // Meals and nap start unrecorded: a stock "Habis" would reach the family
+  // as something the teacher saw, from a tab they may never have opened.
+  const [breakfast, setBreakfast] = useState<MealConsumption | "">("");
+  const [lunch, setLunch] = useState<MealConsumption | "">("");
+  const [snack, setSnack] = useState<MealConsumption | "">("");
 
   // Activities
   const [activities, setActivities] = useState("");
   const [achievements, setAchievements] = useState("");
   const [tahfidz, setTahfidz] = useState("");
-  const [napDuration, setNapDuration] = useState("0");
+  const [napDuration, setNapDuration] = useState("");
   const [toiletNotes, setToiletNotes] = useState("");
 
   // Notes
@@ -110,33 +111,31 @@ function CreateDailyReportPageContent() {
   // Queries
   const { data: unitsData } = useUnits();
   const { data: classesData } = useClasses({ unitId: unitId || undefined });
-  const { data: academicYearsData } = useAcademicYears();
   const { data: enrollmentsData } = useClassEnrollments(classId);
 
   const units = unitsData || [];
   const classes = classesData?.data || [];
-  const academicYears = academicYearsData?.data || [];
   const students = enrollmentsData || [];
 
   const handleSubmit = async () => {
-    if (!unitId || !studentId || !academicYearId || !date) {
+    if (!studentId || !date) {
       toast.error("Mohon lengkapi data dasar laporan");
       return;
     }
 
     try {
+      // The unit and the academic year follow from the pupil and the date.
       await createReport.mutateAsync({
-        unitId,
         studentId,
-        academicYearId,
         reportDate: format(date, "yyyy-MM-dd"),
+        arrivalTime: arrivalTime || undefined,
         morningMood: mood,
         temperature: temperature ? parseFloat(temperature) : undefined,
         healthNotes,
-        breakfastConsumption: breakfast,
-        lunchConsumption: lunch,
-        snackConsumption: snack,
-        napDurationMinutes: napDuration ? parseInt(napDuration) : 0,
+        breakfastConsumption: breakfast || undefined,
+        lunchConsumption: lunch || undefined,
+        snackConsumption: snack || undefined,
+        napDurationMinutes: napDuration ? parseInt(napDuration) : undefined,
         toiletingNotes: toiletNotes,
         activitiesSummary: activities,
         learningAchievements: achievements,
@@ -144,14 +143,13 @@ function CreateDailyReportPageContent() {
         behaviorNotes,
         parentNotes: teacherNotes,
         homeworkSuggestion: homework,
-        photoUrls: photos.map((p) => p.url),
+        photos: photos.map((p) => ({ url: p.url, caption: p.caption })),
       });
 
       toast.success("Laporan berhasil dibuat");
       router.push("/daily-report");
     } catch (error) {
-      toast.error("Gagal membuat laporan");
-      console.error(error);
+      toast.error(getErrorMessage(error));
     }
   };
 
@@ -212,25 +210,6 @@ function CreateDailyReportPageContent() {
                     {units.map((unit) => (
                       <SelectItem key={unit.id} value={unit.id}>
                         {unit.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Tahun Ajaran</Label>
-                <Select
-                  value={academicYearId}
-                  onValueChange={setAcademicYearId}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih Tahun" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {academicYears.map((year) => (
-                      <SelectItem key={year.id} value={year.id}>
-                        {year.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -488,9 +467,12 @@ function CreateDailyReportPageContent() {
                 <CardContent className="space-y-6">
                   <div className="space-y-2">
                     <Label>Sarapan / Snack Pagi</Label>
-                    <Select value={breakfast} onValueChange={setBreakfast}>
+                    <Select
+                      value={breakfast}
+                      onValueChange={(v) => setBreakfast(v as MealConsumption)}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Belum diisi" />
                       </SelectTrigger>
                       <SelectContent>
                         {MEAL_OPTIONS.map((opt) => (
@@ -504,9 +486,12 @@ function CreateDailyReportPageContent() {
 
                   <div className="space-y-2">
                     <Label>Makan Siang</Label>
-                    <Select value={lunch} onValueChange={setLunch}>
+                    <Select
+                      value={lunch}
+                      onValueChange={(v) => setLunch(v as MealConsumption)}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Belum diisi" />
                       </SelectTrigger>
                       <SelectContent>
                         {MEAL_OPTIONS.map((opt) => (
@@ -520,9 +505,12 @@ function CreateDailyReportPageContent() {
 
                   <div className="space-y-2">
                     <Label>Snack Sore</Label>
-                    <Select value={snack} onValueChange={setSnack}>
+                    <Select
+                      value={snack}
+                      onValueChange={(v) => setSnack(v as MealConsumption)}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder="Belum diisi" />
                       </SelectTrigger>
                       <SelectContent>
                         {MEAL_OPTIONS.map((opt) => (

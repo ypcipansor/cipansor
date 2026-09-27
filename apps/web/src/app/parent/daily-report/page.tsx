@@ -57,15 +57,17 @@ import {
   useStudentDailySummary,
   useAddParentNotes,
 } from "@/hooks/use-daily-report";
-import { useAuthStore } from "@/stores/auth";
+import { useParentChildren } from "@/hooks/use-parent-portal";
+import { getErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
-import { User } from "@/lib/api";
+import { authFileUrl } from "@/lib/files";
 
-// Extended User type for Parent
-interface ParentUser extends User {
-  children?: { id: string; name: string; user?: { name: string } }[];
-  studentId?: string;
-}
+const MEAL_LABELS: Record<string, string> = {
+  HABIS: "Habis",
+  SETENGAH: "Setengah",
+  SEDIKIT: "Sedikit",
+  TIDAK_MAU: "Tidak mau",
+};
 
 // Mood Icon Helper
 const MoodIcon = ({
@@ -103,30 +105,28 @@ const MoodLabel = ({ mood }: { mood: string }) => {
 };
 
 export default function ParentDailyReportPage() {
-  const { user } = useAuthStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const [isFeedbackDialogOpen, setIsFeedbackDialogOpen] = useState(false);
 
-  const parentUser = user as unknown as ParentUser;
-  const availableChildren = parentUser?.children || [];
-  const defaultStudentId = parentUser?.studentId || availableChildren[0]?.id;
-
-  const [activeStudentId, setActiveStudentId] = useState<string>(
-    defaultStudentId || "",
-  );
+  // The wali's children come from the API; the first is shown until they
+  // pick another.
+  const { data: children, isLoading: childrenLoading } = useParentChildren();
+  const availableChildren = children ?? [];
+  const [pickedStudentId, setActiveStudentId] = useState<string>("");
+  const activeStudentId = pickedStudentId || availableChildren[0]?.id || "";
 
   const {
     data: summaryData,
-    isLoading,
+    isLoading: summaryLoading,
     refetch,
   } = useStudentDailySummary({
     studentId: activeStudentId,
-    academicYearId: user?.academicYearId || "",
     month: currentDate.getMonth() + 1,
     year: currentDate.getFullYear(),
   });
+  const isLoading = childrenLoading || summaryLoading;
 
   const confirmMutation = useAddParentNotes();
 
@@ -142,10 +142,7 @@ export default function ParentDailyReportPage() {
     confirmMutation.mutate(
       {
         id: selectedReportId,
-        data: {
-          isConfirmed: true,
-          parentFeedback: feedback,
-        },
+        data: { parentFeedback: feedback.trim() || undefined },
       },
       {
         onSuccess: () => {
@@ -154,14 +151,14 @@ export default function ParentDailyReportPage() {
           setFeedback("");
           refetch();
         },
-        onError: () => {
-          toast.error("Gagal mengkonfirmasi laporan");
+        onError: (error) => {
+          toast.error(getErrorMessage(error));
         },
       },
     );
   };
 
-  if (!activeStudentId) {
+  if (!childrenLoading && !activeStudentId) {
     return (
       <div className="container mx-auto p-6 flex flex-col items-center justify-center min-h-[400px]">
         <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
@@ -194,9 +191,9 @@ export default function ParentDailyReportPage() {
                 <SelectValue placeholder="Pilih Anak" />
               </SelectTrigger>
               <SelectContent>
-                {availableChildren.map((child: any) => (
+                {availableChildren.map((child) => (
                   <SelectItem key={child.id} value={child.id}>
-                    {child.user?.name || child.name || "Siswa"}
+                    {child.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -274,11 +271,17 @@ export default function ParentDailyReportPage() {
               <CardContent>
                 <div className="flex items-center gap-2">
                   <div className="text-2xl font-bold">
-                    {Object.entries(
-                      summaryData?.statistics.moodDistribution || {},
-                    ).sort(
-                      ([, a], [, b]) => (b as number) - (a as number),
-                    )[0]?.[0] || "-"}
+                    {(() => {
+                      const [dominant, count] =
+                        Object.entries(
+                          summaryData?.statistics.moodDistribution || {},
+                        ).sort(([, a], [, b]) => b - a)[0] ?? [];
+                      return dominant && count ? (
+                        <MoodLabel mood={dominant} />
+                      ) : (
+                        "-"
+                      );
+                    })()}
                   </div>
                   {/* Show dominant mood icon */}
                 </div>
@@ -302,6 +305,7 @@ export default function ParentDailyReportPage() {
               summaryData?.reports.map((report) => (
                 <Card
                   key={report.id}
+                  data-testid={`daily-report-${report.id}`}
                   className={cn(
                     "overflow-hidden transition-all hover:shadow-md",
                     !report.parentReadAt && "border-l-4 border-l-blue-500",
@@ -322,8 +326,7 @@ export default function ParentDailyReportPage() {
                             )}
                           </CardTitle>
                           <CardDescription>
-                            Dicatat oleh:{" "}
-                            {report.createdBy?.name || "Guru Kelas"}
+                            Dicatat oleh: {report.createdBy?.name || "-"}
                           </CardDescription>
                         </div>
                       </div>
@@ -347,17 +350,17 @@ export default function ParentDailyReportPage() {
                       <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
                         <div className="flex items-center gap-2">
                           <MoodIcon
-                            mood={report.mood || "NEUTRAL"}
+                            mood={report.mood || ""}
                             className="h-5 w-5"
                           />
                           <span className="font-medium">Mood:</span>
-                          <MoodLabel mood={report.mood || "NEUTRAL"} />
+                          {report.mood ? <MoodLabel mood={report.mood} /> : "-"}
                         </div>
                         <div className="h-4 w-px bg-border mx-2" />
                         <div className="flex items-center gap-2">
                           <Thermometer className="h-4 w-4 text-orange-500" />
                           <span className="font-medium">Kesehatan:</span>
-                          <span>{report.healthStatus || "Sehat"}</span>
+                          <span>{report.healthStatus || "-"}</span>
                         </div>
                       </div>
 
@@ -369,13 +372,17 @@ export default function ParentDailyReportPage() {
                           <div className="flex justify-between border p-2 rounded">
                             <span>Makan Siang</span>
                             <span className="font-medium">
-                              {report.mealStatus || "-"}
+                              {report.mealStatus
+                                ? MEAL_LABELS[report.mealStatus]
+                                : "-"}
                             </span>
                           </div>
                           <div className="flex justify-between border p-2 rounded">
                             <span>Snack</span>
                             <span className="font-medium">
-                              {report.snackStatus || "-"}
+                              {report.snackStatus
+                                ? MEAL_LABELS[report.snackStatus]
+                                : "-"}
                             </span>
                           </div>
                         </div>
@@ -390,23 +397,27 @@ export default function ParentDailyReportPage() {
                             (prayer) => {
                               const key =
                                 `sholat${prayer}` as keyof typeof report;
-                              const isDone = !!report[key];
+                              // true, false, or not recorded at all.
+                              const done = report[key] as
+                                boolean | null | undefined;
                               return (
                                 <div
                                   key={prayer}
                                   className={cn(
                                     "flex flex-col items-center justify-center p-2 rounded border text-xs",
-                                    isDone
+                                    done === true
                                       ? "bg-green-50 border-green-200 text-green-700"
-                                      : "bg-red-50 border-red-200 text-red-700",
+                                      : done === false
+                                        ? "bg-red-50 border-red-200 text-red-700"
+                                        : "bg-muted/30 text-muted-foreground",
                                   )}
                                 >
                                   <span className="font-bold">{prayer}</span>
-                                  {isDone ? (
+                                  {done === true ? (
                                     <CheckCircle2 className="h-4 w-4 mt-1" />
                                   ) : (
                                     <span className="text-[10px] mt-1">
-                                      Tidak
+                                      {done === false ? "Tidak" : "-"}
                                     </span>
                                   )}
                                 </div>
@@ -434,6 +445,31 @@ export default function ParentDailyReportPage() {
                           </h4>
                           <div className="text-sm text-muted-foreground bg-muted/20 p-3 rounded-lg min-h-[60px]">
                             {report.activitiesSummary}
+                          </div>
+                        </div>
+                      )}
+
+                      {report.photos && report.photos.length > 0 && (
+                        <div className="space-y-1">
+                          <h4 className="text-sm font-semibold">
+                            Foto Kegiatan
+                          </h4>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                            {report.photos.map((photo) => (
+                              <figure key={photo.id} className="space-y-1">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={authFileUrl(photo.photoUrl)}
+                                  alt={photo.caption || "Foto kegiatan"}
+                                  className="aspect-square w-full rounded-md border object-cover"
+                                />
+                                {photo.caption && (
+                                  <figcaption className="text-xs text-muted-foreground">
+                                    {photo.caption}
+                                  </figcaption>
+                                )}
+                              </figure>
+                            ))}
                           </div>
                         </div>
                       )}

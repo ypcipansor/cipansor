@@ -9,10 +9,8 @@ import { PageHeader } from "@/components/shared";
 import {
   useDailyReport,
   useUpdateDailyReport,
-  DailyMood,
+  type DailyReport,
 } from "@/hooks/use-daily-report";
-import { useStudents } from "@/hooks/use-students";
-import { useClasses } from "@/hooks/use-classes";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -38,31 +36,21 @@ import {
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { CalendarIcon, Save, ArrowLeft, Loader2 } from "lucide-react";
+import { Save, ArrowLeft, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
-import { useAuthStore } from "@/stores/auth";
-import { useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/api-error";
+import { DAILY_MOOD_VALUES, MEAL_CONSUMPTION_VALUES } from "@cipansor/shared";
 import { MOOD_OPTIONS, CONSUMPTION_OPTIONS } from "../../constants";
 
 const dailyReportSchema = z.object({
-  studentId: z.string().min(1, "Siswa wajib dipilih"),
-  classId: z.string().min(1, "Kelas wajib dipilih"),
-  reportDate: z.date({ error: "Tanggal wajib diisi" }),
-  morningMood: z.string().optional(),
+  morningMood: z.enum(DAILY_MOOD_VALUES).optional(),
   healthNotes: z.string().optional(),
   temperature: z.number().optional(),
-  breakfastConsumption: z.string().optional(),
-  lunchConsumption: z.string().optional(),
-  snackConsumption: z.string().optional(),
+  breakfastConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
+  lunchConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
+  snackConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
   napDurationMinutes: z.number().optional(),
   toiletingNotes: z.string().optional(),
   activitiesSummary: z.string().optional(),
@@ -75,81 +63,98 @@ const dailyReportSchema = z.object({
 
 type DailyReportFormData = z.infer<typeof dailyReportSchema>;
 
+/**
+ * What the report holds, as the form's starting values. A field the teacher
+ * left empty stays empty: filling it with a likely value ("Senang", 36.5 °C,
+ * "Habis") would write that value into the child's record on save.
+ */
+function toFormValues(report: DailyReport): DailyReportFormData {
+  return {
+    morningMood: report.mood ?? undefined,
+    healthNotes: report.healthStatus ?? "",
+    temperature: report.temperature ?? undefined,
+    // Only whether the child had breakfast is kept.
+    breakfastConsumption:
+      report.hadBreakfast == null
+        ? undefined
+        : report.hadBreakfast
+          ? "HABIS"
+          : "TIDAK_MAU",
+    lunchConsumption: report.mealStatus ?? undefined,
+    snackConsumption: report.snackStatus ?? undefined,
+    napDurationMinutes: report.napDuration ?? undefined,
+    toiletingNotes: report.toiletNotes ?? "",
+    activitiesSummary: report.activitiesSummary ?? "",
+    learningAchievements: report.achievements ?? "",
+    surahPractice: report.tahfidzActivity ?? "",
+    behaviorNotes: report.behaviorNotes ?? "",
+    teacherNotes: report.teacherNotes ?? "",
+    homeworkSuggestion: report.homeActivity ?? "",
+  };
+}
+
 export default function EditDailyReportPage() {
   const params = useParams();
-  const router = useRouter();
   const id = params.id as string;
-  const { user } = useAuthStore();
+  const { data: report, isLoading } = useDailyReport(id);
 
-  const { data: report, isLoading: loadingReport } = useDailyReport(id);
-  const { data: students } = useStudents({ unitId: user?.unitId, limit: 100 });
-  const { data: classes } = useClasses({ unitId: user?.unitId });
-
-  const form = useForm<DailyReportFormData>({
-    resolver: zodResolver(dailyReportSchema),
-    defaultValues: {
-      studentId: "",
-      classId: "",
-      reportDate: new Date(),
-    },
-  });
-
-  const updateMutation = useUpdateDailyReport();
-
-  useEffect(() => {
-    if (report) {
-      // Safe access for classId using optional chaining
-      form.reset({
-        studentId: report.studentId,
-        classId: report.student?.classId || "",
-        reportDate: new Date(report.reportDate),
-        morningMood: report.mood || "HAPPY",
-        healthNotes: report.healthStatus || "",
-        temperature: report.temperature || 36.5,
-        breakfastConsumption: report.hadBreakfast ? "HABIS" : "TIDAK_MAU", // Simplified mapping
-        lunchConsumption: report.mealStatus || "HABIS",
-        snackConsumption: report.snackStatus || "HABIS",
-        napDurationMinutes: report.napDuration || 0,
-        toiletingNotes: report.toiletNotes || "",
-        activitiesSummary: report.activitiesSummary || "",
-        learningAchievements: report.achievements || "",
-        surahPractice: report.tahfidzActivity || "",
-        behaviorNotes: report.behaviorNotes || "",
-        teacherNotes: report.teacherNotes || "",
-        homeworkSuggestion: report.homeActivity || "",
-      });
-    }
-  }, [report, form]);
-
-  const onSubmit = async (data: DailyReportFormData) => {
-    try {
-      // Remove fields that shouldn't be updated
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { reportDate, studentId, classId, ...updateData } = data;
-
-      await updateMutation.mutateAsync({
-        id,
-        data: {
-          ...updateData,
-          morningMood: updateData.morningMood as DailyMood | undefined,
-        },
-      });
-      toast.success("Laporan harian berhasil diperbarui");
-      router.push("/paud/daily-reports");
-    } catch {
-      toast.error("Gagal memperbarui laporan harian");
-    }
-  };
-
-  if (loadingReport) {
+  if (isLoading || !report) {
     return (
       <MainLayout>
         <div className="flex items-center justify-center min-h-[400px]">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          {isLoading ? (
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          ) : (
+            <p className="text-muted-foreground">Laporan tidak ditemukan.</p>
+          )}
         </div>
       </MainLayout>
     );
   }
+
+  // Built once the report is here, so its values are the form's defaults
+  // rather than a reset the controlled Selects can lose.
+  return <EditDailyReportForm key={report.id} report={report} />;
+}
+
+function EditDailyReportForm({ report }: { report: DailyReport }) {
+  const router = useRouter();
+  const form = useForm<DailyReportFormData>({
+    resolver: zodResolver(dailyReportSchema),
+    defaultValues: toFormValues(report),
+  });
+
+  const updateMutation = useUpdateDailyReport();
+
+  const onSubmit = async (data: DailyReportFormData) => {
+    try {
+      // The pupil and the day are fixed. The form's "catatan guru" is the
+      // contract's `parentNotes` (the note for the family).
+      await updateMutation.mutateAsync({
+        id: report.id,
+        data: {
+          morningMood: data.morningMood,
+          healthNotes: data.healthNotes,
+          temperature: data.temperature,
+          breakfastConsumption: data.breakfastConsumption,
+          lunchConsumption: data.lunchConsumption,
+          snackConsumption: data.snackConsumption,
+          napDurationMinutes: data.napDurationMinutes,
+          toiletingNotes: data.toiletingNotes,
+          activitiesSummary: data.activitiesSummary,
+          learningAchievements: data.learningAchievements,
+          surahPractice: data.surahPractice,
+          behaviorNotes: data.behaviorNotes,
+          parentNotes: data.teacherNotes,
+          homeworkSuggestion: data.homeworkSuggestion,
+        },
+      });
+      toast.success("Laporan harian berhasil diperbarui");
+      router.push("/tk/daily-reports");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
 
   return (
     <MainLayout>
@@ -174,106 +179,25 @@ export default function EditDailyReportPage() {
               <CardHeader>
                 <CardTitle>Informasi Dasar</CardTitle>
                 <CardDescription>
-                  Pilih siswa dan tanggal laporan
+                  Siswa dan tanggal laporan tidak dapat diubah
                 </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-6 md:grid-cols-3">
-                <FormField
-                  control={form.control}
-                  name="studentId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Siswa *</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih siswa" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {students?.data?.map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="classId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Kelas *</FormLabel>
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Pilih kelas" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {classes?.data?.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="reportDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Tanggal *</FormLabel>
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <FormControl>
-                            <Button
-                              variant="outline"
-                              className={cn(
-                                "w-full justify-start text-left font-normal",
-                                !field.value && "text-muted-foreground",
-                              )}
-                            >
-                              <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value
-                                ? format(field.value, "dd MMMM yyyy", {
-                                    locale: idLocale,
-                                  })
-                                : "Pilih tanggal"}
-                            </Button>
-                          </FormControl>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            locale={idLocale}
-                          />
-                        </PopoverContent>
-                      </Popover>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <CardContent className="grid gap-6 md:grid-cols-2">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Siswa</p>
+                  <p className="text-sm">
+                    {report.student?.user?.name ?? "-"}
+                    {report.student?.nis ? ` (${report.student.nis})` : ""}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">Tanggal</p>
+                  <p className="text-sm">
+                    {format(new Date(report.reportDate), "EEEE, dd MMMM yyyy", {
+                      locale: idLocale,
+                    })}
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
