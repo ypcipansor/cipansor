@@ -29,7 +29,7 @@ import {
   FoundationQuorumMode,
   quorumValueForMode,
 } from '@cipansor/shared';
-import { prisma } from '@/lib/prisma';
+import { prisma, type Db } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { config } from '@/config';
 import { evaluateQuorum, type QuorumEvaluation } from '@/utils/foundation-quorum';
@@ -603,8 +603,15 @@ const decisionInclude = {
 } satisfies Prisma.FoundationDecisionInclude;
 
 type Actor = FoundationActorLike;
-/** Klien Prisma di dalam transaksi interaktif (atau prisma itu sendiri). */
-type DbClient = Prisma.TransactionClient;
+/**
+ * Klien Prisma di dalam transaksi interaktif (atau prisma itu sendiri).
+ *
+ * `Db` adalah klien ATAU transaksi — bukan `Prisma.TransactionClient`, yang
+ * tidak menerima `prisma` sejak kredensial User di-`omit` secara global
+ * (`lib/prisma.ts`): hasil transaksi membawa kolom kredensial, hasil klien
+ * tidak, sehingga keduanya tidak saling assignable.
+ */
+type DbClient = Db;
 
 /**
  * Resolusi peran AKTUAL dari basis data (Finding B3).

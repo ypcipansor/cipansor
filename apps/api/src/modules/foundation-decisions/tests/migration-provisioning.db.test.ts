@@ -735,8 +735,9 @@ describe.skipIf(!RUN)('migrasi CANCELLED + normalisasi sirkuler', () => {
  *
  * Uji ini mereproduksi bentuk basis data itu secara nyata: DDL dari skema FINAL
  * (`prisma migrate diff --from-empty --to-schema`, tepat bentuk `db push`),
- * seluruh migrasi pra-foundation ditandai `--applied` (seperti produksi), lalu
- * `migrate deploy` harus hijau dan mendarat dengan seluruh migrasi selesai.
+ * seluruh migrasi di LUAR rangkaian foundation ditandai `--applied` (seperti
+ * produksi; lihat `FOUNDATION_SERIES`), lalu `migrate deploy` harus hijau dan
+ * mendarat dengan seluruh migrasi selesai.
  *
  * Sebaliknya, skema yang BENAR-BENAR menyimpang tetap ditolak: label dasar yang
  * HILANG, dan label TAMBAHAN yang bukan milik rangkaian ini. Keduanya diuji di
@@ -785,14 +786,36 @@ describe.skipIf(!RUN)(
       }
     }
 
-    async function baselinePreFoundation(url: string): Promise<void> {
+    /**
+     * Rangkaian migrasi FOUNDATION (yang perilaku adopsinya diuji di sini).
+     *
+     * HANYA migrasi ini yang mengklaim idempotensi + preflight terhadap basis
+     * data bentuk `db push` (lihat header masing-masing). Migrasi lain —
+     * termasuk yang ditambahkan main setelah rangkaian ini (`permit_decider`,
+     * `attendance_follow_up`, …) — tidak, dan tidak perlu: basis data yang
+     * di-`db push` memang tidak lagi cara penyediaan yang didukung (mereka
+     * di-drop dan dibuat ulang lewat migrasi). Karena itu dalam simulasi ini
+     * migrasi di luar rangkaian ditandai `--applied`, bukan dijalankan; kalau
+     * tidak, `migrate deploy` akan mencoba menjalankan `CREATE TYPE
+     * "PermitDecider"` di atas skema `db push` yang sudah memuatnya dan mati
+     * dengan "current transaction is aborted" — kegagalan milik migrasi main
+     * itu, bukan milik rangkaian foundation.
+     */
+    const FOUNDATION_SERIES = new Set([
+      '20260916000000_foundation_decisions',
+      '20260917000000_foundation_decision_vote_key_binding',
+      '20260921170000_foundation_decision_publication',
+      '20260922000000_foundation_decision_cancelled_and_circular_mufakat',
+    ]);
+
+    async function baselineOutsideFoundationSeries(url: string): Promise<void> {
       const src = path.resolve(API_DIR, 'prisma/migrations');
-      const pre = fs
+      const rest = fs
         .readdirSync(src)
         .filter((e) => fs.statSync(path.join(src, e)).isDirectory())
-        .filter((n) => n < '20260916000000_foundation_decisions')
+        .filter((n) => !FOUNDATION_SERIES.has(n))
         .sort();
-      for (const m of pre) {
+      for (const m of rest) {
         migrateResolveApplied(url, m);
       }
     }
@@ -803,7 +826,7 @@ describe.skipIf(!RUN)(
       await createDatabase(name);
       const url = urlForDatabase(name);
       await applySql(url, finalSchemaDdl(url));
-      await baselinePreFoundation(url);
+      await baselineOutsideFoundationSeries(url);
       return { name, url };
     }
 
