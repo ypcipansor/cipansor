@@ -181,3 +181,50 @@ export interface AttendanceFollowUpItem {
   walis: { name: string; phone: string | null; relation: string }[];
   followUps: AttendanceFollowUpEntry[];
 }
+
+/**
+ * A pattern in a santri's attendance — the third tier of the follow-up
+ * (decided 2026-09-28, decisions/absensi-harian.md). Absent means any absence,
+ * Alpa, Sakit or Izin, as persistent absence is counted by the DfE (*Working
+ * together to improve school attendance*, 2024) and chronic absence by
+ * Attendance Works: a child misses the lesson whatever the reason, and
+ * repeated illness is itself worth a look.
+ */
+export const ATTENDANCE_PATTERN_ABSENCE_RATE = 0.1;
+/**
+ * Days recorded this semester before the absence rate counts, so one absence
+ * in the first week is not already 10%.
+ */
+export const ATTENDANCE_PATTERN_MIN_DAYS = 10;
+/** Late this many times in the last `…_LATE_WINDOW_DAYS` calendar days. */
+export const ATTENDANCE_PATTERN_LATE_COUNT = 3;
+export const ATTENDANCE_PATTERN_LATE_WINDOW_DAYS = 30;
+
+export const ATTENDANCE_PATTERN_KINDS = ["ABSENCE", "LATE"] as const;
+export type AttendancePatternKind = (typeof ATTENDANCE_PATTERN_KINDS)[number];
+
+/**
+ * GET /attendance/patterns — a santri whose attendance shows a pattern now,
+ * among those the caller is told about: the pupils of their homeroom classes,
+ * the santri mukim they are musyrif of, and — for a guru BK — their unit's.
+ */
+export interface AttendancePatternItem {
+  student: { id: string; name: string; nis: string | null };
+  class: { id: string; name: string } | null;
+  /** Why this santri is the caller's to know about. */
+  as: ("WALI_KELAS" | "GURU_BK" | "MUSYRIF")[];
+  kinds: AttendancePatternKind[];
+  /** This semester, from its first day (yyyy-MM-dd) to today. */
+  absence: {
+    since: string;
+    recordedDays: number;
+    absentDays: number;
+    alpa: number;
+    sakit: number;
+    izin: number;
+  };
+  /** Late marks in the last `ATTENDANCE_PATTERN_LATE_WINDOW_DAYS` days. */
+  lateDays: number;
+  /** When each pattern was first raised this semester, if it has been. */
+  raisedAt: Partial<Record<AttendancePatternKind, string>>;
+}

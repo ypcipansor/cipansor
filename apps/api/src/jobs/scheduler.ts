@@ -14,6 +14,7 @@ import { runChatbotTranscriptPurge } from './chatbot-transcript-purge.job';
 import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
 import { runAttendanceFollowUpReminder } from './attendance-follow-up.job';
 import { runAttendanceRegisterReminder } from './attendance-register-reminder.job';
+import { runAttendancePatternFlags } from './attendance-pattern.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -331,6 +332,31 @@ export function initializeScheduler(): void {
   scheduledTasks.push(registerReminderTask);
   logger.info('[Scheduler] Register reminder scheduled every 5 minutes, 05:00–16:55 WIB');
 
+  /**
+   * Tanda pola kehadiran (decisions/absensi-harian.md, diputuskan 2026-09-28).
+   *
+   * Pukul 16:00 WIB, sesudah register hari itu masuk: santri yang tidak hadir
+   * pada ≥10% hari tercatat semester ini (sesudah 10 hari), atau terlambat 3
+   * kali dalam 30 hari, ditandai sekali per semester; wali kelas, guru BK
+   * unitnya, dan musyrif santri mukim diberi tahu.
+   */
+  const attendancePatternTask = cron.schedule(
+    '0 16 * * *',
+    async () => {
+      try {
+        const { raised, told } = await runAttendancePatternFlags();
+        if (raised) logger.info(`[Scheduler] Attendance patterns raised: ${raised}, told: ${told}`);
+      } catch (error) {
+        logger.error('[Scheduler] Attendance pattern flag failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(attendancePatternTask);
+  logger.info('[Scheduler] Attendance pattern flag scheduled daily at 16:00 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -360,6 +386,7 @@ export async function runJob(
     | 'chatbot-escalation-retry'
     | 'attendance-follow-up'
     | 'attendance-register-reminder'
+    | 'attendance-pattern'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -399,6 +426,9 @@ export async function runJob(
       break;
     case 'attendance-register-reminder':
       await runAttendanceRegisterReminder();
+      break;
+    case 'attendance-pattern':
+      await runAttendancePatternFlags();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

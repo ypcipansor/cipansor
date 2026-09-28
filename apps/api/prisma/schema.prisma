@@ -1102,6 +1102,7 @@ model Student {
   parents                     StudentParent[]
   enrollments                 ClassEnrollment[]
   attendances                 Attendance[]
+  attendancePatternFlags      AttendancePatternFlag[]
   tahfidzRecords              TahfidzRecord[]
   tahfidzTargets              TahfidzTarget[]
   roomAssignments             RoomAssignment[]
@@ -1396,6 +1397,32 @@ model AttendanceFollowUp {
   @@index([attendanceId])
   @@index([contactedById])
   @@map("attendance_follow_ups")
+}
+
+/// A pattern in a santri's attendance (decided 2026-09-28,
+/// decisions/absensi-harian.md): absent — Alpa, Sakit or Izin — on at least
+/// 10% of the days recorded this semester, once 10 days are recorded; or late
+/// three times in 30 days.
+enum AttendancePatternKind {
+  ABSENCE
+  LATE
+}
+
+/// When a pattern was first raised this semester, so the wali kelas, the guru
+/// BK and a santri mukim's musyrif are told once, not every day. Which santri
+/// show a pattern now is worked out from the register, not from this table.
+model AttendancePatternFlag {
+  id            String                @id @default(uuid())
+  studentId     String                @map("student_id")
+  kind          AttendancePatternKind
+  /// The first day of the semester the pattern belongs to.
+  semesterStart DateTime              @map("semester_start") @db.Date
+  raisedAt      DateTime              @default(now()) @map("raised_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, kind, semesterStart])
+  @@map("attendance_pattern_flags")
 }
 
 /// TahfidzRecord - Quran memorization records

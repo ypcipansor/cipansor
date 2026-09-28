@@ -1,6 +1,6 @@
 # absensi-harian
 
-> Keputusan pengguna 2026-09-27 — register harian diisi di kelas oleh wali kelas atau guru yang mengajar di kelas itu (operator unit cadangan); satu halaman; tindak lanjut otomatis dengan pemilik yang sudah ada (wali kelas untuk murid harian, musyrif untuk santri mukim); tanpa guru piket
+> Keputusan pengguna 2026-09-27 — register harian diisi di kelas oleh wali kelas atau guru yang mengajar di kelas itu (operator unit cadangan); satu halaman; tindak lanjut otomatis dengan pemilik yang sudah ada (wali kelas untuk murid harian, musyrif untuk santri mukim); tanpa guru piket. 2026-09-28: parameter tanda pola
 
 **Pertanyaan pengguna:** "Apa memang perlu ada guru piket? Apa tidak sebaiknya
 pakai otomatis saja dari sistem?" Jawabannya: sebagian besar otomatis, tetapi
@@ -15,7 +15,7 @@ satu langkah tetap butuh orang, dan orang itu sudah ada.
 | Kelas belum mengisi register 30 menit sesudah jam pertama | sistem mengingatkan guru jam itu dan wali kelas |
 | Murid ditandai Alpa atau Terlambat | sistem memberi tahu walinya seketika (wali bisa menjawab atau mengajukan izin); santri mukim → **musyrifnya juga**, seketika |
 | Sampai sore belum ada keterangan | tugas tindak lanjut untuk **wali kelas** (murid harian) atau **musyrif** (santri mukim); hasil kontaknya dicatat |
-| Pola: ≥10% hari tidak hadir, atau sering terlambat | ditandai untuk wali kelas dan guru BK |
+| Pola: ≥10% hari tidak hadir, atau sering terlambat (parameter di bawah) | ditandai untuk wali kelas dan guru BK; santri mukim → **musyrifnya juga** |
 | Kepala sekolah | membaca rekap; tidak mengisi register |
 
 - **Satu halaman untuk satu register.** *Mengajar → Absensi → Input
@@ -28,6 +28,32 @@ satu langkah tetap butuh orang, dan orang itu sudah ada.
 - **Santri mukim yang Alpa di kelas seharusnya ada di dalam pondok.** Karena
   itu musyrifnya harus tahu seketika, bukan hanya walinya yang jauh di rumah.
   Inilah bedanya dengan sekolah harian.
+
+## Tanda pola — diputuskan pengguna 2026-09-28
+
+Keempatnya pilihan yang direkomendasikan:
+
+1. **Yang dihitung: semua ketidakhadiran — Alpa, Sakit, dan Izin.** Begitu
+   *persistent absence* dihitung DfE (*Working together*, 2024) dan *chronic
+   absence* dihitung [Attendance Works](https://www.attendanceworks.org/chronic-absence/addressing-chronic-absence/3-tiers-of-intervention/):
+   anak kehilangan pelajaran apa pun alasannya, dan sakit yang berulang justru
+   perlu dilihat.
+2. **Periode: semester berjalan, dan baru dinilai sesudah 10 hari
+   tercatat**, supaya satu hari absen di minggu pertama tidak langsung menjadi
+   10%. Attendance Works: 2–4 hari absen di bulan pertama sudah tanda dini
+   ("Why September Matters"). Batas semester sama dengan rapor: semester
+   ganjil dari hari pertama tahun ajaran, genap dari 1 Januari WIB
+   (`apps/api/src/utils/semester.ts`).
+3. **Sering terlambat: 3 kali dalam 30 hari (bergulir).** Pola tata tertib
+   sekolah di Indonesia yang umum: terlambat tiga kali → orang tua dipanggil.
+4. **Santri mukim: wali kelas, guru BK, dan musyrifnya** — musyrif memegang
+   pengasuhan harian, aturan yang sama dengan pemutus izin dan tindak lanjut
+   Alpa.
+
+Tiap pola diberitahukan **sekali per semester** (pukul 16:00 WIB); halaman
+*Pola Kehadiran* menunjukkannya selama pola itu masih berlaku. Guru BK hanya
+ada di SMP IT dan SMA Qur'an; di TK dan SD tanda pola sampai ke wali kelas
+(dan musyrif).
 
 ## Dasarnya (diriset 2026-09-27, jangan diulang)
 
@@ -56,7 +82,8 @@ satu langkah tetap butuh orang, dan orang itu sudah ada.
 
 ## Yang sudah ada dan yang belum
 
-Sudah ada: siapa yang mengisi register (#580), izin dan UKS mengisi register,
-status Terlambat. Belum ada: pengingat register, pemberitahuan Alpa/Terlambat
-ke wali dan musyrif, tugas tindak lanjut, tanda pola, dan penyatuan halaman.
-Urutannya di `roadmap.md`.
+Semuanya dibangun: siapa yang mengisi register (#580), satu halaman (#585),
+pemberitahuan Alpa/Terlambat ke wali dan musyrif dengan kotak masuk pribadi
+(#587), tugas tindak lanjut dengan catatan kontak (#588), pengingat register
+(#590), dan tanda pola (*Wali Kelas → Pola Kehadiran*, *Pengasuhan → Pola
+Kehadiran*).
