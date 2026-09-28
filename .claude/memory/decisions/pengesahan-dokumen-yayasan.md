@@ -46,7 +46,8 @@ ditolak bila menginduk RKA Yayasan. Uji e2e:
 `apps/web/e2e/perencanaan-pengesahan.spec.ts`.
 
 **Belum dimodelkan:** keputusan Pembina sebagai keputusan *rapat* (kini satu
-akun Pembina yang menekan); aturan per-medan untuk rencana BERJALAN — kepala
+akun Pembina yang menekan — syaratnya sejak 2026-09-28 di
+[pengawasan-dan-rapat-pembina](./pengawasan-dan-rapat-pembina.md)); aturan per-medan untuk rencana BERJALAN — kepala
 rencana IN_PROGRESS masih bisa diubah penyusunnya.
 
 Lihat [rka-dua-tingkat](./rka-dua-tingkat.md), [pk-organ-yayasan-tanpa-kontrak](./pk-organ-yayasan-tanpa-kontrak.md).
