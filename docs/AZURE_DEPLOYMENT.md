@@ -21,7 +21,7 @@ Dokumen ini berisi panduan langkah demi langkah untuk mendeploy Sistem Informasi
   - Container 1: `cipansor-api` (Express 5 REST API + Socket.IO)
   - Container 2: `cipansor-web` (Next.js 16 App Router)
 - **Database:** **Azure Database for PostgreSQL (Flexible Server)** (B1ms burstable, 32GB storage)
-- **Storage:** **Azure Blob Storage Account** (`cipansorstore`)
+- **Storage:** **Azure Blob Storage Account** (`<storage-account>`)
   - Container `e-office-documents` (PDF Surat & E-Sign)
   - Container `student-documents` (Berkas Santri & PPDB)
   - Container `media-public` (Foto Galeri & Banner)
@@ -68,7 +68,7 @@ DB_PASS=$(openssl rand -base64 24)
 
 az postgres flexible-server create \
   --resource-group rg-cipansor-prod \
-  --name db-cipansor-prod \
+  --name <db-server> \
   --location southeastasia \
   --admin-user cipansoradmin \
   --admin-password "$DB_PASS" \
@@ -81,15 +81,15 @@ az postgres flexible-server create \
 
 ```bash
 az storage account create \
-  --name cipansorstore \
+  --name <storage-account> \
   --resource-group rg-cipansor-prod \
   --location southeastasia \
   --sku Standard_LRS
 
 # Buat Container Blob Storage
-az storage container create --name e-office-documents --account-name cipansorstore
-az storage container create --name student-documents --account-name cipansorstore
-az storage container create --name media-public --account-name cipansorstore
+az storage container create --name e-office-documents --account-name <storage-account>
+az storage container create --name student-documents --account-name <storage-account>
+az storage container create --name media-public --account-name <storage-account>
 ```
 
 ### Langkah 6: Deploy App Service untuk API & Web
@@ -123,8 +123,8 @@ Atur variabel lingkungan di Azure Portal atau via CLI (disarankan mereferensikan
 
 ```bash
 az webapp config appsettings set --resource-group rg-cipansor-prod --name app-cipansor-api --settings \
-  DATABASE_URL="postgresql://cipansoradmin:${DB_PASS}@db-cipansor-prod.postgres.database.azure.com:5432/cipansor?sslmode=require" \
-  AZURE_STORAGE_ACCOUNT="cipansorstore" \
+  DATABASE_URL="postgresql://cipansoradmin:${DB_PASS}@<db-server>.postgres.database.azure.com:5432/cipansor?sslmode=require" \
+  AZURE_STORAGE_ACCOUNT="<storage-account>" \
   AZURE_STORAGE_CONNECTION_STRING="${AZURE_STORAGE_CONNECTION_STRING}" \
   GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
   MICROSOFT_CLIENT_ID="${MICROSOFT_CLIENT_ID}" \
