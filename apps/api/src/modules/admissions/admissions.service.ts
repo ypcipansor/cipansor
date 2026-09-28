@@ -16,6 +16,7 @@ import {
   CreateRegistrantDocumentInput,
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
+import { readsAllUnits } from './admissions.access';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
 
@@ -342,11 +343,11 @@ export async function getRegistrants(
   if (status) where.status = status;
   if (gender) where.gender = gender as Gender;
 
-  // Server-side unit scoping: SUPER_ADMIN sees all; non-SUPER_ADMIN is
-  // restricted to their unitId. A non-SUPER_ADMIN without a unitId must NEVER
-  // fall through to the unscoped query — that would let them list registrants
-  // of EVERY unit. Refuse with 403 instead of silently widening the filter.
-  if (actor && !isSuperAdmin(actor)) {
+  // Server-side unit scoping: SUPER_ADMIN and the yayasan board read all
+  // (readsAllUnits); everyone else is restricted to their unitId. Any other
+  // user without a unitId must NEVER fall through to the unscoped query —
+  // that would let them list registrants of EVERY unit. Refuse with 403.
+  if (actor && !readsAllUnits(actor)) {
     if (!actor.unitId) {
       throw Errors.forbidden('Access to this unit is not allowed');
     }
@@ -409,7 +410,7 @@ export async function getRegistrantById(id: string, actor?: AuthUser) {
   });
 
   if (registrant && actor) {
-    if (!isSuperAdmin(actor)) {
+    if (!readsAllUnits(actor)) {
       const actorUnitId = actor.unitId;
       if (!actorUnitId || registrant.admissionPeriod?.unitId !== actorUnitId) {
         throw Errors.forbidden('Access to this unit is not allowed');
@@ -1085,7 +1086,8 @@ export async function deleteRegistrant(id: string, actor?: AuthUser) {
 // =====================================
 
 export async function getRegistrantDocuments(registrantId: string, actor?: AuthUser) {
-  if (actor) await assertRegistrantUnitAccess(registrantId, actor);
+  // A read: the yayasan board may look (readsAllUnits), never change.
+  if (actor && !readsAllUnits(actor)) await assertRegistrantUnitAccess(registrantId, actor);
   return prisma.registrantDocument.findMany({
     where: { registrantId },
     orderBy: { createdAt: 'desc' },

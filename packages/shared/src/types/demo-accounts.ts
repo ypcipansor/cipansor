@@ -1,5 +1,10 @@
 /**
- * Canonical demo accounts — one per RoleCode in the system.
+ * Canonical demo accounts — at least one per RoleCode in the system. MUSYRIF
+ * and MUHAFIDZ have several personas (putra/putri, wali kamar, murabbi) since
+ * those roles were merged on 2026-09-25, and each school's GURU has three
+ * since wakasek and wali kelas were merged into it on 2026-09-26 (the
+ * `*.wakasek@` and `*.walikelas@` logins stay, as teachers); the seed looks a
+ * role up by its FIRST account.
  *
  * This single list is the source of truth for the API seed
  * (apps/api/prisma/seed.ts), which creates the login users, and for the tools
@@ -22,6 +27,12 @@ export interface DemoAccount {
   description: string;
   /** Public path to an avatar, when a real photo exists. */
   photo?: string;
+  /**
+   * Wali kelas of its unit's demo class: the seed sets
+   * `Class.homeroomTeacherId` to this persona. Wali kelas is a duty, not a
+   * role code, so it is marked here rather than read from `roleCode`.
+   */
+  homeroom?: true;
 }
 
 /** Every seeded demo account shares one password. */
@@ -97,16 +108,8 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
     name: "K.H. Muhammad Taufik Ismail, S.Pd",
     email: "pesantren.pengasuh@cipansor.or.id",
     password: P,
-    description: "Pimpinan / Pengasuh Pesantren",
+    description: "Pimpinan Pesantren (Kiai), juga Pembina yayasan",
     photo: "/images/people/pimpinan-pesantren.webp",
-  },
-  {
-    group: "PESANTREN",
-    roleCode: "PESANTREN_DIREKTUR",
-    name: "Ustadz Hilman Fauzi, Lc.",
-    email: "pesantren.direktur@cipansor.or.id",
-    password: P,
-    description: "Direktur operasional pesantren",
   },
   {
     group: "PESANTREN",
@@ -134,7 +137,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MUSYRIFAH",
+    roleCode: "MUSYRIF",
     name: "Ustadzah Nur Aisyah",
     email: "pesantren.musyrifah@cipansor.or.id",
     password: P,
@@ -150,7 +153,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MUHAFIDZAH",
+    roleCode: "MUHAFIDZ",
     name: "Ustadzah Khodijah, Al-Hafidzah",
     email: "pesantren.muhafidzah@cipansor.or.id",
     password: P,
@@ -158,19 +161,19 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "PESANTREN",
-    roleCode: "MURABBI",
+    roleCode: "MUSYRIF",
     name: "Ustadz Salman Alfarisi",
     email: "pesantren.murabbi@cipansor.or.id",
     password: P,
-    description: "Pembina akhlaq",
+    description: "Musyrif — pembina akhlak (murabbi)",
   },
   {
     group: "PESANTREN",
-    roleCode: "WALI_KAMAR",
+    roleCode: "MUSYRIF",
     name: "Ustadz Rizki Ramadhan",
     email: "pesantren.walikamar@cipansor.or.id",
     password: P,
-    description: "Penanggung jawab kamar",
+    description: "Musyrif — wali kamar",
   },
 
   // ── TK Qur'an ───────────────────────────────────────────────────────
@@ -192,14 +195,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "TK_QURAN",
-    roleCode: "TKQ_WAKASEK",
-    name: "Rina Marlina, S.Pd.",
-    email: "tkq.wakasek@cipansor.or.id",
-    password: P,
-    description: "Wakil Kepala TK Qur'an",
-  },
-  {
-    group: "TK_QURAN",
     roleCode: "TKQ_GURU",
     name: "Bunda Fitri Handayani, S.Pd.",
     email: "tkq.guru@cipansor.or.id",
@@ -208,11 +203,20 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "TK_QURAN",
-    roleCode: "TKQ_WALI_KELAS",
+    roleCode: "TKQ_GURU",
     name: "Bunda Neng Sartika, S.Pd.",
     email: "tkq.walikelas@cipansor.or.id",
     password: P,
-    description: "Wali Kelas TK Qur'an",
+    description: "Guru dan wali kelas TK Qur'an",
+    homeroom: true,
+  },
+  {
+    group: "TK_QURAN",
+    roleCode: "TKQ_GURU",
+    name: "Rina Marlina, S.Pd.",
+    email: "tkq.wakasek@cipansor.or.id",
+    password: P,
+    description: "Guru TK Qur'an",
   },
   {
     group: "TK_QURAN",
@@ -267,14 +271,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SD_IT",
-    roleCode: "SDIT_WAKASEK",
-    name: "Agus Setiawan, S.Pd.",
-    email: "sdit.wakasek@cipansor.or.id",
-    password: P,
-    description: "Wakil Kepala SD IT",
-  },
-  {
-    group: "SD_IT",
     roleCode: "SDIT_GURU",
     name: "Ustadz Yusuf Maulana, S.Pd.",
     email: "sdit.guru@cipansor.or.id",
@@ -283,11 +279,20 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SD_IT",
-    roleCode: "SDIT_WALI_KELAS",
+    roleCode: "SDIT_GURU",
     name: "Ustadzah Siti Nurjanah, S.Pd.",
     email: "sdit.walikelas@cipansor.or.id",
     password: P,
-    description: "Wali Kelas SD IT",
+    description: "Guru dan wali kelas SD IT",
+    homeroom: true,
+  },
+  {
+    group: "SD_IT",
+    roleCode: "SDIT_GURU",
+    name: "Agus Setiawan, S.Pd.",
+    email: "sdit.wakasek@cipansor.or.id",
+    password: P,
+    description: "Guru SD IT",
   },
   {
     group: "SD_IT",
@@ -350,14 +355,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SMP_IT",
-    roleCode: "SMPIT_WAKASEK",
-    name: "Dodi Hermawan, S.Pd.",
-    email: "smpit.wakasek@cipansor.or.id",
-    password: P,
-    description: "Wakil Kepala SMP IT",
-  },
-  {
-    group: "SMP_IT",
     roleCode: "SMPIT_GURU",
     name: "Ustadz Ahmad Musyaffa, S.Pd.",
     email: "smpit.guru@cipansor.or.id",
@@ -366,11 +363,20 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SMP_IT",
-    roleCode: "SMPIT_WALI_KELAS",
+    roleCode: "SMPIT_GURU",
     name: "Ustadzah Fatimah Zahra, S.Pd.",
     email: "smpit.walikelas@cipansor.or.id",
     password: P,
-    description: "Wali Kelas SMP IT",
+    description: "Guru dan wali kelas SMP IT",
+    homeroom: true,
+  },
+  {
+    group: "SMP_IT",
+    roleCode: "SMPIT_GURU",
+    name: "Dodi Hermawan, S.Pd.",
+    email: "smpit.wakasek@cipansor.or.id",
+    password: P,
+    description: "Guru SMP IT",
   },
   {
     group: "SMP_IT",
@@ -449,14 +455,6 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SMA_QURAN",
-    roleCode: "SMAQ_WAKASEK",
-    name: "Taufik Hidayat, S.Pd.",
-    email: "smaq.wakasek@cipansor.or.id",
-    password: P,
-    description: "Wakil Kepala SMA Qur'an",
-  },
-  {
-    group: "SMA_QURAN",
     roleCode: "SMAQ_GURU",
     name: "Ustadz Malik Ibrahim, Lc.",
     email: "smaq.guru@cipansor.or.id",
@@ -465,11 +463,20 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     group: "SMA_QURAN",
-    roleCode: "SMAQ_WALI_KELAS",
+    roleCode: "SMAQ_GURU",
     name: "Ustadzah Halimah Sa'diyah, S.Pd.",
     email: "smaq.walikelas@cipansor.or.id",
     password: P,
-    description: "Wali Kelas SMA Qur'an",
+    description: "Guru dan wali kelas SMA Qur'an",
+    homeroom: true,
+  },
+  {
+    group: "SMA_QURAN",
+    roleCode: "SMAQ_GURU",
+    name: "Taufik Hidayat, S.Pd.",
+    email: "smaq.wakasek@cipansor.or.id",
+    password: P,
+    description: "Guru SMA Qur'an",
   },
   {
     group: "SMA_QURAN",

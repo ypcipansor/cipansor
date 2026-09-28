@@ -1,15 +1,35 @@
 import { Router } from 'express';
 import { UserRole } from '@prisma/client';
+import {
+  DORMITORY_MANAGER_ROLE_CODES,
+  MUSYRIF_ASSIGNER_ROLE_CODES,
+  MUSYRIF_READER_ROLE_CODES,
+  assignMusyrifSchema,
+  createDormitorySchema,
+  createRoomAssignmentSchema,
+  createRoomSchema,
+  musyrifCandidatesQuerySchema,
+  updateDormitorySchema,
+} from '@cipansor/shared';
 import * as controller from './dormitories.controller';
+import * as musyrif from './musyrif.controller';
 import { authenticate, authorize } from '../../middleware/auth';
-import { validateQuery } from '../../middleware/error';
+import { validate, validateQuery } from '../../middleware/error';
 import {
   queryDormitorySchema,
   queryRoomSchema,
   queryRoomAssignmentSchema,
+  updateRoomAssignmentSchema,
+  updateRoomSchema,
 } from './dormitories.schema';
 
 const router = Router();
+
+/**
+ * Who writes asrama, kamar and placements — one list, which the web reads to
+ * decide whether to show the buttons (see @cipansor/shared dormitories.ts).
+ */
+const manage = authorize(...DORMITORY_MANAGER_ROLE_CODES);
 
 router.use(authenticate);
 
@@ -179,7 +199,7 @@ router.get(
  *       201:
  *         description: Dormitory created
  */
-router.post('/', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createDormitory);
+router.post('/', manage, validate(createDormitorySchema), controller.createDormitory);
 
 /**
  * @swagger
@@ -259,6 +279,69 @@ router.get(
 
 /**
  * @swagger
+ * /api/dormitories/{id}/musyrif:
+ *   get:
+ *     summary: The asrama's active musyrif assignments (no kamar = the whole asrama)
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: MusyrifAssignment[] }
+ *   post:
+ *     summary: Assign someone to the asrama or one of its kamar
+ *     description: Super admin or Pimpinan Pesantren. The person must hold an educator role.
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema: { type: object, required: [userId], properties: { userId: { type: string, format: uuid }, roomId: { type: string, format: uuid, nullable: true }, role: { type: string, enum: [PEMBINA, KOORDINATOR, PENGAWAS] } } }
+ *     responses:
+ *       201: { description: Assigned }
+ *       400: { description: Not an educator, or a kamar of another asrama }
+ *       409: { description: Already assigned there }
+ * /api/dormitories/{id}/musyrif/candidates:
+ *   get:
+ *     summary: People who may be assigned (active educators), by name
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: q, schema: { type: string } }
+ *     responses:
+ *       200: { description: MusyrifCandidate[] }
+ * /api/dormitories/{id}/musyrif/{assignmentId}/end:
+ *   post:
+ *     summary: End an assignment (kept as history)
+ *     tags: [Dormitories]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Ended }
+ *       404: { description: No such active assignment in this asrama }
+ */
+router.get('/:id/musyrif', authorize(...MUSYRIF_READER_ROLE_CODES), musyrif.list);
+router.get(
+  '/:id/musyrif/candidates',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  validateQuery(musyrifCandidatesQuerySchema),
+  musyrif.candidates
+);
+router.post(
+  '/:id/musyrif',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  validate(assignMusyrifSchema),
+  musyrif.assign
+);
+router.post(
+  '/:id/musyrif/:assignmentId/end',
+  authorize(...MUSYRIF_ASSIGNER_ROLE_CODES),
+  musyrif.end
+);
+
+/**
+ * @swagger
  * /api/dormitories/{id}:
  *   put:
  *     summary: Update dormitory
@@ -275,11 +358,7 @@ router.get(
  *       200:
  *         description: Dormitory updated
  */
-router.put(
-  '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateDormitory
-);
+router.put('/:id', manage, validate(updateDormitorySchema), controller.updateDormitory);
 
 /**
  * @swagger
@@ -299,11 +378,7 @@ router.put(
  *       204:
  *         description: Dormitory deleted
  */
-router.delete(
-  '/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteDormitory
-);
+router.delete('/:id', manage, controller.deleteDormitory);
 
 // ==================== ROOMS ====================
 
@@ -338,7 +413,7 @@ router.delete(
  *       201:
  *         description: Room created
  */
-router.post('/rooms', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.createRoom);
+router.post('/rooms', manage, validate(createRoomSchema), controller.createRoom);
 
 /**
  * @swagger
@@ -406,11 +481,7 @@ router.get(
  *       200:
  *         description: Room updated
  */
-router.put(
-  '/rooms/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateRoom
-);
+router.put('/rooms/:id', manage, validate(updateRoomSchema), controller.updateRoom);
 
 /**
  * @swagger
@@ -430,11 +501,7 @@ router.put(
  *       204:
  *         description: Room deleted
  */
-router.delete(
-  '/rooms/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteRoom
-);
+router.delete('/rooms/:id', manage, controller.deleteRoom);
 
 // ==================== ROOM ASSIGNMENTS ====================
 
@@ -471,7 +538,8 @@ router.delete(
  */
 router.post(
   '/assignments',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  manage,
+  validate(createRoomAssignmentSchema),
   controller.createRoomAssignment
 );
 
@@ -519,7 +587,8 @@ router.get(
  */
 router.put(
   '/assignments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  manage,
+  validate(updateRoomAssignmentSchema),
   controller.updateRoomAssignment
 );
 
@@ -541,10 +610,6 @@ router.put(
  *       204:
  *         description: Room assignment ended
  */
-router.delete(
-  '/assignments/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.endRoomAssignment
-);
+router.delete('/assignments/:id', manage, controller.endRoomAssignment);
 
 export default router;

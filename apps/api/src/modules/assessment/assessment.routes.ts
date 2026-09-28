@@ -14,9 +14,19 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Entering grades, publishing report cards and setting exams is teaching work.
+// Until 2026-09-24 every one of these writes accepted any signed-in account —
+// a santri could PATCH their own grade. Reads stay open to santri and wali
+// (their exam page, their report card) and are narrowed to the santri each
+// account may see in the service (utils/student-scope).
+router.use((req, res, next) => (req.method === 'GET' ? next() : isTeacherOrAbove(req, res, next)));
+// SKHUN, transcripts and their bulk exports are school documents about every
+// santri in a class, not a santri's own view.
+router.use('/reports', isTeacherOrAbove);
+
 // ==================== EXAMS ====================
 
-router.get('/exams/:id/analytics', controller.getExamAnalytics);
+router.get('/exams/:id/analytics', isTeacherOrAbove, controller.getExamAnalytics);
 router.get(
   '/units/:unitId/analytics',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),

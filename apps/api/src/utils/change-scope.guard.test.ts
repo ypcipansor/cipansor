@@ -36,11 +36,10 @@ describe('change-scope.sh', () => {
     const notCode = [
       'AGENTS.md',
       'apps/web/AGENTS.md',
-      'docs/ROADMAP.md',
+      'docs/ARCHITECTURE.md',
       'docs/img/galeri.png',
       '.claude/hooks/main-ci-watch.sh',
       '.claude/settings.json',
-      '.github/agents/Deep Plan.agent.md',
       '.github/PULL_REQUEST_TEMPLATE.md',
       'LICENSE',
     ];

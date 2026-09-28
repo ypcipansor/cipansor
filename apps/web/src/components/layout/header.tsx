@@ -17,6 +17,7 @@ import Link from "next/link";
 import { RoleSwitcher } from "./role-switcher";
 import { LanguageSwitcher } from "./language-switcher";
 import { useI18n } from "@/providers/i18n-provider";
+import { useUnreadNotificationCount } from "@/hooks/use-notifications";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -24,6 +25,8 @@ interface HeaderProps {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { user, logout } = useAuthStore();
+  const { data: unreadData } = useUnreadNotificationCount();
+  const unread = unreadData?.count ?? 0;
   const { t } = useI18n();
 
   return (
@@ -59,10 +62,24 @@ export function Header({ onMenuClick }: HeaderProps) {
         {/* Language Switcher */}
         <LanguageSwitcher />
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/notifications">
+        {/* The user's own notifications — for everyone. The management page
+            (broadcasts, templates) is in the admins' menu. */}
+        <Button variant="ghost" size="icon" className="relative" asChild>
+          <Link
+            href="/notifications/me"
+            aria-label={
+              unread > 0 ? `Notifikasi, ${unread} belum dibaca` : "Notifikasi"
+            }
+          >
             <Bell className="h-5 w-5" />
+            {unread > 0 && (
+              <span
+                aria-hidden
+                className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground"
+              >
+                {unread > 99 ? "99+" : unread}
+              </span>
+            )}
           </Link>
         </Button>
 

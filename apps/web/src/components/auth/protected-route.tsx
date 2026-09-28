@@ -34,12 +34,10 @@ interface ProtectedRouteProps {
   allowedRoleCodes?: string[]; // New role codes (SMPIT_ADMIN, PAUD_GURU, etc.)
   allowedRealms?: string[]; // Realms (GLOBAL, YAYASAN, PAUD, etc.)
   /**
-   * Permission strings exactly as the API returns them (`user.permissions`,
-   * e.g. "STUDENT_VIEW"). Prefer this over `allowedRoles` for a page whose API
-   * route is gated by `hasPermission(...)`: a legacy role list has to guess
-   * which 60-odd RoleCodes hold the permission, and silently excludes the ones
-   * it forgot. That is how `/students` — linked from every staff menu, served
-   * by the API — bounced 5 staff/comite roles to /unauthorized.
+   * API permissions (e.g. STUDENT_UPDATE), any one of which admits the user.
+   * The same list the API's hasPermission() checks: the login and /auth/me
+   * user carries it from the active role. Use it where a legacy bucket is too
+   * coarse: TU holds STUDENT_CREATE/UPDATE but sits in STAFF with the nurse.
    */
   allowedPermissions?: string[];
 }
@@ -115,15 +113,11 @@ export function ProtectedRoute({
       return true;
     }
 
-    // Permission-based access — mirrors the API's hasPermission() gate. This is
-    // the authoritative check for a page whose endpoint requires a permission:
-    // the same permission string, resolved from the same source (`/auth/me`).
-    // Holding any one of the listed permissions is enough.
-    if (allowedPermissions) {
-      const held = (user as { permissions?: string[] }).permissions ?? [];
-      if (allowedPermissions.some((p) => held.includes(p))) {
-        return true;
-      }
+    if (
+      allowedPermissions &&
+      allowedPermissions.some((p) => user.permissions?.includes(p))
+    ) {
+      return true;
     }
 
     // Check realm-based access

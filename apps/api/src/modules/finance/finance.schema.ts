@@ -53,12 +53,22 @@ export const updateInvoiceSchema = z.object({
 export const queryInvoiceSchema = z.object({
   studentId: z.string().uuid().optional(),
   paymentTypeId: z.string().uuid().optional(),
+  /** Payment types are per unit; a foundation user filters "SPP" across all of them by code. */
+  paymentTypeCode: z.string().max(50).optional(),
+  /** Bills due within the months of this academic year. */
+  academicYearId: z.string().uuid().optional(),
+  /** Invoice number, NIS or student name. */
+  search: z.string().max(100).optional(),
   status: z.nativeEnum(PaymentStatus).optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   overdue: z.coerce.boolean().optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
+});
+
+export const financialSummaryQuerySchema = z.object({
+  academicYearId: z.string().uuid().optional(),
 });
 
 // =====================================

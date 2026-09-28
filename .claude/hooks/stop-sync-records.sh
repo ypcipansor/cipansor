@@ -102,9 +102,10 @@ memory = os.path.join(
 )
 
 watched = [
-    os.path.join(root, "docs", "ROADMAP.md"),
+    os.path.join(root, ".claude", "memory", "progress.md"),
+    os.path.join(root, ".claude", "memory", "roadmap.md"),
     os.path.join(root, "docs", "EOFFICE_ESIGN_PLAN.md"),
-    os.path.join(root, "docs", "KNOWN_ISSUES.md"),
+    os.path.join(root, ".claude", "memory", "known-issues.md"),
     os.path.join(root, "AGENTS.md"),
     os.path.join(root, "apps", "api", "AGENTS.md"),
     os.path.join(root, "apps", "web", "AGENTS.md"),

@@ -50,6 +50,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
+import { useFilePreviews } from "@/hooks/use-file-previews";
 import { useAddEvidence } from "@/hooks/use-tk-assessment";
 import {
   ImagePlus,
@@ -149,25 +150,13 @@ export default function CreateTKAssessmentPage() {
   });
 
   const [step, setStep] = useState(1);
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const { files, previews, addFiles, removeAt } = useFilePreviews();
 
   const createMutation = useCreateTKAssessment();
   const addEvidenceMutation = useAddEvidence();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...newFiles]);
-
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
-      setPreviews((prev) => [...prev, ...newPreviews]);
-    }
-  };
-
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
+    if (e.target.files) addFiles(Array.from(e.target.files));
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -512,17 +501,14 @@ export default function CreateTKAssessmentPage() {
                                     "flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-card p-4 hover:scale-[1.02] transition-all cursor-pointer h-full relative overflow-hidden group shadow-sm hover:shadow-md",
                                     "peer-data-[state=checked]:border-primary peer-data-[state=checked]:shadow-lg",
                                     field.value === option.value &&
-                                      option.color.replace(
-                                        "border-",
-                                        "border-",
-                                      ) + " bg-accent/20",
+                                      option.color + " bg-accent/20",
                                   )}
                                 >
                                   {/* Color Indicator Strip */}
                                   <div
                                     className={cn(
                                       "absolute top-0 left-0 w-full h-1.5",
-                                      option.color.replace("border-", "bg-"),
+                                      option.color.replace(/^border-/, "bg-"),
                                     )}
                                   />
 
@@ -681,7 +667,7 @@ export default function CreateTKAssessmentPage() {
                             />
                             <button
                               type="button"
-                              onClick={() => removeFile(index)}
+                              onClick={() => removeAt(index)}
                               className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
                             >
                               <X className="h-3 w-3" />
@@ -760,12 +746,16 @@ export default function CreateTKAssessmentPage() {
               </Button>
 
               <div className="flex gap-3">
+                {/* Distinct keys stop React reusing the same <button> node
+                    across the step-3 -> 4 flip from type="button" to
+                    type="submit", which makes the advancing click also submit. */}
                 {step < 4 ? (
-                  <Button type="button" onClick={nextStep}>
+                  <Button key="next" type="button" onClick={nextStep}>
                     Lanjut
                   </Button>
                 ) : (
                   <Button
+                    key="submit"
                     type="submit"
                     disabled={
                       createMutation.isPending || addEvidenceMutation.isPending

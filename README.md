@@ -11,7 +11,7 @@
 [![Prisma](https://img.shields.io/badge/Prisma-7-blueviolet.svg)](https://www.prisma.io/)
 [![Express](https://img.shields.io/badge/Express-5-green.svg)](https://expressjs.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Lisensi: Proprietary](https://img.shields.io/badge/Lisensi-Proprietary-red.svg)](LICENSE)
 
 ---
 
@@ -61,23 +61,22 @@ Angka-angka berikut diambil langsung dari basis kode (per September 2026):
 | Metrik                               | Jumlah    |
 | ------------------------------------ | --------- |
 | Modul API (`apps/api/src/modules`)   | **94**    |
-| Model Prisma                         | **287**   |
-| Enum Prisma                          | **152**   |
-| Halaman web (`page.tsx`)             | **446**   |
-| Peran (`RoleCode`)                   | **66**    |
-| Akun demo (satu per peran)           | **66**    |
-| Spesifikasi Playwright e2e           | **84**    |
-| Berkas test API (vitest)             | **282**   |
-| Berkas test web (vitest)             | **28**    |
-| Halaman terverifikasi visual (sweep) | **755**   |
-| Halaman per peran terverifikasi      | **1.200** |
+| Model Prisma                         | **286**   |
+| Enum Prisma                          | **155**   |
+| Halaman web (`page.tsx`)             | **440**   |
+| Peran (`RoleCode`)                   | **53**    |
+| Akun demo                            | **65**    |
+| Spesifikasi Playwright e2e           | **94**    |
+| Berkas test API (vitest)             | **325**   |
+| Berkas test web (vitest)             | **39**    |
+| Halaman terverifikasi visual (sweep) | **746**   |
+| Halaman per peran terverifikasi      | **920**   |
 
 > Angka dapat bergeser seiring perubahan; skrip verifikasi
 > (`pnpm --filter web test` dan gate di bawah) adalah sumber kebenaran, bukan
-> tabel ini. Dua baris terakhir berasal dari sweep visual-QA: **755 rute** unik
-> dirender sebagai SUPER_ADMIN (784 tangkapan, termasuk pembacaan host publik)
-> dan **1.200 halaman** dibuka lewat menu tiap peran, seluruhnya tanpa halaman
-> kosong/error (lihat [Visual QA](#visual-qa)).
+> tabel ini. Dua baris terakhir berasal dari sweep visual-QA: **746 rute** unik
+> dirender sebagai SUPER_ADMIN dan **920 halaman** dibuka lewat menu tiap peran,
+> seluruhnya tanpa halaman kosong/error (lihat [Visual QA](#visual-qa)).
 
 ---
 
@@ -107,21 +106,26 @@ Rincian lengkap ada di [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Peran Pengguna
 
-Sistem mengenali **66 `RoleCode`** yang dikelompokkan menjadi delapan realm.
+Sistem mengenali **53 `RoleCode`** yang dikelompokkan menjadi delapan realm.
+Sebuah role code adalah **fungsi** yang dipegang seseorang (guru, kepala
+sekolah, tata usaha, …); tugas tambahan bukan role code — wali kelas adalah
+`Class.homeroomTeacherId`, dan wakasek serta tugas tambahan lain belum
+dimodelkan. `*_WAKASEK` dan `*_WALI_KELAS` digabung ke `*_GURU` pada
+2026-09-26, dan `PESANTREN_DIREKTUR` dihapus (Kiai adalah Pimpinan Pesantren).
 Setiap peran memiliki akun demo dengan kata sandi yang sama, dan **setiap akun
 dijamin bisa login** karena daftar akun adalah satu sumber kebenaran
 (`packages/shared/src/types/demo-accounts.ts`) yang dipakai bersama oleh seed API
 dan halaman login.
 
-| Realm                   | Peran                                                                                                                                                                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Global & Yayasan**    | `SUPER_ADMIN`, `YAYASAN_PEMBINA`, `YAYASAN_KETUA`, `YAYASAN_SEKRETARIS`, `YAYASAN_BENDAHARA`, `YAYASAN_ANGGOTA`, `YAYASAN_PENGAWAS`                                     |
-| **Pesantren**           | `PESANTREN_PENGASUH`, `PESANTREN_DIREKTUR`, `PESANTREN_TATA_USAHA`, `USTADZ`, `MUSYRIF`, `MUSYRIFAH`, `MUHAFIDZ`, `MUHAFIDZAH`, `MURABBI`, `WALI_KAMAR`                 |
-| **TK Qur'an**           | `TKQ_ADMIN`, `TKQ_KEPALA_SEKOLAH`, `TKQ_WAKASEK`, `TKQ_GURU`, `TKQ_WALI_KELAS`, `TKQ_TATA_USAHA`, `TKQ_BENDAHARA`, `TKQ_KOMITE`, `TKQ_ORANG_TUA`                        |
-| **SD IT**               | `SDIT_ADMIN`, `SDIT_KEPALA_SEKOLAH`, `SDIT_WAKASEK`, `SDIT_GURU`, `SDIT_WALI_KELAS`, `SDIT_TATA_USAHA`, `SDIT_BENDAHARA`, `SDIT_KOMITE`, `SDIT_ORANG_TUA`, `SDIT_SISWA` |
-| **SMP IT**              | `SMPIT_*` (admin, kepala sekolah, wakasek, guru, wali kelas, guru BK, tata usaha, bendahara, komite, orang tua, siswa, alumni)                                          |
-| **SMA Qur'an**          | `SMAQ_*` (idem dengan SMP IT)                                                                                                                                           |
-| **Sarana & Unit Usaha** | `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_MANAGER`, `BUSINESS_STAFF`                                                                                    |
+| Realm                   | Peran                                                                                                                                                                          |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Global & Yayasan**    | `SUPER_ADMIN`, `YAYASAN_PEMBINA`, `YAYASAN_KETUA`, `YAYASAN_SEKRETARIS`, `YAYASAN_BENDAHARA`, `YAYASAN_ANGGOTA`, `YAYASAN_PENGAWAS`                                            |
+| **Pesantren**           | `PESANTREN_PENGASUH`, `PESANTREN_TATA_USAHA`, `USTADZ`, `MUSYRIF`, `MUHAFIDZ`                                                                                                  |
+| **TK Qur'an**           | `TKQ_ADMIN`, `TKQ_KEPALA_SEKOLAH`, `TKQ_GURU`, `TKQ_TATA_USAHA`, `TKQ_BENDAHARA`, `TKQ_KOMITE`, `TKQ_ORANG_TUA`                                                                 |
+| **SD IT**               | `SDIT_ADMIN`, `SDIT_KEPALA_SEKOLAH`, `SDIT_GURU`, `SDIT_TATA_USAHA`, `SDIT_BENDAHARA`, `SDIT_KOMITE`, `SDIT_ORANG_TUA`, `SDIT_SISWA`                                           |
+| **SMP IT**              | `SMPIT_*` (admin, kepala sekolah, guru, guru BK, tata usaha, bendahara, komite, orang tua, siswa, alumni)                                                                       |
+| **SMA Qur'an**          | `SMAQ_*` (idem dengan SMP IT)                                                                                                                                                   |
+| **Sarana & Unit Usaha** | `PUSTAKAWAN`, `PERAWAT`, `KEAMANAN`, `LABORAN`, `BUSINESS_MANAGER`, `BUSINESS_STAFF`                                                                                            |
 
 Akses dijaga berlapis: `middleware.ts` memblokir rute, `config/navigation.ts`
 mengatur menu, dan API memeriksa `RoleCode`/permission di setiap endpoint.
@@ -147,9 +151,9 @@ Semua gambar diverifikasi tidak kosong/error sebelum ditampilkan.
 | ------------------------------------------------- | --------------------------------------- |
 | ![Dashboard PAUD](docs/images/dashboard-paud.png) | ![Dashboard](docs/images/dashboard.png) |
 
-| Login                           | Reset Password                                    |
-| ------------------------------- | ------------------------------------------------- |
-| ![Login](docs/images/login.png) | ![Reset Password](docs/images/reset-password.png) |
+| Login                           | Reset Password                                             |
+| ------------------------------- | ---------------------------------------------------------- |
+| ![Login](docs/images/login.png) | ![Reset Password](docs/images/pages/reset-password.webp)   |
 
 ### 2. Manajemen Yayasan & Administrasi
 
@@ -319,19 +323,17 @@ Semua gambar diverifikasi tidak kosong/error sebelum ditampilkan.
 
 ## Galeri Lengkap Halaman
 
-Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visual-QA terakhir. Semua tangkapan layar diverifikasi tidak kosong, tidak _error_, dan tidak _overflow_ horizontal. Klik modul untuk membuka galerinya.
+Setiap halaman App Router (**746** rute) yang berhasil dirender pada sweep visual-QA terakhir. Semua tangkapan layar diverifikasi tidak kosong, tidak _error_, dan tidak _overflow_ horizontal. Klik modul untuk membuka galerinya.
 
 <details>
-<summary><strong>Dashboard</strong> — 4 halaman</summary>
+<summary><strong>Dashboard</strong> — 2 halaman</summary>
 
 | Halaman                                                                                                                     | Rute                                 |
 | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
 | <img src="docs/images/pages/root.webp" width="420" alt="/">                                                                 | `/`                                  |
 | <img src="docs/images/pages/dashboard.webp" width="420" alt="/dashboard">                                                   | `/dashboard`                         |
-| <img src="docs/images/pages/dashboard__comparison.webp" width="420" alt="/dashboard/comparison">                            | `/dashboard/comparison`              |
-| <img src="docs/images/pages/dashboard__executive.webp" width="420" alt="/dashboard/executive">                              | `/dashboard/executive`               |
 
-</details>
+
 
 <details>
 <summary><strong>Masuk & Pemulihan Akun</strong> — 1 halaman</summary>
@@ -340,7 +342,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------- | -------- |
 | <img src="docs/images/pages/login.webp" width="420" alt="/login"> | `/login` |
 
-</details>
+
 
 <details>
 <summary><strong>Profil Pengguna</strong> — 1 halaman</summary>
@@ -349,7 +351,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/profile.webp" width="420" alt="/profile"> | `/profile` |
 
-</details>
+
 
 <details>
 <summary><strong>Data Siswa</strong> — 46 halaman</summary>
@@ -403,7 +405,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/students__new.webp" width="420" alt="/students/new">                                                                                          | `/students/new`                                             |
 | <img src="docs/images/pages/students__transcript.webp" width="420" alt="/students/transcript">                                                                            | `/students/transcript`                                      |
 
-</details>
+
 
 <details>
 <summary><strong>Kelas</strong> — 4 halaman</summary>
@@ -415,7 +417,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/classes__73628434-e210-4b9f-9332-5adcb258d19f__edit.webp" width="420" alt="/classes/73628434-e210-4b9f-9332-5adcb258d19f/edit"> | `/classes/73628434-e210-4b9f-9332-5adcb258d19f/edit` |
 | <img src="docs/images/pages/classes__new.webp" width="420" alt="/classes/new">                                                                              | `/classes/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Tahun Ajaran</strong> — 6 halaman</summary>
@@ -429,7 +431,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/academic-years__8adf6832-c4f5-44ed-bbcb-7b7092430023__edit.webp" width="420" alt="/academic-years/8adf6832-c4f5-44ed-bbcb-7b7092430023/edit"> | `/academic-years/8adf6832-c4f5-44ed-bbcb-7b7092430023/edit` |
 | <img src="docs/images/pages/academic-years__new.webp" width="420" alt="/academic-years/new">                                                                              | `/academic-years/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Jadwal Pelajaran</strong> — 1 halaman</summary>
@@ -438,18 +440,14 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------------- | ----------- |
 | <img src="docs/images/pages/schedule.webp" width="420" alt="/schedule"> | `/schedule` |
 
-</details>
+
 
 <details>
-<summary><strong>Kurikulum</strong> — 36 halaman</summary>
+<summary><strong>Kurikulum</strong> — 32 halaman</summary>
 
 | Halaman                                                                                                                                                                                                  | Rute                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | <img src="docs/images/pages/curriculum.webp" width="420" alt="/curriculum">                                                                                                                              | `/curriculum`                                                              |
-| <img src="docs/images/pages/curriculum__curriculums__f81b11c0-a05a-48da-96d7-205a0baa5e94.webp" width="420" alt="/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94">                          | `/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94`             |
-| <img src="docs/images/pages/curriculum__curriculums__f81b11c0-a05a-48da-96d7-205a0baa5e94__add-subject.webp" width="420" alt="/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94/add-subject"> | `/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94/add-subject` |
-| <img src="docs/images/pages/curriculum__curriculums__f81b11c0-a05a-48da-96d7-205a0baa5e94__edit.webp" width="420" alt="/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94/edit">               | `/curriculum/curriculums/f81b11c0-a05a-48da-96d7-205a0baa5e94/edit`        |
-| <img src="docs/images/pages/curriculum__curriculums__new.webp" width="420" alt="/curriculum/curriculums/new">                                                                                            | `/curriculum/curriculums/new`                                              |
 | <img src="docs/images/pages/curriculum__merdeka.webp" width="420" alt="/curriculum/merdeka">                                                                                                             | `/curriculum/merdeka`                                                      |
 | <img src="docs/images/pages/curriculum__merdeka__p5__6f780328-ecee-468e-bbc5-345c4d684591.webp" width="420" alt="/curriculum/merdeka/p5/6f780328-ecee-468e-bbc5-345c4d684591">                           | `/curriculum/merdeka/p5/6f780328-ecee-468e-bbc5-345c4d684591`              |
 | <img src="docs/images/pages/curriculum__projects.webp" width="420" alt="/curriculum/projects">                                                                                                           | `/curriculum/projects`                                                     |
@@ -482,7 +480,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/curriculum__subjects__fc654bc6-a5f3-4ad4-a89d-2a9d625ebc11__edit.webp" width="420" alt="/curriculum/subjects/fc654bc6-a5f3-4ad4-a89d-2a9d625ebc11/edit">                     | `/curriculum/subjects/fc654bc6-a5f3-4ad4-a89d-2a9d625ebc11/edit`           |
 | <img src="docs/images/pages/curriculum__subjects__new.webp" width="420" alt="/curriculum/subjects/new">                                                                                                  | `/curriculum/subjects/new`                                                 |
 
-</details>
+
 
 <details>
 <summary><strong>Penilaian & Rapor</strong> — 31 halaman</summary>
@@ -521,7 +519,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/assessment__unified-raport.webp" width="420" alt="/assessment/unified-raport">                                                                                                                                                            | `/assessment/unified-raport`                                                                                                     |
 | <img src="docs/images/pages/assessment__unified-raport__9e625721-d97b-468d-bbb7-eafaa5705dda__q66030a08.webp" width="420" alt="/assessment/unified-raport/9e625721-d97b-468d-bbb7-eafaa5705dda?academicYearId=1c26ab5d-3bac-44fa-812e-00e02d0306da&semester=1">       | `/assessment/unified-raport/9e625721-d97b-468d-bbb7-eafaa5705dda?academicYearId=1c26ab5d-3bac-44fa-812e-00e02d0306da&semester=1` |
 
-</details>
+
 
 <details>
 <summary><strong>Absensi</strong> — 4 halaman</summary>
@@ -533,22 +531,21 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/attendance__heatmap.webp" width="420" alt="/attendance/heatmap">   | `/attendance/heatmap`  |
 | <img src="docs/images/pages/attendance__record.webp" width="420" alt="/attendance/record">     | `/attendance/record`   |
 
-</details>
+
 
 <details>
-<summary><strong>Wali Kelas</strong> — 7 halaman</summary>
+<summary><strong>Wali Kelas</strong> — 6 halaman</summary>
 
 | Halaman                                                                                                                                                               | Rute                                                      |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
 | <img src="docs/images/pages/homeroom.webp" width="420" alt="/homeroom">                                                                                               | `/homeroom`                                               |
-| <img src="docs/images/pages/homeroom__attendance.webp" width="420" alt="/homeroom/attendance">                                                                        | `/homeroom/attendance`                                    |
 | <img src="docs/images/pages/homeroom__behavior.webp" width="420" alt="/homeroom/behavior">                                                                            | `/homeroom/behavior`                                      |
 | <img src="docs/images/pages/homeroom__daily-report.webp" width="420" alt="/homeroom/daily-report">                                                                    | `/homeroom/daily-report`                                  |
 | <img src="docs/images/pages/homeroom__messages.webp" width="420" alt="/homeroom/messages">                                                                            | `/homeroom/messages`                                      |
 | <img src="docs/images/pages/homeroom__performance.webp" width="420" alt="/homeroom/performance">                                                                      | `/homeroom/performance`                                   |
 | <img src="docs/images/pages/homeroom__students__9e625721-d97b-468d-bbb7-eafaa5705dda.webp" width="420" alt="/homeroom/students/9e625721-d97b-468d-bbb7-eafaa5705dda"> | `/homeroom/students/9e625721-d97b-468d-bbb7-eafaa5705dda` |
 
-</details>
+
 
 <details>
 <summary><strong>Sertifikat & Ijazah</strong> — 5 halaman</summary>
@@ -561,7 +558,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/certificates__verify.webp" width="420" alt="/certificates/verify">                                                             | `/certificates/verify`                               |
 | <img src="docs/images/pages/certificates__verify__CERT-TFZ-30-2024001.webp" width="420" alt="/certificates/verify/CERT-TFZ-30-2024001">                    | `/certificates/verify/CERT-TFZ-30-2024001`           |
 
-</details>
+
 
 <details>
 <summary><strong>CBT / Ujian Online</strong> — 11 halaman</summary>
@@ -580,7 +577,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/cbt__exams__fe131dce-e302-4e35-abaa-1353f226ee87__monitoring.webp" width="420" alt="/cbt/exams/fe131dce-e302-4e35-abaa-1353f226ee87/monitoring"> | `/cbt/exams/fe131dce-e302-4e35-abaa-1353f226ee87/monitoring` |
 | <img src="docs/images/pages/cbt__exams__new.webp" width="420" alt="/cbt/exams/new">                                                                                          | `/cbt/exams/new`                                             |
 
-</details>
+
 
 <details>
 <summary><strong>PAUD / TK Qur'an</strong> — 20 halaman</summary>
@@ -608,7 +605,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/tk__reports__c2126588-25f1-4da4-a34f-23c1372ef8ab__edit.webp" width="420" alt="/tk/reports/c2126588-25f1-4da4-a34f-23c1372ef8ab/edit">             | `/tk/reports/c2126588-25f1-4da4-a34f-23c1372ef8ab/edit`       |
 | <img src="docs/images/pages/tk__reports__generate.webp" width="420" alt="/tk/reports/generate">                                                                                | `/tk/reports/generate`                                        |
 
-</details>
+
 
 <details>
 <summary><strong>Portofolio Siswa</strong> — 1 halaman</summary>
@@ -617,7 +614,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ------------------------------------------------------------------------- | ------------ |
 | <img src="docs/images/pages/portfolio.webp" width="420" alt="/portfolio"> | `/portfolio` |
 
-</details>
+
 
 <details>
 <summary><strong>Perpustakaan</strong> — 20 halaman</summary>
@@ -645,7 +642,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/library__borrow.webp" width="420" alt="/library/borrow">                                                                                     | `/library/borrow`                                          |
 | <img src="docs/images/pages/library__digital.webp" width="420" alt="/library/digital">                                                                                   | `/library/digital`                                         |
 
-</details>
+
 
 <details>
 <summary><strong>Tahfidz</strong> — 24 halaman</summary>
@@ -677,7 +674,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/tahfidz__simaan__new.webp" width="420" alt="/tahfidz/simaan/new">                                                                              | `/tahfidz/simaan/new`                                       |
 | <img src="docs/images/pages/tahfidz__simaan__schedule.webp" width="420" alt="/tahfidz/simaan/schedule">                                                                    | `/tahfidz/simaan/schedule`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Takhosus</strong> — 11 halaman</summary>
@@ -696,7 +693,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/takhosus__simaan__create.webp" width="420" alt="/takhosus/simaan/create">                                                                          | `/takhosus/simaan/create`                                     |
 | <img src="docs/images/pages/takhosus__targets.webp" width="420" alt="/takhosus/targets">                                                                                       | `/takhosus/targets`                                           |
 
-</details>
+
 
 <details>
 <summary><strong>Pembelajaran Kitab</strong> — 3 halaman</summary>
@@ -707,7 +704,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/kitab-progress__6b2562d1-6c1e-427d-bb11-d589507a4270.webp" width="420" alt="/kitab-progress/6b2562d1-6c1e-427d-bb11-d589507a4270"> | `/kitab-progress/6b2562d1-6c1e-427d-bb11-d589507a4270` |
 | <img src="docs/images/pages/kitab-progress__new.webp" width="420" alt="/kitab-progress/new">                                                                   | `/kitab-progress/new`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Ibadah Harian</strong> — 5 halaman</summary>
@@ -720,7 +717,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/ibadah__statistics.webp" width="420" alt="/ibadah/statistics">   | `/ibadah/statistics`  |
 | <img src="docs/images/pages/ibadah__targets.webp" width="420" alt="/ibadah/targets">         | `/ibadah/targets`     |
 
-</details>
+
 
 <details>
 <summary><strong>Muhasabah</strong> — 3 halaman</summary>
@@ -731,7 +728,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/muhasabah__656c1bcc-082b-4feb-8b0a-e0dc3f316455.webp" width="420" alt="/muhasabah/656c1bcc-082b-4feb-8b0a-e0dc3f316455"> | `/muhasabah/656c1bcc-082b-4feb-8b0a-e0dc3f316455` |
 | <img src="docs/images/pages/muhasabah__new.webp" width="420" alt="/muhasabah/new">                                                                   | `/muhasabah/new`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Muhadhoroh</strong> — 4 halaman</summary>
@@ -743,7 +740,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/muhadhoroh__491b09ad-c136-45d3-a543-29106bffc721__evaluate.webp" width="420" alt="/muhadhoroh/491b09ad-c136-45d3-a543-29106bffc721/evaluate"> | `/muhadhoroh/491b09ad-c136-45d3-a543-29106bffc721/evaluate` |
 | <img src="docs/images/pages/muhadhoroh__new.webp" width="420" alt="/muhadhoroh/new">                                                                                      | `/muhadhoroh/new`                                           |
 
-</details>
+
 
 <details>
 <summary><strong>Muhadatsah</strong> — 4 halaman</summary>
@@ -755,7 +752,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/muhadatsah__5706d5f6-a766-4fc1-976e-fe4d5ba3fc13__evaluate.webp" width="420" alt="/muhadatsah/5706d5f6-a766-4fc1-976e-fe4d5ba3fc13/evaluate"> | `/muhadatsah/5706d5f6-a766-4fc1-976e-fe4d5ba3fc13/evaluate` |
 | <img src="docs/images/pages/muhadatsah__new.webp" width="420" alt="/muhadatsah/new">                                                                                      | `/muhadatsah/new`                                           |
 
-</details>
+
 
 <details>
 <summary><strong>Asrama</strong> — 7 halaman</summary>
@@ -770,7 +767,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/dormitories__d867e633-c601-4958-b71a-071d6396450d__edit.webp" width="420" alt="/dormitories/d867e633-c601-4958-b71a-071d6396450d/edit">                                                                                             | `/dormitories/d867e633-c601-4958-b71a-071d6396450d/edit`                                              |
 | <img src="docs/images/pages/dormitories__new.webp" width="420" alt="/dormitories/new">                                                                                                                                                                          | `/dormitories/new`                                                                                    |
 
-</details>
+
 
 <details>
 <summary><strong>Musyrif</strong> — 2 halaman</summary>
@@ -780,7 +777,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/musyrif.webp" width="420" alt="/musyrif">                                  | `/musyrif`                 |
 | <img src="docs/images/pages/musyrif__boarding-center.webp" width="420" alt="/musyrif/boarding-center"> | `/musyrif/boarding-center` |
 
-</details>
+
 
 <details>
 <summary><strong>Rapor Pesantren</strong> — 8 halaman</summary>
@@ -796,7 +793,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/rapor-pesantren__print__cecb6546-b2f6-45b7-a518-1b55dea1a84b.webp" width="420" alt="/rapor-pesantren/print/cecb6546-b2f6-45b7-a518-1b55dea1a84b">     | `/rapor-pesantren/print/cecb6546-b2f6-45b7-a518-1b55dea1a84b`   |
 | <img src="docs/images/pages/rapor-pesantren__unified__cecb6546-b2f6-45b7-a518-1b55dea1a84b.webp" width="420" alt="/rapor-pesantren/unified/cecb6546-b2f6-45b7-a518-1b55dea1a84b"> | `/rapor-pesantren/unified/cecb6546-b2f6-45b7-a518-1b55dea1a84b` |
 
-</details>
+
 
 <details>
 <summary><strong>Pelanggaran</strong> — 12 halaman</summary>
@@ -816,7 +813,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/violations__types__ketertiban__edit.webp" width="420" alt="/violations/types/ketertiban/edit">                                        | `/violations/types/ketertiban/edit`                     |
 | <img src="docs/images/pages/violations__types__new.webp" width="420" alt="/violations/types/new">                                                                 | `/violations/types/new`                                 |
 
-</details>
+
 
 <details>
 <summary><strong>Penghargaan</strong> — 12 halaman</summary>
@@ -836,7 +833,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/rewards__types__new.webp" width="420" alt="/rewards/types/new">                                                                 | `/rewards/types/new`                                 |
 | <img src="docs/images/pages/rewards__types__tahfidz__edit.webp" width="420" alt="/rewards/types/tahfidz/edit">                                              | `/rewards/types/tahfidz/edit`                        |
 
-</details>
+
 
 <details>
 <summary><strong>Perizinan</strong> — 7 halaman</summary>
@@ -851,7 +848,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/permits__e697396d-3004-45f6-af4a-41991d21974a.webp" width="420" alt="/permits/e697396d-3004-45f6-af4a-41991d21974a">            | `/permits/e697396d-3004-45f6-af4a-41991d21974a`      |
 | <img src="docs/images/pages/permits__new.webp" width="420" alt="/permits/new">                                                                              | `/permits/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Konseling</strong> — 4 halaman</summary>
@@ -863,7 +860,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/counseling__60252995-2426-494c-be72-ce2791261d5b__edit.webp" width="420" alt="/counseling/60252995-2426-494c-be72-ce2791261d5b/edit"> | `/counseling/60252995-2426-494c-be72-ce2791261d5b/edit` |
 | <img src="docs/images/pages/counseling__new.webp" width="420" alt="/counseling/new">                                                                              | `/counseling/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Kesehatan (UKS)</strong> — 13 halaman</summary>
@@ -884,7 +881,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/health__growth.webp" width="420" alt="/health/growth">                                                                        | `/health/growth`                                    |
 | <img src="docs/images/pages/health__new.webp" width="420" alt="/health/new">                                                                              | `/health/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Tabungan Santri</strong> — 4 halaman</summary>
@@ -896,7 +893,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/wallet__4b56ed3a-52b2-4032-b01c-becac31a8920.webp" width="420" alt="/wallet/4b56ed3a-52b2-4032-b01c-becac31a8920"> | `/wallet/4b56ed3a-52b2-4032-b01c-becac31a8920` |
 | <img src="docs/images/pages/wallet__7d867a1f-8ad5-4d94-814c-cb70ae3dfa55.webp" width="420" alt="/wallet/7d867a1f-8ad5-4d94-814c-cb70ae3dfa55"> | `/wallet/7d867a1f-8ad5-4d94-814c-cb70ae3dfa55` |
 
-</details>
+
 
 <details>
 <summary><strong>Makan / Catering</strong> — 5 halaman</summary>
@@ -909,7 +906,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/meals__menus__7a108fa3-80f8-46e6-ba04-58251a65dee1__edit.webp" width="420" alt="/meals/menus/7a108fa3-80f8-46e6-ba04-58251a65dee1/edit"> | `/meals/menus/7a108fa3-80f8-46e6-ba04-58251a65dee1/edit` |
 | <img src="docs/images/pages/meals__menus__new.webp" width="420" alt="/meals/menus/new">                                                                              | `/meals/menus/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Laundry</strong> — 1 halaman</summary>
@@ -918,7 +915,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/laundry.webp" width="420" alt="/laundry"> | `/laundry` |
 
-</details>
+
 
 <details>
 <summary><strong>Kantin</strong> — 1 halaman</summary>
@@ -927,7 +924,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/canteen.webp" width="420" alt="/canteen"> | `/canteen` |
 
-</details>
+
 
 <details>
 <summary><strong>Inventaris & Aset</strong> — 23 halaman</summary>
@@ -958,7 +955,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/inventory__maintenance.webp" width="420" alt="/inventory/maintenance">                                                                                                                                                                             | `/inventory/maintenance`                                                                                                                                 |
 | <img src="docs/images/pages/inventory__new.webp" width="420" alt="/inventory/new">                                                                                                                                                                                             | `/inventory/new`                                                                                                                                         |
 
-</details>
+
 
 <details>
 <summary><strong>Fasilitas</strong> — 1 halaman</summary>
@@ -967,7 +964,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------------- | ------------- |
 | <img src="docs/images/pages/facilities.webp" width="420" alt="/facilities"> | `/facilities` |
 
-</details>
+
 
 <details>
 <summary><strong>Ekstrakurikuler</strong> — 3 halaman</summary>
@@ -978,7 +975,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/extracurricular__0196d388-2bc5-4c0a-a2f4-f546e9988d49.webp" width="420" alt="/extracurricular/0196d388-2bc5-4c0a-a2f4-f546e9988d49"> | `/extracurricular/0196d388-2bc5-4c0a-a2f4-f546e9988d49` |
 | <img src="docs/images/pages/extracurricular__new.webp" width="420" alt="/extracurricular/new">                                                                   | `/extracurricular/new`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Notifikasi</strong> — 15 halaman</summary>
@@ -1001,7 +998,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/notifications__templates__new.webp" width="420" alt="/notifications/templates/new">                                              | `/notifications/templates/new`                        |
 | <img src="docs/images/pages/notifications__whatsapp.webp" width="420" alt="/notifications/whatsapp">                                                         | `/notifications/whatsapp`                             |
 
-</details>
+
 
 <details>
 <summary><strong>Pengumuman & Berita</strong> — 1 halaman</summary>
@@ -1010,7 +1007,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------------------- | ---------------- |
 | <img src="docs/images/pages/announcements.webp" width="420" alt="/announcements"> | `/announcements` |
 
-</details>
+
 
 <details>
 <summary><strong>E-Office</strong> — 6 halaman</summary>
@@ -1024,7 +1021,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/e-office__letter__a94715a5-07f6-4de1-b7a8-a80f6ee1339f.webp" width="420" alt="/e-office/letter/a94715a5-07f6-4de1-b7a8-a80f6ee1339f"> | `/e-office/letter/a94715a5-07f6-4de1-b7a8-a80f6ee1339f` |
 | <img src="docs/images/pages/e-office__outbox.webp" width="420" alt="/e-office/outbox">                                                                            | `/e-office/outbox`                                      |
 
-</details>
+
 
 <details>
 <summary><strong>Kepegawaian (HR)</strong> — 55 halaman</summary>
@@ -1087,7 +1084,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/hr__payroll__staff-salary.webp" width="420" alt="/hr/payroll/staff-salary">                                                                  | `/hr/payroll/staff-salary`                                 |
 | <img src="docs/images/pages/hr__teachers__compliance.webp" width="420" alt="/hr/teachers/compliance">                                                                    | `/hr/teachers/compliance`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Jadwal Piket</strong> — 4 halaman</summary>
@@ -1099,7 +1096,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/duty-roster__6692473b-e590-4777-9a98-7962922e4399.webp" width="420" alt="/duty-roster/6692473b-e590-4777-9a98-7962922e4399"> | `/duty-roster/6692473b-e590-4777-9a98-7962922e4399` |
 | <img src="docs/images/pages/duty-roster__new.webp" width="420" alt="/duty-roster/new">                                                                   | `/duty-roster/new`                                  |
 
-</details>
+
 
 <details>
 <summary><strong>Dashboard Guru</strong> — 1 halaman</summary>
@@ -1108,7 +1105,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/teacher.webp" width="420" alt="/teacher"> | `/teacher` |
 
-</details>
+
 
 <details>
 <summary><strong>Dashboard Staff</strong> — 1 halaman</summary>
@@ -1117,7 +1114,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------- | -------- |
 | <img src="docs/images/pages/staff.webp" width="420" alt="/staff"> | `/staff` |
 
-</details>
+
 
 <details>
 <summary><strong>Payroll</strong> — 1 halaman</summary>
@@ -1126,7 +1123,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/payroll.webp" width="420" alt="/payroll"> | `/payroll` |
 
-</details>
+
 
 <details>
 <summary><strong>Keuangan</strong> — 37 halaman</summary>
@@ -1171,7 +1168,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/finance__verification.webp" width="420" alt="/finance/verification">                                                                                     | `/finance/verification`                                          |
 | <img src="docs/images/pages/finance__wallet.webp" width="420" alt="/finance/wallet">                                                                                                 | `/finance/wallet`                                                |
 
-</details>
+
 
 <details>
 <summary><strong>Pengadaan</strong> — 9 halaman</summary>
@@ -1188,10 +1185,10 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/procurement__suppliers__create.webp" width="420" alt="/procurement/suppliers/create">                                                             | `/procurement/suppliers/create`                               |
 | <img src="docs/images/pages/procurement__suppliers__f235ccea-2de5-49c4-a073-794f19483c0a.webp" width="420" alt="/procurement/suppliers/f235ccea-2de5-49c4-a073-794f19483c0a"> | `/procurement/suppliers/f235ccea-2de5-49c4-a073-794f19483c0a` |
 
-</details>
+
 
 <details>
-<summary><strong>Yayasan</strong> — 9 halaman</summary>
+<summary><strong>Yayasan</strong> — 8 halaman</summary>
 
 | Halaman                                                                                                                                                                                | Rute                                                              |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
@@ -1200,12 +1197,11 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/foundation__accreditation__readiness.webp" width="420" alt="/foundation/accreditation/readiness">                                                          | `/foundation/accreditation/readiness`                             |
 | <img src="docs/images/pages/foundation__board__b8e55827-6cc9-43c2-a8d4-cf2ae0a5242e__edit.webp" width="420" alt="/foundation/board/b8e55827-6cc9-43c2-a8d4-cf2ae0a5242e/edit">         | `/foundation/board/b8e55827-6cc9-43c2-a8d4-cf2ae0a5242e/edit`     |
 | <img src="docs/images/pages/foundation__board__new.webp" width="420" alt="/foundation/board/new">                                                                                      | `/foundation/board/new`                                           |
-| <img src="docs/images/pages/foundation__dashboard.webp" width="420" alt="/foundation/dashboard">                                                                                       | `/foundation/dashboard`                                           |
 | <img src="docs/images/pages/foundation__documents__c0d1684a-8a17-432d-a211-2ea8359a2d3e__edit.webp" width="420" alt="/foundation/documents/c0d1684a-8a17-432d-a211-2ea8359a2d3e/edit"> | `/foundation/documents/c0d1684a-8a17-432d-a211-2ea8359a2d3e/edit` |
 | <img src="docs/images/pages/foundation__documents__new.webp" width="420" alt="/foundation/documents/new">                                                                              | `/foundation/documents/new`                                       |
 | <img src="docs/images/pages/foundation__finance__consolidation.webp" width="420" alt="/foundation/finance/consolidation">                                                              | `/foundation/finance/consolidation`                               |
 
-</details>
+
 
 <details>
 <summary><strong>Unit Pendidikan</strong> — 12 halaman</summary>
@@ -1225,7 +1221,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/units__d711970b-5945-468b-b923-a32b09cb2ca4__edit.webp" width="420" alt="/units/d711970b-5945-468b-b923-a32b09cb2ca4/edit"> | `/units/d711970b-5945-468b-b923-a32b09cb2ca4/edit` |
 | <img src="docs/images/pages/units__new.webp" width="420" alt="/units/new">                                                                              | `/units/new`                                       |
 
-</details>
+
 
 <details>
 <summary><strong>Perencanaan</strong> — 5 halaman</summary>
@@ -1238,7 +1234,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/perencanaan__7f271d0e-c267-4c12-b96f-8caf3959bc5c.webp" width="420" alt="/perencanaan/7f271d0e-c267-4c12-b96f-8caf3959bc5c"> | `/perencanaan/7f271d0e-c267-4c12-b96f-8caf3959bc5c` |
 | <img src="docs/images/pages/perencanaan__strategy-map.webp" width="420" alt="/perencanaan/strategy-map">                                                 | `/perencanaan/strategy-map`                         |
 
-</details>
+
 
 <details>
 <summary><strong>Kinerja</strong> — 4 halaman</summary>
@@ -1250,7 +1246,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/kinerja__evaluasi.webp" width="420" alt="/kinerja/evaluasi">   | `/kinerja/evaluasi`  |
 | <img src="docs/images/pages/kinerja__pk.webp" width="420" alt="/kinerja/pk">               | `/kinerja/pk`        |
 
-</details>
+
 
 <details>
 <summary><strong>Penjaminan Mutu (SPMI)</strong> — 8 halaman</summary>
@@ -1266,7 +1262,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/quality__complaints__3a6f03f1-833f-44d0-b488-34a47adce824.webp" width="420" alt="/quality/complaints/3a6f03f1-833f-44d0-b488-34a47adce824">                                                                                                    | `/quality/complaints/3a6f03f1-833f-44d0-b488-34a47adce824`                                                                                             |
 | <img src="docs/images/pages/quality__complaints__create.webp" width="420" alt="/quality/complaints/create">                                                                                                                                                                | `/quality/complaints/create`                                                                                                                           |
 
-</details>
+
 
 <details>
 <summary><strong>Manajemen Risiko</strong> — 3 halaman</summary>
@@ -1277,7 +1273,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/risk-management__b5497bb3-797c-45f9-a6a4-35f05e432063__q1c683e1a.webp" width="420" alt="/risk-management/b5497bb3-797c-45f9-a6a4-35f05e432063?unitId=a91eba8f-57f9-4208-9d6e-b48b8b68328f"> | `/risk-management/b5497bb3-797c-45f9-a6a4-35f05e432063?unitId=a91eba8f-57f9-4208-9d6e-b48b8b68328f` |
 | <img src="docs/images/pages/risk-management__create.webp" width="420" alt="/risk-management/create">                                                                                                                    | `/risk-management/create`                                                                           |
 
-</details>
+
 
 <details>
 <summary><strong>Penelitian & Pengembangan</strong> — 1 halaman</summary>
@@ -1286,7 +1282,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------------- | ----------- |
 | <img src="docs/images/pages/research.webp" width="420" alt="/research"> | `/research` |
 
-</details>
+
 
 <details>
 <summary><strong>GRC Dashboard</strong> — 1 halaman</summary>
@@ -1295,7 +1291,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------------------- | ---------------- |
 | <img src="docs/images/pages/grc-dashboard.webp" width="420" alt="/grc-dashboard"> | `/grc-dashboard` |
 
-</details>
+
 
 <details>
 <summary><strong>Analitik</strong> — 8 halaman</summary>
@@ -1311,7 +1307,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/analytics__grc.webp" width="420" alt="/analytics/grc">                             | `/analytics/grc`               |
 | <img src="docs/images/pages/analytics__parent-engagement.webp" width="420" alt="/analytics/parent-engagement"> | `/analytics/parent-engagement` |
 
-</details>
+
 
 <details>
 <summary><strong>Laporan</strong> — 2 halaman</summary>
@@ -1321,7 +1317,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/reports.webp" width="420" alt="/reports">                  | `/reports`         |
 | <img src="docs/images/pages/reports__builder.webp" width="420" alt="/reports/builder"> | `/reports/builder` |
 
-</details>
+
 
 <details>
 <summary><strong>Marketing</strong> — 9 halaman</summary>
@@ -1338,7 +1334,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/marketing__leads__76b4aa5f-bb62-44d2-85e6-b505e2942a37.webp" width="420" alt="/marketing/leads/76b4aa5f-bb62-44d2-85e6-b505e2942a37"> | `/marketing/leads/76b4aa5f-bb62-44d2-85e6-b505e2942a37` |
 | <img src="docs/images/pages/marketing__leads__f24c5764-6d41-4536-ba02-5f78867d717b.webp" width="420" alt="/marketing/leads/f24c5764-6d41-4536-ba02-5f78867d717b"> | `/marketing/leads/f24c5764-6d41-4536-ba02-5f78867d717b` |
 
-</details>
+
 
 <details>
 <summary><strong>SPMB / PPDB</strong> — 8 halaman</summary>
@@ -1354,7 +1350,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/spmb__registrations__76b4aa5f-bb62-44d2-85e6-b505e2942a37.webp" width="420" alt="/spmb/registrations/76b4aa5f-bb62-44d2-85e6-b505e2942a37"> | `/spmb/registrations/76b4aa5f-bb62-44d2-85e6-b505e2942a37` |
 | <img src="docs/images/pages/spmb__registrations__f24c5764-6d41-4536-ba02-5f78867d717b.webp" width="420" alt="/spmb/registrations/f24c5764-6d41-4536-ba02-5f78867d717b"> | `/spmb/registrations/f24c5764-6d41-4536-ba02-5f78867d717b` |
 
-</details>
+
 
 <details>
 <summary><strong>Admisi</strong> — 3 halaman</summary>
@@ -1365,7 +1361,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/admissions__analytics.webp" width="420" alt="/admissions/analytics"> | `/admissions/analytics` |
 | <img src="docs/images/pages/admissions__waves.webp" width="420" alt="/admissions/waves">         | `/admissions/waves`     |
 
-</details>
+
 
 <details>
 <summary><strong>Donasi & Wakaf</strong> — 4 halaman</summary>
@@ -1377,7 +1373,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/donation__campaigns__new.webp" width="420" alt="/donation/campaigns/new">                                                                   | `/donation/campaigns/new`                                  |
 | <img src="docs/images/pages/donation__new.webp" width="420" alt="/donation/new">                                                                                        | `/donation/new`                                            |
 
-</details>
+
 
 <details>
 <summary><strong>Alumni</strong> — 20 halaman</summary>
@@ -1405,7 +1401,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/alumni__placement.webp" width="420" alt="/alumni/placement">                                                                  | `/alumni/placement`                                 |
 | <img src="docs/images/pages/alumni__sanad.webp" width="420" alt="/alumni/sanad">                                                                          | `/alumni/sanad`                                     |
 
-</details>
+
 
 <details>
 <summary><strong>Organisasi Siswa</strong> — 1 halaman</summary>
@@ -1414,7 +1410,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------------------- | -------------- |
 | <img src="docs/images/pages/student-org.webp" width="420" alt="/student-org"> | `/student-org` |
 
-</details>
+
 
 <details>
 <summary><strong>Portal Wali Santri</strong> — 17 halaman</summary>
@@ -1439,7 +1435,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/parent__rewards.webp" width="420" alt="/parent/rewards">                                                                                      | `/parent/rewards`                                           |
 | <img src="docs/images/pages/parent__violations.webp" width="420" alt="/parent/violations">                                                                                | `/parent/violations`                                        |
 
-</details>
+
 
 <details>
 <summary><strong>Manajemen User</strong> — 5 halaman</summary>
@@ -1452,7 +1448,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/users__320fb4e6-4c1f-4cc1-9f31-4219d3c5e14e__roles.webp" width="420" alt="/users/320fb4e6-4c1f-4cc1-9f31-4219d3c5e14e/roles"> | `/users/320fb4e6-4c1f-4cc1-9f31-4219d3c5e14e/roles` |
 | <img src="docs/images/pages/users__new.webp" width="420" alt="/users/new">                                                                                | `/users/new`                                        |
 
-</details>
+
 
 <details>
 <summary><strong>Pengaturan</strong> — 81 halaman</summary>
@@ -1541,20 +1537,19 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/settings__roles__ff97ab8d-f459-4d7d-b6df-a01b52350450.webp" width="420" alt="/settings/roles/ff97ab8d-f459-4d7d-b6df-a01b52350450"> | `/settings/roles/ff97ab8d-f459-4d7d-b6df-a01b52350450` |
 | <img src="docs/images/pages/settings__roles__new.webp" width="420" alt="/settings/roles/new">                                                                   | `/settings/roles/new`                                  |
 
-</details>
+
 
 <details>
-<summary><strong>Resepsionis</strong> — 5 halaman</summary>
+<summary><strong>Resepsionis</strong> — 4 halaman</summary>
 
 | Halaman                                                                                            | Rute                     |
 | -------------------------------------------------------------------------------------------------- | ------------------------ |
 | <img src="docs/images/pages/reception.webp" width="420" alt="/reception">                          | `/reception`             |
-| <img src="docs/images/pages/reception__gate.webp" width="420" alt="/reception/gate">               | `/reception/gate`        |
 | <img src="docs/images/pages/reception__guest-books.webp" width="420" alt="/reception/guest-books"> | `/reception/guest-books` |
 | <img src="docs/images/pages/reception__packages.webp" width="420" alt="/reception/packages">       | `/reception/packages`    |
 | <img src="docs/images/pages/reception__visits.webp" width="420" alt="/reception/visits">           | `/reception/visits`      |
 
-</details>
+
 
 <details>
 <summary><strong>Proyek</strong> — 2 halaman</summary>
@@ -1564,7 +1559,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/project.webp" width="420" alt="/project">                                                                            | `/project`                                      |
 | <img src="docs/images/pages/project__b632b81d-9137-43c5-abd0-64210e283334.webp" width="420" alt="/project/b632b81d-9137-43c5-abd0-64210e283334"> | `/project/b632b81d-9137-43c5-abd0-64210e283334` |
 
-</details>
+
 
 <details>
 <summary><strong>Wilayah</strong> — 1 halaman</summary>
@@ -1573,7 +1568,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------- | ---------- |
 | <img src="docs/images/pages/wilayah.webp" width="420" alt="/wilayah"> | `/wilayah` |
 
-</details>
+
 
 <details>
 <summary><strong>Laporan Harian</strong> — 4 halaman</summary>
@@ -1585,7 +1580,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/daily-report__c2126588-25f1-4da4-a34f-23c1372ef8ab.webp" width="420" alt="/daily-report/c2126588-25f1-4da4-a34f-23c1372ef8ab"> | `/daily-report/c2126588-25f1-4da4-a34f-23c1372ef8ab` |
 | <img src="docs/images/pages/daily-report__create.webp" width="420" alt="/daily-report/create">                                                             | `/daily-report/create`                               |
 
-</details>
+
 
 <details>
 <summary><strong>Situs Unit</strong> — 6 halaman</summary>
@@ -1599,7 +1594,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/unit__takhosus.webp" width="420" alt="/unit/takhosus">   | `/unit/takhosus`  |
 | <img src="docs/images/pages/unit__tkq.webp" width="420" alt="/unit/tkq">             | `/unit/tkq`       |
 
-</details>
+
 
 <details>
 <summary><strong>Berita (Publik)</strong> — 5 halaman</summary>
@@ -1612,7 +1607,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/berita__osn-kecamatan-kadipaten-2026.webp" width="420" alt="/berita/osn-kecamatan-kadipaten-2026">                     | `/berita/osn-kecamatan-kadipaten-2026`           |
 | <img src="docs/images/pages/berita__prestasi-pentas-pai-kadipaten.webp" width="420" alt="/berita/prestasi-pentas-pai-kadipaten">                   | `/berita/prestasi-pentas-pai-kadipaten`          |
 
-</details>
+
 
 <details>
 <summary><strong>Profil Yayasan (Publik)</strong> — 3 halaman</summary>
@@ -1623,7 +1618,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/profil__legalitas.webp" width="420" alt="/profil/legalitas"> | `/profil/legalitas` |
 | <img src="docs/images/pages/profil__pimpinan.webp" width="420" alt="/profil/pimpinan">   | `/profil/pimpinan`  |
 
-</details>
+
 
 <details>
 <summary><strong>Program Unggulan (Publik)</strong> — 1 halaman</summary>
@@ -1632,7 +1627,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------------------------- | ------------------- |
 | <img src="docs/images/pages/program-unggulan.webp" width="420" alt="/program-unggulan"> | `/program-unggulan` |
 
-</details>
+
 
 <details>
 <summary><strong>Wakaf & Infaq (Publik)</strong> — 1 halaman</summary>
@@ -1641,7 +1636,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------------------- | -------------- |
 | <img src="docs/images/pages/wakaf-infaq.webp" width="420" alt="/wakaf-infaq"> | `/wakaf-infaq` |
 
-</details>
+
 
 <details>
 <summary><strong>Kontak (Publik)</strong> — 1 halaman</summary>
@@ -1650,7 +1645,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ------------------------------------------------------------------- | --------- |
 | <img src="docs/images/pages/kontak.webp" width="420" alt="/kontak"> | `/kontak` |
 
-</details>
+
 
 <details>
 <summary><strong>Halaman Publik Lain</strong> — 5 halaman</summary>
@@ -1663,7 +1658,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/public__verify-letter.webp" width="420" alt="/public/verify-letter"> | `/public/verify-letter` |
 | <img src="docs/images/pages/public__verify-sanad.webp" width="420" alt="/public/verify-sanad">   | `/public/verify-sanad`  |
 
-</details>
+
 
 <details>
 <summary><strong>Tidak Berwenang</strong> — 1 halaman</summary>
@@ -1672,7 +1667,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ------------------------------------------------------------------------------- | --------------- |
 | <img src="docs/images/pages/unauthorized.webp" width="420" alt="/unauthorized"> | `/unauthorized` |
 
-</details>
+
 
 <details>
 <summary><strong>Reset Password</strong> — 1 halaman</summary>
@@ -1681,7 +1676,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ----------------------------------------------------------------------------------- | ----------------- |
 | <img src="docs/images/pages/reset-password.webp" width="420" alt="/reset-password"> | `/reset-password` |
 
-</details>
+
 
 <details>
 <summary><strong>Admin</strong> — 1 halaman</summary>
@@ -1690,7 +1685,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | -------------------------------------------------------------------------------------- | ------------------ |
 | <img src="docs/images/pages/admin__marketing.webp" width="420" alt="/admin/marketing"> | `/admin/marketing` |
 
-</details>
+
 
 <details>
 <summary><strong>Assignments</strong> — 3 halaman</summary>
@@ -1701,7 +1696,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/assignments__create.webp" width="420" alt="/assignments/create">                                                             | `/assignments/create`                               |
 | <img src="docs/images/pages/assignments__ff926aa0-b666-4c7a-bd5e-4c95b13df1a8.webp" width="420" alt="/assignments/ff926aa0-b666-4c7a-bd5e-4c95b13df1a8"> | `/assignments/ff926aa0-b666-4c7a-bd5e-4c95b13df1a8` |
 
-</details>
+
 
 <details>
 <summary><strong>Calendar</strong> — 3 halaman</summary>
@@ -1712,7 +1707,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/calendar__events.webp" width="420" alt="/calendar/events">          | `/calendar/events`     |
 | <img src="docs/images/pages/calendar__events__new.webp" width="420" alt="/calendar/events/new"> | `/calendar/events/new` |
 
-</details>
+
 
 <details>
 <summary><strong>Emis</strong> — 1 halaman</summary>
@@ -1721,7 +1716,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------- | ------- |
 | <img src="docs/images/pages/emis.webp" width="420" alt="/emis"> | `/emis` |
 
-</details>
+
 
 <details>
 <summary><strong>Galeri</strong> — 1 halaman</summary>
@@ -1730,7 +1725,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | ------------------------------------------------------------------- | --------- |
 | <img src="docs/images/pages/galeri.webp" width="420" alt="/galeri"> | `/galeri` |
 
-</details>
+
 
 <details>
 <summary><strong>Lingkungan</strong> — 1 halaman</summary>
@@ -1739,7 +1734,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | --------------------------------------------------------------------------- | ------------- |
 | <img src="docs/images/pages/lingkungan.webp" width="420" alt="/lingkungan"> | `/lingkungan` |
 
-</details>
+
 
 <details>
 <summary><strong>Organisasi</strong> — 3 halaman</summary>
@@ -1750,7 +1745,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/organisasi__posisi__ee6dd00d-93c5-43ea-a6cd-b2a7a4734fb6.webp" width="420" alt="/organisasi/posisi/ee6dd00d-93c5-43ea-a6cd-b2a7a4734fb6"> | `/organisasi/posisi/ee6dd00d-93c5-43ea-a6cd-b2a7a4734fb6` |
 | <img src="docs/images/pages/organisasi__struktur.webp" width="420" alt="/organisasi/struktur">                                                                        | `/organisasi/struktur`                                    |
 
-</details>
+
 
 <details>
 <summary><strong>Pengawasan</strong> — 2 halaman</summary>
@@ -1760,7 +1755,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/pengawasan.webp" width="420" alt="/pengawasan">                                                                            | `/pengawasan`                                      |
 | <img src="docs/images/pages/pengawasan__ce805da4-8f54-4e6d-be43-a3fd08a05a03.webp" width="420" alt="/pengawasan/ce805da4-8f54-4e6d-be43-a3fd08a05a03"> | `/pengawasan/ce805da4-8f54-4e6d-be43-a3fd08a05a03` |
 
-</details>
+
 
 <details>
 <summary><strong>Practicum</strong> — 2 halaman</summary>
@@ -1770,7 +1765,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/practicum.webp" width="420" alt="/practicum">          | `/practicum`     |
 | <img src="docs/images/pages/practicum__new.webp" width="420" alt="/practicum/new"> | `/practicum/new` |
 
-</details>
+
 
 <details>
 <summary><strong>Student</strong> — 4 halaman</summary>
@@ -1782,7 +1777,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/student__exams.webp" width="420" alt="/student/exams">                                                                                       | `/student/exams`                                           |
 | <img src="docs/images/pages/student__exams__e8a73c30-d814-42fe-a1fb-6d315d54a404__take.webp" width="420" alt="/student/exams/e8a73c30-d814-42fe-a1fb-6d315d54a404/take"> | `/student/exams/e8a73c30-d814-42fe-a1fb-6d315d54a404/take` |
 
-</details>
+
 
 <details>
 <summary><strong>Syariah</strong> — 2 halaman</summary>
@@ -1792,7 +1787,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/syariah.webp" width="420" alt="/syariah">                                                                            | `/syariah`                                      |
 | <img src="docs/images/pages/syariah__61cdd312-9261-4b0b-8e60-d9d0c1b08365.webp" width="420" alt="/syariah/61cdd312-9261-4b0b-8e60-d9d0c1b08365"> | `/syariah/61cdd312-9261-4b0b-8e60-d9d0c1b08365` |
 
-</details>
+
 
 <details>
 <summary><strong>Talenta</strong> — 5 halaman</summary>
@@ -1805,7 +1800,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/talenta__matrix.webp" width="420" alt="/talenta/matrix">                                                             | `/talenta/matrix`                               |
 | <img src="docs/images/pages/talenta__succession.webp" width="420" alt="/talenta/succession">                                                     | `/talenta/succession`                           |
 
-</details>
+
 
 <details>
 <summary><strong>Tata Laksana</strong> — 2 halaman</summary>
@@ -1815,7 +1810,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/tata-laksana.webp" width="420" alt="/tata-laksana">                                                                            | `/tata-laksana`                                      |
 | <img src="docs/images/pages/tata-laksana__95103671-aa30-4cce-bfef-5120e096d71f.webp" width="420" alt="/tata-laksana/95103671-aa30-4cce-bfef-5120e096d71f"> | `/tata-laksana/95103671-aa30-4cce-bfef-5120e096d71f` |
 
-</details>
+
 
 <details>
 <summary><strong>Unit Usaha</strong> — 3 halaman</summary>
@@ -1826,7 +1821,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 | <img src="docs/images/pages/unit-usaha__1510e99e-72c4-4a51-9b4b-b1c74881ccfe.webp" width="420" alt="/unit-usaha/1510e99e-72c4-4a51-9b4b-b1c74881ccfe"> | `/unit-usaha/1510e99e-72c4-4a51-9b4b-b1c74881ccfe` |
 | <img src="docs/images/pages/unit-usaha__33048f6b-eea8-4ebc-afd0-fc6b6406ea3c.webp" width="420" alt="/unit-usaha/33048f6b-eea8-4ebc-afd0-fc6b6406ea3c"> | `/unit-usaha/33048f6b-eea8-4ebc-afd0-fc6b6406ea3c` |
 
-</details>
+
 
 <!-- END:GENERATED-GALLERY -->
 
@@ -1836,7 +1831,7 @@ Setiap halaman App Router (**755** rute) yang berhasil dirender pada sweep visua
 
 ## Galeri Per Peran
 
-Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
+Setiap dari **53 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
 
 <details>
 <summary><code>business-manager</code> — 12 halaman</summary>
@@ -1856,7 +1851,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/business-manager__announcements.webp" width="360" alt="business-manager /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/business-manager__quality__complaints.webp" width="360" alt="business-manager /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>business-staff</code> — 12 halaman</summary>
@@ -1876,7 +1871,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/business-staff__announcements.webp" width="360" alt="business-staff /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/business-staff__quality__complaints.webp" width="360" alt="business-staff /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>keamanan</code> — 13 halaman</summary>
@@ -1897,7 +1892,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/keamanan__announcements.webp" width="360" alt="keamanan /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/keamanan__quality__complaints.webp" width="360" alt="keamanan /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>laboran</code> — 13 halaman</summary>
@@ -1918,7 +1913,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/laboran__announcements.webp" width="360" alt="laboran /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/laboran__quality__complaints.webp" width="360" alt="laboran /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>muhafidz</code> — 24 halaman</summary>
@@ -1950,71 +1945,9 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/muhafidz__rapor-pesantren.webp" width="360" alt="muhafidz /rapor-pesantren">        | `/rapor-pesantren`    |
 | <img src="docs/images/roles/muhafidz__quality__complaints.webp" width="360" alt="muhafidz /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>muhafidzah</code> — 24 halaman</summary>
 
-| Halaman                                                                                                             | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/muhafidzah__meals.webp" width="360" alt="muhafidzah /meals">                            | `/meals`              |
-| <img src="docs/images/roles/muhafidzah__health.webp" width="360" alt="muhafidzah /health">                          | `/health`             |
-| <img src="docs/images/roles/muhafidzah__ibadah.webp" width="360" alt="muhafidzah /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/muhafidzah__laundry.webp" width="360" alt="muhafidzah /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/muhafidzah__musyrif.webp" width="360" alt="muhafidzah /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/muhafidzah__permits.webp" width="360" alt="muhafidzah /permits">                        | `/permits`            |
-| <img src="docs/images/roles/muhafidzah__rewards.webp" width="360" alt="muhafidzah /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/muhafidzah__tahfidz.webp" width="360" alt="muhafidzah /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/muhafidzah__teacher.webp" width="360" alt="muhafidzah /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/muhafidzah__e-office.webp" width="360" alt="muhafidzah /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/muhafidzah__schedule.webp" width="360" alt="muhafidzah /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/muhafidzah__students.webp" width="360" alt="muhafidzah /students">                      | `/students`           |
-| <img src="docs/images/roles/muhafidzah__takhosus.webp" width="360" alt="muhafidzah /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/muhafidzah__muhasabah.webp" width="360" alt="muhafidzah /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/muhafidzah__muhadatsah.webp" width="360" alt="muhafidzah /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/muhafidzah__muhadhoroh.webp" width="360" alt="muhafidzah /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/muhafidzah__violations.webp" width="360" alt="muhafidzah /violations">                  | `/violations`         |
-| <img src="docs/images/roles/muhafidzah__dormitories.webp" width="360" alt="muhafidzah /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/muhafidzah__duty-roster.webp" width="360" alt="muhafidzah /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/muhafidzah__daily-report.webp" width="360" alt="muhafidzah /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/muhafidzah__announcements.webp" width="360" alt="muhafidzah /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/muhafidzah__kitab-progress.webp" width="360" alt="muhafidzah /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/muhafidzah__rapor-pesantren.webp" width="360" alt="muhafidzah /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/muhafidzah__quality__complaints.webp" width="360" alt="muhafidzah /quality/complaints"> | `/quality/complaints` |
 
-</details>
-
-<details>
-<summary><code>murabbi</code> — 24 halaman</summary>
-
-| Halaman                                                                                                       | Rute                  |
-| ------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/murabbi__meals.webp" width="360" alt="murabbi /meals">                            | `/meals`              |
-| <img src="docs/images/roles/murabbi__health.webp" width="360" alt="murabbi /health">                          | `/health`             |
-| <img src="docs/images/roles/murabbi__ibadah.webp" width="360" alt="murabbi /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/murabbi__laundry.webp" width="360" alt="murabbi /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/murabbi__musyrif.webp" width="360" alt="murabbi /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/murabbi__permits.webp" width="360" alt="murabbi /permits">                        | `/permits`            |
-| <img src="docs/images/roles/murabbi__rewards.webp" width="360" alt="murabbi /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/murabbi__tahfidz.webp" width="360" alt="murabbi /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/murabbi__teacher.webp" width="360" alt="murabbi /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/murabbi__e-office.webp" width="360" alt="murabbi /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/murabbi__schedule.webp" width="360" alt="murabbi /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/murabbi__students.webp" width="360" alt="murabbi /students">                      | `/students`           |
-| <img src="docs/images/roles/murabbi__takhosus.webp" width="360" alt="murabbi /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/murabbi__muhasabah.webp" width="360" alt="murabbi /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/murabbi__muhadatsah.webp" width="360" alt="murabbi /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/murabbi__muhadhoroh.webp" width="360" alt="murabbi /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/murabbi__violations.webp" width="360" alt="murabbi /violations">                  | `/violations`         |
-| <img src="docs/images/roles/murabbi__dormitories.webp" width="360" alt="murabbi /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/murabbi__duty-roster.webp" width="360" alt="murabbi /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/murabbi__daily-report.webp" width="360" alt="murabbi /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/murabbi__announcements.webp" width="360" alt="murabbi /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/murabbi__kitab-progress.webp" width="360" alt="murabbi /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/murabbi__rapor-pesantren.webp" width="360" alt="murabbi /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/murabbi__quality__complaints.webp" width="360" alt="murabbi /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>musyrif</code> — 24 halaman</summary>
@@ -2046,39 +1979,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/musyrif__rapor-pesantren.webp" width="360" alt="musyrif /rapor-pesantren">        | `/rapor-pesantren`    |
 | <img src="docs/images/roles/musyrif__quality__complaints.webp" width="360" alt="musyrif /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>musyrifah</code> — 24 halaman</summary>
 
-| Halaman                                                                                                           | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/musyrifah__meals.webp" width="360" alt="musyrifah /meals">                            | `/meals`              |
-| <img src="docs/images/roles/musyrifah__health.webp" width="360" alt="musyrifah /health">                          | `/health`             |
-| <img src="docs/images/roles/musyrifah__ibadah.webp" width="360" alt="musyrifah /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/musyrifah__laundry.webp" width="360" alt="musyrifah /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/musyrifah__musyrif.webp" width="360" alt="musyrifah /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/musyrifah__permits.webp" width="360" alt="musyrifah /permits">                        | `/permits`            |
-| <img src="docs/images/roles/musyrifah__rewards.webp" width="360" alt="musyrifah /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/musyrifah__tahfidz.webp" width="360" alt="musyrifah /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/musyrifah__teacher.webp" width="360" alt="musyrifah /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/musyrifah__e-office.webp" width="360" alt="musyrifah /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/musyrifah__schedule.webp" width="360" alt="musyrifah /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/musyrifah__students.webp" width="360" alt="musyrifah /students">                      | `/students`           |
-| <img src="docs/images/roles/musyrifah__takhosus.webp" width="360" alt="musyrifah /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/musyrifah__muhasabah.webp" width="360" alt="musyrifah /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/musyrifah__muhadatsah.webp" width="360" alt="musyrifah /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/musyrifah__muhadhoroh.webp" width="360" alt="musyrifah /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/musyrifah__violations.webp" width="360" alt="musyrifah /violations">                  | `/violations`         |
-| <img src="docs/images/roles/musyrifah__dormitories.webp" width="360" alt="musyrifah /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/musyrifah__duty-roster.webp" width="360" alt="musyrifah /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/musyrifah__daily-report.webp" width="360" alt="musyrifah /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/musyrifah__announcements.webp" width="360" alt="musyrifah /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/musyrifah__kitab-progress.webp" width="360" alt="musyrifah /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/musyrifah__rapor-pesantren.webp" width="360" alt="musyrifah /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/musyrifah__quality__complaints.webp" width="360" alt="musyrifah /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>perawat</code> — 13 halaman</summary>
@@ -2099,41 +2001,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/perawat__announcements.webp" width="360" alt="perawat /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/perawat__quality__complaints.webp" width="360" alt="perawat /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>pesantren-direktur</code> — 26 halaman</summary>
 
-| Halaman                                                                                                                             | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pesantren-direktur__meals.webp" width="360" alt="pesantren-direktur /meals">                            | `/meals`              |
-| <img src="docs/images/roles/pesantren-direktur__health.webp" width="360" alt="pesantren-direktur /health">                          | `/health`             |
-| <img src="docs/images/roles/pesantren-direktur__ibadah.webp" width="360" alt="pesantren-direktur /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/pesantren-direktur__canteen.webp" width="360" alt="pesantren-direktur /canteen">                        | `/canteen`            |
-| <img src="docs/images/roles/pesantren-direktur__laundry.webp" width="360" alt="pesantren-direktur /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/pesantren-direktur__musyrif.webp" width="360" alt="pesantren-direktur /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/pesantren-direktur__permits.webp" width="360" alt="pesantren-direktur /permits">                        | `/permits`            |
-| <img src="docs/images/roles/pesantren-direktur__reports.webp" width="360" alt="pesantren-direktur /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pesantren-direktur__rewards.webp" width="360" alt="pesantren-direktur /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/pesantren-direktur__tahfidz.webp" width="360" alt="pesantren-direktur /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/pesantren-direktur__teacher.webp" width="360" alt="pesantren-direktur /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pesantren-direktur__e-office.webp" width="360" alt="pesantren-direktur /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pesantren-direktur__students.webp" width="360" alt="pesantren-direktur /students">                      | `/students`           |
-| <img src="docs/images/roles/pesantren-direktur__takhosus.webp" width="360" alt="pesantren-direktur /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/pesantren-direktur__analytics.webp" width="360" alt="pesantren-direktur /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pesantren-direktur__muhasabah.webp" width="360" alt="pesantren-direktur /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/pesantren-direktur__counseling.webp" width="360" alt="pesantren-direktur /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pesantren-direktur__muhadatsah.webp" width="360" alt="pesantren-direktur /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/pesantren-direktur__muhadhoroh.webp" width="360" alt="pesantren-direktur /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/pesantren-direktur__violations.webp" width="360" alt="pesantren-direktur /violations">                  | `/violations`         |
-| <img src="docs/images/roles/pesantren-direktur__dormitories.webp" width="360" alt="pesantren-direktur /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/pesantren-direktur__duty-roster.webp" width="360" alt="pesantren-direktur /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/pesantren-direktur__announcements.webp" width="360" alt="pesantren-direktur /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pesantren-direktur__kitab-progress.webp" width="360" alt="pesantren-direktur /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/pesantren-direktur__rapor-pesantren.webp" width="360" alt="pesantren-direktur /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/pesantren-direktur__quality__complaints.webp" width="360" alt="pesantren-direktur /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>pesantren-pengasuh</code> — 26 halaman</summary>
@@ -2167,7 +2036,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/pesantren-pengasuh__rapor-pesantren.webp" width="360" alt="pesantren-pengasuh /rapor-pesantren">        | `/rapor-pesantren`    |
 | <img src="docs/images/roles/pesantren-pengasuh__quality__complaints.webp" width="360" alt="pesantren-pengasuh /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>pesantren-tata-usaha</code> — 13 halaman</summary>
@@ -2188,7 +2057,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/pesantren-tata-usaha__announcements.webp" width="360" alt="pesantren-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/pesantren-tata-usaha__quality__complaints.webp" width="360" alt="pesantren-tata-usaha /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>pustakawan</code> — 13 halaman</summary>
@@ -2209,7 +2078,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/pustakawan__announcements.webp" width="360" alt="pustakawan /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/pustakawan__quality__complaints.webp" width="360" alt="pustakawan /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-admin</code> — 40 halaman</summary>
@@ -2257,7 +2126,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-admin__extracurricular.webp" width="360" alt="sdit-admin /extracurricular">        | `/extracurricular`    |
 | <img src="docs/images/roles/sdit-admin__finance__accounting.webp" width="360" alt="sdit-admin /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-bendahara</code> — 13 halaman</summary>
@@ -2278,7 +2147,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-bendahara__announcements.webp" width="360" alt="sdit-bendahara /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/sdit-bendahara__quality__complaints.webp" width="360" alt="sdit-bendahara /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-guru</code> — 19 halaman</summary>
@@ -2303,9 +2172,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-guru__homeroom__behavior.webp" width="360" alt="sdit-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/sdit-guru__homeroom__messages.webp" width="360" alt="sdit-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/sdit-guru__quality__complaints.webp" width="360" alt="sdit-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-guru__homeroom__attendance.webp" width="360" alt="sdit-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-kepala-sekolah</code> — 19 halaman</summary>
@@ -2332,7 +2200,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-kepala-sekolah__announcements.webp" width="360" alt="sdit-kepala-sekolah /announcements"> | `/announcements` |
 | <img src="docs/images/roles/sdit-kepala-sekolah__notifications.webp" width="360" alt="sdit-kepala-sekolah /notifications"> | `/notifications` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-komite</code> — 10 halaman</summary>
@@ -2350,7 +2218,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-komite__announcements.webp" width="360" alt="sdit-komite /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/sdit-komite__quality__complaints.webp" width="360" alt="sdit-komite /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-orang-tua</code> — 16 halaman</summary>
@@ -2374,7 +2242,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-orang-tua__parent__buku-penghubung.webp" width="360" alt="sdit-orang-tua /parent/buku-penghubung">                      | `/parent/buku-penghubung`           |
 | <img src="docs/images/roles/sdit-orang-tua__parent__notifications__preferences.webp" width="360" alt="sdit-orang-tua /parent/notifications/preferences"> | `/parent/notifications/preferences` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-siswa</code> — 13 halaman</summary>
@@ -2395,7 +2263,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-siswa__quality__complaints.webp" width="360" alt="sdit-siswa /quality/complaints">     | `/quality/complaints`   |
 | <img src="docs/images/roles/sdit-siswa__student__achievements.webp" width="360" alt="sdit-siswa /student/achievements"> | `/student/achievements` |
 
-</details>
+
 
 <details>
 <summary><code>sdit-tata-usaha</code> — 13 halaman</summary>
@@ -2416,61 +2284,9 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-tata-usaha__announcements.webp" width="360" alt="sdit-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/sdit-tata-usaha__quality__complaints.webp" width="360" alt="sdit-tata-usaha /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>sdit-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                   | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/sdit-wakasek__ibadah.webp" width="360" alt="sdit-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/sdit-wakasek__classes.webp" width="360" alt="sdit-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/sdit-wakasek__kinerja.webp" width="360" alt="sdit-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/sdit-wakasek__tahfidz.webp" width="360" alt="sdit-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/sdit-wakasek__teacher.webp" width="360" alt="sdit-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/sdit-wakasek__e-office.webp" width="360" alt="sdit-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/sdit-wakasek__homeroom.webp" width="360" alt="sdit-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/sdit-wakasek__students.webp" width="360" alt="sdit-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/sdit-wakasek__portfolio.webp" width="360" alt="sdit-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/sdit-wakasek__attendance.webp" width="360" alt="sdit-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/sdit-wakasek__muhadatsah.webp" width="360" alt="sdit-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/sdit-wakasek__muhadhoroh.webp" width="360" alt="sdit-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/sdit-wakasek__daily-report.webp" width="360" alt="sdit-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/sdit-wakasek__announcements.webp" width="360" alt="sdit-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/sdit-wakasek__kitab-progress.webp" width="360" alt="sdit-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__behavior.webp" width="360" alt="sdit-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__messages.webp" width="360" alt="sdit-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/sdit-wakasek__quality__complaints.webp" width="360" alt="sdit-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__attendance.webp" width="360" alt="sdit-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
-
-<details>
-<summary><code>sdit-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                         | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/sdit-wali-kelas__ibadah.webp" width="360" alt="sdit-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/sdit-wali-kelas__classes.webp" width="360" alt="sdit-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/sdit-wali-kelas__kinerja.webp" width="360" alt="sdit-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/sdit-wali-kelas__tahfidz.webp" width="360" alt="sdit-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/sdit-wali-kelas__teacher.webp" width="360" alt="sdit-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/sdit-wali-kelas__e-office.webp" width="360" alt="sdit-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom.webp" width="360" alt="sdit-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/sdit-wali-kelas__students.webp" width="360" alt="sdit-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/sdit-wali-kelas__portfolio.webp" width="360" alt="sdit-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/sdit-wali-kelas__attendance.webp" width="360" alt="sdit-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/sdit-wali-kelas__muhadatsah.webp" width="360" alt="sdit-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/sdit-wali-kelas__muhadhoroh.webp" width="360" alt="sdit-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/sdit-wali-kelas__daily-report.webp" width="360" alt="sdit-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/sdit-wali-kelas__announcements.webp" width="360" alt="sdit-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/sdit-wali-kelas__kitab-progress.webp" width="360" alt="sdit-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__behavior.webp" width="360" alt="sdit-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__messages.webp" width="360" alt="sdit-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/sdit-wali-kelas__quality__complaints.webp" width="360" alt="sdit-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__attendance.webp" width="360" alt="sdit-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>smaq-admin</code> — 40 halaman</summary>
@@ -2518,7 +2334,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-admin__extracurricular.webp" width="360" alt="smaq-admin /extracurricular">        | `/extracurricular`    |
 | <img src="docs/images/roles/smaq-admin__finance__accounting.webp" width="360" alt="smaq-admin /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-alumni</code> — 8 halaman</summary>
@@ -2534,7 +2350,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-alumni__alumni__placement.webp" width="360" alt="smaq-alumni /alumni/placement">     | `/alumni/placement`   |
 | <img src="docs/images/roles/smaq-alumni__quality__complaints.webp" width="360" alt="smaq-alumni /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-bendahara</code> — 13 halaman</summary>
@@ -2555,7 +2371,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-bendahara__announcements.webp" width="360" alt="smaq-bendahara /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smaq-bendahara__quality__complaints.webp" width="360" alt="smaq-bendahara /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-guru</code> — 19 halaman</summary>
@@ -2580,9 +2396,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-guru__homeroom__behavior.webp" width="360" alt="smaq-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smaq-guru__homeroom__messages.webp" width="360" alt="smaq-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smaq-guru__quality__complaints.webp" width="360" alt="smaq-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-guru__homeroom__attendance.webp" width="360" alt="smaq-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-guru-bk</code> — 19 halaman</summary>
@@ -2607,9 +2422,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-guru-bk__homeroom__behavior.webp" width="360" alt="smaq-guru-bk /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smaq-guru-bk__homeroom__messages.webp" width="360" alt="smaq-guru-bk /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smaq-guru-bk__quality__complaints.webp" width="360" alt="smaq-guru-bk /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-guru-bk__homeroom__attendance.webp" width="360" alt="smaq-guru-bk /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-kepala-sekolah</code> — 19 halaman</summary>
@@ -2636,7 +2450,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-kepala-sekolah__announcements.webp" width="360" alt="smaq-kepala-sekolah /announcements"> | `/announcements` |
 | <img src="docs/images/roles/smaq-kepala-sekolah__notifications.webp" width="360" alt="smaq-kepala-sekolah /notifications"> | `/notifications` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-komite</code> — 10 halaman</summary>
@@ -2654,7 +2468,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-komite__announcements.webp" width="360" alt="smaq-komite /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smaq-komite__quality__complaints.webp" width="360" alt="smaq-komite /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-orang-tua</code> — 16 halaman</summary>
@@ -2678,7 +2492,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-orang-tua__parent__buku-penghubung.webp" width="360" alt="smaq-orang-tua /parent/buku-penghubung">                      | `/parent/buku-penghubung`           |
 | <img src="docs/images/roles/smaq-orang-tua__parent__notifications__preferences.webp" width="360" alt="smaq-orang-tua /parent/notifications/preferences"> | `/parent/notifications/preferences` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-siswa</code> — 13 halaman</summary>
@@ -2699,7 +2513,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-siswa__quality__complaints.webp" width="360" alt="smaq-siswa /quality/complaints">     | `/quality/complaints`   |
 | <img src="docs/images/roles/smaq-siswa__student__achievements.webp" width="360" alt="smaq-siswa /student/achievements"> | `/student/achievements` |
 
-</details>
+
 
 <details>
 <summary><code>smaq-tata-usaha</code> — 13 halaman</summary>
@@ -2720,61 +2534,9 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-tata-usaha__announcements.webp" width="360" alt="smaq-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smaq-tata-usaha__quality__complaints.webp" width="360" alt="smaq-tata-usaha /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>smaq-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                   | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smaq-wakasek__ibadah.webp" width="360" alt="smaq-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smaq-wakasek__classes.webp" width="360" alt="smaq-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smaq-wakasek__kinerja.webp" width="360" alt="smaq-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smaq-wakasek__tahfidz.webp" width="360" alt="smaq-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smaq-wakasek__teacher.webp" width="360" alt="smaq-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smaq-wakasek__e-office.webp" width="360" alt="smaq-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smaq-wakasek__homeroom.webp" width="360" alt="smaq-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smaq-wakasek__students.webp" width="360" alt="smaq-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/smaq-wakasek__portfolio.webp" width="360" alt="smaq-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smaq-wakasek__attendance.webp" width="360" alt="smaq-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smaq-wakasek__muhadatsah.webp" width="360" alt="smaq-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smaq-wakasek__muhadhoroh.webp" width="360" alt="smaq-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smaq-wakasek__daily-report.webp" width="360" alt="smaq-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smaq-wakasek__announcements.webp" width="360" alt="smaq-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smaq-wakasek__kitab-progress.webp" width="360" alt="smaq-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__behavior.webp" width="360" alt="smaq-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__messages.webp" width="360" alt="smaq-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smaq-wakasek__quality__complaints.webp" width="360" alt="smaq-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__attendance.webp" width="360" alt="smaq-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
-
-<details>
-<summary><code>smaq-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                         | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smaq-wali-kelas__ibadah.webp" width="360" alt="smaq-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smaq-wali-kelas__classes.webp" width="360" alt="smaq-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smaq-wali-kelas__kinerja.webp" width="360" alt="smaq-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smaq-wali-kelas__tahfidz.webp" width="360" alt="smaq-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smaq-wali-kelas__teacher.webp" width="360" alt="smaq-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smaq-wali-kelas__e-office.webp" width="360" alt="smaq-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom.webp" width="360" alt="smaq-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smaq-wali-kelas__students.webp" width="360" alt="smaq-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/smaq-wali-kelas__portfolio.webp" width="360" alt="smaq-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smaq-wali-kelas__attendance.webp" width="360" alt="smaq-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smaq-wali-kelas__muhadatsah.webp" width="360" alt="smaq-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smaq-wali-kelas__muhadhoroh.webp" width="360" alt="smaq-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smaq-wali-kelas__daily-report.webp" width="360" alt="smaq-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smaq-wali-kelas__announcements.webp" width="360" alt="smaq-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smaq-wali-kelas__kitab-progress.webp" width="360" alt="smaq-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__behavior.webp" width="360" alt="smaq-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__messages.webp" width="360" alt="smaq-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smaq-wali-kelas__quality__complaints.webp" width="360" alt="smaq-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__attendance.webp" width="360" alt="smaq-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>smpit-admin</code> — 40 halaman</summary>
@@ -2822,7 +2584,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-admin__extracurricular.webp" width="360" alt="smpit-admin /extracurricular">        | `/extracurricular`    |
 | <img src="docs/images/roles/smpit-admin__finance__accounting.webp" width="360" alt="smpit-admin /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-alumni</code> — 8 halaman</summary>
@@ -2838,7 +2600,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-alumni__alumni__placement.webp" width="360" alt="smpit-alumni /alumni/placement">     | `/alumni/placement`   |
 | <img src="docs/images/roles/smpit-alumni__quality__complaints.webp" width="360" alt="smpit-alumni /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-bendahara</code> — 13 halaman</summary>
@@ -2859,7 +2621,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-bendahara__announcements.webp" width="360" alt="smpit-bendahara /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smpit-bendahara__quality__complaints.webp" width="360" alt="smpit-bendahara /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-guru</code> — 19 halaman</summary>
@@ -2884,9 +2646,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-guru__homeroom__behavior.webp" width="360" alt="smpit-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smpit-guru__homeroom__messages.webp" width="360" alt="smpit-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smpit-guru__quality__complaints.webp" width="360" alt="smpit-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-guru__homeroom__attendance.webp" width="360" alt="smpit-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-guru-bk</code> — 19 halaman</summary>
@@ -2911,9 +2672,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-guru-bk__homeroom__behavior.webp" width="360" alt="smpit-guru-bk /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smpit-guru-bk__homeroom__messages.webp" width="360" alt="smpit-guru-bk /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smpit-guru-bk__quality__complaints.webp" width="360" alt="smpit-guru-bk /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-guru-bk__homeroom__attendance.webp" width="360" alt="smpit-guru-bk /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-kepala-sekolah</code> — 19 halaman</summary>
@@ -2940,7 +2700,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-kepala-sekolah__announcements.webp" width="360" alt="smpit-kepala-sekolah /announcements"> | `/announcements` |
 | <img src="docs/images/roles/smpit-kepala-sekolah__notifications.webp" width="360" alt="smpit-kepala-sekolah /notifications"> | `/notifications` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-komite</code> — 10 halaman</summary>
@@ -2958,7 +2718,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-komite__announcements.webp" width="360" alt="smpit-komite /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smpit-komite__quality__complaints.webp" width="360" alt="smpit-komite /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-orang-tua</code> — 16 halaman</summary>
@@ -2982,7 +2742,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-orang-tua__parent__buku-penghubung.webp" width="360" alt="smpit-orang-tua /parent/buku-penghubung">                      | `/parent/buku-penghubung`           |
 | <img src="docs/images/roles/smpit-orang-tua__parent__notifications__preferences.webp" width="360" alt="smpit-orang-tua /parent/notifications/preferences"> | `/parent/notifications/preferences` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-siswa</code> — 13 halaman</summary>
@@ -3003,7 +2763,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-siswa__quality__complaints.webp" width="360" alt="smpit-siswa /quality/complaints">     | `/quality/complaints`   |
 | <img src="docs/images/roles/smpit-siswa__student__achievements.webp" width="360" alt="smpit-siswa /student/achievements"> | `/student/achievements` |
 
-</details>
+
 
 <details>
 <summary><code>smpit-tata-usaha</code> — 13 halaman</summary>
@@ -3024,61 +2784,9 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-tata-usaha__announcements.webp" width="360" alt="smpit-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/smpit-tata-usaha__quality__complaints.webp" width="360" alt="smpit-tata-usaha /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>smpit-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                     | Rute                   |
-| --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smpit-wakasek__ibadah.webp" width="360" alt="smpit-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smpit-wakasek__classes.webp" width="360" alt="smpit-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smpit-wakasek__kinerja.webp" width="360" alt="smpit-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smpit-wakasek__tahfidz.webp" width="360" alt="smpit-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smpit-wakasek__teacher.webp" width="360" alt="smpit-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smpit-wakasek__e-office.webp" width="360" alt="smpit-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smpit-wakasek__homeroom.webp" width="360" alt="smpit-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smpit-wakasek__students.webp" width="360" alt="smpit-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/smpit-wakasek__portfolio.webp" width="360" alt="smpit-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smpit-wakasek__attendance.webp" width="360" alt="smpit-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smpit-wakasek__muhadatsah.webp" width="360" alt="smpit-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smpit-wakasek__muhadhoroh.webp" width="360" alt="smpit-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smpit-wakasek__daily-report.webp" width="360" alt="smpit-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smpit-wakasek__announcements.webp" width="360" alt="smpit-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smpit-wakasek__kitab-progress.webp" width="360" alt="smpit-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__behavior.webp" width="360" alt="smpit-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__messages.webp" width="360" alt="smpit-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smpit-wakasek__quality__complaints.webp" width="360" alt="smpit-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__attendance.webp" width="360" alt="smpit-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
-
-<details>
-<summary><code>smpit-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                           | Rute                   |
-| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smpit-wali-kelas__ibadah.webp" width="360" alt="smpit-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smpit-wali-kelas__classes.webp" width="360" alt="smpit-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smpit-wali-kelas__kinerja.webp" width="360" alt="smpit-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smpit-wali-kelas__tahfidz.webp" width="360" alt="smpit-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smpit-wali-kelas__teacher.webp" width="360" alt="smpit-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smpit-wali-kelas__e-office.webp" width="360" alt="smpit-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom.webp" width="360" alt="smpit-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smpit-wali-kelas__students.webp" width="360" alt="smpit-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/smpit-wali-kelas__portfolio.webp" width="360" alt="smpit-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smpit-wali-kelas__attendance.webp" width="360" alt="smpit-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smpit-wali-kelas__muhadatsah.webp" width="360" alt="smpit-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smpit-wali-kelas__muhadhoroh.webp" width="360" alt="smpit-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smpit-wali-kelas__daily-report.webp" width="360" alt="smpit-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smpit-wali-kelas__announcements.webp" width="360" alt="smpit-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smpit-wali-kelas__kitab-progress.webp" width="360" alt="smpit-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__behavior.webp" width="360" alt="smpit-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__messages.webp" width="360" alt="smpit-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smpit-wali-kelas__quality__complaints.webp" width="360" alt="smpit-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__attendance.webp" width="360" alt="smpit-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>super-admin</code> — 42 halaman</summary>
@@ -3128,7 +2836,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/super-admin__extracurricular.webp" width="360" alt="super-admin /extracurricular">        | `/extracurricular`    |
 | <img src="docs/images/roles/super-admin__finance__accounting.webp" width="360" alt="super-admin /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-admin</code> — 40 halaman</summary>
@@ -3176,7 +2884,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-admin__extracurricular.webp" width="360" alt="tkq-admin /extracurricular">        | `/extracurricular`    |
 | <img src="docs/images/roles/tkq-admin__finance__accounting.webp" width="360" alt="tkq-admin /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-bendahara</code> — 13 halaman</summary>
@@ -3197,7 +2905,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-bendahara__announcements.webp" width="360" alt="tkq-bendahara /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/tkq-bendahara__quality__complaints.webp" width="360" alt="tkq-bendahara /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-guru</code> — 19 halaman</summary>
@@ -3222,9 +2930,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-guru__homeroom__behavior.webp" width="360" alt="tkq-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/tkq-guru__homeroom__messages.webp" width="360" alt="tkq-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/tkq-guru__quality__complaints.webp" width="360" alt="tkq-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-guru__homeroom__attendance.webp" width="360" alt="tkq-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-kepala-sekolah</code> — 19 halaman</summary>
@@ -3251,7 +2958,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-kepala-sekolah__announcements.webp" width="360" alt="tkq-kepala-sekolah /announcements"> | `/announcements` |
 | <img src="docs/images/roles/tkq-kepala-sekolah__notifications.webp" width="360" alt="tkq-kepala-sekolah /notifications"> | `/notifications` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-komite</code> — 10 halaman</summary>
@@ -3269,7 +2976,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-komite__announcements.webp" width="360" alt="tkq-komite /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/tkq-komite__quality__complaints.webp" width="360" alt="tkq-komite /quality/complaints"> | `/quality/complaints` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-orang-tua</code> — 16 halaman</summary>
@@ -3293,7 +3000,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-orang-tua__parent__buku-penghubung.webp" width="360" alt="tkq-orang-tua /parent/buku-penghubung">                      | `/parent/buku-penghubung`           |
 | <img src="docs/images/roles/tkq-orang-tua__parent__notifications__preferences.webp" width="360" alt="tkq-orang-tua /parent/notifications/preferences"> | `/parent/notifications/preferences` |
 
-</details>
+
 
 <details>
 <summary><code>tkq-tata-usaha</code> — 13 halaman</summary>
@@ -3314,61 +3021,9 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-tata-usaha__announcements.webp" width="360" alt="tkq-tata-usaha /announcements">            | `/announcements`      |
 | <img src="docs/images/roles/tkq-tata-usaha__quality__complaints.webp" width="360" alt="tkq-tata-usaha /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>tkq-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                 | Rute                   |
-| ----------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/tkq-wakasek__ibadah.webp" width="360" alt="tkq-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/tkq-wakasek__classes.webp" width="360" alt="tkq-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/tkq-wakasek__kinerja.webp" width="360" alt="tkq-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/tkq-wakasek__tahfidz.webp" width="360" alt="tkq-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/tkq-wakasek__teacher.webp" width="360" alt="tkq-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/tkq-wakasek__e-office.webp" width="360" alt="tkq-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/tkq-wakasek__homeroom.webp" width="360" alt="tkq-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/tkq-wakasek__students.webp" width="360" alt="tkq-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/tkq-wakasek__portfolio.webp" width="360" alt="tkq-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/tkq-wakasek__attendance.webp" width="360" alt="tkq-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/tkq-wakasek__muhadatsah.webp" width="360" alt="tkq-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/tkq-wakasek__muhadhoroh.webp" width="360" alt="tkq-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/tkq-wakasek__daily-report.webp" width="360" alt="tkq-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/tkq-wakasek__announcements.webp" width="360" alt="tkq-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/tkq-wakasek__kitab-progress.webp" width="360" alt="tkq-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__behavior.webp" width="360" alt="tkq-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__messages.webp" width="360" alt="tkq-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/tkq-wakasek__quality__complaints.webp" width="360" alt="tkq-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__attendance.webp" width="360" alt="tkq-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
 
-</details>
-
-<details>
-<summary><code>tkq-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                       | Rute                   |
-| ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/tkq-wali-kelas__ibadah.webp" width="360" alt="tkq-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/tkq-wali-kelas__classes.webp" width="360" alt="tkq-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/tkq-wali-kelas__kinerja.webp" width="360" alt="tkq-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/tkq-wali-kelas__tahfidz.webp" width="360" alt="tkq-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/tkq-wali-kelas__teacher.webp" width="360" alt="tkq-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/tkq-wali-kelas__e-office.webp" width="360" alt="tkq-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom.webp" width="360" alt="tkq-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/tkq-wali-kelas__students.webp" width="360" alt="tkq-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/tkq-wali-kelas__portfolio.webp" width="360" alt="tkq-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/tkq-wali-kelas__attendance.webp" width="360" alt="tkq-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/tkq-wali-kelas__muhadatsah.webp" width="360" alt="tkq-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/tkq-wali-kelas__muhadhoroh.webp" width="360" alt="tkq-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/tkq-wali-kelas__daily-report.webp" width="360" alt="tkq-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/tkq-wali-kelas__announcements.webp" width="360" alt="tkq-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/tkq-wali-kelas__kitab-progress.webp" width="360" alt="tkq-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__behavior.webp" width="360" alt="tkq-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__messages.webp" width="360" alt="tkq-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/tkq-wali-kelas__quality__complaints.webp" width="360" alt="tkq-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__attendance.webp" width="360" alt="tkq-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>ustadz</code> — 24 halaman</summary>
@@ -3400,39 +3055,8 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/ustadz__rapor-pesantren.webp" width="360" alt="ustadz /rapor-pesantren">        | `/rapor-pesantren`    |
 | <img src="docs/images/roles/ustadz__quality__complaints.webp" width="360" alt="ustadz /quality/complaints"> | `/quality/complaints` |
 
-</details>
 
-<details>
-<summary><code>wali-kamar</code> — 24 halaman</summary>
 
-| Halaman                                                                                                             | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/wali-kamar__meals.webp" width="360" alt="wali-kamar /meals">                            | `/meals`              |
-| <img src="docs/images/roles/wali-kamar__health.webp" width="360" alt="wali-kamar /health">                          | `/health`             |
-| <img src="docs/images/roles/wali-kamar__ibadah.webp" width="360" alt="wali-kamar /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/wali-kamar__laundry.webp" width="360" alt="wali-kamar /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/wali-kamar__musyrif.webp" width="360" alt="wali-kamar /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/wali-kamar__permits.webp" width="360" alt="wali-kamar /permits">                        | `/permits`            |
-| <img src="docs/images/roles/wali-kamar__rewards.webp" width="360" alt="wali-kamar /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/wali-kamar__tahfidz.webp" width="360" alt="wali-kamar /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/wali-kamar__teacher.webp" width="360" alt="wali-kamar /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/wali-kamar__e-office.webp" width="360" alt="wali-kamar /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/wali-kamar__schedule.webp" width="360" alt="wali-kamar /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/wali-kamar__students.webp" width="360" alt="wali-kamar /students">                      | `/students`           |
-| <img src="docs/images/roles/wali-kamar__takhosus.webp" width="360" alt="wali-kamar /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/wali-kamar__muhasabah.webp" width="360" alt="wali-kamar /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/wali-kamar__muhadatsah.webp" width="360" alt="wali-kamar /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/wali-kamar__muhadhoroh.webp" width="360" alt="wali-kamar /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/wali-kamar__violations.webp" width="360" alt="wali-kamar /violations">                  | `/violations`         |
-| <img src="docs/images/roles/wali-kamar__dormitories.webp" width="360" alt="wali-kamar /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/wali-kamar__duty-roster.webp" width="360" alt="wali-kamar /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/wali-kamar__daily-report.webp" width="360" alt="wali-kamar /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/wali-kamar__announcements.webp" width="360" alt="wali-kamar /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/wali-kamar__kitab-progress.webp" width="360" alt="wali-kamar /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/wali-kamar__rapor-pesantren.webp" width="360" alt="wali-kamar /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/wali-kamar__quality__complaints.webp" width="360" alt="wali-kamar /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>yayasan-anggota</code> — 14 halaman</summary>
@@ -3454,7 +3078,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-anggota__risk-management.webp" width="360" alt="yayasan-anggota /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-anggota__finance__accounting.webp" width="360" alt="yayasan-anggota /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>yayasan-bendahara</code> — 14 halaman</summary>
@@ -3476,7 +3100,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-bendahara__risk-management.webp" width="360" alt="yayasan-bendahara /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-bendahara__finance__accounting.webp" width="360" alt="yayasan-bendahara /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>yayasan-ketua</code> — 14 halaman</summary>
@@ -3498,7 +3122,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-ketua__risk-management.webp" width="360" alt="yayasan-ketua /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-ketua__finance__accounting.webp" width="360" alt="yayasan-ketua /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>yayasan-pembina</code> — 14 halaman</summary>
@@ -3520,7 +3144,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-pembina__risk-management.webp" width="360" alt="yayasan-pembina /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-pembina__finance__accounting.webp" width="360" alt="yayasan-pembina /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>yayasan-pengawas</code> — 14 halaman</summary>
@@ -3542,7 +3166,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-pengawas__risk-management.webp" width="360" alt="yayasan-pengawas /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-pengawas__finance__accounting.webp" width="360" alt="yayasan-pengawas /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <details>
 <summary><code>yayasan-sekretaris</code> — 14 halaman</summary>
@@ -3564,7 +3188,7 @@ Setiap dari **66 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/yayasan-sekretaris__risk-management.webp" width="360" alt="yayasan-sekretaris /risk-management">        | `/risk-management`    |
 | <img src="docs/images/roles/yayasan-sekretaris__finance__accounting.webp" width="360" alt="yayasan-sekretaris /finance/accounting"> | `/finance/accounting` |
 
-</details>
+
 
 <!-- END:GENERATED-ROLES -->
 
@@ -3722,8 +3346,8 @@ Keduanya memerlukan stack lokal yang sudah di-seed. Hasil terakhir:
 
 | Sweep              | Cakupan                                     | Kegagalan |
 | ------------------ | ------------------------------------------- | --------- |
-| `screenshot-all`   | 781 tangkapan (755 rute unik + host publik) | **0**     |
-| `screenshot-roles` | 1.200 halaman di 66 peran                   | **0**     |
+| `screenshot-all`   | 746 rute unik + host publik                 | **0**     |
+| `screenshot-roles` | 920 halaman di 53 peran                     | **0**     |
 
 Skrip juga menghapus toast Sonner sebelum menangkap gambar, sehingga banner
 "akses ditolak" yang bersifat sementara tidak menutupi halaman yang sebenarnya
@@ -3737,8 +3361,8 @@ Setelah sweep, dua skrip membangun galeri di README dan
 python3 scripts/audit-screenshots.py apps/web/.qa-all      # deteksi halaman kosong
 python3 scripts/audit-screenshots.py apps/web/.qa-screens
 python3 scripts/build-doc-images.py       # gambar utama docs/images
-python3 scripts/build-page-gallery.py     # galeri lengkap (755 halaman)
-python3 scripts/build-role-gallery.py     # galeri per peran (66 peran)
+python3 scripts/build-page-gallery.py     # galeri lengkap (746 halaman)
+python3 scripts/build-role-gallery.py     # galeri per peran (53 peran)
 python3 scripts/check-doc-refs.py         # gagal bila ada gambar yatim
 ```
 
@@ -3782,36 +3406,39 @@ Aturan yang dijaga gate ini:
 
 ## Dokumentasi
 
-| Dokumen                                                    | Isi                                            |
-| ---------------------------------------------------------- | ---------------------------------------------- |
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)             | Peta sistem, alur request, dua host            |
-| [`docs/QUICK_START.md`](docs/QUICK_START.md)               | Orientasi cepat untuk kontributor baru         |
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)                 | Deployment produksi                            |
-| [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md)             | Cacat & technical debt                         |
-| [`docs/ROADMAP.md`](docs/ROADMAP.md)                       | Rencana kerja berikutnya                       |
-| [`docs/MOBILE_API.md`](docs/MOBILE_API.md)                 | Kontrak API aplikasi wali (PWA)                |
-| [`docs/EMAIL_SETUP.md`](docs/EMAIL_SETUP.md)               | Konfigurasi email keluar                       |
-| [`docs/EOFFICE_ESIGN_PLAN.md`](docs/EOFFICE_ESIGN_PLAN.md) | Rencana e-office & e-signature                 |
-| [`docs/planning/`](docs/planning/)                         | Dokumen desain awal (backend, DB, chatbot, UI) |
-| [`AGENTS.md`](AGENTS.md)                                   | Konvensi kanonik untuk agen & developer        |
+| Dokumen                                                          | Isi                                            |
+| ---------------------------------------------------------------- | ---------------------------------------------- |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)                   | Peta sistem, alur request, dua host            |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)                       | Deployment produksi                            |
+| [`docs/MOBILE_API.md`](docs/MOBILE_API.md)                       | Kontrak API aplikasi wali (PWA)                |
+| [`docs/EMAIL_SETUP.md`](docs/EMAIL_SETUP.md)                     | Konfigurasi email keluar                       |
+| [`docs/EOFFICE_ESIGN_PLAN.md`](docs/EOFFICE_ESIGN_PLAN.md)       | Rencana e-office & e-signature                 |
+| [`docs/planning/chatbot-design.md`](docs/planning/chatbot-design.md) | Desain chatbot                             |
+| [`AGENTS.md`](AGENTS.md)                                         | Konvensi kanonik untuk agen & developer        |
+| [`.claude/memory/`](.claude/memory/)                             | Catatan proyek: progres, roadmap, known issues, keputusan, pelajaran |
 
 ---
 
 ## Kontribusi
 
-1. Buat branch dari `main` (mis. `feat/fitur-keren`).
-2. Terapkan perubahan + test-nya.
-3. Jalankan gate kualitas di atas.
-4. Commit dengan pesan jelas, push ke branch.
-5. Buka Pull Request ke `main`.
+Pengembangan dilakukan oleh pihak yang ditugaskan atau dikontrak Yayasan
+Pesantren Cipansor. Repositori ini tidak menerima kontribusi dari luar.
 
-Jangan push langsung ke `main`.
+Alur kerjanya ada di [`AGENTS.md`](AGENTS.md): kerjakan di branch fitur, jalankan
+gerbang mutu lokal, lalu buka Pull Request ke `main` — tidak pernah push langsung
+ke `main`.
 
 ---
 
 ## Lisensi
 
-Dilisensikan di bawah [MIT License](LICENSE).
+Hak Cipta © 2025–2026 Yayasan Pesantren Cipansor. Seluruh hak dilindungi.
+
+Perangkat lunak ini **proprietary, bukan sumber terbuka**. Tidak ada lisensi yang
+diberikan untuk menyalin, mengubah, mendistribusikan, atau memakainya di luar
+operasional Yayasan — lihat [`LICENSE`](LICENSE). Repositori ini dapat terlihat
+publik untuk sementara, dan keterlihatan itu tidak memberikan hak apa pun.
+Komponen pihak ketiga tetap tunduk pada lisensinya masing-masing.
 
 ---
 

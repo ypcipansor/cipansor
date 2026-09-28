@@ -52,4 +52,32 @@ describe('RolesService.switchRole', () => {
     expect(mocked.userRoleAssignment.updateMany).toHaveBeenCalled();
     expect(mocked.userRoleAssignment.update).toHaveBeenCalled();
   });
+
+  // 2FA wajib bagi organ yayasan (keputusan 2026-09-24), di peran mana pun.
+  it('menolak pindah ke peran Pembina tanpa 2FA', async () => {
+    mocked.userRoleAssignment.findFirst.mockResolvedValue({
+      id: 'assign-2',
+      role: { code: 'YAYASAN_PEMBINA' },
+      user: { id: 'u-1', isTwoFactorEnabled: false },
+    } as any);
+
+    await expect(service.switchRole('u-1', 'assign-2')).rejects.toMatchObject({
+      statusCode: 403,
+    });
+    expect(mocked.userRoleAssignment.update).not.toHaveBeenCalled();
+  });
+
+  it('mengizinkan pindah ke peran Pembina dengan 2FA aktif', async () => {
+    mocked.userRoleAssignment.findFirst.mockResolvedValue({
+      id: 'assign-2',
+      role: { code: 'YAYASAN_PEMBINA' },
+      user: { id: 'u-1', isTwoFactorEnabled: true },
+    } as any);
+    mocked.userRoleAssignment.updateMany.mockResolvedValue({ count: 1 } as any);
+    mocked.userRoleAssignment.update.mockResolvedValue({ id: 'assign-2' } as any);
+
+    await expect(service.switchRole('u-1', 'assign-2')).resolves.toMatchObject({
+      activeRole: { id: 'assign-2' },
+    });
+  });
 });

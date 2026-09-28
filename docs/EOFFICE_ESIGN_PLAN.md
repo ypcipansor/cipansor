@@ -4,8 +4,13 @@ Written 2026-09-02, after auditing PR #414, the e-signature key lifecycle, and
 the incoming/outgoing letter flow. This is the durable copy of a plan that is
 too large to carry in a conversation.
 
-Read [`ROADMAP.md`](./ROADMAP.md) §14 for where this sits against everything
+Read [`roadmap.md`](../.claude/memory/roadmap.md) §6 for where this sits against everything
 else outstanding.
+
+> **How the feature works today is the [`naskah-dinas`](../.claude/skills/naskah-dinas/SKILL.md)
+> skill.** This file is the record behind it: what the audit found, why each
+> PR was shaped as it was, and the sources. §0 and §2 describe the state on
+> 2026-09-02 and are history; the "SHIPPED" marks say which PRs have landed.
 
 ---
 

@@ -83,7 +83,11 @@ export default function NewStudentPage() {
   };
 
   return (
-    <MainLayout allowedPermissions={["STUDENT_CREATE"]}>
+    // TU registers santri: the API grants them STUDENT_CREATE.
+    <MainLayout
+      allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN"]}
+      allowedPermissions={["STUDENT_CREATE"]}
+    >
       <div className="space-y-6">
         <PageHeader
           title="Add New Student"

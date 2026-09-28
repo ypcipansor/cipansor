@@ -470,7 +470,9 @@ test.describe("Teacher Management - Subject Assignment", () => {
       await waitForLoadingComplete(page);
 
       // Look for subject assignment section
-      const subjectSection = page.getByText(/mata pelajaran|subject|mengajar/i);
+      const subjectSection = page
+        .getByRole("main")
+        .getByText(/mata pelajaran|subject|mengajar/i);
       if (
         await subjectSection.isVisible({ timeout: 3000 }).catch(() => false)
       ) {

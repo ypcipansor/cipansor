@@ -137,6 +137,7 @@ import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permis
 // can't leave the seeded demo logins out of sync with what the web login page
 // lists. This is the single source of truth for the per-role demo accounts.
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../../packages/shared/src/types/demo-accounts';
+import { ADMIN_ROLE_CODES, GOVERNANCE_ROLE_CODES } from '../../../packages/shared/src/roles';
 
 // RoleCode comes straight from the generated Prisma client — do NOT keep a
 // local copy here. A shadow copy previously drifted out of sync with the
@@ -529,8 +530,9 @@ async function main() {
       description: "Siswa SMA Qur'an",
     },
 
-    // Granular school roles (wakasek / wali kelas / guru BK / bendahara /
-    // komite / alumni) for each unit
+    // Granular school roles (guru BK / bendahara / komite / alumni) for each
+    // unit. Wakasek and wali kelas are duties of a guru, not roles (merged
+    // into *_GURU on 2026-09-26); wali kelas is Class.homeroomTeacherId.
     ...(
       [
         ['TKQ', "TK Qur'an", Realm.TK_QURAN],
@@ -539,18 +541,6 @@ async function main() {
         ['SMAQ', "SMA Qur'an", Realm.SMA_QURAN],
       ] as const
     ).flatMap(([prefix, unitLabel, realm]) => [
-      {
-        code: RoleCode[`${prefix}_WAKASEK`],
-        name: `Wakil Kepala ${unitLabel}`,
-        realm,
-        description: `Wakil kepala sekolah ${unitLabel}`,
-      },
-      {
-        code: RoleCode[`${prefix}_WALI_KELAS`],
-        name: `Wali Kelas ${unitLabel}`,
-        realm,
-        description: `Wali kelas ${unitLabel}`,
-      },
       // Guru BK exists only at SMP IT and SMA Qur'an. TK Qur'an and SD IT have
       // no dedicated counselling teacher — the wali kelas covers it — so those
       // RoleCodes do not exist and must not be generated here.
@@ -593,15 +583,9 @@ async function main() {
     // Pesantren roles (cross-unit)
     {
       code: RoleCode.PESANTREN_PENGASUH,
-      name: 'Pengasuh Pesantren',
+      name: 'Pimpinan Pesantren (Kiai)',
       realm: Realm.PESANTREN,
-      description: 'Kyai / pimpinan tertinggi pesantren',
-    },
-    {
-      code: RoleCode.PESANTREN_DIREKTUR,
-      name: 'Direktur Pesantren',
-      realm: Realm.PESANTREN,
-      description: 'Pengelola operasional harian pesantren',
+      description: 'Kiai — pengasuh dan pemimpin tertinggi pesantren (UU 18/2019 Ps. 9 ayat 2)',
     },
     {
       code: RoleCode.PESANTREN_TATA_USAHA,
@@ -617,39 +601,15 @@ async function main() {
     },
     {
       code: RoleCode.MUSYRIF,
-      name: 'Musyrif',
+      name: 'Musyrif / Musyrifah',
       realm: Realm.PESANTREN,
-      description: 'Pembina asrama (putra)',
-    },
-    {
-      code: RoleCode.MUSYRIFAH,
-      name: 'Musyrifah',
-      realm: Realm.PESANTREN,
-      description: 'Pembina asrama (putri)',
+      description: 'Pembina asrama, wali kamar dan pembina akhlak (murabbi), putra atau putri',
     },
     {
       code: RoleCode.MUHAFIDZ,
-      name: 'Muhafidz',
+      name: 'Muhafidz / Muhafidzah',
       realm: Realm.PESANTREN,
-      description: 'Pengampu tahfidz (putra)',
-    },
-    {
-      code: RoleCode.MUHAFIDZAH,
-      name: 'Muhafidzah',
-      realm: Realm.PESANTREN,
-      description: 'Pengampu tahfidz (putri)',
-    },
-    {
-      code: RoleCode.MURABBI,
-      name: 'Murabbi',
-      realm: Realm.PESANTREN,
-      description: 'Pembina akhlaq',
-    },
-    {
-      code: RoleCode.WALI_KAMAR,
-      name: 'Wali Kamar',
-      realm: Realm.PESANTREN,
-      description: 'Penanggung jawab kamar',
+      description: 'Pengampu tahfidz, putra atau putri',
     },
 
     // Cross-unit support staff (yayasan-wide services)
@@ -747,15 +707,10 @@ async function main() {
    */
   const PESANTREN_REALM_ROLES = new Set([
     'PESANTREN_PENGASUH',
-    'PESANTREN_DIREKTUR',
     'PESANTREN_TATA_USAHA',
     'USTADZ',
     'MUSYRIF',
-    'MUSYRIFAH',
     'MUHAFIDZ',
-    'MUHAFIDZAH',
-    'MURABBI',
-    'WALI_KAMAR',
     'KEAMANAN',
     'PERAWAT',
     'PUSTAKAWAN',
@@ -783,19 +738,9 @@ async function main() {
     if (code.startsWith('YAYASAN_') || code.endsWith('_ADMIN')) return UserRole.UNIT_ADMIN;
     if (code.endsWith('_SISWA') || code.endsWith('_ALUMNI')) return UserRole.STUDENT;
     if (code.endsWith('_ORANG_TUA')) return UserRole.PARENT;
-    const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_WAKASEK', '_WALI_KELAS', '_GURU_BK'];
+    const teacherSuffix = ['_GURU', '_KEPALA_SEKOLAH', '_GURU_BK'];
     if (teacherSuffix.some((s) => code.endsWith(s))) return UserRole.TEACHER;
-    const teacherExact = [
-      'PESANTREN_PENGASUH',
-      'PESANTREN_DIREKTUR',
-      'USTADZ',
-      'MUSYRIF',
-      'MUSYRIFAH',
-      'MUHAFIDZ',
-      'MUHAFIDZAH',
-      'MURABBI',
-      'WALI_KAMAR',
-    ];
+    const teacherExact = ['PESANTREN_PENGASUH', 'USTADZ', 'MUSYRIF', 'MUHAFIDZ'];
     if (teacherExact.includes(code)) return UserRole.TEACHER;
     return UserRole.STAFF;
   };
@@ -803,6 +748,11 @@ async function main() {
   // Kept so the domain rows for these personas can be created further down,
   // once classes, students and teachers exist.
   const demoUsers = new Map<string, { id: string; name: string; unitId?: string }>();
+  // Every account, including a role's second persona, for the per-person
+  // domain rows (Teacher, Student, parent link) built further down.
+  const demoPersonas: Array<
+    [string, { id: string; name: string; unitId?: string; homeroom?: boolean }]
+  > = [];
   let demoCreated = 0;
   for (const acc of DEMO_ACCOUNTS) {
     const role = roles[acc.roleCode];
@@ -830,7 +780,11 @@ async function main() {
         isActive: true,
       },
     });
-    demoUsers.set(acc.roleCode, { id: demoUser.id, name: acc.name, unitId });
+    // Several musyrif and muhafidz personas share one role since 2026-09-25;
+    // the first account listed for a role is the one looked up by role.
+    const persona = { id: demoUser.id, name: acc.name, unitId };
+    demoPersonas.push([acc.roleCode, { ...persona, homeroom: acc.homeroom }]);
+    if (!demoUsers.has(acc.roleCode)) demoUsers.set(acc.roleCode, persona);
     demoCreated++;
   }
   console.log(`✅ Demo accounts created (${demoCreated} of ${DEMO_ACCOUNTS.length})`);
@@ -846,10 +800,14 @@ async function main() {
   // These pairings are the ones that genuinely occur in a pesantren: a kepala
   // sekolah who still teaches, and a yayasan treasurer who also keeps a unit's
   // books. The second is deliberately cross-realm (YAYASAN + SD_IT) so the
-  // switcher's realm grouping is exercised too.
+  // switcher's realm grouping is exercised too. The third is Cipansor's own:
+  // the Kiai, Pimpinan Pesantren, also sits on the yayasan's Pembina (UU
+  // 16/2001 Ps. 29 bars Pembina only from Pengurus and Pengawas; a pesantren
+  // leader is a "pelaksana kegiatan", Ps. 35 ayat 3).
   const SECONDARY_ROLES: Array<{ primary: string; secondary: string }> = [
     { primary: 'SMPIT_KEPALA_SEKOLAH', secondary: 'SMPIT_GURU' },
     { primary: 'YAYASAN_BENDAHARA', secondary: 'SDIT_BENDAHARA' },
+    { primary: 'PESANTREN_PENGASUH', secondary: 'YAYASAN_PEMBINA' },
   ];
   let secondaryCreated = 0;
   for (const pair of SECONDARY_ROLES) {
@@ -1554,6 +1512,8 @@ async function main() {
   const demoUnitClasses = new Map<string, string>([
     [smpIt.id, class7A.id],
     [sdIt.id, class1A.id],
+    // TK Qur'an has no demo student; its pupils are all in TK A.
+    [tkQuran.id, classTkA.id],
   ]);
 
   /** One class per unit, so students of every realm can be enrolled. */
@@ -1574,12 +1534,15 @@ async function main() {
   };
 
   const demoStudentByUnit = new Map<string, string>();
+  // Teacher rows of the wali kelas personas (`homeroom` in DEMO_ACCOUNTS),
+  // made homeroom of their unit's demo class below.
+  const demoHomeroomByUnit = new Map<string, string>();
   let demoStudents = 0;
   let demoTeachers = 0;
   let demoParents = 0;
   let demoNis = 9000;
 
-  for (const [roleCode, demo] of demoUsers) {
+  for (const [roleCode, demo] of demoPersonas) {
     if (!demo.unitId) continue;
 
     const isStudent = roleCode.endsWith('_SISWA');
@@ -1631,13 +1594,14 @@ async function main() {
       demoStudentByUnit.set(demo.unitId, student.id);
       demoStudents++;
     } else if (isTeacher) {
-      await prisma.teacher.create({
+      const teacher = await prisma.teacher.create({
         data: {
           userId: demo.id,
           unitId: demo.unitId,
           nip: `1990${String(demoNis++).padStart(11, '0')}`,
         },
       });
+      if (demo.homeroom) demoHomeroomByUnit.set(demo.unitId, teacher.id);
       demoTeachers++;
     } else if (isParent) {
       demoParents++; // linked in the second pass, once every student exists
@@ -1651,10 +1615,21 @@ async function main() {
     demoStudentByUnit.set(tkQuran.id, tkPupils[0].id);
   }
 
+  // The wali kelas persona is the wali kelas of the class its unit's demo
+  // santri sits in (TK A for TK Qur'an). A day pupil's leave is the wali
+  // kelas's to decide (2026-09-25), and since 2026-09-27 the Wali Kelas menu
+  // and the homeroom pages follow this relation, not a role: a persona that is
+  // wali kelas of no class would have neither.
+  for (const [unitId, teacherId] of demoHomeroomByUnit) {
+    const classId = demoUnitClasses.get(unitId);
+    if (!classId) continue;
+    await prisma.class.update({ where: { id: classId }, data: { homeroomTeacherId: teacherId } });
+  }
+
   // Second pass: the parent of a unit is linked to that unit's demo student.
   // Done separately because map iteration order does not guarantee the
   // student was created before the parent.
-  for (const [roleCode, demo] of demoUsers) {
+  for (const [roleCode, demo] of demoPersonas) {
     if (!roleCode.endsWith('_ORANG_TUA') || !demo.unitId) continue;
     const studentId = demoStudentByUnit.get(demo.unitId);
     if (!studentId) continue;
@@ -3285,52 +3260,6 @@ async function main() {
 
   console.log('✅ Subjects created');
 
-  // Create Curriculums (kelompok mata pelajaran per unit + tahun ajaran + tingkat).
-  // The web `/curriculum` screen has always linked to these detail pages; before
-  // the model existed there was nothing to link to, so every curriculum URL 404'd.
-  const curriculumsData = [
-    {
-      code: 'KUR-MERDEKA-SMP-7',
-      name: 'Kurikulum Merdeka SMP Kelas 7',
-      description: 'Struktur kurikulum merdeka untuk tingkat 7 SMP IT.',
-      gradeLevel: 7,
-    },
-    {
-      code: 'KUR-MERDEKA-SMP-8',
-      name: 'Kurikulum Merdeka SMP Kelas 8',
-      description: 'Struktur kurikulum merdeka untuk tingkat 8 SMP IT.',
-      gradeLevel: 8,
-    },
-  ];
-
-  for (const cur of curriculumsData) {
-    const curriculum = await prisma.curriculum.create({
-      data: {
-        unitId: smpIt.id,
-        academicYearId: academicYear.id,
-        code: cur.code,
-        name: cur.name,
-        description: cur.description,
-        gradeLevel: cur.gradeLevel,
-        isActive: true,
-      },
-    });
-
-    // Split the subject list across the two semesters, preserving order.
-    const half = Math.ceil(subjects.length / 2);
-    await prisma.curriculumSubject.createMany({
-      data: subjects.map((subject, index) => ({
-        curriculumId: curriculum.id,
-        subjectId: subject.id,
-        semester: index < half ? 1 : 2,
-        sequence: index % half,
-        isRequired: subject.type !== SubjectType.EXTRACURRICULAR,
-      })),
-    });
-  }
-
-  console.log('✅ Curriculums created');
-
   // Seed Kurikulum Merdeka Learning Outcomes (sekarang subjects sudah ada)
   await seedKurikulumMerdeka(prisma, smpIt.id, academicYear.id);
 
@@ -3364,6 +3293,26 @@ async function main() {
     { subjectIdx: 11, day: DayOfWeek.FRIDAY, startTime: '09:00', endTime: '10:30' },
   ];
 
+  // The Guru SMP IT persona teaches one lesson in 7A without being its wali
+  // kelas, so the demo has a teacher who takes a class's register by teaching
+  // in it (2026-09-27: daily attendance is recorded by the wali kelas, a
+  // teacher with a lesson in the class, or the unit's operator).
+  const smpGuruPersona = await prisma.teacher.findFirst({
+    where: { user: { email: 'smpit.guru@cipansor.or.id' }, deletedAt: null },
+    select: { id: true },
+  });
+  const PERSONA_LESSON = 5; // Monday 09:00, subjects[5]
+  if (smpGuruPersona) {
+    await prisma.teacherSubject.create({
+      data: {
+        teacherId: smpGuruPersona.id,
+        subjectId: subjects[PERSONA_LESSON].id,
+        classId: class7A.id,
+        isActive: true,
+      },
+    });
+  }
+
   for (const sched of schedulesData) {
     await prisma.schedule.create({
       data: {
@@ -3371,7 +3320,10 @@ async function main() {
         academicYearId: academicYear.id,
         classId: class7A.id,
         subjectId: subjects[sched.subjectIdx].id,
-        teacherId: teacherPesantren.id,
+        teacherId:
+          sched.subjectIdx === PERSONA_LESSON && smpGuruPersona
+            ? smpGuruPersona.id
+            : teacherPesantren.id,
         dayOfWeek: sched.day,
         startTime: sched.startTime,
         endTime: sched.endTime,
@@ -5583,6 +5535,43 @@ async function main() {
       isActive: true,
     },
   });
+
+  // The demo musyrif personas look after real asrama and kamar. A boarder's
+  // leave is their musyrif's to decide (2026-09-25); without a Musyrif row and
+  // an assignment these logins were musyrif in name only and could decide
+  // nothing. The murabbi keeps no asrama: pembinaan akhlak is not a kamar.
+  const musyrifDuties: Array<
+    [email: string, dormitoryId: string, roomId: string | null, role: string]
+  > = [
+    ['pesantren.musyrif@cipansor.or.id', dormitoryPutra.id, null, 'KOORDINATOR'],
+    ['pesantren.musyrifah@cipansor.or.id', dormitoryPutri.id, null, 'KOORDINATOR'],
+    ['pesantren.walikamar@cipansor.or.id', dormitoryPutra.id, rooms[0].room.id, 'PEMBINA'],
+  ];
+  for (const [email, dormitoryId, roomId, role] of musyrifDuties) {
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, unitId: true },
+    });
+    if (!user) continue;
+    const musyrif = await prisma.musyrif.create({
+      data: {
+        userId: user.id,
+        unitId: user.unitId ?? smpIt.id,
+        isActive: true,
+        joinDate: currentYear.startDate,
+      },
+    });
+    await prisma.musyrifAssignment.create({
+      data: {
+        musyrifId: musyrif.id,
+        dormitoryId,
+        roomId,
+        role,
+        startDate: currentYear.startDate,
+        isActive: true,
+      },
+    });
+  }
   console.log('   ✅ Musyrif & assignments created');
 
   // --- Santri Wallet & Transactions ---
@@ -8132,8 +8121,17 @@ async function main() {
   // fixed secret never lands in a real environment's seed.
   if (process.env.E2E_FIXED_2FA === '1') {
     const fixedSecret = process.env.E2E_2FA_SECRET || 'NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE';
+    // Everyone login forces through 2FA: the legacy admin column, plus any
+    // active admin or yayasan-organ assignment (the organs' legacy column is
+    // STAFF on some accounts, e.g. ketua@).
+    const secondFactorCodes = [...ADMIN_ROLE_CODES, ...GOVERNANCE_ROLE_CODES] as RoleCode[];
     const updated = await prisma.user.updateMany({
-      where: { role: { in: [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN] } },
+      where: {
+        OR: [
+          { role: { in: [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN] } },
+          { userRoles: { some: { isActive: true, role: { code: { in: secondFactorCodes } } } } },
+        ],
+      },
       data: {
         isTwoFactorEnabled: true,
         twoFactorSecret: fixedSecret,

@@ -123,7 +123,9 @@ describe('Library Service', () => {
       vi.mocked(prisma.borrowing.create).mockResolvedValue({ id: 'bor-1' } as any);
 
       // Mock transaction execution
-      vi.mocked(prisma.$transaction).mockImplementation(async (cb) => cb(prisma));
+      vi.mocked(prisma.$transaction).mockImplementation(async (cb) =>
+        (cb as unknown as (tx: typeof prisma) => unknown)(prisma)
+      );
 
       await service.createBorrowing(
         {

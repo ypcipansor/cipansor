@@ -32,7 +32,7 @@ set -u
 is_code() {
   case "$1" in
     docs/DEPLOYMENT.md) return 0 ;; # decommissioned-modules.guard.test.ts pins its numbers
-    *.md | docs/* | .claude/* | .github/agents/* | .github/ISSUE_TEMPLATE/* | LICENSE | LICENSE.*) return 1 ;;
+    *.md | docs/* | .claude/* | .github/ISSUE_TEMPLATE/* | LICENSE | LICENSE.*) return 1 ;;
     *) return 0 ;;
   esac
 }

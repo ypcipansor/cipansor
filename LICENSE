@@ -1,0 +1,65 @@
+HAK CIPTA DAN KETENTUAN PENGGUNAAN — PERANGKAT LUNAK PROPRIETARY
+
+Hak Cipta (c) 2025-2026 Yayasan Pesantren Cipansor. Seluruh hak dilindungi.
+
+Perangkat lunak ini — termasuk kode sumber, kode objek, skema basis data,
+dokumentasi, desain antarmuka, dan aset yang menyertainya ("Perangkat Lunak")
+— adalah milik Yayasan Pesantren Cipansor ("Yayasan") dan dilindungi oleh
+Undang-Undang Nomor 28 Tahun 2014 tentang Hak Cipta.
+
+Perangkat Lunak ini BUKAN perangkat lunak sumber terbuka (open source). Tidak
+ada lisensi apa pun yang diberikan kepada siapa pun, baik secara tersurat
+maupun tersirat. Tanpa izin tertulis dari Yayasan, dilarang:
+
+  1. menyalin atau memperbanyak Perangkat Lunak, seluruhnya atau sebagian;
+  2. mengubah, menerjemahkan, atau membuat karya turunan darinya;
+  3. mendistribusikan, menjual, menyewakan, atau menyediakannya bagi pihak
+     lain, termasuk sebagai layanan daring;
+  4. menggunakannya untuk kepentingan selain operasional Yayasan dan
+     unit-unitnya.
+
+Pihak yang ditugaskan atau dikontrak oleh Yayasan untuk mengembangkan atau
+mengoperasikan Perangkat Lunak boleh menggunakannya sebatas penugasan itu.
+
+Repositori ini dapat terlihat oleh publik untuk sementara waktu.
+Keterlihatan itu tidak memberikan hak apa pun atas Perangkat Lunak.
+
+Komponen pihak ketiga tetap tunduk pada lisensinya masing-masing: paket yang
+dipasang melalui pnpm, serta font Amiri di apps/api/src/assets/fonts/
+(SIL Open Font License 1.1 — lihat OFL.txt di direktori tersebut).
+
+Permohonan izin: Yayasan Pesantren Cipansor — https://cipansor.or.id
+
+-------------------------------------------------------------------------------
+
+COPYRIGHT AND TERMS OF USE — PROPRIETARY SOFTWARE (English translation; the
+Indonesian text above prevails)
+
+Copyright (c) 2025-2026 Yayasan Pesantren Cipansor. All rights reserved.
+
+This software — including its source code, object code, database schema,
+documentation, interface design and accompanying assets (the "Software") — is
+the property of Yayasan Pesantren Cipansor (the "Foundation") and is protected
+by Indonesian Law No. 28 of 2014 on Copyright.
+
+The Software is NOT open source. No licence of any kind is granted to anyone,
+express or implied. Without the Foundation's written permission, you may not:
+
+  1. copy or reproduce the Software, in whole or in part;
+  2. modify, translate, or create derivative works of it;
+  3. distribute, sell, rent, or make it available to others, including as an
+     online service;
+  4. use it for any purpose other than the operations of the Foundation and
+     its units.
+
+Parties assigned or contracted by the Foundation to develop or operate the
+Software may use it within the scope of that assignment.
+
+This repository may be publicly visible for a period of time. That visibility
+grants no rights in the Software.
+
+Third-party components remain under their own licences: the packages
+installed through pnpm, and the Amiri font in apps/api/src/assets/fonts/
+(SIL Open Font License 1.1 — see OFL.txt in that directory).
+
+Permission requests: Yayasan Pesantren Cipansor — https://cipansor.or.id

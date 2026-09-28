@@ -2,73 +2,43 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 
 // Bill types (tagihan)
+
+/** Prisma Decimal columns (amount, paidAmount) arrive as strings. */
+export type Money = number | string;
+
+/**
+ * A santri bill exactly as GET /finance/invoices and /finance/invoices/:id
+ * return it (Prisma `Invoice`).
+ *
+ * This type used to describe a bill the API never sent (`billType`,
+ * `student.name`, `academicYear`, `description`), so the list's "Jenis"
+ * column was blank and the santri column showed only the NIS. The kind of
+ * bill is its `paymentType`, a per-unit row, not a fixed enum.
+ */
 export interface Bill {
   id: string;
+  invoiceNumber: string;
   studentId: string;
   student?: {
     id: string;
-    name: string;
     nis: string;
-    class?: {
-      id: string;
-      name: string;
-    };
+    unitId: string;
+    user?: { id: string; name: string };
+    unit?: { id: string; name: string };
   };
-  academicYearId: string;
-  academicYear?: {
-    id: string;
-    name: string;
-  };
-  billType: BillType;
-  amount: number;
+  paymentTypeId: string;
+  paymentType?: { id: string; name: string; code: string };
+  amount: Money;
+  paidAmount: Money;
   dueDate: string;
-  paidAmount: number;
   status: BillStatus;
-  description?: string;
+  /** e.g. "September 2026", or "Tahun Ajaran 2026/2027" for a yearly fee. */
+  period?: string | null;
+  notes?: string | null;
+  /** Only on GET /finance/invoices/:id. */
+  payments?: Payment[];
   createdAt: string;
   updatedAt: string;
-}
-
-/**
- * The finance API models a bill as an `Invoice` row: the student's display name
- * lives on `student.user.name`, the bill kind on `paymentType.code`, and the
- * academic year is not returned at all. Every page here was built against a flat
- * `Bill` shape (`student.name`, `billType`), so a raw row rendered an empty
- * student column and a blank "Jenis". Normalize at the hook boundary so the
- * pages keep working and every field they read is defined.
- */
-export function normalizeBill(raw: any): Bill {
-  const student = raw.student ?? {};
-  const user = student.user ?? {};
-  const code = raw.paymentType?.code ?? raw.billType ?? "OTHER";
-  return {
-    ...raw,
-    studentId: raw.studentId ?? student.id ?? "",
-    student: raw.student
-      ? {
-          id: student.id,
-          name: user.name ?? student.name ?? "",
-          nis: student.nis ?? "",
-          class: student.class ?? undefined,
-        }
-      : undefined,
-    academicYearId: raw.academicYearId ?? raw.academicYear?.id ?? "",
-    academicYear: raw.academicYear ?? undefined,
-    billType: (BILL_TYPES.some((t) => t.value === code)
-      ? code
-      : "OTHER") as BillType,
-    amount: Number(raw.amount ?? 0),
-    paidAmount: Number(raw.paidAmount ?? 0),
-    description:
-      raw.description ?? raw.notes ?? raw.paymentType?.name ?? undefined,
-  };
-}
-
-function normalizeBillList(payload: PaginatedResponse<unknown>) {
-  return {
-    ...payload,
-    data: (payload.data ?? []).map(normalizeBill),
-  };
 }
 
 export type BillType =
@@ -118,93 +88,81 @@ export const BILL_STATUSES: {
 ];
 
 // Payment types (pembayaran)
+
+/**
+ * A payment as GET /finance/payments and /finance/payments/:id return it
+ * (Prisma `Payment`). Like `Bill`, this used to describe fields the API never
+ * sent (`billId`, `bill`, `paymentMethod`, `paymentDate`, `receiptNumber`).
+ */
 export interface Payment {
   id: string;
-  billId: string;
-  bill?: Bill;
-  amount: number;
-  paymentMethod: PaymentMethod;
-  paymentDate: string;
-  receiptNumber: string;
-  notes?: string;
-  verifiedBy?: string;
-  verifiedAt?: string;
+  invoiceId: string;
+  invoice?: Bill & {
+    student?: Bill["student"] & {
+      /** Only on GET /finance/payments/:id: the active class, for the receipt. */
+      enrollments?: { class: { id: string; name: string } }[];
+    };
+  };
+  amount: Money;
+  method: PaymentMethod;
+  referenceNo?: string | null;
+  proofUrl?: string | null;
+  paidAt: string;
+  notes?: string | null;
+  verificationStatus: PaymentVerificationStatus;
   createdAt: string;
   updatedAt: string;
 }
 
+/** Only FINAL_APPROVED payments count toward a bill; the others are proofs in review. */
+export type PaymentVerificationStatus =
+  "PENDING_VERIFICATION" | "TU_APPROVED" | "FINAL_APPROVED" | "REJECTED";
+
+export const VERIFICATION_LABELS: Record<PaymentVerificationStatus, string> = {
+  PENDING_VERIFICATION: "Menunggu verifikasi TU",
+  TU_APPROVED: "Menunggu persetujuan akhir",
+  FINAL_APPROVED: "Sah",
+  REJECTED: "Ditolak",
+};
+
+/** Prisma `PaymentMethod`. */
 export type PaymentMethod =
   "CASH" | "BANK_TRANSFER" | "VIRTUAL_ACCOUNT" | "EWALLET" | "OTHER";
 
-// Values mirror the Prisma `PaymentMethod` enum exactly: the filter dropdown
-// sends its value straight to `GET /finance/payments?method=`, so a UI-only
-// spelling (`TRANSFER`, `DEBIT_CARD`) selected a method the API cannot parse.
 export const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CASH", label: "Tunai" },
   { value: "BANK_TRANSFER", label: "Transfer Bank" },
   { value: "VIRTUAL_ACCOUNT", label: "Virtual Account" },
-  { value: "EWALLET", label: "Dompet Digital" },
+  { value: "EWALLET", label: "Dompet Digital / QRIS" },
   { value: "OTHER", label: "Lainnya" },
 ];
 
+export function paymentMethodLabel(method: string): string {
+  return PAYMENT_METHODS.find((m) => m.value === method)?.label ?? method;
+}
+
 /**
- * The payments API returns an `Invoice`-shaped relation, not the `bill` field
- * the pages read. Flatten it here so `payment.bill.student.name`, `billType`,
- * `paymentMethod`, `paymentDate` and `billId` are all defined — without this the
- * payments table rendered "Invalid Date", an empty student column and a
- * `/finance/bills/undefined` link.
+ * The kinds of bill, for a filter: active payment types, one per code.
+ * Payment types are rows per unit, so "SPP" exists once in each unit; the
+ * list filters by code so one choice covers them all.
  */
-export function normalizePayment(raw: any): Payment {
-  const invoice = raw.invoice ?? {};
-  const student = invoice.student ?? {};
-  const user = student.user ?? {};
-  const code = invoice.paymentType?.code ?? "OTHER";
-  const bill = raw.bill ?? {
-    id: invoice.id ?? raw.invoiceId,
-    studentId: invoice.studentId ?? student.id ?? "",
-    student: invoice.student
-      ? {
-          id: student.id,
-          name: user.name ?? student.name ?? "",
-          nis: student.nis ?? "",
-          class: student.class ?? undefined,
-        }
-      : undefined,
-    academicYearId: invoice.academicYearId ?? invoice.academicYear?.id ?? "",
-    academicYear: invoice.academicYear ?? undefined,
-    billType: (BILL_TYPES.some((t) => t.value === code)
-      ? code
-      : "OTHER") as BillType,
-    amount: Number(invoice.amount ?? 0),
-    paidAmount: Number(invoice.paidAmount ?? 0),
-    dueDate: invoice.dueDate ?? "",
-    status: (invoice.status ?? "PENDING") as BillStatus,
-    description: invoice.notes ?? invoice.paymentType?.name ?? undefined,
-    createdAt: invoice.createdAt ?? "",
-    updatedAt: invoice.updatedAt ?? "",
-  };
-  return {
-    ...raw,
-    billId: raw.billId ?? invoice.id ?? raw.invoiceId ?? "",
-    bill,
-    invoice: invoice.id
-      ? {
-          ...invoice,
-          student: { ...student, name: user.name ?? student.name ?? "" },
-        }
-      : raw.invoice,
-    amount: Number(raw.amount ?? 0),
-    paymentMethod: (raw.paymentMethod ?? raw.method ?? "CASH") as PaymentMethod,
-    paymentDate: raw.paymentDate ?? raw.paidAt ?? raw.createdAt ?? "",
-    receiptNumber: raw.receiptNumber ?? raw.referenceNo ?? raw.id ?? "",
-    verifiedBy:
-      raw.verifiedBy ??
-      raw.finalVerifiedById ??
-      raw.tuVerifiedById ??
-      undefined,
-    verifiedAt:
-      raw.verifiedAt ?? raw.finalVerifiedAt ?? raw.tuVerifiedAt ?? undefined,
-  } as Payment;
+export function usePaymentTypeOptions() {
+  return useQuery({
+    queryKey: ["payment-types", "options"],
+    queryFn: async () => {
+      const response = await api.get<
+        PaginatedResponse<{ id: string; code: string; name: string }>
+      >("/finance/payment-types", { params: { isActive: true, limit: 100 } });
+      const byCode = new Map<string, string>();
+      for (const t of response.data.data) {
+        if (!byCode.has(t.code)) byCode.set(t.code, t.name);
+      }
+      return Array.from(byCode, ([code, name]) => ({ code, name })).sort(
+        (a, b) => a.name.localeCompare(b.name, "id"),
+      );
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 // Bill hooks
@@ -212,8 +170,12 @@ export interface BillParams {
   page?: number;
   limit?: number;
   studentId?: string;
+  /** Bills due within this academic year's months. */
   academicYearId?: string;
-  billType?: BillType;
+  /** Payment types are per unit; filter by code to match "SPP" in every unit. */
+  paymentTypeCode?: string;
+  /** Invoice number, NIS or santri name. */
+  search?: string;
   status?: BillStatus;
 }
 
@@ -221,13 +183,13 @@ export function useBills(params: BillParams = {}) {
   return useQuery({
     queryKey: ["bills", params],
     queryFn: async () => {
-      const response = await api.get<PaginatedResponse<unknown>>(
+      const response = await api.get<PaginatedResponse<Bill>>(
         "/finance/invoices",
         {
           params,
         },
       );
-      return normalizeBillList(response.data);
+      return response.data;
     },
   });
 }
@@ -236,10 +198,10 @@ export function useBill(id: string) {
   return useQuery({
     queryKey: ["bills", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<unknown>>(
+      const response = await api.get<ApiResponse<Bill>>(
         `/finance/invoices/${id}`,
       );
-      return normalizeBill(response.data.data);
+      return response.data.data;
     },
     enabled: !!id,
   });
@@ -249,10 +211,10 @@ export function useStudentBills(studentId: string) {
   return useQuery({
     queryKey: ["students", studentId, "bills"],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<unknown[]>>(
+      const response = await api.get<ApiResponse<Bill[]>>(
         `/students/${studentId}/bills`,
       );
-      return (response.data.data ?? []).map(normalizeBill);
+      return response.data.data;
     },
     enabled: !!studentId,
   });
@@ -352,8 +314,8 @@ export function useDeleteBill() {
 export interface PaymentParams {
   page?: number;
   limit?: number;
-  billId?: string;
-  paymentMethod?: PaymentMethod;
+  invoiceId?: string;
+  method?: PaymentMethod;
   startDate?: string;
   endDate?: string;
 }
@@ -362,18 +324,13 @@ export function usePayments(params: PaymentParams = {}) {
   return useQuery({
     queryKey: ["payments", params],
     queryFn: async () => {
-      // The API filters by `invoiceId`, not the UI's `billId`.
-      const { billId, paymentMethod, ...rest } = params;
-      const response = await api.get<PaginatedResponse<unknown>>(
+      const response = await api.get<PaginatedResponse<Payment>>(
         "/finance/payments",
         {
-          params: { ...rest, invoiceId: billId, method: paymentMethod },
+          params,
         },
       );
-      return {
-        ...response.data,
-        data: (response.data.data ?? []).map(normalizePayment),
-      };
+      return response.data;
     },
   });
 }
@@ -382,30 +339,12 @@ export function usePayment(id: string) {
   return useQuery({
     queryKey: ["payments", id],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<unknown>>(
+      const response = await api.get<ApiResponse<Payment>>(
         `/finance/payments/${id}`,
       );
-      return normalizePayment(response.data.data);
+      return response.data.data;
     },
     enabled: !!id,
-  });
-}
-
-export function useBillPayments(billId: string) {
-  return useQuery({
-    queryKey: ["bills", billId, "payments"],
-    queryFn: async () => {
-      // There is no `/finance/invoices/:id/payments` route; the payments list
-      // filtered by invoice is the same data.
-      const response = await api.get<PaginatedResponse<unknown>>(
-        "/finance/payments",
-        {
-          params: { invoiceId: billId, limit: 100 },
-        },
-      );
-      return (response.data.data ?? []).map(normalizePayment);
-    },
-    enabled: !!billId,
   });
 }
 
@@ -422,18 +361,11 @@ export function useCreatePayment() {
 
   return useMutation({
     mutationFn: async (data: CreatePaymentData) => {
-      // The API expects `invoiceId` + `method` (see createPaymentSchema); posting
-      // the UI field names returned 400 "Invalid invoice ID".
-      const response = await api.post<ApiResponse<unknown>>(
+      const response = await api.post<ApiResponse<Payment>>(
         "/finance/payments",
-        {
-          invoiceId: data.billId,
-          amount: data.amount,
-          method: data.paymentMethod,
-          notes: data.notes,
-        },
+        data,
       );
-      return normalizePayment(response.data.data);
+      return response.data.data;
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["payments"] });
@@ -466,7 +398,8 @@ export interface FinancialSummary {
   totalOutstanding: number;
   totalOverdue: number;
   billsByType: {
-    type: BillType;
+    /** The payment type's name. */
+    type: string;
     total: number;
     paid: number;
     outstanding: number;

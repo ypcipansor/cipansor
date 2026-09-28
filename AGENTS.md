@@ -19,7 +19,7 @@ monorepo**:
 ## Golden rules
 
 1. **Never clobber `apps/api/prisma/schema.prisma`.** It is very large —
-   ~9,400 lines, hundreds of models and enums. (Exact counts drift; don't
+   ~10,000 lines, hundreds of models and enums. (Exact counts drift; don't
    hard-code them here.) It was once accidentally truncated to a stub, which
    broke the entire backend. Edit surgically; run `pnpm --filter api db:generate`
    after changes. A committed PreToolUse hook (`.claude/hooks/guard.sh`) blocks a
@@ -84,6 +84,28 @@ monorepo**:
    very files #504 deleted. `git worktree add --detach <dir> origin/main`, merge
    both heads into it, run the gate there; it costs one gate run and it is the
    only thing that catches this class.
+10. **Every UI change ships before/after screenshots**, one pair per affected
+    surface, taken from the real components — "before" rendered from `main`,
+    not remembered. Put them where the reviewer sees them (the PR body, or a
+    shared page linked from it). The `screenshot-roles` skill has the rigs
+    (`before-after.md`). Walking each screen for its screenshot is also what
+    finds the defects a diff hides.
+11. **Say "done" only when someone can click it — and say how far it went.**
+    Every report of a UI change gives the **menu path** to reach it (e.g.
+    *Perencanaan & Kinerja → Perjanjian Kinerja → Tambah*) and its state:
+    **on a branch**, **merged to `main`**, **on staging**, or **in
+    production**. A page on an unmerged branch is not "built" to the person
+    looking for it in the app.
+12. **A decision that is the user's: research first, then offer choices.**
+    Before asking, look up how the matter is settled in practice —
+    regulation, the pesantren's and schools' own practice, established
+    standards — and cite the sources. Question the premise too: include
+    "not needed at all" or "let the system do it" when that is a real
+    option. Then give the user a multiple-choice question, recommended
+    option first with the reason, never an open question and never a
+    decision taken on their behalf (Claude: the `AskUserQuestion` window).
+    Research already recorded in `.claude/memory/decisions/` is not
+    repeated. The user asked for this twice (2026-09-27).
 
 ## Commands
 
@@ -112,78 +134,132 @@ pnpm lint                             # eslint (api + web)
 
 ## Architecture standard (API module)
 
-Every module under `apps/api/src/modules/<name>/` follows:
+The module layout, file naming (`<name>.routes.ts`, `<name>.controller.ts`,
+`<name>.service.ts`, `<name>.schema.ts`, `index.ts`, `tests/`) and the shared
+primitives to reuse are in [`apps/api/AGENTS.md`](apps/api/AGENTS.md) — one
+home, because a second copy here said `routes.ts` for years while every module
+used `<name>.routes.ts`. The rules that hold across the codebase:
 
-```
-<name>/
-  routes.ts        # express.Router(); auth + validate middleware; delegates to controller
-  controller.ts    # thin handlers wrapped in asyncHandler; shape responses via ApiResponse
-  service.ts       # business logic + Prisma access
-  schema.ts        # Zod request schemas; types via z.infer
-  index.ts         # barrel: export { <name>Routes }
-  tests/           # vitest unit tests (Prisma mocked)
-```
+- **Layering:** routes → thin controller → service (the only layer that touches
+  Prisma) → Zod schema. Measured 2026-09-25, 22 of 93 modules follow it fully
+  and 12 call Prisma from a route or controller (`known-issues.md`); new and
+  touched code follows it.
+- **Modules talk through the typed `eventBus`** (`src/lib/event-bus.ts`, add the
+  event to `AppEvents`) or through another module's `index.ts` — never by
+  importing its service file.
+- **One concept, one module.** Before adding a module, a model or a page, look
+  for the existing one (`.claude/memory/decisions/istilah-dan-penamaan.md` has
+  the target names). Five modules over the tahfidz tables and five places for
+  report cards are what this rule exists to stop.
 
-Reuse the shared primitives — do not reinvent them:
-- `src/utils/response.ts` — `ApiResponse.success/error/paginated`
-- `src/middleware/error.ts` — `ApiError`, `Errors.*`, `asyncHandler`, `validate`, `validateQuery`
-- `src/middleware/auth.ts` — `authenticate`, `authorize(...RoleCode)`, `hasPermission`, `isAdmin`, `isSuperAdmin`, `isTeacherOrAbove`
-- `src/lib/{prisma,event-bus,realtime,jwt,redis,logger}.ts`
+## Naming and API conventions
 
-Cross-module communication goes through the typed `eventBus` (`src/lib/event-bus.ts`);
-add new events to the `AppEvents` interface with a payload type.
+Decided 2026-07-21 and 2026-09-25 — the reasons, the glossary and the target
+name of every module are in
+[`decisions/istilah-dan-penamaan.md`](.claude/memory/decisions/istilah-dan-penamaan.md).
+
+- **Language.** URL paths, API paths and identifiers are **English** for general
+  concepts; **pesantren and regulatory terms are never translated** (`tahfidz`,
+  `takhosus`, `muhadhoroh`, `spmb`, `emis`, `dapodik`); **every label a person
+  reads is Indonesian**. Learners are *santri* on every portal screen (decided
+  2026-09-27); *murid* / *peserta didik* only in formats the state defines
+  (rapor, SPMB, Dapodik/EMIS exports); the code says `student`.
+- **Names say what the thing is**, never its history: no `-enhancement`,
+  `-v2`, `new-`, `unified-`. A module is named after its content
+  (`practicum` holding Amaliyah Tadris is the example not to repeat).
+- **Resources:** plural, kebab-case nouns (`/permits`, `/report-cards`).
+  Partial update is `PATCH /{id}`; a state change is `POST /{id}/{verb}`
+  (`/permits/{id}/approve`); an aggregate is `GET …/summary`; the caller's own
+  data is under `/me`. Register static routes before parameter routes —
+  `apps/api/src/utils/route-shadowing.guard.test.ts` fails otherwise.
+- **The web calls only routes the API serves.** Every call goes through a hook
+  in `apps/web/src/hooks/*` with a path the router answers; a string typed on
+  one side and imagined on the other is how 212 calls came to point at nothing
+  (measured 2026-09-25). `apps/api/src/utils/web-api-contract.guard.test.ts`
+  checks every call against the real router and fails on a new broken one; its
+  baseline of the old ones only shrinks.
+- **Versions:** the API moves under `/api/v1` (phase 4 of the audit plan in
+  `roadmap.md`); a breaking change after the first external client ships gets
+  a new major version, never an in-place break.
+- **Renames** move the table with the model (a migration, replayed on a copy of
+  production first) and give every changed **web** path a permanent 308. Paths
+  printed on paper (`/public/verify-card`, `/verifikasi`) never change.
 
 ## Web standard
 
 - Data layer: Axios instance in `src/lib/api.ts` (+ `lib/api-error.ts`), consumed
-  through React Query hooks in `src/hooks/*`. **No mock/placeholder data in
-  pages** — wire to the API.
+  through React Query hooks in `src/hooks/*` — not from pages, not from the
+  legacy `src/services/*` or the `lib/api-client.ts` alias (both are being
+  removed). **No mock/placeholder data in pages** — wire to the API.
 - Share request/response types from `@cipansor/shared`; don't redefine `any`.
 - Route protection / nav visibility must reflect real `RoleCode` + permissions.
+- **Language:** the portal is **Indonesian only**. The public site
+  (`cipansor.or.id`) is **Indonesian, English and Arabic** on every page,
+  switchable, Arabic right-to-left; `config/i18n-coverage.test.ts` fails when a
+  string exists in one language only.
+- New pages: `…/new` for create, `…/[id]/edit` for edit.
 
 ## Per-area guides
 
 See nested `AGENTS.md` files: `apps/api/AGENTS.md`, `apps/web/AGENTS.md`,
-`packages/shared/AGENTS.md`, `apps/api/prisma/AGENTS.md`. Known technical debt and
-the remaining build-green roadmap live in `docs/KNOWN_ISSUES.md`.
+`packages/shared/AGENTS.md`, `apps/api/prisma/AGENTS.md`. The nearest one to the
+file you are changing applies on top of this one.
 
-## Committed skills and hooks
+## Where things live
 
-`.claude/` carries the automation this repo relies on, and it is checked in so
-every session gets it.
+Every agent (Claude, OpenHands, Jules, Copilot) loads this file; Claude also
+loads `.claude/memory/INDEX.md`. Each kind of knowledge has exactly one home —
+two copies drift, and a stale one actively misleads.
 
-**These files are kept current without asking.** Standing permission from the
-user (2026-07-24, widened 2026-09-05) covers **adding, changing and deleting**
-anything in `.claude/`, `AGENTS.md`, `CLAUDE.md` and the per-area guides — new
-files where one is missing, and removal of files that guard a flow that no
-longer exists. The reason is the same one that put them here: a stale guide is
-not neutral, it actively misleads, and a skill for a workflow we deleted is a
-trap for whoever reads it next.
+| Kind | Home | Changes |
+|---|---|---|
+| Rules every change follows: architecture, build/test/deploy, style, guardrails | this file + the nested `AGENTS.md` | rarely, by PR |
+| Procedures and domain knowledge, loaded when relevant ([index](#skills)) | `.claude/skills/<name>/SKILL.md` | when a standard or a rule changes, by PR |
+| Enforcement | CI and the `main` ruleset (every agent); `.claude/hooks/` (Claude only) | rarely, by PR |
+| Project memory: progress, backlog, known issues (`.claude/memory/*.md`); decisions not yet in a skill (`decisions/`); traps that cost time (`lessons/`) — indexed in `INDEX.md` | `.claude/memory/` | as work happens, by PR |
+| Documentation for people: architecture, deployment, setup, user manuals | `docs/` | with the code it describes |
+| Anything **sensitive**, personal, or specific to one machine | the machine-local memory (`~/.claude/projects/…/memory/`), never the repo | — |
 
-Three conditions, none of them loosened by that permission: it goes through a
-branch and a PR like any other change, **never straight to `main`**; a deletion
-must say in the PR body *why*, because what is gone is invisible on screen; and
-before removing anything, prove it is unused — grep for callers, check
-`settings.json` for a hook registration — rather than assuming.
+**Sensitive** means what an attacker could use: credentials and their status,
+keys, tokens, connection strings, cloud resource names and ids (vault, storage,
+database server), IP addresses, host paths, a weakness still open in
+production, incident details, personal data. The repository is **public until
+release** and git history keeps everything. `.github/scripts/check-sensitive.py`
+rejects the mechanical cases — Claude's `guard.sh` before the write, the
+Security CI job on every PR — and the judgement cases are on whoever writes the
+note. Until the repository is private, moving a machine-local memory into
+`.claude/memory/` needs the user's approval, file by file; once it is private,
+the two are merged.
 
-| | |
+**Lifecycle.** Add a skill when the same procedure or domain knowledge is needed
+a second time; a hook when a written rule was broken anyway; a memory when a
+future session would otherwise repeat the work or the mistake. Update in place
+— one subject, one file. Delete what guards a flow that no longer exists, after
+proving it unused (grep for callers, check `.claude/settings.json`), and say why
+in the PR body, because what is gone is invisible on screen. The `sync-records`
+skill is the pass that moves findings out of a session and into the right home.
+
+Standing permission from the user (2026-07-24, widened 2026-09-05) covers
+adding, changing and deleting anything in `.claude/`, `AGENTS.md`, `CLAUDE.md`
+and the per-area guides — always on a branch and through a PR, never straight
+to `main`.
+
+### Skills
+
+Claude loads a skill by its description; any other agent opens the file when
+its "use when" matches the task.
+
+| Skill | Use when |
 |---|---|
-| `skills/gate` | the quality gate AGENTS.md requires before pushing |
-| `skills/stack` | bring the local Postgres + Redis stack up |
-| `skills/screenshot-roles` | render real components for before/after shots |
-| `skills/sync-records` | move findings out of the transcript and into files |
-| `hooks/guard.sh` | PreToolUse — blocks a full-file Write to `schema.prisma` and a push to `main` |
-| `hooks/format-before-push.sh` | PreToolUse — refuses a `git push` whose commits carry `.ts`/`.tsx` files Prettier would change, and prints the command that fixes them |
-| `hooks/session-bootstrap.sh` | SessionStart — installs deps, generates the Prisma client, builds shared |
-| `hooks/pre-compact-sync.sh` | PreCompact — pauses a manual `/compact` when there is new work the durable records do not yet reflect; *holds* an auto-compaction until this session has run `sync-records` |
-| `hooks/context-sync-warn.sh` | PostToolUse + UserPromptSubmit — tells the model, before the auto-compaction window, to run `sync-records` (the only channel that reaches it) |
-| `hooks/main-ci-watch.sh` | SessionStart + UserPromptSubmit + PostToolUse — reports once when a workflow on `main` fails (CI, E2E, CodeQL, Deploy staging/production), and once when it recovers |
-| `hooks/sync_stamp.py` | shared by the hooks above and the `sync-records` skill: one definition of "the records are level", plus the context-size reading |
-| `hooks/stop-sync-baseline.sh` | SessionStart — records the HEAD sha the session started from, so the Stop hook has something to compare against |
-| `hooks/stop-sync-records.sh` | Stop — asks for a `sync-records` pass once, at the first resting point after the session has produced commits |
+| [`gate`](.claude/skills/gate/SKILL.md) | before every push: the full local quality gate |
+| [`stack`](.claude/skills/stack/SKILL.md) | the app must run locally: Postgres + Redis + API + web |
+| [`screenshot-roles`](.claude/skills/screenshot-roles/SKILL.md) | before/after screenshots, per-role visual QA |
+| [`sync-records`](.claude/skills/sync-records/SKILL.md) | end of a work session or before compaction: update memory, roadmap, guides |
+| [`panduan-peran`](.claude/skills/panduan-peran/SKILL.md) | who a role is, the menu it sees (printed from code), the menu path a report gives, "can role X do Y", user manuals for staff |
+| [`tata-kelola-yayasan`](.claude/skills/tata-kelola-yayasan/SKILL.md) | yayasan organs, the RPJP → Renstra → RKA chain and its ratification, PK and atasan penilai |
+| [`naskah-dinas`](.claude/skills/naskah-dinas/SKILL.md) | E-Office letters, TTE keys and identity, the signed PDF, verification by upload, revocation |
 
-**Why each hook works the way it does** — what went wrong before, what was
-measured, and the safety rails — is in [`.claude/README.md`](./.claude/README.md).
-It matters only to whoever changes a hook, so it is kept out of this file,
-which every agent loads whole. Read it before touching a hook: most of these
-designs replaced an earlier one that looked right and did nothing.
+The Claude Code hooks, what each one enforces, and why each works the way it
+does are in [`.claude/README.md`](./.claude/README.md). Read it before touching
+a hook: most of these designs replaced an earlier one that looked right and did
+nothing.

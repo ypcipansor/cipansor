@@ -12,8 +12,19 @@ import {
   queryPaymentSchema,
   submitPaymentProofSchema,
   verifyPaymentSchema,
+  financialSummaryQuerySchema,
 } from './finance.schema';
 import { Errors } from '../../middleware/error';
+
+/** Who is asking, in the shape the service scopes bills by. */
+function scopeOf(req: Request) {
+  return {
+    sub: req.user!.sub,
+    role: req.user!.role,
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  };
+}
 
 // =====================================
 // PAYMENT TYPE CONTROLLERS
@@ -111,7 +122,7 @@ export async function createInvoice(req: Request, res: Response, next: NextFunct
 export async function getInvoices(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryInvoiceSchema.parse(res.locals.validatedQuery || req.query);
-    const result = await financeService.getInvoices(query);
+    const result = await financeService.getInvoices(query, scopeOf(req));
     res.json({
       success: true,
       ...result,
@@ -124,7 +135,7 @@ export async function getInvoices(req: Request, res: Response, next: NextFunctio
 export async function getInvoiceById(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const invoice = await financeService.getInvoiceById(id);
+    const invoice = await financeService.getInvoiceById(id, scopeOf(req));
     if (!invoice) {
       throw Errors.notFound('Invoice');
     }
@@ -265,7 +276,7 @@ export async function verifyPayment(req: Request, res: Response, next: NextFunct
 export async function getPayments(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryPaymentSchema.parse(res.locals.validatedQuery || req.query);
-    const result = await financeService.getPayments(query);
+    const result = await financeService.getPayments(query, scopeOf(req));
     res.json({
       success: true,
       ...result,
@@ -278,7 +289,7 @@ export async function getPayments(req: Request, res: Response, next: NextFunctio
 export async function getPaymentById(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const payment = await financeService.getPaymentById(id);
+    const payment = await financeService.getPaymentById(id, scopeOf(req));
     if (!payment) {
       throw Errors.notFound('Payment');
     }
@@ -308,13 +319,13 @@ export async function getStudentFinanceSummary(req: Request, res: Response, next
   }
 }
 
-/**
- * Yayasan-wide financial summary. See financeService.getFinancialSummary for
- * why `academicYearId` is accepted but not applied.
- */
-export async function getFinancialSummary(_req: Request, res: Response, next: NextFunction) {
+/** Billing summary for the caller's unit (or every unit), optionally one academic year. */
+export async function getFinancialSummary(req: Request, res: Response, next: NextFunction) {
   try {
-    const summary = await financeService.getFinancialSummary();
+    const { academicYearId } = financialSummaryQuerySchema.parse(
+      res.locals.validatedQuery || req.query
+    );
+    const summary = await financeService.getFinancialSummary(scopeOf(req), academicYearId);
     res.json({ success: true, data: summary });
   } catch (error) {
     next(error);

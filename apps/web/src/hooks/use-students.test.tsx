@@ -9,7 +9,7 @@ vi.mock("@/lib/api", () => {
   return { api, default: api };
 });
 
-import { useGraduateStudent, useStudent } from "./use-students";
+import { useGraduateStudent, useStudent, useStudents } from "./use-students";
 
 function wrapper(client: QueryClient) {
   return function Wrapper({ children }: { children: ReactNode }) {
@@ -73,5 +73,37 @@ describe("useStudent", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(get).toHaveBeenCalledWith("/students/s1");
     expect(result.current.data?.name).toBe("Muhammad Rizky");
+  });
+});
+
+describe("useStudents", () => {
+  it("reads the roster's counts from the envelope GET /students actually sends", async () => {
+    // apps/api/src/modules/students/student.controller.ts `list`:
+    // `meta: { pagination: result.pagination }`.
+    get.mockResolvedValue({
+      data: {
+        success: true,
+        data: [{ id: "s1", nis: "20240001", user: { name: "Muhammad Rizky" } }],
+        meta: {
+          pagination: { page: 2, limit: 10, total: 601, totalPages: 61 },
+        },
+      },
+    });
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(() => useStudents({ page: 2, limit: 10 }), {
+      wrapper: wrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // It showed "0 of 0 results" and one page: meta.total was undefined.
+    expect(result.current.data?.meta).toEqual({
+      page: 2,
+      limit: 10,
+      total: 601,
+      totalPages: 61,
+    });
+    expect(result.current.data?.data[0].name).toBe("Muhammad Rizky");
   });
 });

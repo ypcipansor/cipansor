@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '@/middleware/auth';
+import { authenticate, isStaffMember, isTeacherOrAbove } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/validate';
 import * as controller from './paud-assessment.controller';
 import {
@@ -25,6 +25,15 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// PAUD assessments, narrative reports and their photo evidence are the TK
+// teachers' work; every page that reads them is a staff page (/tk/...). Until
+// 2026-09-25 any signed-in account could create, edit and delete them and
+// upload files. Checked here, ahead of the upload middleware, so a refused
+// request never reaches it.
+router.use((req, res, next) =>
+  req.method === 'GET' ? isStaffMember(req, res, next) : isTeacherOrAbove(req, res, next)
+);
 
 /**
  * @swagger

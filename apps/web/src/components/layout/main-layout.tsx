@@ -9,10 +9,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 interface MainLayoutProps {
   children: React.ReactNode;
   allowedRoles?: string[];
-  /**
-   * Permission strings from the API (`user.permissions`, e.g. "STUDENT_VIEW").
-   * Prefer this for a page whose endpoint is gated by `hasPermission(...)`.
-   */
+  /** See ProtectedRoute: any one of these API permissions also admits. */
   allowedPermissions?: string[];
   showSidebar?: boolean;
 }

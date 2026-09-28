@@ -34,6 +34,11 @@ import {
   getAchievementLabel,
   getAchievementColor,
 } from "@/hooks/use-paud-dashboard";
+import { MOOD_OPTIONS } from "./daily-reports/constants";
+
+const MOOD_LABELS: Record<string, string> = Object.fromEntries(
+  MOOD_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 export default function TKPage() {
   const router = useRouter();
@@ -63,7 +68,7 @@ export default function TKPage() {
       title: "Tahfidz Tracker",
       description: "Pantau hafalan Quran siswa",
       icon: BookOpen,
-      href: "/academic/tahfidz",
+      href: "/tahfidz",
       color: "text-amber-600",
       bgColor: "bg-amber-50",
     },
@@ -222,11 +227,11 @@ export default function TKPage() {
                             </div>
                             <div>
                               <p className="font-medium text-sm">
-                                {report.student?.name}
+                                {report.student?.user?.name ?? "-"}
                               </p>
                               <p className="text-xs text-muted-foreground">
                                 {safeFormat(
-                                  new Date(report.date),
+                                  new Date(report.reportDate),
                                   "dd MMM yyyy",
                                   {
                                     locale: localeId,
@@ -238,7 +243,7 @@ export default function TKPage() {
                                   variant="outline"
                                   className="mt-1 text-[10px]"
                                 >
-                                  {report.mood}
+                                  {MOOD_LABELS[report.mood] ?? report.mood}
                                 </Badge>
                               )}
                             </div>

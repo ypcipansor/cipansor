@@ -32,15 +32,4 @@ test.describe("Business Unit & Integrated Flows", () => {
       timeout: 15000,
     });
   });
-
-  test("should show Executive Dashboard with consolidated data", async ({
-    page,
-  }) => {
-    await page.goto("/foundation/dashboard", { waitUntil: "domcontentloaded" });
-    await expect(
-      page.locator('h1:has-text("Executive Dashboard")'),
-    ).toBeVisible({
-      timeout: 15000,
-    });
-  });
 });

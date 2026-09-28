@@ -61,7 +61,9 @@ import {
   NotebookPen,
   ShieldCheck,
   type LucideIcon,
+  PhoneCall,
 } from "lucide-react";
+import { GURU_BK_ROLE_CODES, PERMIT_STAFF_ROLE_CODES } from "@cipansor/shared";
 
 export interface NavItem {
   title: string;
@@ -76,6 +78,47 @@ export interface NavItem {
 export interface NavGroup {
   title: string;
   items: NavItem[];
+  /**
+   * Shown only to someone who holds this duty. A duty is a relation, not a
+   * role (decisions/peran-dan-tugas-tambahan.md), so the role code cannot
+   * tell: `homeroom` is the wali kelas of a class in the current academic
+   * year (`Class.homeroomTeacherId`), which the sidebar asks
+   * GET /homeroom/my-classes for.
+   */
+  duty?: "homeroom";
+}
+
+/**
+ * The one menu entry the page belongs to: the entry whose address is the
+ * longest one the page sits at or under. "Inside its path" alone lit two
+ * entries at once — Mengajar → Absensi (`/attendance`) and Wali Kelas →
+ * Absensi Harian (`/attendance/record`) on the same page. A page with no entry
+ * of its own still lights the section it sits in, as before.
+ */
+export function activeNavHref(
+  groups: NavGroup[],
+  pathname: string,
+): string | null {
+  let best: string | null = null;
+  const consider = (href: string) => {
+    const within = pathname === href || pathname.startsWith(`${href}/`);
+    if (within && (best === null || href.length > best.length)) best = href;
+  };
+  for (const group of groups) {
+    for (const item of group.items) {
+      consider(item.href);
+      for (const child of item.children ?? []) consider(child.href);
+    }
+  }
+  return best;
+}
+
+/** The menu without the groups of duties the user does not hold. */
+export function withDutiesHeld(
+  navigation: NavGroup[],
+  held: { homeroom: boolean },
+): NavGroup[] {
+  return navigation.filter((group) => !group.duty || held[group.duty]);
 }
 
 // Role codes by category for navigation permissions
@@ -97,14 +140,6 @@ const TEACHER_ROLES = [
   "SDIT_GURU",
   "SMPIT_GURU",
   "SMAQ_GURU",
-  "TKQ_WAKASEK",
-  "SDIT_WAKASEK",
-  "SMPIT_WAKASEK",
-  "SMAQ_WAKASEK",
-  "TKQ_WALI_KELAS",
-  "SDIT_WALI_KELAS",
-  "SMPIT_WALI_KELAS",
-  "SMAQ_WALI_KELAS",
   "SMPIT_GURU_BK",
   "SMAQ_GURU_BK",
 ];
@@ -146,17 +181,9 @@ const YAYASAN_ROLES = [
 ];
 
 // Pesantren leadership vs. field pengasuhan staff — they get different menus.
-const PESANTREN_PIMPINAN_ROLES = ["PESANTREN_PENGASUH", "PESANTREN_DIREKTUR"];
+const PESANTREN_PIMPINAN_ROLES = ["PESANTREN_PENGASUH"];
 
-const PESANTREN_PENGASUHAN_ROLES = [
-  "USTADZ",
-  "MUSYRIF",
-  "MUSYRIFAH",
-  "MUHAFIDZ",
-  "MUHAFIDZAH",
-  "MURABBI",
-  "WALI_KAMAR",
-];
+const PESANTREN_PENGASUHAN_ROLES = ["USTADZ", "MUSYRIF", "MUHAFIDZ"];
 
 const PESANTREN_ROLES = [
   ...PESANTREN_PIMPINAN_ROLES,
@@ -218,10 +245,18 @@ const teacherNavigation: NavGroup[] = [
         href: "/portfolio",
         icon: FolderOpen,
       },
+      {
+        // The school counsellors: the readers of confidential sessions.
+        title: "Bimbingan Konseling",
+        href: "/counseling",
+        icon: HeartHandshake,
+        roleCodes: [...GURU_BK_ROLE_CODES],
+      },
     ],
   },
   {
     title: "Wali Kelas",
+    duty: "homeroom",
     items: [
       {
         title: "Dashboard Wali Kelas",
@@ -229,9 +264,18 @@ const teacherNavigation: NavGroup[] = [
         icon: Home,
       },
       {
+        // The same register as Absensi → Isi Absensi Harian; the page opens
+        // on the class the user is wali kelas of (listed first by the API).
         title: "Absensi Harian",
-        href: "/homeroom/attendance",
+        href: "/attendance/record",
         icon: ClipboardCheck,
+      },
+      {
+        // Alpa with no reason, for the wali kelas to follow up with the wali
+        // (decisions/absensi-harian.md); a santri mukim's is the musyrif's.
+        title: "Tindak Lanjut Absensi",
+        href: "/attendance/follow-ups",
+        icon: PhoneCall,
       },
       {
         title: "Catatan Perilaku",
@@ -242,6 +286,14 @@ const teacherNavigation: NavGroup[] = [
         title: "Pesan Orang Tua",
         href: "/homeroom/messages",
         icon: Send,
+      },
+      {
+        // A day pupil's leave is the wali kelas's to decide (2026-09-25);
+        // the page lists the ones waiting for them under "Perlu keputusan
+        // saya".
+        title: "Perizinan",
+        href: "/permits",
+        icon: FileText,
       },
     ],
   },
@@ -355,12 +407,6 @@ const staffNavigation: NavGroup[] = [
         title: "Data Siswa",
         href: "/students",
         icon: GraduationCap,
-        // Every staff role below holds STUDENT_VIEW except the two unit-usaha
-        // (business) roles, which the API answers with 403. They were shown
-        // the link anyway — the page then bounced them to /unauthorized.
-        roleCodes: STAFF_ROLES.filter(
-          (code) => !["BUSINESS_MANAGER", "BUSINESS_STAFF"].includes(code),
-        ),
       },
       {
         title: "Kesehatan",
@@ -368,9 +414,12 @@ const staffNavigation: NavGroup[] = [
         icon: Heart,
       },
       {
+        // Of the nine staff functions only tata usaha, keamanan (the gate)
+        // and the nurse work with permits; the API refuses the rest.
         title: "Perizinan",
         href: "/permits",
         icon: FileText,
+        roleCodes: [...PERMIT_STAFF_ROLE_CODES],
       },
       {
         title: "Pelanggaran",
@@ -416,6 +465,54 @@ const staffNavigation: NavGroup[] = [
         title: "Aduan & Aspirasi",
         href: "/quality/complaints",
         icon: MessageSquareWarning,
+      },
+    ],
+  },
+  {
+    // One menu serves nine staff functions, so each service page is shown
+    // only to the role that runs it (filtered in getNavigationForRoleCode;
+    // `roleCodeRouteAccess` in rbac.ts opens the same pages). Until 2026-09-25
+    // none of these roles could reach its own module.
+    title: "Sarana & Layanan",
+    items: [
+      {
+        title: "Perpustakaan",
+        href: "/library",
+        icon: Library,
+        roleCodes: ["PUSTAKAWAN"],
+        children: [
+          {
+            title: "Maktabah Digital",
+            href: "/library/digital",
+            icon: BookOpen,
+            roleCodes: ["PUSTAKAWAN"],
+          },
+        ],
+      },
+      {
+        // Laboratory equipment; /practicum is Amaliyah Tadris, not a lab.
+        title: "Inventaris",
+        href: "/inventory",
+        icon: Package,
+        roleCodes: ["LABORAN"],
+      },
+      {
+        title: "Kantin & Koperasi",
+        href: "/canteen",
+        icon: ShoppingCart,
+        roleCodes: ["BUSINESS_MANAGER", "BUSINESS_STAFF"],
+      },
+      {
+        title: "Laundry",
+        href: "/laundry",
+        icon: WashingMachine,
+        roleCodes: ["BUSINESS_MANAGER", "BUSINESS_STAFF"],
+      },
+      {
+        title: "Unit Usaha",
+        href: "/unit-usaha",
+        icon: Briefcase,
+        roleCodes: ["BUSINESS_MANAGER"],
       },
     ],
   },
@@ -686,8 +783,24 @@ const yayasanNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Kinerja",
+    title: "Perencanaan & Kinerja",
     items: [
+      {
+        // Pengurus drafts and the Ketua submits the yayasan's plans, Pengawas
+        // reviews and Pembina ratifies them; the kepala sekolah drafts the RKA
+        // Unit. Until 2026-09-25 none of them had this link — the ratification
+        // flow was reachable by typing the URL.
+        title: "Perencanaan Strategis",
+        href: "/perencanaan",
+        icon: ClipboardList,
+        children: [
+          {
+            title: "Peta Strategi",
+            href: "/perencanaan/strategy-map",
+            icon: Globe,
+          },
+        ],
+      },
       {
         title: "Manajemen Kinerja",
         href: "/kinerja",
@@ -860,7 +973,7 @@ const adminNavigation: NavGroup[] = [
             icon: Calendar,
           },
           {
-            title: "Curriculum",
+            title: "Mata Pelajaran & Jadwal",
             href: "/curriculum",
             icon: BookMarked,
           },
@@ -1047,7 +1160,7 @@ const adminNavigation: NavGroup[] = [
         icon: Home,
         children: [
           {
-            title: "Permits",
+            title: "Perizinan",
             href: "/permits",
             icon: FileText,
           },
@@ -1578,7 +1691,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: BookOpen,
         children: [
           {
-            title: "Curriculum",
+            title: "Mata Pelajaran & Jadwal",
             href: "/curriculum",
             icon: BookMarked,
           },
@@ -1610,9 +1723,15 @@ const kepalaSekolahNavigation: NavGroup[] = [
     title: "Kesantrian",
     items: [
       {
-        title: "Permits",
+        title: "Perizinan",
         href: "/permits",
         icon: FileText,
+      },
+      {
+        // A confidential session reaches the kepala sekolah as its referrals.
+        title: "Bimbingan Konseling",
+        href: "/counseling",
+        icon: HeartHandshake,
       },
       {
         title: "Violations",
@@ -1644,8 +1763,24 @@ const kepalaSekolahNavigation: NavGroup[] = [
     ],
   },
   {
-    title: "Kinerja",
+    title: "Perencanaan & Kinerja",
     items: [
+      {
+        // Pengurus drafts and the Ketua submits the yayasan's plans, Pengawas
+        // reviews and Pembina ratifies them; the kepala sekolah drafts the RKA
+        // Unit. Until 2026-09-25 none of them had this link — the ratification
+        // flow was reachable by typing the URL.
+        title: "Perencanaan Strategis",
+        href: "/perencanaan",
+        icon: ClipboardList,
+        children: [
+          {
+            title: "Peta Strategi",
+            href: "/perencanaan/strategy-map",
+            icon: Globe,
+          },
+        ],
+      },
       {
         title: "Manajemen Kinerja",
         href: "/kinerja",
@@ -1707,7 +1842,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
   },
 ];
 
-// Pesantren leadership (Pengasuh, Direktur) — oversight across pengasuhan,
+// Pesantren leadership (Pimpinan Pesantren / Kiai) — oversight across pengasuhan,
 // tahfidz/diniyah, boarding services and reporting.
 const pesantrenPimpinanNavigation: NavGroup[] = [
   {
@@ -1800,6 +1935,12 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
     title: "Pengasuhan",
     items: [
       { title: "Santri Binaan", href: "/students", icon: GraduationCap },
+      {
+        // A santri mukim's Alpa is followed up by their musyrif.
+        title: "Tindak Lanjut Absensi",
+        href: "/attendance/follow-ups",
+        icon: PhoneCall,
+      },
       { title: "Asrama", href: "/dormitories", icon: Home },
       { title: "Musyrif", href: "/musyrif", icon: UserCog },
       { title: "Mutabaah Yaumiyah", href: "/daily-report", icon: Activity },
@@ -2001,16 +2142,6 @@ function filterNavItemsByRoleCode(
     });
 }
 
-/** Apply the `roleCodes` tags of a whole nav tree and drop groups left empty. */
-function applyRoleFilter(groups: NavGroup[], roleCode: string): NavGroup[] {
-  return groups
-    .map((group) => ({
-      ...group,
-      items: filterNavItemsByRoleCode(group.items, roleCode),
-    }))
-    .filter((group) => group.items.length > 0);
-}
-
 /**
  * Get navigation for a specific role code
  * Uses the new RoleCode-based system
@@ -2061,18 +2192,25 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
     return alumniNavigation;
   }
 
-  // Teacher roles
+  // Teacher roles — one menu for guru and guru BK, with the entries only
+  // some of them use ("Bimbingan Konseling": guru BK).
   if (isTeacherRole(roleCode)) {
-    return teacherNavigation;
+    return teacherNavigation
+      .map((group) => ({
+        ...group,
+        items: filterNavItemsByRoleCode(group.items, roleCode),
+      }))
+      .filter((group) => group.items.length > 0);
   }
 
   // Staff roles
   if (isStaffRole(roleCode)) {
-    // Filtered, not returned raw: `staffNavigation` carries `roleCodes` tags
-    // (e.g. `/students`, which the two business roles cannot read), and a tag
-    // that nothing consults hides nothing — it only documents the intent while
-    // the link is still shown and the page still 403s.
-    return applyRoleFilter(staffNavigation, roleCode);
+    return staffNavigation
+      .map((group) => ({
+        ...group,
+        items: filterNavItemsByRoleCode(group.items, roleCode),
+      }))
+      .filter((group) => group.items.length > 0);
   }
 
   // Student roles

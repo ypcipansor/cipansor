@@ -1,9 +1,13 @@
 ---
 name: screenshot-roles
-description: Run the per-role visual QA sweep — log in as every seeded demo account (one per RoleCode), open each menu item its role should see, assert the page opens (no crash, no 404, no bounce), and screenshot it. Use when asked to "screenshot roles", "visual QA the menus", or verify no role hits a broken page.
+description: Screenshots of the web app. (1) The per-role visual QA sweep — log in as every seeded demo account, open each menu item its role should see, assert the page opens (no crash, no 404, no bounce), and screenshot it. (2) Before/after screenshots of a UI change, rendered from the real components (see before-after.md). Use when asked to "screenshot roles", "visual QA the menus", verify no role hits a broken page, or when a UI change needs its before/after pair.
 ---
 
 # Per-role screenshot sweep
+
+> For **before/after screenshots of a UI change** (required by `AGENTS.md` for
+> every UI change), read [`before-after.md`](before-after.md) in this folder —
+> three ways to render the real components, and the traps in each.
 
 `apps/web/scripts/screenshot-roles.ts` drives a real browser through every
 `DEMO_ACCOUNTS` login and every page in that role's navigation, writing

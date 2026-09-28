@@ -197,7 +197,7 @@ export function middleware(request: NextRequest) {
 
   // Role-based access control for authenticated users
   if (isAuthenticated && role && !isPublicRoute) {
-    if (!canAccessRoute(role, pathname)) {
+    if (!canAccessRoute(role, pathname, roleCode)) {
       // Redirect to their proper dashboard if trying to access unauthorized route
       const dashboard = getDashboardForRole(role, roleCode);
       return NextResponse.redirect(new URL(dashboard, request.url));

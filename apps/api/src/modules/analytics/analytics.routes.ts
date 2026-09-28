@@ -3,12 +3,23 @@ import { UserRole, RoleCode } from '@prisma/client';
 import * as controller from './analytics.controller';
 import * as forecastController from './forecast.controller';
 import * as exportController from './export.controller';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isStaffMember } from '@/middleware/auth';
+import { PRINCIPAL_ROLE_CODES } from '@cipansor/shared';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// School statistics, finance, risk registers and exports are staff business.
+// Until 2026-09-24 any signed-in account could read them — a santri account
+// exported 164 santri and 1,271 invoices from /export/*.
+router.use(isStaffMember);
+
+// The exports are the full rows (santri identity, invoices), so they are for
+// the people who answer for them: Super Admin, the unit's operator and the
+// yayasan board, and the kepala sekolah. A unit's account exports its own unit.
+const exporter = authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, ...PRINCIPAL_ROLE_CODES);
 
 // Roles allowed to view forecast/projection data. Forecasts can leak
 // strategic information (cash position, projected attrition, etc.) so
@@ -385,7 +396,7 @@ router.get('/forecast/cash-flow', forecastViewer, forecastController.getCashFlow
  *       200:
  *         description: Complete export of students, attendance, finance, tahfidz
  */
-router.get('/export/all', exportController.exportAll);
+router.get('/export/all', exporter, exportController.exportAll);
 
 /**
  * @swagger
@@ -405,7 +416,7 @@ router.get('/export/all', exportController.exportAll);
  *       200:
  *         description: Students data export
  */
-router.get('/export/students', exportController.exportStudents);
+router.get('/export/students', exporter, exportController.exportStudents);
 
 /**
  * @swagger
@@ -425,7 +436,7 @@ router.get('/export/students', exportController.exportStudents);
  *       200:
  *         description: Attendance data export
  */
-router.get('/export/attendance', exportController.exportAttendance);
+router.get('/export/attendance', exporter, exportController.exportAttendance);
 
 /**
  * @swagger
@@ -445,7 +456,7 @@ router.get('/export/attendance', exportController.exportAttendance);
  *       200:
  *         description: Finance data export
  */
-router.get('/export/finance', exportController.exportFinance);
+router.get('/export/finance', exporter, exportController.exportFinance);
 
 /**
  * @swagger
@@ -465,7 +476,7 @@ router.get('/export/finance', exportController.exportFinance);
  *       200:
  *         description: Tahfidz data export
  */
-router.get('/export/tahfidz', exportController.exportTahfidz);
+router.get('/export/tahfidz', exporter, exportController.exportTahfidz);
 
 // ============================================
 // BENCHMARK ENDPOINTS (Comparative Analytics)

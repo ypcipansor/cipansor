@@ -542,7 +542,7 @@ export default function BukuPenghubungPage() {
                               {report.mood && getMoodIcon(report.mood)}
                             </div>
                             <p className="text-sm text-muted-foreground">
-                              {report.healthStatus || "Sehat"}
+                              {report.healthStatus || "-"}
                               {report.temperature &&
                                 ` - ${report.temperature}°C`}
                             </p>
@@ -555,40 +555,48 @@ export default function BukuPenghubungPage() {
                             <span className="text-muted-foreground text-xs mb-1">
                               Dhuha
                             </span>
-                            {report.sholatDhuha ? (
+                            {report.sholatDhuha === true ? (
                               <Check className="h-4 w-4 text-green-500" />
-                            ) : (
+                            ) : report.sholatDhuha === false ? (
                               <X className="h-4 w-4 text-red-300" />
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </div>
                           <div className="flex flex-col items-center">
                             <span className="text-muted-foreground text-xs mb-1">
                               Dzuhur
                             </span>
-                            {report.sholatDzuhur ? (
+                            {report.sholatDzuhur === true ? (
                               <Check className="h-4 w-4 text-green-500" />
-                            ) : (
+                            ) : report.sholatDzuhur === false ? (
                               <X className="h-4 w-4 text-red-300" />
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </div>
                           <div className="flex flex-col items-center">
                             <span className="text-muted-foreground text-xs mb-1">
                               Ashar
                             </span>
-                            {report.sholatAshar ? (
+                            {report.sholatAshar === true ? (
                               <Check className="h-4 w-4 text-green-500" />
-                            ) : (
+                            ) : report.sholatAshar === false ? (
                               <X className="h-4 w-4 text-red-300" />
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </div>
                           <div className="flex flex-col items-center">
                             <span className="text-muted-foreground text-xs mb-1">
                               Jamaah
                             </span>
-                            {report.sholatJamaah ? (
+                            {report.sholatJamaah === true ? (
                               <Check className="h-4 w-4 text-green-500" />
-                            ) : (
+                            ) : report.sholatJamaah === false ? (
                               <X className="h-4 w-4 text-red-300" />
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
                             )}
                           </div>
                         </div>

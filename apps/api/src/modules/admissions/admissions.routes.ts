@@ -9,6 +9,7 @@ import { validateQuery } from '../../middleware/error';
 import { validate } from '../../middleware/validate';
 import { queryAdmissionPeriodSchema, queryRegistrantSchema } from './admissions.schema';
 import waveRoutes from './ppdb-wave.routes';
+import { viewAdmissions } from './admissions.access';
 import { requireTurnstile } from '@/middleware/turnstile';
 
 const router = Router();
@@ -152,7 +153,7 @@ router.get(
 // expected to read but not directly mutate admissions records.
 router.get(
   '/periods',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   validateQuery(queryAdmissionPeriodSchema),
   controller.getAdmissionPeriods
 );
@@ -219,7 +220,7 @@ router.post(
  */
 router.get(
   '/periods/:id',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   controller.getAdmissionPeriodById
 );
 
@@ -243,7 +244,7 @@ router.get(
  */
 router.get(
   '/periods/:id/stats',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   controller.getAdmissionPeriodStats
 );
 
@@ -329,7 +330,7 @@ router.delete(
  */
 router.get(
   '/registrants',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   validateQuery(queryRegistrantSchema),
   controller.getRegistrants
 );
@@ -400,7 +401,7 @@ router.post(
  */
 router.get(
   '/registrants/:id',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   controller.getRegistrantById
 );
 
@@ -599,7 +600,7 @@ router.delete(
  */
 router.get(
   '/registrants/:registrantId/documents',
-  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
+  viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN', 'STAFF'),
   controller.getRegistrantDocuments
 );
 

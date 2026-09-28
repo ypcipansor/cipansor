@@ -1,6 +1,6 @@
 ## Galeri Per Peran
 
-Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
+Setiap dari **53 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuka oleh menunya, ditangkap dengan sesi login peran tersebut. Halaman yang sengaja hanya menampilkan pesan RBAC tidak dihitung sebagai kegagalan.
 
 <details>
 <summary><code>business-manager</code> — 12 halaman</summary>
@@ -116,69 +116,7 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>muhafidzah</code> — 24 halaman</summary>
 
-| Halaman                                                                                                             | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/muhafidzah__meals.webp" width="360" alt="muhafidzah /meals">                            | `/meals`              |
-| <img src="docs/images/roles/muhafidzah__health.webp" width="360" alt="muhafidzah /health">                          | `/health`             |
-| <img src="docs/images/roles/muhafidzah__ibadah.webp" width="360" alt="muhafidzah /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/muhafidzah__laundry.webp" width="360" alt="muhafidzah /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/muhafidzah__musyrif.webp" width="360" alt="muhafidzah /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/muhafidzah__permits.webp" width="360" alt="muhafidzah /permits">                        | `/permits`            |
-| <img src="docs/images/roles/muhafidzah__rewards.webp" width="360" alt="muhafidzah /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/muhafidzah__tahfidz.webp" width="360" alt="muhafidzah /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/muhafidzah__teacher.webp" width="360" alt="muhafidzah /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/muhafidzah__e-office.webp" width="360" alt="muhafidzah /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/muhafidzah__schedule.webp" width="360" alt="muhafidzah /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/muhafidzah__students.webp" width="360" alt="muhafidzah /students">                      | `/students`           |
-| <img src="docs/images/roles/muhafidzah__takhosus.webp" width="360" alt="muhafidzah /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/muhafidzah__muhasabah.webp" width="360" alt="muhafidzah /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/muhafidzah__muhadatsah.webp" width="360" alt="muhafidzah /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/muhafidzah__muhadhoroh.webp" width="360" alt="muhafidzah /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/muhafidzah__violations.webp" width="360" alt="muhafidzah /violations">                  | `/violations`         |
-| <img src="docs/images/roles/muhafidzah__dormitories.webp" width="360" alt="muhafidzah /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/muhafidzah__duty-roster.webp" width="360" alt="muhafidzah /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/muhafidzah__daily-report.webp" width="360" alt="muhafidzah /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/muhafidzah__announcements.webp" width="360" alt="muhafidzah /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/muhafidzah__kitab-progress.webp" width="360" alt="muhafidzah /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/muhafidzah__rapor-pesantren.webp" width="360" alt="muhafidzah /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/muhafidzah__quality__complaints.webp" width="360" alt="muhafidzah /quality/complaints"> | `/quality/complaints` |
-
-</details>
-
-<details>
-<summary><code>murabbi</code> — 24 halaman</summary>
-
-| Halaman                                                                                                       | Rute                  |
-| ------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/murabbi__meals.webp" width="360" alt="murabbi /meals">                            | `/meals`              |
-| <img src="docs/images/roles/murabbi__health.webp" width="360" alt="murabbi /health">                          | `/health`             |
-| <img src="docs/images/roles/murabbi__ibadah.webp" width="360" alt="murabbi /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/murabbi__laundry.webp" width="360" alt="murabbi /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/murabbi__musyrif.webp" width="360" alt="murabbi /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/murabbi__permits.webp" width="360" alt="murabbi /permits">                        | `/permits`            |
-| <img src="docs/images/roles/murabbi__rewards.webp" width="360" alt="murabbi /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/murabbi__tahfidz.webp" width="360" alt="murabbi /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/murabbi__teacher.webp" width="360" alt="murabbi /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/murabbi__e-office.webp" width="360" alt="murabbi /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/murabbi__schedule.webp" width="360" alt="murabbi /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/murabbi__students.webp" width="360" alt="murabbi /students">                      | `/students`           |
-| <img src="docs/images/roles/murabbi__takhosus.webp" width="360" alt="murabbi /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/murabbi__muhasabah.webp" width="360" alt="murabbi /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/murabbi__muhadatsah.webp" width="360" alt="murabbi /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/murabbi__muhadhoroh.webp" width="360" alt="murabbi /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/murabbi__violations.webp" width="360" alt="murabbi /violations">                  | `/violations`         |
-| <img src="docs/images/roles/murabbi__dormitories.webp" width="360" alt="murabbi /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/murabbi__duty-roster.webp" width="360" alt="murabbi /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/murabbi__daily-report.webp" width="360" alt="murabbi /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/murabbi__announcements.webp" width="360" alt="murabbi /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/murabbi__kitab-progress.webp" width="360" alt="murabbi /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/murabbi__rapor-pesantren.webp" width="360" alt="murabbi /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/murabbi__quality__complaints.webp" width="360" alt="murabbi /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>musyrif</code> — 24 halaman</summary>
@@ -212,37 +150,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>musyrifah</code> — 24 halaman</summary>
-
-| Halaman                                                                                                           | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/musyrifah__meals.webp" width="360" alt="musyrifah /meals">                            | `/meals`              |
-| <img src="docs/images/roles/musyrifah__health.webp" width="360" alt="musyrifah /health">                          | `/health`             |
-| <img src="docs/images/roles/musyrifah__ibadah.webp" width="360" alt="musyrifah /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/musyrifah__laundry.webp" width="360" alt="musyrifah /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/musyrifah__musyrif.webp" width="360" alt="musyrifah /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/musyrifah__permits.webp" width="360" alt="musyrifah /permits">                        | `/permits`            |
-| <img src="docs/images/roles/musyrifah__rewards.webp" width="360" alt="musyrifah /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/musyrifah__tahfidz.webp" width="360" alt="musyrifah /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/musyrifah__teacher.webp" width="360" alt="musyrifah /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/musyrifah__e-office.webp" width="360" alt="musyrifah /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/musyrifah__schedule.webp" width="360" alt="musyrifah /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/musyrifah__students.webp" width="360" alt="musyrifah /students">                      | `/students`           |
-| <img src="docs/images/roles/musyrifah__takhosus.webp" width="360" alt="musyrifah /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/musyrifah__muhasabah.webp" width="360" alt="musyrifah /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/musyrifah__muhadatsah.webp" width="360" alt="musyrifah /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/musyrifah__muhadhoroh.webp" width="360" alt="musyrifah /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/musyrifah__violations.webp" width="360" alt="musyrifah /violations">                  | `/violations`         |
-| <img src="docs/images/roles/musyrifah__dormitories.webp" width="360" alt="musyrifah /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/musyrifah__duty-roster.webp" width="360" alt="musyrifah /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/musyrifah__daily-report.webp" width="360" alt="musyrifah /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/musyrifah__announcements.webp" width="360" alt="musyrifah /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/musyrifah__kitab-progress.webp" width="360" alt="musyrifah /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/musyrifah__rapor-pesantren.webp" width="360" alt="musyrifah /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/musyrifah__quality__complaints.webp" width="360" alt="musyrifah /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>perawat</code> — 13 halaman</summary>
@@ -265,39 +172,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>pesantren-direktur</code> — 26 halaman</summary>
-
-| Halaman                                                                                                                             | Rute                  |
-| ----------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/pesantren-direktur__meals.webp" width="360" alt="pesantren-direktur /meals">                            | `/meals`              |
-| <img src="docs/images/roles/pesantren-direktur__health.webp" width="360" alt="pesantren-direktur /health">                          | `/health`             |
-| <img src="docs/images/roles/pesantren-direktur__ibadah.webp" width="360" alt="pesantren-direktur /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/pesantren-direktur__canteen.webp" width="360" alt="pesantren-direktur /canteen">                        | `/canteen`            |
-| <img src="docs/images/roles/pesantren-direktur__laundry.webp" width="360" alt="pesantren-direktur /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/pesantren-direktur__musyrif.webp" width="360" alt="pesantren-direktur /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/pesantren-direktur__permits.webp" width="360" alt="pesantren-direktur /permits">                        | `/permits`            |
-| <img src="docs/images/roles/pesantren-direktur__reports.webp" width="360" alt="pesantren-direktur /reports">                        | `/reports`            |
-| <img src="docs/images/roles/pesantren-direktur__rewards.webp" width="360" alt="pesantren-direktur /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/pesantren-direktur__tahfidz.webp" width="360" alt="pesantren-direktur /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/pesantren-direktur__teacher.webp" width="360" alt="pesantren-direktur /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/pesantren-direktur__e-office.webp" width="360" alt="pesantren-direktur /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/pesantren-direktur__students.webp" width="360" alt="pesantren-direktur /students">                      | `/students`           |
-| <img src="docs/images/roles/pesantren-direktur__takhosus.webp" width="360" alt="pesantren-direktur /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/pesantren-direktur__analytics.webp" width="360" alt="pesantren-direktur /analytics">                    | `/analytics`          |
-| <img src="docs/images/roles/pesantren-direktur__muhasabah.webp" width="360" alt="pesantren-direktur /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/pesantren-direktur__counseling.webp" width="360" alt="pesantren-direktur /counseling">                  | `/counseling`         |
-| <img src="docs/images/roles/pesantren-direktur__muhadatsah.webp" width="360" alt="pesantren-direktur /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/pesantren-direktur__muhadhoroh.webp" width="360" alt="pesantren-direktur /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/pesantren-direktur__violations.webp" width="360" alt="pesantren-direktur /violations">                  | `/violations`         |
-| <img src="docs/images/roles/pesantren-direktur__dormitories.webp" width="360" alt="pesantren-direktur /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/pesantren-direktur__duty-roster.webp" width="360" alt="pesantren-direktur /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/pesantren-direktur__announcements.webp" width="360" alt="pesantren-direktur /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/pesantren-direktur__kitab-progress.webp" width="360" alt="pesantren-direktur /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/pesantren-direktur__rapor-pesantren.webp" width="360" alt="pesantren-direktur /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/pesantren-direktur__quality__complaints.webp" width="360" alt="pesantren-direktur /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>pesantren-pengasuh</code> — 26 halaman</summary>
@@ -467,7 +341,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/sdit-guru__homeroom__behavior.webp" width="360" alt="sdit-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/sdit-guru__homeroom__messages.webp" width="360" alt="sdit-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/sdit-guru__quality__complaints.webp" width="360" alt="sdit-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-guru__homeroom__attendance.webp" width="360" alt="sdit-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -582,59 +455,7 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>sdit-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                   | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/sdit-wakasek__ibadah.webp" width="360" alt="sdit-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/sdit-wakasek__classes.webp" width="360" alt="sdit-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/sdit-wakasek__kinerja.webp" width="360" alt="sdit-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/sdit-wakasek__tahfidz.webp" width="360" alt="sdit-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/sdit-wakasek__teacher.webp" width="360" alt="sdit-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/sdit-wakasek__e-office.webp" width="360" alt="sdit-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/sdit-wakasek__homeroom.webp" width="360" alt="sdit-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/sdit-wakasek__students.webp" width="360" alt="sdit-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/sdit-wakasek__portfolio.webp" width="360" alt="sdit-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/sdit-wakasek__attendance.webp" width="360" alt="sdit-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/sdit-wakasek__muhadatsah.webp" width="360" alt="sdit-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/sdit-wakasek__muhadhoroh.webp" width="360" alt="sdit-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/sdit-wakasek__daily-report.webp" width="360" alt="sdit-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/sdit-wakasek__announcements.webp" width="360" alt="sdit-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/sdit-wakasek__kitab-progress.webp" width="360" alt="sdit-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__behavior.webp" width="360" alt="sdit-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__messages.webp" width="360" alt="sdit-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/sdit-wakasek__quality__complaints.webp" width="360" alt="sdit-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-wakasek__homeroom__attendance.webp" width="360" alt="sdit-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
-
-<details>
-<summary><code>sdit-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                         | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/sdit-wali-kelas__ibadah.webp" width="360" alt="sdit-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/sdit-wali-kelas__classes.webp" width="360" alt="sdit-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/sdit-wali-kelas__kinerja.webp" width="360" alt="sdit-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/sdit-wali-kelas__tahfidz.webp" width="360" alt="sdit-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/sdit-wali-kelas__teacher.webp" width="360" alt="sdit-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/sdit-wali-kelas__e-office.webp" width="360" alt="sdit-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom.webp" width="360" alt="sdit-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/sdit-wali-kelas__students.webp" width="360" alt="sdit-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/sdit-wali-kelas__portfolio.webp" width="360" alt="sdit-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/sdit-wali-kelas__attendance.webp" width="360" alt="sdit-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/sdit-wali-kelas__muhadatsah.webp" width="360" alt="sdit-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/sdit-wali-kelas__muhadhoroh.webp" width="360" alt="sdit-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/sdit-wali-kelas__daily-report.webp" width="360" alt="sdit-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/sdit-wali-kelas__announcements.webp" width="360" alt="sdit-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/sdit-wali-kelas__kitab-progress.webp" width="360" alt="sdit-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__behavior.webp" width="360" alt="sdit-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__messages.webp" width="360" alt="sdit-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/sdit-wali-kelas__quality__complaints.webp" width="360" alt="sdit-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/sdit-wali-kelas__homeroom__attendance.webp" width="360" alt="sdit-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>smaq-admin</code> — 40 halaman</summary>
@@ -744,7 +565,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-guru__homeroom__behavior.webp" width="360" alt="smaq-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smaq-guru__homeroom__messages.webp" width="360" alt="smaq-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smaq-guru__quality__complaints.webp" width="360" alt="smaq-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-guru__homeroom__attendance.webp" width="360" alt="smaq-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -771,7 +591,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smaq-guru-bk__homeroom__behavior.webp" width="360" alt="smaq-guru-bk /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smaq-guru-bk__homeroom__messages.webp" width="360" alt="smaq-guru-bk /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smaq-guru-bk__quality__complaints.webp" width="360" alt="smaq-guru-bk /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-guru-bk__homeroom__attendance.webp" width="360" alt="smaq-guru-bk /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -886,59 +705,7 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>smaq-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                   | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smaq-wakasek__ibadah.webp" width="360" alt="smaq-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smaq-wakasek__classes.webp" width="360" alt="smaq-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smaq-wakasek__kinerja.webp" width="360" alt="smaq-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smaq-wakasek__tahfidz.webp" width="360" alt="smaq-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smaq-wakasek__teacher.webp" width="360" alt="smaq-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smaq-wakasek__e-office.webp" width="360" alt="smaq-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smaq-wakasek__homeroom.webp" width="360" alt="smaq-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smaq-wakasek__students.webp" width="360" alt="smaq-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/smaq-wakasek__portfolio.webp" width="360" alt="smaq-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smaq-wakasek__attendance.webp" width="360" alt="smaq-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smaq-wakasek__muhadatsah.webp" width="360" alt="smaq-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smaq-wakasek__muhadhoroh.webp" width="360" alt="smaq-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smaq-wakasek__daily-report.webp" width="360" alt="smaq-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smaq-wakasek__announcements.webp" width="360" alt="smaq-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smaq-wakasek__kitab-progress.webp" width="360" alt="smaq-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__behavior.webp" width="360" alt="smaq-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__messages.webp" width="360" alt="smaq-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smaq-wakasek__quality__complaints.webp" width="360" alt="smaq-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-wakasek__homeroom__attendance.webp" width="360" alt="smaq-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
-
-<details>
-<summary><code>smaq-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                         | Rute                   |
-| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smaq-wali-kelas__ibadah.webp" width="360" alt="smaq-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smaq-wali-kelas__classes.webp" width="360" alt="smaq-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smaq-wali-kelas__kinerja.webp" width="360" alt="smaq-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smaq-wali-kelas__tahfidz.webp" width="360" alt="smaq-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smaq-wali-kelas__teacher.webp" width="360" alt="smaq-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smaq-wali-kelas__e-office.webp" width="360" alt="smaq-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom.webp" width="360" alt="smaq-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smaq-wali-kelas__students.webp" width="360" alt="smaq-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/smaq-wali-kelas__portfolio.webp" width="360" alt="smaq-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smaq-wali-kelas__attendance.webp" width="360" alt="smaq-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smaq-wali-kelas__muhadatsah.webp" width="360" alt="smaq-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smaq-wali-kelas__muhadhoroh.webp" width="360" alt="smaq-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smaq-wali-kelas__daily-report.webp" width="360" alt="smaq-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smaq-wali-kelas__announcements.webp" width="360" alt="smaq-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smaq-wali-kelas__kitab-progress.webp" width="360" alt="smaq-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__behavior.webp" width="360" alt="smaq-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__messages.webp" width="360" alt="smaq-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smaq-wali-kelas__quality__complaints.webp" width="360" alt="smaq-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smaq-wali-kelas__homeroom__attendance.webp" width="360" alt="smaq-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>smpit-admin</code> — 40 halaman</summary>
@@ -1048,7 +815,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-guru__homeroom__behavior.webp" width="360" alt="smpit-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smpit-guru__homeroom__messages.webp" width="360" alt="smpit-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smpit-guru__quality__complaints.webp" width="360" alt="smpit-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-guru__homeroom__attendance.webp" width="360" alt="smpit-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -1075,7 +841,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/smpit-guru-bk__homeroom__behavior.webp" width="360" alt="smpit-guru-bk /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/smpit-guru-bk__homeroom__messages.webp" width="360" alt="smpit-guru-bk /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/smpit-guru-bk__quality__complaints.webp" width="360" alt="smpit-guru-bk /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-guru-bk__homeroom__attendance.webp" width="360" alt="smpit-guru-bk /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -1190,59 +955,7 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>smpit-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                     | Rute                   |
-| --------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smpit-wakasek__ibadah.webp" width="360" alt="smpit-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smpit-wakasek__classes.webp" width="360" alt="smpit-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smpit-wakasek__kinerja.webp" width="360" alt="smpit-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smpit-wakasek__tahfidz.webp" width="360" alt="smpit-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smpit-wakasek__teacher.webp" width="360" alt="smpit-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smpit-wakasek__e-office.webp" width="360" alt="smpit-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smpit-wakasek__homeroom.webp" width="360" alt="smpit-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smpit-wakasek__students.webp" width="360" alt="smpit-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/smpit-wakasek__portfolio.webp" width="360" alt="smpit-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smpit-wakasek__attendance.webp" width="360" alt="smpit-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smpit-wakasek__muhadatsah.webp" width="360" alt="smpit-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smpit-wakasek__muhadhoroh.webp" width="360" alt="smpit-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smpit-wakasek__daily-report.webp" width="360" alt="smpit-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smpit-wakasek__announcements.webp" width="360" alt="smpit-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smpit-wakasek__kitab-progress.webp" width="360" alt="smpit-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__behavior.webp" width="360" alt="smpit-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__messages.webp" width="360" alt="smpit-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smpit-wakasek__quality__complaints.webp" width="360" alt="smpit-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-wakasek__homeroom__attendance.webp" width="360" alt="smpit-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
-
-<details>
-<summary><code>smpit-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                           | Rute                   |
-| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/smpit-wali-kelas__ibadah.webp" width="360" alt="smpit-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/smpit-wali-kelas__classes.webp" width="360" alt="smpit-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/smpit-wali-kelas__kinerja.webp" width="360" alt="smpit-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/smpit-wali-kelas__tahfidz.webp" width="360" alt="smpit-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/smpit-wali-kelas__teacher.webp" width="360" alt="smpit-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/smpit-wali-kelas__e-office.webp" width="360" alt="smpit-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom.webp" width="360" alt="smpit-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/smpit-wali-kelas__students.webp" width="360" alt="smpit-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/smpit-wali-kelas__portfolio.webp" width="360" alt="smpit-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/smpit-wali-kelas__attendance.webp" width="360" alt="smpit-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/smpit-wali-kelas__muhadatsah.webp" width="360" alt="smpit-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/smpit-wali-kelas__muhadhoroh.webp" width="360" alt="smpit-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/smpit-wali-kelas__daily-report.webp" width="360" alt="smpit-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/smpit-wali-kelas__announcements.webp" width="360" alt="smpit-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/smpit-wali-kelas__kitab-progress.webp" width="360" alt="smpit-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__behavior.webp" width="360" alt="smpit-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__messages.webp" width="360" alt="smpit-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/smpit-wali-kelas__quality__complaints.webp" width="360" alt="smpit-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/smpit-wali-kelas__homeroom__attendance.webp" width="360" alt="smpit-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>super-admin</code> — 42 halaman</summary>
@@ -1386,7 +1099,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 | <img src="docs/images/roles/tkq-guru__homeroom__behavior.webp" width="360" alt="tkq-guru /homeroom/behavior">     | `/homeroom/behavior`   |
 | <img src="docs/images/roles/tkq-guru__homeroom__messages.webp" width="360" alt="tkq-guru /homeroom/messages">     | `/homeroom/messages`   |
 | <img src="docs/images/roles/tkq-guru__quality__complaints.webp" width="360" alt="tkq-guru /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-guru__homeroom__attendance.webp" width="360" alt="tkq-guru /homeroom/attendance"> | `/homeroom/attendance` |
 
 </details>
 
@@ -1480,59 +1192,7 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>tkq-wakasek</code> — 19 halaman</summary>
 
-| Halaman                                                                                                                 | Rute                   |
-| ----------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/tkq-wakasek__ibadah.webp" width="360" alt="tkq-wakasek /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/tkq-wakasek__classes.webp" width="360" alt="tkq-wakasek /classes">                          | `/classes`             |
-| <img src="docs/images/roles/tkq-wakasek__kinerja.webp" width="360" alt="tkq-wakasek /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/tkq-wakasek__tahfidz.webp" width="360" alt="tkq-wakasek /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/tkq-wakasek__teacher.webp" width="360" alt="tkq-wakasek /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/tkq-wakasek__e-office.webp" width="360" alt="tkq-wakasek /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/tkq-wakasek__homeroom.webp" width="360" alt="tkq-wakasek /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/tkq-wakasek__students.webp" width="360" alt="tkq-wakasek /students">                        | `/students`            |
-| <img src="docs/images/roles/tkq-wakasek__portfolio.webp" width="360" alt="tkq-wakasek /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/tkq-wakasek__attendance.webp" width="360" alt="tkq-wakasek /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/tkq-wakasek__muhadatsah.webp" width="360" alt="tkq-wakasek /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/tkq-wakasek__muhadhoroh.webp" width="360" alt="tkq-wakasek /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/tkq-wakasek__daily-report.webp" width="360" alt="tkq-wakasek /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/tkq-wakasek__announcements.webp" width="360" alt="tkq-wakasek /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/tkq-wakasek__kitab-progress.webp" width="360" alt="tkq-wakasek /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__behavior.webp" width="360" alt="tkq-wakasek /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__messages.webp" width="360" alt="tkq-wakasek /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/tkq-wakasek__quality__complaints.webp" width="360" alt="tkq-wakasek /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-wakasek__homeroom__attendance.webp" width="360" alt="tkq-wakasek /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
-
-<details>
-<summary><code>tkq-wali-kelas</code> — 19 halaman</summary>
-
-| Halaman                                                                                                                       | Rute                   |
-| ----------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| <img src="docs/images/roles/tkq-wali-kelas__ibadah.webp" width="360" alt="tkq-wali-kelas /ibadah">                            | `/ibadah`              |
-| <img src="docs/images/roles/tkq-wali-kelas__classes.webp" width="360" alt="tkq-wali-kelas /classes">                          | `/classes`             |
-| <img src="docs/images/roles/tkq-wali-kelas__kinerja.webp" width="360" alt="tkq-wali-kelas /kinerja">                          | `/kinerja`             |
-| <img src="docs/images/roles/tkq-wali-kelas__tahfidz.webp" width="360" alt="tkq-wali-kelas /tahfidz">                          | `/tahfidz`             |
-| <img src="docs/images/roles/tkq-wali-kelas__teacher.webp" width="360" alt="tkq-wali-kelas /teacher">                          | `/teacher`             |
-| <img src="docs/images/roles/tkq-wali-kelas__e-office.webp" width="360" alt="tkq-wali-kelas /e-office">                        | `/e-office`            |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom.webp" width="360" alt="tkq-wali-kelas /homeroom">                        | `/homeroom`            |
-| <img src="docs/images/roles/tkq-wali-kelas__students.webp" width="360" alt="tkq-wali-kelas /students">                        | `/students`            |
-| <img src="docs/images/roles/tkq-wali-kelas__portfolio.webp" width="360" alt="tkq-wali-kelas /portfolio">                      | `/portfolio`           |
-| <img src="docs/images/roles/tkq-wali-kelas__attendance.webp" width="360" alt="tkq-wali-kelas /attendance">                    | `/attendance`          |
-| <img src="docs/images/roles/tkq-wali-kelas__muhadatsah.webp" width="360" alt="tkq-wali-kelas /muhadatsah">                    | `/muhadatsah`          |
-| <img src="docs/images/roles/tkq-wali-kelas__muhadhoroh.webp" width="360" alt="tkq-wali-kelas /muhadhoroh">                    | `/muhadhoroh`          |
-| <img src="docs/images/roles/tkq-wali-kelas__daily-report.webp" width="360" alt="tkq-wali-kelas /daily-report">                | `/daily-report`        |
-| <img src="docs/images/roles/tkq-wali-kelas__announcements.webp" width="360" alt="tkq-wali-kelas /announcements">              | `/announcements`       |
-| <img src="docs/images/roles/tkq-wali-kelas__kitab-progress.webp" width="360" alt="tkq-wali-kelas /kitab-progress">            | `/kitab-progress`      |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__behavior.webp" width="360" alt="tkq-wali-kelas /homeroom/behavior">     | `/homeroom/behavior`   |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__messages.webp" width="360" alt="tkq-wali-kelas /homeroom/messages">     | `/homeroom/messages`   |
-| <img src="docs/images/roles/tkq-wali-kelas__quality__complaints.webp" width="360" alt="tkq-wali-kelas /quality/complaints">   | `/quality/complaints`  |
-| <img src="docs/images/roles/tkq-wali-kelas__homeroom__attendance.webp" width="360" alt="tkq-wali-kelas /homeroom/attendance"> | `/homeroom/attendance` |
-
-</details>
 
 <details>
 <summary><code>ustadz</code> — 24 halaman</summary>
@@ -1566,37 +1226,6 @@ Setiap dari **75 akun demo** (`RoleCode`) beserta halaman yang benar-benar dibuk
 
 </details>
 
-<details>
-<summary><code>wali-kamar</code> — 24 halaman</summary>
-
-| Halaman                                                                                                             | Rute                  |
-| ------------------------------------------------------------------------------------------------------------------- | --------------------- |
-| <img src="docs/images/roles/wali-kamar__meals.webp" width="360" alt="wali-kamar /meals">                            | `/meals`              |
-| <img src="docs/images/roles/wali-kamar__health.webp" width="360" alt="wali-kamar /health">                          | `/health`             |
-| <img src="docs/images/roles/wali-kamar__ibadah.webp" width="360" alt="wali-kamar /ibadah">                          | `/ibadah`             |
-| <img src="docs/images/roles/wali-kamar__laundry.webp" width="360" alt="wali-kamar /laundry">                        | `/laundry`            |
-| <img src="docs/images/roles/wali-kamar__musyrif.webp" width="360" alt="wali-kamar /musyrif">                        | `/musyrif`            |
-| <img src="docs/images/roles/wali-kamar__permits.webp" width="360" alt="wali-kamar /permits">                        | `/permits`            |
-| <img src="docs/images/roles/wali-kamar__rewards.webp" width="360" alt="wali-kamar /rewards">                        | `/rewards`            |
-| <img src="docs/images/roles/wali-kamar__tahfidz.webp" width="360" alt="wali-kamar /tahfidz">                        | `/tahfidz`            |
-| <img src="docs/images/roles/wali-kamar__teacher.webp" width="360" alt="wali-kamar /teacher">                        | `/teacher`            |
-| <img src="docs/images/roles/wali-kamar__e-office.webp" width="360" alt="wali-kamar /e-office">                      | `/e-office`           |
-| <img src="docs/images/roles/wali-kamar__schedule.webp" width="360" alt="wali-kamar /schedule">                      | `/schedule`           |
-| <img src="docs/images/roles/wali-kamar__students.webp" width="360" alt="wali-kamar /students">                      | `/students`           |
-| <img src="docs/images/roles/wali-kamar__takhosus.webp" width="360" alt="wali-kamar /takhosus">                      | `/takhosus`           |
-| <img src="docs/images/roles/wali-kamar__muhasabah.webp" width="360" alt="wali-kamar /muhasabah">                    | `/muhasabah`          |
-| <img src="docs/images/roles/wali-kamar__muhadatsah.webp" width="360" alt="wali-kamar /muhadatsah">                  | `/muhadatsah`         |
-| <img src="docs/images/roles/wali-kamar__muhadhoroh.webp" width="360" alt="wali-kamar /muhadhoroh">                  | `/muhadhoroh`         |
-| <img src="docs/images/roles/wali-kamar__violations.webp" width="360" alt="wali-kamar /violations">                  | `/violations`         |
-| <img src="docs/images/roles/wali-kamar__dormitories.webp" width="360" alt="wali-kamar /dormitories">                | `/dormitories`        |
-| <img src="docs/images/roles/wali-kamar__duty-roster.webp" width="360" alt="wali-kamar /duty-roster">                | `/duty-roster`        |
-| <img src="docs/images/roles/wali-kamar__daily-report.webp" width="360" alt="wali-kamar /daily-report">              | `/daily-report`       |
-| <img src="docs/images/roles/wali-kamar__announcements.webp" width="360" alt="wali-kamar /announcements">            | `/announcements`      |
-| <img src="docs/images/roles/wali-kamar__kitab-progress.webp" width="360" alt="wali-kamar /kitab-progress">          | `/kitab-progress`     |
-| <img src="docs/images/roles/wali-kamar__rapor-pesantren.webp" width="360" alt="wali-kamar /rapor-pesantren">        | `/rapor-pesantren`    |
-| <img src="docs/images/roles/wali-kamar__quality__complaints.webp" width="360" alt="wali-kamar /quality/complaints"> | `/quality/complaints` |
-
-</details>
 
 <details>
 <summary><code>yayasan-anggota</code> — 14 halaman</summary>

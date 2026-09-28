@@ -76,11 +76,11 @@ export default function DailyReportPage() {
     search,
     unitId: unitId || undefined,
     classId: classId || undefined,
-    date: date ? date.toISOString() : undefined,
+    date: date ? format(date, "yyyy-MM-dd") : undefined,
   });
 
   const reports = reportsData?.data || [];
-  const pagination: any = reportsData?.meta || {
+  const pagination = reportsData?.meta?.pagination ?? {
     totalPages: 1,
     page: 1,
     total: 0,
@@ -132,7 +132,7 @@ export default function DailyReportPage() {
         action={{
           label: "Buat Laporan",
           icon: <Plus className="h-4 w-4" />,
-          href: "/daily-report/create",
+          href: "/daily-report/new",
         }}
       />
 
@@ -236,7 +236,7 @@ export default function DailyReportPage() {
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
               <p>Belum ada laporan harian untuk tanggal ini.</p>
               <Button variant="link" asChild className="mt-2">
-                <Link href="/daily-report/create">Buat Laporan Baru</Link>
+                <Link href="/daily-report/new">Buat Laporan Baru</Link>
               </Button>
             </CardContent>
           </Card>

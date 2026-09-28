@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate } from '../../middleware/auth';
+import { authenticate, isStaffMember } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import {
   createGuestBookSchema,
@@ -14,6 +14,9 @@ import * as ReceptionController from './reception.controller';
 const router = Router();
 
 router.use(authenticate);
+// The guest book (names, phones), santri visits and parcels are the front
+// desk's work; until 2026-09-24 any signed-in account could read and write them.
+router.use(isStaffMember);
 
 // Stats
 router.get('/stats', ReceptionController.getStats);

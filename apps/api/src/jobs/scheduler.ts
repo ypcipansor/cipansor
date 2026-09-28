@@ -12,6 +12,8 @@ import { purgeIdentityDocuments } from './identity-purge.job';
 import { runChatbotSpendCheck } from './chatbot-spend.job';
 import { runChatbotTranscriptPurge } from './chatbot-transcript-purge.job';
 import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
+import { runAttendanceFollowUpReminder } from './attendance-follow-up.job';
+import { runAttendanceRegisterReminder } from './attendance-register-reminder.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -280,6 +282,55 @@ export function initializeScheduler(): void {
   scheduledTasks.push(chatbotEscalationTask);
   logger.info('[Scheduler] Chatbot escalation retry scheduled every 30 minutes');
 
+  /**
+   * Pengingat tindak lanjut absensi (decisions/absensi-harian.md).
+   *
+   * Pukul 15:00 WIB: sesudah jam pelajaran usai, masih di jam kerja, dan
+   * masih sempat menghubungi wali hari itu juga. Wali kelas murid pulang-pergi
+   * dan musyrif santri mukim diingatkan sekali tentang Alpa hari ini yang
+   * belum ada keterangannya; hari tanpa Alpa tidak mengirim apa pun.
+   */
+  const attendanceFollowUpTask = cron.schedule(
+    '0 15 * * *',
+    async () => {
+      try {
+        const { reminded } = await runAttendanceFollowUpReminder();
+        if (reminded) logger.info(`[Scheduler] Attendance follow-up reminders: ${reminded}`);
+      } catch (error) {
+        logger.error('[Scheduler] Attendance follow-up reminder failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(attendanceFollowUpTask);
+  logger.info('[Scheduler] Attendance follow-up reminder scheduled daily at 15:00 WIB');
+
+  /**
+   * Pengingat register (decisions/absensi-harian.md).
+   *
+   * Tiap 5 menit pukul 05:00–16:55 WIB: kelas yang registernya belum lengkap
+   * 30 menit sesudah jam pertamanya hari itu mengingatkan guru jam itu dan
+   * wali kelasnya, sekali. Hari libur di kalender tidak mengingatkan siapa pun.
+   */
+  const registerReminderTask = cron.schedule(
+    '*/5 5-16 * * *',
+    async () => {
+      try {
+        const { reminded } = await runAttendanceRegisterReminder();
+        if (reminded) logger.info(`[Scheduler] Register reminders: ${reminded}`);
+      } catch (error) {
+        logger.error('[Scheduler] Register reminder failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(registerReminderTask);
+  logger.info('[Scheduler] Register reminder scheduled every 5 minutes, 05:00–16:55 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -307,6 +358,8 @@ export async function runJob(
     | 'chatbot-spend'
     | 'chatbot-transcript-purge'
     | 'chatbot-escalation-retry'
+    | 'attendance-follow-up'
+    | 'attendance-register-reminder'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -340,6 +393,12 @@ export async function runJob(
       break;
     case 'chatbot-escalation-retry':
       await runChatbotEscalationRetry();
+      break;
+    case 'attendance-follow-up':
+      await runAttendanceFollowUpReminder();
+      break;
+    case 'attendance-register-reminder':
+      await runAttendanceRegisterReminder();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

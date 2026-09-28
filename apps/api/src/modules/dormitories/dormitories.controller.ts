@@ -1,36 +1,25 @@
 import { Request, Response, NextFunction } from 'express';
 import * as dormitoryService from './dormitories.service';
 import {
-  createDormitorySchema,
-  updateDormitorySchema,
   queryDormitorySchema,
-  createRoomSchema,
-  updateRoomSchema,
   queryRoomSchema,
-  createRoomAssignmentSchema,
-  updateRoomAssignmentSchema,
   queryRoomAssignmentSchema,
 } from './dormitories.schema';
-import { ApiError, Errors } from '../../middleware/error';
+import { Errors, asyncHandler } from '../../middleware/error';
+import { ApiResponse } from '../../utils/response';
 import { requireUser } from '../../middleware/auth';
 
 // =====================================
 // DORMITORY CONTROLLERS
 // =====================================
 
-export async function createDormitory(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createDormitorySchema.parse(req.body);
-    const dormitory = await dormitoryService.createDormitory(data);
-    res.status(201).json({
-      success: true,
-      message: 'Dormitory created successfully',
-      data: dormitory,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+// The writes receive bodies already parsed by validate() in
+// dormitories.routes.ts, against the contract in @cipansor/shared.
+
+export const createDormitory = asyncHandler(async (req: Request, res: Response) => {
+  const dormitory = await dormitoryService.createDormitory(req.body);
+  res.status(201).json(ApiResponse.success(dormitory, 'Asrama ditambahkan'));
+});
 
 export async function getStudentsByMusyrif(req: Request, res: Response, next: NextFunction) {
   try {
@@ -98,51 +87,24 @@ export async function getDormitoryStats(req: Request, res: Response, next: NextF
   }
 }
 
-export async function updateDormitory(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = updateDormitorySchema.parse(req.body);
-    const dormitory = await dormitoryService.updateDormitory(id, data);
-    res.json({
-      success: true,
-      message: 'Dormitory updated successfully',
-      data: dormitory,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const updateDormitory = asyncHandler(async (req: Request, res: Response) => {
+  const dormitory = await dormitoryService.updateDormitory(req.params.id, req.body);
+  res.json(ApiResponse.success(dormitory, 'Asrama diperbarui'));
+});
 
-export async function deleteDormitory(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    await dormitoryService.deleteDormitory(id);
-    res.json({
-      success: true,
-      message: 'Dormitory deleted successfully',
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const deleteDormitory = asyncHandler(async (req: Request, res: Response) => {
+  await dormitoryService.deleteDormitory(req.params.id);
+  res.json(ApiResponse.success(null, 'Asrama dihapus'));
+});
 
 // =====================================
 // ROOM CONTROLLERS
 // =====================================
 
-export async function createRoom(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createRoomSchema.parse(req.body);
-    const room = await dormitoryService.createRoom(data);
-    res.status(201).json({
-      success: true,
-      message: 'Room created successfully',
-      data: room,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const createRoom = asyncHandler(async (req: Request, res: Response) => {
+  const room = await dormitoryService.createRoom(req.body);
+  res.status(201).json(ApiResponse.success(room, 'Kamar ditambahkan'));
+});
 
 export async function getRooms(req: Request, res: Response, next: NextFunction) {
   try {
@@ -209,51 +171,24 @@ export async function getRoomOccupancy(req: Request, res: Response, next: NextFu
   }
 }
 
-export async function updateRoom(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = updateRoomSchema.parse(req.body);
-    const room = await dormitoryService.updateRoom(id, data);
-    res.json({
-      success: true,
-      message: 'Room updated successfully',
-      data: room,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const updateRoom = asyncHandler(async (req: Request, res: Response) => {
+  const room = await dormitoryService.updateRoom(req.params.id, req.body);
+  res.json(ApiResponse.success(room, 'Kamar diperbarui'));
+});
 
-export async function deleteRoom(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    await dormitoryService.deleteRoom(id);
-    res.json({
-      success: true,
-      message: 'Room deactivated successfully',
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const deleteRoom = asyncHandler(async (req: Request, res: Response) => {
+  await dormitoryService.deleteRoom(req.params.id);
+  res.json(ApiResponse.success(null, 'Kamar dihapus'));
+});
 
 // =====================================
 // ROOM ASSIGNMENT CONTROLLERS
 // =====================================
 
-export async function createRoomAssignment(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createRoomAssignmentSchema.parse(req.body);
-    const assignment = await dormitoryService.createRoomAssignment(data);
-    res.status(201).json({
-      success: true,
-      message: 'Student assigned to room successfully',
-      data: assignment,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const createRoomAssignment = asyncHandler(async (req: Request, res: Response) => {
+  const assignment = await dormitoryService.createRoomAssignment(req.body);
+  res.status(201).json(ApiResponse.success(assignment, 'Santri ditempatkan'));
+});
 
 export async function getRoomAssignments(req: Request, res: Response, next: NextFunction) {
   try {
@@ -284,30 +219,12 @@ export async function getRoomAssignmentById(req: Request, res: Response, next: N
   }
 }
 
-export async function updateRoomAssignment(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = updateRoomAssignmentSchema.parse(req.body);
-    const assignment = await dormitoryService.updateRoomAssignment(id, data);
-    res.json({
-      success: true,
-      message: 'Room assignment updated successfully',
-      data: assignment,
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const updateRoomAssignment = asyncHandler(async (req: Request, res: Response) => {
+  const assignment = await dormitoryService.updateRoomAssignment(req.params.id, req.body);
+  res.json(ApiResponse.success(assignment, 'Penempatan diperbarui'));
+});
 
-export async function endRoomAssignment(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    await dormitoryService.endRoomAssignment(id);
-    res.json({
-      success: true,
-      message: 'Room assignment ended successfully',
-    });
-  } catch (error) {
-    next(error);
-  }
-}
+export const endRoomAssignment = asyncHandler(async (req: Request, res: Response) => {
+  await dormitoryService.endRoomAssignment(req.params.id);
+  res.json(ApiResponse.success(null, 'Santri dikeluarkan dari kamar'));
+});

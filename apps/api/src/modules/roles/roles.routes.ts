@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { rolesController } from './roles.controller';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isAdmin } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/error';
 import {
   getRolesQuerySchema,
@@ -131,7 +131,7 @@ router.post(
 router.get(
   '/users/:userId',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  isAdmin,
   rolesController.getUserRoles.bind(rolesController)
 );
 
@@ -220,10 +220,14 @@ router.patch(
  *       201:
  *         description: Role assigned
  */
+// Role changes: isAdmin, not authorize(UNIT_ADMIN). The legacy UNIT_ADMIN
+// bucket also holds every yayasan organ, and they are not system
+// administrators (see ADMIN_ROLE_CODES). What a unit admin may change is
+// decided per request in rolesService.assertMayManage.
 router.post(
   '/assign',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  isAdmin,
   validate(assignRoleSchema),
   rolesController.assignRole.bind(rolesController)
 );
@@ -261,7 +265,7 @@ router.post(
 router.patch(
   '/users/:userId/primary',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  isAdmin,
   validate(setPrimaryRoleSchema),
   rolesController.setPrimaryRole.bind(rolesController)
 );
@@ -287,7 +291,7 @@ router.patch(
 router.delete(
   '/assignments/:id',
   authenticate,
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  isAdmin,
   rolesController.removeRoleAssignment.bind(rolesController)
 );
 
