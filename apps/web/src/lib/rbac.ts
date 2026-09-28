@@ -408,11 +408,12 @@ export function getEffectiveRole(
 export const roleCodeRouteAccess: Readonly<Record<string, readonly string[]>> =
   {
     // The head drafts the RKA Unit their PK must anchor to
-    // (`canAuthorUnitPlan` on the API).
-    TKQ_KEPALA_SEKOLAH: ["/perencanaan"],
-    SDIT_KEPALA_SEKOLAH: ["/perencanaan"],
-    SMPIT_KEPALA_SEKOLAH: ["/perencanaan"],
-    SMAQ_KEPALA_SEKOLAH: ["/perencanaan"],
+    // (`canAuthorUnitPlan` on the API), and reads their unit's page and its
+    // accreditation (Profil Unit).
+    TKQ_KEPALA_SEKOLAH: ["/perencanaan", "/units"],
+    SDIT_KEPALA_SEKOLAH: ["/perencanaan", "/units"],
+    SMPIT_KEPALA_SEKOLAH: ["/perencanaan", "/units"],
+    SMAQ_KEPALA_SEKOLAH: ["/perencanaan", "/units"],
     PUSTAKAWAN: ["/library"],
     // Laboratory equipment: the role holds INVENTORY_VIEW / INVENTORY_MANAGE.
     // `/practicum` is Amaliyah Tadris (teaching practice), not a laboratory.

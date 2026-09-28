@@ -14,3 +14,4 @@ export * from "./daily-report";
 export * from "./homeroom";
 export * from "./attendance";
 export * from "./donation";
+export * from "./accreditation";
