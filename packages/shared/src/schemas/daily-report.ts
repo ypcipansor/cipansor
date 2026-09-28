@@ -83,13 +83,21 @@ const mood = z.enum(DAILY_MOOD_VALUES).nullish();
 const meal = z.enum(MEAL_CONSUMPTION_VALUES).nullish();
 
 /**
- * A file this API stored through POST /upload (which answers with an absolute
- * URL ending in /uploads/<file>), never a link to somewhere else.
+ * A file this API stored through POST /upload — an absolute URL ending in
+ * `/uploads/<file>` (the Azure provider) or the relative `/uploads/<file>` path
+ * (the local provider used by dev and the e2e stack; the browser resolves it
+ * against the API origin). The `//` form is tolerated because a browser may
+ * hand back protocol-relative.
+ *
+ * This checks the *shape* of a stored reference, not its ownership: whether the
+ * caller may attach a given blob is decided by the blob-claim/ownership probe
+ * at write time and by `/upload/sas` at read time. A non-`/uploads/` link (a raw
+ * blob host, a page URL) has the wrong shape and is refused here.
  */
 const uploadedFileUrl = z
   .string()
   .regex(
-    /^https?:\/\/[^/?#\s]+\/uploads\/[^/?#\s]+$/,
+    /^(?:https?:)?\/\/[^/?#\s]+\/uploads\/[^/?#\s]+$|^\/uploads\/[^/?#\s]+$/,
     "Foto harus diunggah lewat aplikasi",
   );
 

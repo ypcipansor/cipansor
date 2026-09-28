@@ -119,7 +119,7 @@ test.describe("Daily report detail", () => {
         academicYearId: base.academicYearId,
         reportDate: `${reportDate}T00:00:00.000Z`,
         activitiesSummary: "E2E tk photo resolution",
-        photoUrls: [photoUrl],
+        photos: [{ url: photoUrl }],
       },
     );
 
@@ -218,7 +218,7 @@ test.describe("Daily report detail", () => {
       academicYearId: base.academicYearId,
       reportDate: `${reportDate}T00:00:00.000Z`,
       activitiesSummary: "E2E daily report",
-      photoUrls: [photoUrl],
+      photos: [{ url: photoUrl }],
     });
     expect(created.success).toBe(true);
     expect(created.data.photos.map((p) => p.photoUrl)).toContain(photoUrl);
@@ -228,7 +228,7 @@ test.describe("Daily report detail", () => {
     // as it was read before the photo rows were rewritten, so re-read to assert
     // the persisted state.
     await apiRequest(session, "PUT", `/daily-report/${created.data.id}`, {
-      photoUrls: [],
+      photos: [],
     });
     const reloaded = await apiRequest<{
       data: { photos: Array<{ photoUrl: string }> };
