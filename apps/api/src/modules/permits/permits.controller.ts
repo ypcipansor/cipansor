@@ -4,7 +4,7 @@ import { requireUser } from '@/middleware/auth';
 import { ApiResponse } from '@/utils/response';
 import * as permitService from './permits.service';
 import * as doctorNoteService from './permit-doctor-note.service';
-import type { ListPermitsQueryParsed } from './permits.schema';
+import type { ListPermitsQueryParsed, PermitDeciderQueryParsed } from './permits.schema';
 
 // Bodies and queries arrive already parsed by validate()/validateQuery() in
 // permits.routes.ts; the caller always comes from the verified token.
@@ -17,6 +17,11 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 
 export const summary = asyncHandler(async (req: Request, res: Response) => {
   res.json(ApiResponse.success(await permitService.getSummary(requireUser(req))));
+});
+
+export const deciderPreview = asyncHandler(async (req: Request, res: Response) => {
+  const query = res.locals.validatedQuery as PermitDeciderQueryParsed;
+  res.json(ApiResponse.success(await permitService.previewDecider(query, requireUser(req))));
 });
 
 export const getByCode = asyncHandler(async (req: Request, res: Response) => {

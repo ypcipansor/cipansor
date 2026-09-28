@@ -8,7 +8,10 @@ import {
   type PageResponse,
   type Permit,
   type PermitDecider,
+  type PermitDeciderPreview,
+  type PermitDeciderQuery,
   type PermitDecision,
+  type PermitMentorKind,
   type PermitStatus,
   type PermitSummary,
   type PermitType,
@@ -89,18 +92,30 @@ export const PERMIT_DECIDER_LABELS: Record<PermitDecider, string> = {
   WALI_KELAS: "wali kelas",
   KEPALA_SEKOLAH: "kepala sekolah",
   PIMPINAN_PESANTREN: "Pimpinan Pesantren",
+  KOORDINATOR_ASRAMA: "koordinator asrama",
 };
 
-const MENTOR_LABELS = { MUSYRIF: "musyrif", WALI_KELAS: "wali kelas" } as const;
+/** Who decides below the unit head, as it reads in a sentence. */
+export const PERMIT_MENTOR_LABELS: Record<PermitMentorKind, string> = {
+  MUSYRIF: "musyrif",
+  KOORDINATOR: "koordinator asrama",
+  WALI_KELAS: "wali kelas",
+};
 
 /**
  * Who decides a pending permit, in one line: the santri's own musyrif or wali
- * kelas, or the unit head for long leave or when no mentor is on record.
+ * kelas — the koordinator asrama when a santri mukim goes home or stays out
+ * overnight — or the unit head for long leave or when no mentor is on record.
  */
-export function whoDecides(d: PermitDecision): string {
-  const mentor = MENTOR_LABELS[d.mentorKind];
+export function whoDecides(
+  d: Pick<PermitDecision, "route" | "mentorKind" | "mentors">,
+): string {
+  const mentor = PERMIT_MENTOR_LABELS[d.mentorKind];
   if (d.route === "LONG") {
     return `Kepala unit — izin lebih dari ${PERMIT_HEAD_AFTER_DAYS} hari`;
+  }
+  if (d.route === "NO_MENTOR" && d.mentorKind === "KOORDINATOR") {
+    return "Pimpinan Pesantren atau kepala unit — asrama santri ini belum punya koordinator tercatat";
   }
   if (d.route === "NO_MENTOR") {
     return `Kepala unit — santri ini belum punya ${mentor} tercatat`;
@@ -134,6 +149,25 @@ export function usePermits(params: ListPermitsQuery = {}, enabled = true) {
     queryFn: async () =>
       (await api.get<PageResponse<Permit>>("/permits", { params })).data,
     enabled,
+  });
+}
+
+/**
+ * Who would decide a permit with these facts, before it is filed, and whether
+ * the learner boards (the form then asks where a sick santri will be). Off
+ * until the learner, the type and both dates are chosen.
+ */
+export function usePermitDecider(query: PermitDeciderQuery | null) {
+  return useQuery({
+    queryKey: [...KEY, "decider", query],
+    queryFn: async () =>
+      (
+        await api.get<ApiResponse<PermitDeciderPreview>>("/permits/decider", {
+          params: query,
+        })
+      ).data.data,
+    enabled: !!query,
+    staleTime: 30_000,
   });
 }
 

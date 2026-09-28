@@ -26,12 +26,12 @@ items before 2026-09-25 is in the history of this file and of
        EMIS and Dapodik exports and the SKHUN — and the readiness
        self-assessment stops overwriting it, the SKHUN stops printing "B" for
        a unit with none (#597); then the public site (Legalitas and the
-       unit's section, three languages, hidden once expired — #598, open);
+       unit's section, three languages, hidden once expired — #598);
     5. the permit rule's three parameters (`pemutus-izin-santri.md`): the
-       doctor's note (retention and access answered 2026-09-28 — in
-       progress), then the koordinator asrama for going home or staying
-       overnight, then the wali's approval for staff-filed leave off the
-       pondok (schema change);
+       doctor's note (#606), the koordinator asrama for going home or
+       staying overnight (in progress; adds `permits.off_campus`, which the
+       next part reads), then the wali's approval for staff-filed leave off
+       the pondok (schema change);
     6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
        the koordinator's placement in their own asrama;
     7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid

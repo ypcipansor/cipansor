@@ -62,6 +62,7 @@ function permitRow(overrides: Record<string, unknown> = {}) {
     type: 'PULANG',
     reason: 'Acara keluarga di rumah',
     destination: null,
+    offCampus: true,
     // Friday 13:00 WIB → Sunday 17:00 WIB
     startDate: new Date('2026-09-25T06:00:00Z'),
     endDate: new Date('2026-09-27T10:00:00Z'),
@@ -108,10 +109,16 @@ function boarder() {
 
 /** The asrama's coordinator covers every kamar; another kamar's pembina does not. */
 const DORM_MUSYRIF = [
-  { dormitoryId: 'dorm-putra', roomId: null, musyrif: { user: person('u-musyrif', 'Ust. Fahmi') } },
+  {
+    dormitoryId: 'dorm-putra',
+    roomId: null,
+    role: 'KOORDINATOR',
+    musyrif: { user: person('u-musyrif', 'Ust. Fahmi') },
+  },
   {
     dormitoryId: 'dorm-putra',
     roomId: 'room-2',
+    role: 'PEMBINA',
     musyrif: { user: person('u-kamar2', 'Ust. Rizki') },
   },
 ];
@@ -190,6 +197,25 @@ describe('createPermit', () => {
   });
 });
 
+describe('createPermit — where the santri will be', () => {
+  beforeEach(() => {
+    db.student.findFirst.mockResolvedValue({ id: STUDENT_ID });
+    db.permit.findFirst.mockResolvedValue(null);
+    db.permit.create.mockResolvedValue(permitRow());
+  });
+  const stored = () => db.permit.create.mock.calls[0][0].data.offCampus;
+
+  it('stores a sick santri in the UKS as on the pondok', async () => {
+    await service.createPermit({ ...CREATE, type: 'SAKIT', offCampus: false }, WALI);
+    expect(stored()).toBe(false);
+  });
+
+  it('stores izin pulang as off the pondok, whatever the request said', async () => {
+    await service.createPermit({ ...CREATE, offCampus: false }, WALI);
+    expect(stored()).toBe(true);
+  });
+});
+
 describe('listPermits — rows follow the caller', () => {
   const QUERY = { page: 1, limit: 20 };
   beforeEach(() => {
@@ -241,7 +267,7 @@ describe('moves', () => {
     expect(createNotification).not.toHaveBeenCalled();
   });
 
-  it('the move is guarded on the state and the dates it was decided on (a race is 409)', async () => {
+  it('the move is guarded on the state and every fact that routes it — dates, type, off the pondok (a race is 409)', async () => {
     db.permit.findFirst.mockResolvedValue(permitRow());
     db.permit.updateMany.mockResolvedValue({ count: 0 });
 
@@ -251,6 +277,8 @@ describe('moves', () => {
     expect(db.permit.updateMany.mock.calls[0][0].where).toEqual({
       id: PERMIT_ID,
       status: 'PENDING',
+      type: 'PULANG',
+      offCampus: true,
       startDate: new Date('2026-09-25T06:00:00Z'),
       endDate: new Date('2026-09-27T10:00:00Z'),
     });
@@ -355,6 +383,8 @@ describe('who decides — the learner’s own mentor, the head above them', () =
   const decidedWith = () => db.permit.updateMany.mock.calls[0][0].data;
   /** Friday 13:00 WIB → the Saturday of the next week: nine calendar days. */
   const LONG = { endDate: new Date('2026-10-03T10:00:00Z') };
+  /** Out of the pondok on Friday afternoon, back by 17:00 WIB: the kamar's to decide. */
+  const AFTERNOON_OUT = { type: 'KELUAR', endDate: new Date('2026-09-25T10:00:00Z') };
 
   it('a day pupil’s leave is the wali kelas’s', async () => {
     pending();
@@ -373,7 +403,7 @@ describe('who decides — the learner’s own mentor, the head above them', () =
 
   it('a boarder’s leave is the musyrif’s of their kamar or asrama, not the wali kelas’s', async () => {
     learnerIs(boarder());
-    pending();
+    pending(AFTERNOON_OUT);
     await expect(service.approvePermit(PERMIT_ID, WALI_KELAS)).rejects.toMatchObject({
       statusCode: 403,
     });
@@ -383,7 +413,7 @@ describe('who decides — the learner’s own mentor, the head above them', () =
 
   it('a musyrif of another kamar in the same asrama may not', async () => {
     learnerIs(boarder());
-    pending();
+    pending(AFTERNOON_OUT);
     const otherRoom = { sub: 'u-kamar2', roleCode: 'MUSYRIF', unitId: 'unit-smp' };
     await expect(service.approvePermit(PERMIT_ID, otherRoom)).rejects.toMatchObject({
       statusCode: 403,
@@ -396,14 +426,55 @@ describe('who decides — the learner’s own mentor, the head above them', () =
       {
         dormitoryId: 'dorm-putra',
         roomId: null,
+        role: 'KOORDINATOR',
         musyrif: { user: person('u-musyrif', 'Ust. Fahmi', false) },
       },
     ]);
-    pending();
+    pending(AFTERNOON_OUT);
     await expect(service.approvePermit(PERMIT_ID, MUSYRIF)).rejects.toMatchObject({
       statusCode: 403,
       message: expect.stringContaining('belum punya musyrif'),
     });
+  });
+
+  it('a boarder going home is the koordinator asrama’s: recorded as such; the kamar’s pembina may not', async () => {
+    learnerIs(boarder());
+    db.musyrifAssignment.findMany.mockResolvedValue([
+      ...DORM_MUSYRIF,
+      {
+        dormitoryId: 'dorm-putra',
+        roomId: 'room-1',
+        role: 'PEMBINA',
+        musyrif: { user: person('u-kamar1', 'Ust. Rizal') },
+      },
+    ]);
+    pending();
+    const pembina = { sub: 'u-kamar1', roleCode: 'MUSYRIF', unitId: 'unit-smp' };
+    await expect(service.approvePermit(PERMIT_ID, pembina)).rejects.toMatchObject({
+      statusCode: 403,
+      message: 'Izin ini diputuskan oleh koordinator asrama santri (Ust. Fahmi)',
+    });
+    await service.approvePermit(PERMIT_ID, MUSYRIF);
+    expect(decidedWith()).toMatchObject({ decidedAs: 'KOORDINATOR_ASRAMA', tookOver: false });
+  });
+
+  it('…while the same pembina decides that santri’s afternoon out', async () => {
+    learnerIs(boarder());
+    db.musyrifAssignment.findMany.mockResolvedValue([
+      {
+        dormitoryId: 'dorm-putra',
+        roomId: 'room-1',
+        role: 'PEMBINA',
+        musyrif: { user: person('u-kamar1', 'Ust. Rizal') },
+      },
+    ]);
+    pending(AFTERNOON_OUT);
+    await service.approvePermit(PERMIT_ID, {
+      sub: 'u-kamar1',
+      roleCode: 'MUSYRIF',
+      unitId: 'unit-smp',
+    });
+    expect(decidedWith()).toMatchObject({ decidedAs: 'MUSYRIF' });
   });
 
   it('the kepala sekolah may take over, and it is recorded and the mentor told', async () => {
@@ -505,6 +576,21 @@ describe('filing tells the people who need to know', () => {
     expect(told()).toContain('u-wali: Izin diajukan');
   });
 
+  it('a boarder’s izin pulang goes to the koordinator asrama, not the kamar’s pembina', async () => {
+    learnerIs(boarder());
+    db.musyrifAssignment.findMany.mockResolvedValue([
+      ...DORM_MUSYRIF,
+      {
+        dormitoryId: 'dorm-putra',
+        roomId: 'room-1',
+        role: 'PEMBINA',
+        musyrif: { user: person('u-kamar1', 'Ust. Rizal') },
+      },
+    ]);
+    await service.createPermit(CREATE, WALI);
+    expect(told()).toEqual(['u-musyrif: Izin menunggu keputusan Anda']);
+  });
+
   it('leave that goes up is announced to the heads, not the mentor', async () => {
     db.permit.create.mockResolvedValue(permitRow({ endDate: new Date('2026-10-03T10:00:00Z') }));
     await service.createPermit(CREATE, WALI);
@@ -523,6 +609,19 @@ describe('updatePermit', () => {
       service.updatePermit(PERMIT_ID, { reason: 'Alasan yang lain sekali' }, WALI)
     ).rejects.toMatchObject({ statusCode: 409 });
     expect(db.permit.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps where the santri is when the change does not say, and a type that leaves the pondok always does', async () => {
+    db.permit.findFirst.mockResolvedValueOnce(permitRow({ type: 'SAKIT', offCampus: false }));
+    db.permit.findFirst.mockResolvedValue(null);
+    db.permit.update.mockResolvedValue(permitRow());
+
+    await service.updatePermit(PERMIT_ID, { reason: 'Masih demam, istirahat di UKS' }, WALI);
+    expect(db.permit.update.mock.calls[0][0].data.offCampus).toBe(false);
+
+    db.permit.findFirst.mockResolvedValueOnce(permitRow({ type: 'SAKIT', offCampus: false }));
+    await service.updatePermit(PERMIT_ID, { type: 'PULANG' }, WALI);
+    expect(db.permit.update.mock.calls[1][0].data.offCampus).toBe(true);
   });
 
   it('a new end before the stored start is refused', async () => {
@@ -561,5 +660,64 @@ describe('daysCovered', () => {
       new Date('2026-09-26T10:00:00Z')
     );
     expect(days.map((d) => d.toISOString())).toEqual(['2026-09-26T00:00:00.000Z']);
+  });
+});
+
+describe('offCampusOf — whether the leave takes the santri off the pondok', () => {
+  it('PULANG, KELUAR and KELUARGA always do, whatever is said', () => {
+    for (const type of ['PULANG', 'KELUAR', 'KELUARGA'] as const) {
+      expect(service.offCampusOf(type, false)).toBe(true);
+    }
+  });
+
+  it('SAKIT and OTHER as the filer says; true when nobody said', () => {
+    expect(service.offCampusOf('SAKIT', false)).toBe(false);
+    expect(service.offCampusOf('OTHER', true)).toBe(true);
+    expect(service.offCampusOf('SAKIT', undefined)).toBe(true);
+    expect(service.offCampusOf('SAKIT', undefined, false)).toBe(false);
+  });
+});
+
+describe('previewDecider — who would decide, before it is filed', () => {
+  const query = {
+    studentId: STUDENT_ID,
+    type: 'SAKIT' as const,
+    startDate: '2026-10-02T07:00:00+07:00',
+    endDate: '2026-10-04T17:00:00+07:00',
+  };
+
+  it('is a 404 for a learner outside the caller’s scope, and reads nothing else', async () => {
+    db.student.findFirst.mockResolvedValue(null);
+    await expect(service.previewDecider(query, WALI)).rejects.toMatchObject({ statusCode: 404 });
+    expect(db.student.findMany).not.toHaveBeenCalled();
+  });
+
+  it('names the koordinator for a sick santri mukim at home, and the kamar in the UKS', async () => {
+    db.student.findFirst.mockResolvedValue({ id: STUDENT_ID });
+    learnerIs(boarder());
+
+    expect(await service.previewDecider({ ...query, offCampus: true }, WALI)).toEqual({
+      boarder: true,
+      decision: {
+        route: 'MENTOR',
+        mentorKind: 'KOORDINATOR',
+        mentors: [{ id: 'u-musyrif', name: 'Ust. Fahmi' }],
+      },
+    });
+    expect(
+      (await service.previewDecider({ ...query, offCampus: false }, WALI)).decision.mentorKind
+    ).toBe('MUSYRIF');
+  });
+
+  it('a day pupil: not a boarder, and the wali kelas decides', async () => {
+    db.student.findFirst.mockResolvedValue({ id: STUDENT_ID });
+    expect(await service.previewDecider(query, WALI)).toEqual({
+      boarder: false,
+      decision: {
+        route: 'MENTOR',
+        mentorKind: 'WALI_KELAS',
+        mentors: [{ id: 'u-walikelas', name: 'Ustadzah Fatimah' }],
+      },
+    });
   });
 });

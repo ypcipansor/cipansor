@@ -1,9 +1,9 @@
 /**
  * A doctor's note on a permit (decided 2026-09-28,
  * decisions/pemutus-izin-santri.md): the wali attaches it when filing sick
- * leave; the santri's musyrif, who decides it, opens it and is recorded as the
- * one who saw it; the unit's tata usaha sees that there is one and cannot open
- * it. It is a child's health data, so the file is never a link — it is fetched
+ * leave at home; the koordinator of the santri's asrama (the musyrif
+ * persona), who decides it, opens it and is recorded as the one who saw it;
+ * the unit's tata usaha sees that there is one and cannot open it. It is a child's health data, so the file is never a link — it is fetched
  * with the session and shown in the page.
  *
  * Accounts come from DEMO_ACCOUNTS (the seed links SMP IT's demo wali to the
@@ -84,6 +84,12 @@ test.describe("Surat dokter pada izin", () => {
     await page.getByRole("option", { name: "Sakit", exact: true }).click();
     await dialog.getByLabel("Berangkat").fill(localInput(offset, 7));
     await dialog.getByLabel("Kembali").fill(localInput(offset + 2, 17));
+    // A santri mukim, sick: the form asks where they will be. At home for
+    // three days is the koordinator asrama's to decide.
+    await dialog
+      .getByLabel("Luar pondok — rumah, klinik, atau rumah sakit")
+      .check();
+    await expect(dialog.getByText(/^Koordinator asrama: /)).toBeVisible();
     await dialog.getByLabel("Alasan").fill(reason);
     // Who opens it and how long it stays is said before it is sent.
     await expect(

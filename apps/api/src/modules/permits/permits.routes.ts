@@ -12,6 +12,7 @@ import { Errors, validate, validateQuery } from '../../middleware/error';
 import {
   createPermitSchema,
   listPermitsQuerySchema,
+  permitDeciderQuerySchema,
   rejectPermitSchema,
   returnPermitSchema,
   updatePermitSchema,
@@ -88,6 +89,31 @@ router.post('/', requesters, validate(createPermitSchema), controller.create);
  *       404: { description: No such permit in the caller's scope }
  */
 router.get('/summary', staff, controller.summary);
+
+/**
+ * @swagger
+ * /api/permits/decider:
+ *   get:
+ *     summary: Who would decide a permit with these facts, before it is filed — and whether the learner boards
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: studentId, required: true, schema: { type: string, format: uuid } }
+ *       - { in: query, name: type, required: true, schema: { type: string, enum: [PULANG, KELUAR, SAKIT, KELUARGA, OTHER] } }
+ *       - { in: query, name: startDate, required: true, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endDate, required: true, schema: { type: string, format: date-time } }
+ *       - { in: query, name: offCampus, description: for SAKIT and OTHER, schema: { type: boolean } }
+ *     responses:
+ *       200: { description: PermitDeciderPreview }
+ *       404: { description: No such learner in the caller's scope }
+ */
+router.get(
+  '/decider',
+  requesters,
+  validateQuery(permitDeciderQuerySchema),
+  controller.deciderPreview
+);
 router.get('/code/:code', staff, controller.getByCode);
 
 /**

@@ -31,6 +31,17 @@ export const PERMIT_TYPE_VALUES = [
 export type PermitType = (typeof PERMIT_TYPE_VALUES)[number];
 
 /**
+ * The types that take the learner off the pondok by what they are. For SAKIT
+ * and OTHER the filer says (`offCampus`): a sick santri may be in the UKS or
+ * at home.
+ */
+export const PERMIT_OFF_CAMPUS_TYPES: readonly PermitType[] = [
+  "PULANG",
+  "KELUAR",
+  "KELUARGA",
+];
+
+/**
  * PENDING → APPROVED | REJECTED | CANCELLED; APPROVED → (departs) → COMPLETED
  * when the learner returns. See `permits.service.ts` for who moves it.
  */
@@ -84,6 +95,12 @@ export const PERMIT_REQUESTER_ROLE_CODES: readonly string[] = [
  * does not decide, because the institution holds the child's care while they
  * are in it.
  *
+ * A boarder going home (PULANG), or off the pondok overnight, is the
+ * koordinator asrama's to decide (decided 2026-09-27), as a kepala asrama or
+ * bagian pengasuhan decides izin pulang and bermalam in a pondok; a few hours
+ * out stays with the kamar's musyrif. An asrama with no koordinator on record
+ * sends it to the unit head.
+ *
  * The unit head — the kepala sekolah of the learner's unit, and for a boarder
  * or a Takhosus santri the Pimpinan Pesantren — decides leave longer than
  * `PERMIT_HEAD_AFTER_DAYS`, decides when no mentor is on record, and may take
@@ -121,11 +138,13 @@ export const PERMIT_DECIDER_VALUES = [
   "WALI_KELAS",
   "KEPALA_SEKOLAH",
   "PIMPINAN_PESANTREN",
+  "KOORDINATOR_ASRAMA",
 ] as const;
 export type PermitDecider = (typeof PERMIT_DECIDER_VALUES)[number];
 
 /**
- * Where a pending permit goes: to the learner's mentor, or to the unit head
+ * Where a pending permit goes: to the learner's mentor (for a boarder going
+ * home or out overnight, the koordinator asrama), or to the unit head
  * because it is long (`LONG`) or because no mentor is on record (`NO_MENTOR`).
  */
 export const PERMIT_ROUTE_VALUES = ["MENTOR", "LONG", "NO_MENTOR"] as const;
@@ -138,6 +157,11 @@ const permitFields = {
   type: z.enum(PERMIT_TYPE_VALUES),
   reason: z.string().trim().min(10, "Alasan minimal 10 karakter").max(1000),
   destination: z.string().trim().max(200).optional(),
+  /**
+   * Off the pondok during the leave. Ignored for PULANG, KELUAR and KELUARGA,
+   * which always are; for SAKIT and OTHER it defaults to true.
+   */
+  offCampus: z.boolean().optional(),
   startDate: moment,
   endDate: moment,
 };
@@ -194,11 +218,34 @@ export const listPermitsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).default(20),
 });
 
+/** GET /permits/decider — who would decide a permit with these facts, before it is filed. */
+export const permitDeciderQuerySchema = z.object({
+  studentId: z.uuid(),
+  type: z.enum(PERMIT_TYPE_VALUES),
+  startDate: moment,
+  endDate: moment,
+  offCampus: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
+});
+
 export type CreatePermitInput = z.infer<typeof createPermitSchema>;
 export type UpdatePermitInput = z.infer<typeof updatePermitSchema>;
 export type RejectPermitInput = z.infer<typeof rejectPermitSchema>;
 export type ReturnPermitInput = z.infer<typeof returnPermitSchema>;
 export type ListPermitsQuery = z.input<typeof listPermitsQuerySchema>;
+export type PermitDeciderQuery = z.input<typeof permitDeciderQuerySchema>;
+
+/**
+ * GET /permits/decider. `boarder` tells the form whether to ask where a sick
+ * santri will be; `decision` is who would decide, as `Permit.decision` will
+ * say once it is filed (without the caller's own `canDecide`).
+ */
+export interface PermitDeciderPreview {
+  boarder: boolean;
+  decision: Pick<PermitDecision, "route" | "mentorKind" | "mentors">;
+}
 
 /** A permit as the API sends it. Dates are ISO strings on the wire. */
 export interface Permit {
@@ -208,6 +255,8 @@ export interface Permit {
   type: PermitType;
   reason: string;
   destination: string | null;
+  /** Off the pondok during the leave (see `PERMIT_OFF_CAMPUS_TYPES`). */
+  offCampus: boolean;
   startDate: string;
   endDate: string;
   status: PermitStatus;
@@ -267,19 +316,28 @@ export const PERMIT_NOTE_MIME_TYPES = [
 export const PERMIT_NOTE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
- * Who decides a permit, as of now. The mentors are the learner's musyrif (a
- * boarder) or wali kelas (otherwise), whoever is on record today.
+ * Who decides a permit, as of now. The mentors are those who decide this
+ * permit: a boarder's musyrif, or the koordinator asrama when the boarder
+ * goes home or is out overnight; otherwise the wali kelas — whoever is on
+ * record today.
  */
 export interface PermitDecision {
   route: PermitRoute;
-  /** Which kind of mentor the learner has: a boarder's is the musyrif. */
-  mentorKind: "MUSYRIF" | "WALI_KELAS";
+  /** Which kind of mentor decides it. */
+  mentorKind: PermitMentorKind;
   mentors: { id: string; name: string }[];
   /** The caller may approve or reject it now. */
   canDecide: boolean;
   /** …and would be doing so as a unit head over the mentor. */
   asTakeover: boolean;
 }
+
+export const PERMIT_MENTOR_KIND_VALUES = [
+  "MUSYRIF",
+  "KOORDINATOR",
+  "WALI_KELAS",
+] as const;
+export type PermitMentorKind = (typeof PERMIT_MENTOR_KIND_VALUES)[number];
 
 /** GET /permits/summary — counts over the permits the caller may see. */
 export interface PermitSummary {

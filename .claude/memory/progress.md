@@ -11,10 +11,10 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `cf7c4fd2` (#587) on 2026-09-28,
-  verified read-only (the inbox API answers each role with its own
-  notifications; #584's public form offers no zakat). #588 onward deploy as
-  `main`'s E2E passes.
+  on which CI and E2E (Chromium) pass. At `4004119d` (#594) on 2026-09-28,
+  which holds #588 through #598; verified read-only (the public
+  accreditation list answers `[]` — no certificate recorded on staging — so
+  the section stays hidden). #605 onward deploy as `main`'s E2E passes.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -72,8 +72,9 @@ academic year, opened by the decider, the wali and the unit head
   daily attendance (#580, one page in #585, its follow-up in #587, #588 and
   #590, and the pattern flag in #596), behaviour notes (#581), the Kurikulum
   list (#589), one daily-report page (#592), the units' accreditation record
-  (#597). In flight: accreditation on the public site (#598), then the
-  permit's doctor's note (roadmap 00.5, first of three parts).
+  (#597), accreditation on the public site (#598), the permit's doctor's
+  note (#606). In flight: the koordinator asrama for izin pulang and
+  bermalam (roadmap 00.5, second of three parts).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.
@@ -118,6 +119,24 @@ academic year, opened by the decider, the wali and the unit head
   reads it).
 
 ## Recently done (2026-09-24 → 28)
+
+- **A permit's doctor's note (#606, merged 2026-09-28):** the wali or staff
+  attach a photo or PDF (5 MB, type read from the bytes) when filing; the
+  decider, the unit head and the wali open it in the page, each opening
+  audited; everyone else sees that one exists. Kept in the database, erased
+  nightly once the leave's academic year has ended. Also: an upload over
+  multer's limit is a 400, not a 500, on every route. Before/after:
+  <https://claude.ai/artifact/8g9EKudwHe51HuhSfazT2c>.
+- **Project task notice (#605, merged 2026-09-28):** a saved task is no
+  longer reported as failed when telling its assignee fails.
+- **Units' accreditation (#597 record, #598 public site; both on staging
+  2026-09-28):** one official record per unit, kept by the unit's admin or
+  the Super Admin at *Sistem → Profil Unit* with the certificate PDF, read by
+  the EMIS/Dapodik exports and the SKHUN; the public site shows the one in
+  force on *Profil → Legalitas* and the unit's section, in three languages,
+  hidden once expired; a reminder 12 months before. Before/after:
+  <https://claude.ai/artifact/3hknmFTyFDXGC21eRhSaoV>,
+  <https://claude.ai/artifact/4seR52ain9pns4gimg7iz3>.
 
 - **Absence follow-up, tier 2 (#588, merged 2026-09-28):** *Wali Kelas →
   Tindak Lanjut Absensi* (and *Pengasuhan → Tindak Lanjut Absensi* for the

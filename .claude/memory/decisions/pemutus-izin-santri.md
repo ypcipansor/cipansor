@@ -1,6 +1,6 @@
 # pemutus-izin-santri
 
-> Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali. 2026-09-28: surat dokter disimpan sampai akhir TA, dibuka pemutus + wali + kepala unit
+> Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali. 2026-09-28: surat dokter disimpan sampai akhir TA, dibuka pemutus + wali + kepala unit (#606); koordinator asrama dibangun — "menginap" = di luar pondok melewati tengah malam WIB
 
 **Kepala sekolah terlalu tinggi untuk izin seorang anak.** Itu kata pengguna
 atas #564, yang menaruh keputusan pada kepala sekolah, Pimpinan Pesantren dan
@@ -26,6 +26,7 @@ sedang disanksi, atau besok ujian.
 | santri mukim (punya kamar aktif) | musyrif yang ditugaskan di kamar itu atau di seluruh asrama |
 | selain itu | wali kelas dari kelas aktifnya |
 | lebih dari `PERMIT_HEAD_AFTER_DAYS` (7) hari kalender WIB | kepala sekolah unitnya; untuk santri mukim atau Takhosus juga Pimpinan Pesantren |
+| santri mukim pulang, atau di luar pondok melewati tengah malam WIB | koordinator asrama (`MusyrifAssignment.role = KOORDINATOR`) |
 | belum ada pembimbing tercatat | kepala unit, dan izinnya menyatakan itu |
 
 - **Ambil alih.** Kepala unit boleh mengambil alih izin milik pembimbing yang
@@ -70,7 +71,19 @@ dan panduan DfE [*Working together to improve school attendance*](https://assets
    menunggu orang tua. Izin di dalam pondok (sakit di UKS, tidak ikut
    kegiatan) cukup diberitahukan. Butuh perubahan skema.
 
-Butir 3–4 belum dibangun; urutannya di `roadmap.md`.
+Butir 3 dibangun 2026-09-28; butir 4 belum (urutannya di `roadmap.md`).
+
+**Cara butir 3 dibaca sistem.** Izin punya kolom `offCampus` (santri di luar
+pondok selama izin). PULANG, KELUAR dan KELUARGA selalu di luar pondok; untuk
+SAKIT dan OTHER formulir bertanya kepada pengaju, hanya bila santrinya
+mukim ("Pondok — UKS atau asrama" / "Luar pondok"). Koordinator memutuskan
+bila santri mukim di luar pondok **dan** izinnya PULANG atau melewati tengah
+malam WIB; selain itu musyrif kamar. Izin lebih dari 7 hari tetap ke kepala
+unit. Asrama tanpa koordinator → Pimpinan Pesantren, atau kepala sekolah
+santri itu (keduanya kepala atas santri mukim, sama seperti izin panjang).
+Baris lama yang tak pernah mencatat tempat dianggap di luar pondok — bacaan
+yang lebih ketat. Formulir menampilkan "Akan diputuskan oleh …" sebelum
+dikirim (`GET /permits/decider`).
 
 ## Surat dokter — penyimpanan dan akses (diputuskan pengguna 2026-09-28)
 
@@ -96,8 +109,10 @@ rekomendasi:
    (kepala yang mengambil alih tak bisa melihat dasarnya). Super Admin tidak
    termasuk.
 
-Siapa pun yang boleh mengajukan izin boleh melampirkan atau mengganti surat
-dokter selama izin menunggu atau sudah disetujui. Berkasnya disimpan di basis
+Siapa pun yang boleh mengajukan izin boleh melampirkan surat dokter selama
+izin menunggu atau sudah disetujui; **mengganti** surat yang sudah ada hanya
+bagi yang boleh membukanya — tidak ada yang menimpa bukti yang tak bisa ia
+lihat. Berkasnya disimpan di basis
 data (bukan `public/uploads`), hanya dibaca lewat endpoint yang memeriksa
 pemanggil, dan setiap pembukaan tercatat di log audit.
 

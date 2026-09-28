@@ -10,10 +10,12 @@ import {
 import {
   PARENT_ROLE_CODES,
   PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_OFF_CAMPUS_TYPES,
   PESANTREN_LEADER_ROLE_CODES,
   PRINCIPAL_ROLE_CODES,
   type CreatePermitInput,
   type PermitDecision,
+  type PermitDeciderPreview,
   type PermitDoctorNote,
   type UpdatePermitInput,
 } from '@cipansor/shared';
@@ -27,7 +29,7 @@ import {
   type ScopeActor,
 } from '@/utils/student-scope';
 import { createNotification } from '../notifications/notifications.service';
-import type { ListPermitsQueryParsed } from './permits.schema';
+import type { ListPermitsQueryParsed, PermitDeciderQueryParsed } from './permits.schema';
 import { decisionFor, mayOpenNote, whoDecides, type Guardianship } from './permits.decider';
 import { ACTIVE_ROOM_ASSIGNMENT, activeMusyrifAssignment, coversRoom } from '@/modules/dormitories';
 
@@ -48,7 +50,8 @@ import { ACTIVE_ROOM_ASSIGNMENT, activeMusyrifAssignment, coversRoom } from '@/m
  * boarding and cross-unit staff, every unit. Outside that, a permit is 404.
  *
  * Approve and reject are further limited to the learner's own mentor — their
- * musyrif if they board, else their wali kelas — or the unit head
+ * musyrif if they board (the koordinator asrama when they go home or stay
+ * out overnight), else their wali kelas — or the unit head
  * (`permits.decider.ts`). Every permit on the wire carries `decision`: who
  * decides it, and whether the caller may.
  */
@@ -61,6 +64,7 @@ const PERMIT_SELECT = {
   type: true,
   reason: true,
   destination: true,
+  offCampus: true,
   startDate: true,
   endDate: true,
   status: true,
@@ -117,11 +121,15 @@ export async function findInScope(id: string, actor: ScopeActor): Promise<Permit
 
 // ------------------------------------------------------------ who decides
 
+/** `MusyrifAssignment.role` of the asrama's koordinator. */
+const KOORDINATOR = 'KOORDINATOR';
+
 /**
  * The learner's mentors as of now, for every learner in `studentIds`, in two
  * queries: the learners (unit, active kamar, active class's wali kelas), then
  * the musyrif assigned to their asrama. A musyrif assigned to the whole asrama
- * (`roomId` null) covers every kamar in it.
+ * (`roomId` null) covers every kamar in it; those assigned as KOORDINATOR are
+ * the asrama's koordinator, who decide a boarder's going home.
  */
 export async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guardianship>> {
   const ids = [...new Set(studentIds)];
@@ -152,9 +160,19 @@ export async function loadGuardianship(studentIds: string[]): Promise<Map<string
   const musyrif = dormitoryIds.length
     ? await prisma.musyrifAssignment.findMany({
         where: { dormitoryId: { in: dormitoryIds }, ...activeMusyrifAssignment(now) },
-        select: { dormitoryId: true, roomId: true, musyrif: { select: { user: person } } },
+        select: {
+          dormitoryId: true,
+          roomId: true,
+          role: true,
+          musyrif: { select: { user: person } },
+        },
       })
     : [];
+  const active = (people: { id: string; name: string; isActive: boolean }[]) => [
+    ...new Map(
+      people.filter((p) => p.isActive).map((p) => [p.id, { id: p.id, name: p.name }])
+    ).values(),
+  ];
 
   return new Map(
     students.map((s) => {
@@ -164,12 +182,21 @@ export async function loadGuardianship(studentIds: string[]): Promise<Map<string
         : s.enrollments.flatMap((e) =>
             e.class.homeroomTeacher ? [e.class.homeroomTeacher.user] : []
           );
-      const mentors = [
-        ...new Map(
-          people.filter((p) => p.isActive).map((p) => [p.id, { id: p.id, name: p.name }])
-        ).values(),
+      const coordinators = room
+        ? musyrif
+            .filter((a) => a.dormitoryId === room.dormitoryId && a.role === KOORDINATOR)
+            .map((a) => a.musyrif.user)
+        : [];
+      return [
+        s.id,
+        {
+          unitId: s.unitId,
+          unitType: s.unit.type,
+          boarder: !!room,
+          mentors: active(people),
+          coordinators: active(coordinators),
+        },
       ];
-      return [s.id, { unitId: s.unitId, unitType: s.unit.type, boarder: !!room, mentors }];
     })
   );
 }
@@ -181,6 +208,7 @@ export const guardianshipOf = (g: Map<string, Guardianship>, row: PermitRow): Gu
     unitType: UnitType.OTHER,
     boarder: false,
     mentors: [],
+    coordinators: [],
   };
 
 function viewOf(row: PermitRow, g: Guardianship, actor: ScopeActor): PermitView {
@@ -230,6 +258,40 @@ async function awaitingDecisionBy(
   return (await withDecisions(pending, actor)).filter(
     (p) => p.decision.canDecide && !p.decision.asTakeover
   );
+}
+
+/**
+ * Off the pondok during the leave: always for PULANG, KELUAR and KELUARGA;
+ * for SAKIT and OTHER as the filer says, else as it was (true for a new one —
+ * the stricter reading when nobody said).
+ */
+export function offCampusOf(type: PermitType, said: boolean | undefined, was = true): boolean {
+  if (PERMIT_OFF_CAMPUS_TYPES.includes(type)) return true;
+  return said ?? was;
+}
+
+/**
+ * GET /permits/decider — who would decide a permit with these facts, before it
+ * is filed, for a learner the caller may file for. The form uses `boarder` to
+ * ask where a sick santri will be, and shows who decides.
+ */
+export async function previewDecider(
+  query: PermitDeciderQueryParsed,
+  actor: ScopeActor
+): Promise<PermitDeciderPreview> {
+  await assertStudentInScope(query.studentId, actor);
+  const guardianship = await loadGuardianship([query.studentId]);
+  const g = guardianship.get(query.studentId);
+  if (!g) throw Errors.notFound('Student');
+  const permit = {
+    status: PermitStatus.PENDING,
+    type: query.type,
+    offCampus: offCampusOf(query.type, query.offCampus),
+    startDate: new Date(query.startDate),
+    endDate: new Date(query.endDate),
+  };
+  const { route, mentorKind, mentors } = decisionFor(permit, g, actor);
+  return { boarder: g.boarder, decision: { route, mentorKind, mentors } };
 }
 
 /** Ambiguous characters (0/O, 1/I/L) left out: the code is read aloud and typed at the gate. */
@@ -300,6 +362,7 @@ async function insertWithCode(
           type: input.type,
           reason: input.reason,
           destination: input.destination,
+          offCampus: offCampusOf(input.type, input.offCampus),
           startDate,
           endDate,
           code: permitCode(),
@@ -402,6 +465,7 @@ export async function updatePermit(id: string, input: UpdatePermitInput, actor: 
       type: input.type,
       reason: input.reason,
       destination: input.destination,
+      offCampus: offCampusOf(input.type ?? permit.type, input.offCampus, permit.offCampus),
       startDate,
       endDate,
     },
@@ -431,9 +495,10 @@ async function transition(
 
 /**
  * 409 once decided; 403 unless the caller decides this permit (its learner's
- * mentor, or a unit head). The move that follows is guarded on the dates read
- * here too, so a permit lengthened in the meantime — which may have sent it
- * to the head — is not decided by the mentor on the old reading.
+ * mentor, or a unit head). The move that follows is guarded on what decides
+ * the route — dates, type, off the pondok — as read here, so a permit changed
+ * in the meantime (lengthened, which sends it to the head; made izin pulang,
+ * which sends it to the koordinator) is not decided on the old reading.
  */
 async function assertDecides(id: string, actor: ScopeActor) {
   const permit = await findInScope(id, actor);
@@ -444,6 +509,8 @@ async function assertDecides(id: string, actor: ScopeActor) {
   return {
     from: {
       status: PermitStatus.PENDING,
+      type: permit.type,
+      offCampus: permit.offCampus,
       startDate: permit.startDate,
       endDate: permit.endDate,
     } satisfies Prisma.PermitWhereInput,
