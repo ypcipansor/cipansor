@@ -372,10 +372,12 @@ function quotedAttributeMask(text: string): Uint8Array {
 function stripHiddenElements(text: string): string {
   const MAX_STRIP_HIDDEN_INPUT = 200_000;
   const normalized = typeof text === 'string' ? text : String(text ?? '');
-  const safeText =
+  const bounded =
     normalized.length > MAX_STRIP_HIDDEN_INPUT
       ? normalized.slice(0, MAX_STRIP_HIDDEN_INPUT)
       : normalized;
+  const safeText = String(bounded);
+  const safeLength = Math.min(safeText.length, MAX_STRIP_HIDDEN_INPUT);
 
   const patterns = [
     { open: '<!--', close: '-->' },
@@ -388,7 +390,7 @@ function stripHiddenElements(text: string): string {
   const outPos: number[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
-  for (let i = 0; i < safeText.length; i++) {
+  for (let i = 0; i < safeLength; i++) {
     out.push(safeText[i]);
     outPos.push(i);
 
