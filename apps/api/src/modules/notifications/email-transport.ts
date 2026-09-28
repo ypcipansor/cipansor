@@ -32,16 +32,19 @@ const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
 /**
- * Upper bound on the HTML fed to the scanners in `htmlToText`. Every scan in
- * this file is linear in the input length, but "linear" still means an attacker
- * who controls the string chooses the constant: an unbounded `html` turns the
- * loop bound itself into an attacker-supplied value (CodeQL's loop-bound
- * injection, alerts 53–57). Capping at this boundary — the one entry point
- * before `stripHiddenElements`, `quotedAttributeMask` and `stripTags` — bounds
- * every one of those loops at once. Far larger than any mail we compose (the
- * whole request body is capped at 10 MB), so nothing legitimate is affected.
+ * Upper bound on the HTML `htmlToText` will scan. Every scan in this file is
+ * linear in the input length, but "linear" still means an attacker who controls
+ * the string chooses the constant: an unbounded `html` turns the loop bound
+ * itself into an attacker-supplied value (CodeQL's loop-bound injection, alerts
+ * 53–57). This is the one entry point before `stripHiddenElements`,
+ * `quotedAttributeMask` and `stripTags`, so the bound covers every one of them.
+ *
+ * Exported so the tests can bind it to the sizes they exercise: the linearity
+ * suite feeds inputs up to 1,500,000 chars, and a cap below that would quietly
+ * clip those benchmarks to the cap rather than the depth they measure. The
+ * value sits deliberately above the largest such input.
  */
-const MAX_HTML_TO_TEXT_CHARS = 1_000_000;
+export const MAX_EMAIL_HTML_CHARS = 2_000_000;
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
@@ -202,15 +205,19 @@ export function describeEmailTransport(): EmailTransportStatus {
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  // Bound the input before the scanners see it: their loop bounds must not be
-  // attacker-chosen (CodeQL loop-bound injection). Truncating rather than
-  // throwing keeps a large message deliverable — the HTML part is sent whole
-  // and only this plain-text fallback is shortened — and it caps every loop in
-  // `stripHiddenElements`, `quotedAttributeMask` and `stripTags` from one place.
-  const bounded =
-    html.length > MAX_HTML_TO_TEXT_CHARS ? html.slice(0, MAX_HTML_TO_TEXT_CHARS) : html;
+  // Reject oversize input rather than truncating it. Both transports send the
+  // full HTML alongside this plain-text part, so a truncated text part would be
+  // a *silent* loss for a text-only reader: the HTML they cannot see keeps its
+  // ending, the text they can does not, and the send still reports success.
+  // Refusing at this boundary keeps the two parts in agreement and still keeps
+  // the scan loop bound out of the caller's hands.
+  if (html.length > MAX_EMAIL_HTML_CHARS) {
+    throw new Error(
+      `HTML content too large to convert safely (${html.length} chars, max ${MAX_EMAIL_HTML_CHARS})`
+    );
+  }
 
-  let text = stripHiddenElements(bounded);
+  let text = stripHiddenElements(html);
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
   text = stripTags(text);
 

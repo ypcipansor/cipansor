@@ -1,13 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { config } from '../../config';
+import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
   htmlToText,
+  MAX_EMAIL_HTML_CHARS,
   resetEmailTransport,
-} from './email-transport';
+} from '../email-transport';
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -249,6 +250,33 @@ describe('Gmail API delivery', () => {
     await expect(
       deliverEmail({ to: 'wali@example.test', subject: 's', html: '<p>x</p>' })
     ).rejects.toThrow(/unauthorized/i);
+  });
+
+  it('refuses an oversize message rather than sending a text part that lost its ending', async () => {
+    // A notification message can approach the 10 MB request limit, well past
+    // the converter's cap. The HTML part would be sent whole while the derived
+    // text part stopped at the cap — a text-only reader loses the ending with
+    // no delivery error. The send must fail loudly instead of half-delivering.
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (hasHostname(url, 'oauth2.googleapis.com')) {
+        return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ id: 'gmail-msg-1' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const oversize = 'a'.repeat(MAX_EMAIL_HTML_CHARS + 1) + 'END';
+
+    await expect(
+      deliverEmail({ to: 'wali@example.test', subject: 'Pemberitahuan', html: oversize })
+    ).rejects.toThrow(/too large/i);
+
+    // Nothing reached Gmail: no partial message, no phantom success.
+    expect(fetchMock.mock.calls.some(([url]) => hasHostname(url, 'gmail.googleapis.com'))).toBe(
+      false
+    );
   });
 });
 
@@ -728,25 +756,33 @@ describe('htmlToText', () => {
       }
     });
 
-    it('bounds the scan on oversize input instead of letting the caller set the loop bound', () => {
+    it('refuses oversize input instead of silently clipping it', () => {
       // CodeQL loop-bound injection (alerts 53–57): with no cap the number of
       // iterations is the attacker's, since `html` comes from request data. The
-      // boundary cap makes the loop bound a constant again. Oversize input is
-      // truncated, not rejected, so a large message still yields a text part.
-      const max = 1_000_000;
-      const oversize = 'a'.repeat(max + 500_000);
-      const start = Date.now();
-      const out = htmlToText(oversize);
-      expect(Date.now() - start).toBeLessThan(2000);
-      expect(out).toBe('a'.repeat(max));
+      // boundary refuses oversize input rather than truncating it — a truncated
+      // text part would drop the ending that the HTML part still carries, which
+      // a text-only reader sees as a message that simply stops.
+      const oversize = 'a'.repeat(MAX_EMAIL_HTML_CHARS + 1);
+      expect(() => htmlToText(oversize)).toThrow(/too large/i);
+      expect(() => htmlToText(oversize)).toThrow(String(MAX_EMAIL_HTML_CHARS));
     });
 
-    it('does not alter input at or under the cap', () => {
-      // The cap must not move the result for a normal message: everything below
-      // the limit is scanned whole, byte for byte.
-      const atLimit = 'b'.repeat(1_000_000);
+    it('does not alter input at the cap, and keeps a normal message whole', () => {
+      // The cap must not move the result for anything it accepts: input exactly
+      // at the limit is scanned whole, byte for byte.
+      const atLimit = 'b'.repeat(MAX_EMAIL_HTML_CHARS);
       expect(htmlToText(atLimit)).toBe(atLimit);
       expect(htmlToText('Ringkasan <b>hari ini</b>')).toBe('Ringkasan hari ini');
+    });
+
+    it('keeps the cap above every size the linearity cases feed it', () => {
+      // The linearity benchmarks below feed inputs up to 1,500,000 chars (the
+      // `<a title="<!--">` repeat, 15 chars x 100,000). A cap below that would
+      // clip them to the cap, so they would time a shallower scan than the one
+      // they were written to measure — green, and measuring the wrong thing.
+      // Bind the cap to the largest such input so a future reduction cannot
+      // quietly re-truncate the suite.
+      expect(MAX_EMAIL_HTML_CHARS).toBeGreaterThan(1_500_000);
     });
   });
 
