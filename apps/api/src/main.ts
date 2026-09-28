@@ -6,8 +6,27 @@ Sentry.init({
   integrations: [nodeProfilingIntegration()],
   // Tracing
   tracesSampleRate: 1.0, //  Capture 100% of the transactions
-  // Set sampling rate for profiling - this is relative to tracesSampleRate
-  profilesSampleRate: 1.0,
+  // Continuous profiling (v11): v10's `profilesSampleRate` sampled per
+  // transaction and was removed. Sample every session, and start/stop the
+  // profiler with the active trace so the old "profile every transaction"
+  // behaviour is preserved.
+  profileSessionSampleRate: 1.0,
+  profileLifecycle: 'trace',
+  // v11 collects request/response bodies, cookies, headers, query parameters,
+  // database query data and user info by default; v10 collected none of it.
+  // Keep the restrictive v10 baseline: this API serves santri records, and the
+  // DSN may point at a Sentry project shared with other apps.
+  dataCollection: {
+    userInfo: false,
+    cookies: false,
+    httpHeaders: false,
+    httpBodies: [],
+    urlQueryParams: false,
+    genAI: { inputs: false, outputs: false },
+    databaseQueryData: false,
+    queues: false,
+    graphQL: { document: false, variables: false },
+  },
 });
 
 import { app } from './app';
