@@ -23,6 +23,7 @@ vi.mock('../email-transport', async (importOriginal) => {
     escapeHtml: actual.escapeHtml,
     notificationMessageHtml: actual.notificationMessageHtml,
     notificationEmailUnavailableReason: actual.notificationEmailUnavailableReason,
+    emailHtmlUnavailableReason: actual.emailHtmlUnavailableReason,
     deliverEmail: vi.fn(),
     describeEmailTransport: vi.fn(() => ({
       kind: 'gmail_api',
@@ -141,6 +142,47 @@ describe('NotificationService email dispatch', () => {
       recipientEmail: 'wali@cipansor.or.id',
       title: 'Pengumuman',
       message: "'".repeat(400_000),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/limit/i);
+    expect(deliverEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a small template even when the plain message it replaces is oversized', async () => {
+    // `sendEmail` swaps the plain message for the rendered template before
+    // delivery. Judging the discarded message refused a deliverable e-mail;
+    // the guard must measure the HTML that actually leaves.
+    const result = await notificationService.send({
+      userId: 'user-1',
+      channel: 'EMAIL',
+      type: 'WELCOME',
+      recipientEmail: 'santri@cipansor.or.id',
+      title: 'Selamat Datang',
+      message: "'".repeat(400_000),
+      templateKey: 'welcome',
+      templateData: { name: 'Ahmad Santri', email: 'santri@cipansor.or.id' },
+    });
+
+    expect(result.success).toBe(true);
+    expect(deliverEmailMock).toHaveBeenCalledTimes(1);
+    const sent = deliverEmailMock.mock.calls[0][0] as { html: string };
+    expect(sent.html).toContain('Ahmad Santri');
+  });
+
+  it('refuses an oversized rendered template before the converter throws', async () => {
+    // The body is small, so only the rendered template can be over the cap.
+    // Without a guard at this boundary `htmlToText` throws inside
+    // `deliverEmail`; the failure must be a returned result instead.
+    const result = await notificationService.send({
+      userId: 'user-1',
+      channel: 'EMAIL',
+      type: 'GENERAL',
+      recipientEmail: 'wali@cipansor.or.id',
+      title: 'Pengumuman',
+      message: 'Pesan biasa',
+      templateKey: 'announcement',
+      templateData: { title: 'Pengumuman', content: 'x'.repeat(2_100_000) },
     });
 
     expect(result.success).toBe(false);

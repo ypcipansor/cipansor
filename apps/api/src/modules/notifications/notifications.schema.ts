@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { partialUpdateSchema } from '@/lib/partial';
-import { notificationMessageHtmlWithinLimit } from './email-transport';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -31,40 +30,11 @@ export const RecipientTypeEnum = z.enum(['ALL', 'UNIT', 'CLASS', 'ROLE', 'INDIVI
  * Absolute bound on a notification message, on any channel: it bounds the row
  * we store and the cost of escaping it. `title` has long been capped at 255;
  * the message had no limit at all.
+ *
+ * It is enforced by the HTTP schema and, for direct callers that never parse
+ * that schema (services and jobs), by the notification service itself.
  */
 export const MAX_NOTIFICATION_MESSAGE_CHARS = 500_000;
-
-/**
- * Reject a message whose escaped HTML would exceed the converter's cap when
- * the caller asked for e-mail on the general notification path.
- *
- * External delivery is best-effort and must never fail the caller, so without
- * this the in-app row would be persisted and the request answered with success
- * while the e-mail was silently dropped by `htmlToText`. The check uses the
- * exact HTML `sendEmail` builds for a notification — `notificationMessageHtml`
- * — not a worst-case expansion: a message of ordinary text escapes to roughly
- * its own length, and rejecting it would refuse a mail that was never at risk.
- *
- * Only a notification addressed to a user can reach a mailbox: the service
- * dispatches only when `data.userId` is set, so a request without one has no
- * e-mail to lose and must not be refused for the sake of it.
- */
-function emailMessageSizeIssue(
-  value: { userId?: string; message: string; channels: string[] },
-  ctx: z.RefinementCtx
-): void {
-  if (!value.userId) return;
-  if (!value.channels.includes('EMAIL')) return;
-  if (notificationMessageHtmlWithinLimit(value.message)) return;
-  ctx.addIssue({
-    code: 'custom',
-    path: ['message'],
-    message:
-      `Pesan terlalu panjang untuk dikirim lewat email: HTML-nya melebihi batas ` +
-      `ukuran yang dapat diproses sistem. Kirim sebagai IN_APP saja atau ` +
-      `perpendek pesannya.`,
-  });
-}
 
 const notificationObjectSchema = z.object({
   userId: z.string().uuid().optional(), // Optional for bulk/system
@@ -87,12 +57,10 @@ const notificationObjectSchema = z.object({
   scheduledAt: z.coerce.date().optional(),
 });
 
-export const createNotificationSchema = notificationObjectSchema.superRefine(emailMessageSizeIssue);
+export const createNotificationSchema = notificationObjectSchema;
 
-// The bulk path writes rows through `createMany` and dispatches nothing, so the
-// e-mail size guard does not apply to it; the raw length cap on the base object
-// still does. Adding the refinement here would refuse a bulk request over a
-// send it never performs.
+// The bulk path writes rows through `createMany` and dispatches nothing, so it
+// shares the base object's raw length cap and needs no e-mail size check.
 export const createBulkNotificationSchema = notificationObjectSchema
   .safeExtend({
     userIds: z.array(z.string().uuid()).min(1),

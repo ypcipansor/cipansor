@@ -4,17 +4,16 @@ import {
   createBulkNotificationSchema,
   createNotificationSchema,
 } from '../notifications.schema';
-import { MAX_EMAIL_HTML_CHARS, notificationMessageHtml } from '../email-transport';
 
 /**
- * External e-mail is best-effort: `createNotification` persists the in-app row,
- * fans out, and swallows a delivery failure. A message whose escaped HTML
- * exceeds the converter's cap is therefore the one case where the caller is
- * told "success" while the e-mail was silently dropped. The guard must refuse
- * it at the edge — and must measure the HTML actually sent, not a worst case,
- * or it refuses messages that were never at risk.
+ * The schema bounds the request shape — the row we store and the cost of
+ * escaping it — and nothing else. It deliberately does **not** decide whether
+ * an e-mail is too big: that depends on the system-wide channel policy and on
+ * any template that replaces the message, neither of which a request body can
+ * know. `createNotification` and `sendEmail` make that call, where the HTML
+ * actually sent is known.
  */
-describe('notification message size guard', () => {
+describe('notification message size cap', () => {
   const base = {
     userId: '00000000-0000-0000-0000-000000000000',
     title: 'Pemberitahuan',
@@ -26,90 +25,64 @@ describe('notification message size guard', () => {
   });
 
   it('accepts a 400,000-char message of ordinary letters with EMAIL selected', () => {
-    // Escaped, this is 400,000 chars — well under the cap. A worst-case (6x)
-    // check refused it and dropped a valid e-mail; the finding that caught it.
     const message = 'a'.repeat(400_000);
-    expect(notificationMessageHtml(message).length).toBeLessThan(MAX_EMAIL_HTML_CHARS);
     expect(
       createNotificationSchema.safeParse({ ...base, message, channels: ['EMAIL'] }).success
     ).toBe(true);
   });
 
-  it('rejects a message whose escaped HTML exceeds the cap', () => {
-    // `'` -> `&#039;` (6 chars): ~2,400,000 escaped, over the converter's cap,
-    // while still under the 500,000 raw message cap.
+  it('accepts an e-mail message whose escaped HTML exceeds the converter cap', () => {
+    // `'` -> `&#039;` escapes to ~2,400,000 chars. The schema must not refuse
+    // it: the service persists the in-app row first, and the EMAIL channel may
+    // be disabled by policy — a validation error here would lose the record
+    // too. Dropping the e-mail is the service's job, not the schema's.
     const message = "'".repeat(400_000);
     expect(message.length).toBeLessThanOrEqual(MAX_NOTIFICATION_MESSAGE_CHARS);
-    expect(notificationMessageHtml(message).length).toBeGreaterThan(MAX_EMAIL_HTML_CHARS);
-
-    const result = createNotificationSchema.safeParse({ ...base, message, channels: ['EMAIL'] });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error.issues[0].path).toEqual(['message']);
-      expect(result.error.issues[0].message).toMatch(/terlalu panjang/i);
-    }
-  });
-
-  it('still accepts that same message when only IN_APP is requested', () => {
-    // The in-app row is harmless at any allowed size; only the e-mail is at
-    // risk. Refusing the whole notification would lose the record too.
-    const message = "'".repeat(400_000);
     expect(
-      createNotificationSchema.safeParse({ ...base, message, channels: ['IN_APP'] }).success
+      createNotificationSchema.safeParse({ ...base, message, channels: ['IN_APP', 'EMAIL'] })
+        .success
     ).toBe(true);
   });
 
   it('rejects a message over the absolute length limit on any channel', () => {
     const message = 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1);
-    expect(
-      createNotificationSchema.safeParse({ ...base, message, channels: ['IN_APP'] }).success
-    ).toBe(false);
-    expect(
-      createNotificationSchema.safeParse({ ...base, message, channels: ['EMAIL'] }).success
-    ).toBe(false);
+    for (const channels of [['IN_APP'], ['EMAIL'], ['SMS']]) {
+      const result = createNotificationSchema.safeParse({ ...base, message, channels });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues[0].path).toEqual(['message']);
+      }
+    }
   });
 
-  it('does not apply the e-mail size guard without a recipient user', () => {
-    // The service dispatches only when `data.userId` is set, so a system
-    // notification with no recipient has no e-mail to lose and must not be
-    // refused over one.
-    const message = "'".repeat(400_000);
+  it('caps a recipient-less message the same way', () => {
     const { userId: _userId, ...noRecipient } = base;
     expect(
-      createNotificationSchema.safeParse({ ...noRecipient, message, channels: ['EMAIL'] }).success
-    ).toBe(true);
-  });
-
-  it('still caps a recipient-less message at the raw length limit', () => {
-    const message = 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1);
-    const { userId: _userId, ...noRecipient } = base;
-    expect(
-      createNotificationSchema.safeParse({ ...noRecipient, message, channels: ['EMAIL'] }).success
+      createNotificationSchema.safeParse({
+        ...noRecipient,
+        message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1),
+        channels: ['IN_APP'],
+      }).success
     ).toBe(false);
   });
 
-  it('does not apply the e-mail size guard to the bulk schema (it sends nothing)', () => {
-    // `createBulkNotifications` writes rows through `createMany` and dispatches
-    // no mail, so an EMAIL channel there must not inherit a send it never makes.
-    const message = "'".repeat(400_000);
+  it('caps the bulk schema at the same limit', () => {
     const userIds = ['00000000-0000-0000-0000-000000000000'];
     expect(
-      createBulkNotificationSchema.safeParse({ ...base, message, userIds, channels: ['EMAIL'] })
-        .success
-    ).toBe(true);
-    expect(
-      createBulkNotificationSchema.safeParse({ ...base, message, userIds, channels: ['IN_APP'] })
-        .success
-    ).toBe(true);
-  });
-
-  it('still caps the bulk schema at the raw length limit', () => {
-    const message = 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1);
-    const userIds = ['00000000-0000-0000-0000-000000000000'];
-    expect(
-      createBulkNotificationSchema.safeParse({ ...base, message, userIds, channels: ['IN_APP'] })
-        .success
+      createBulkNotificationSchema.safeParse({
+        ...base,
+        message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1),
+        userIds,
+        channels: ['IN_APP'],
+      }).success
     ).toBe(false);
+    expect(
+      createBulkNotificationSchema.safeParse({
+        ...base,
+        message: "'".repeat(400_000),
+        userIds,
+        channels: ['EMAIL'],
+      }).success
+    ).toBe(true);
   });
 });

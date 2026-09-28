@@ -31,12 +31,12 @@ function mockResponse() {
 }
 
 /**
- * The schema guard lives on the request body, so the behaviour that matters is
- * at the controller: an oversize e-mail notification must be refused *before*
- * `createNotification` runs. If the service were reached, the in-app row would
- * be persisted and the response would say success while the e-mail was dropped.
+ * The controller enforces the request-shape cap before the row is persisted.
+ * It does **not** decide e-mail size: that depends on the channel policy and on
+ * templates the body cannot see, so an e-mail-oversize message must still reach
+ * the service, which persists the in-app row and then drops only the e-mail.
  */
-describe('notificationsController - message size guard before persistence', () => {
+describe('notificationsController - request-shape cap before persistence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -58,22 +58,24 @@ describe('notificationsController - message size guard before persistence', () =
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  it('refuses an oversize e-mail message without persisting it', async () => {
-    const body = { ...validBody, message: "'".repeat(400_000) };
-    const next = vi.fn();
+  it('passes an e-mail-oversize message to the service rather than refusing it', async () => {
+    // The service persists the in-app row and drops the e-mail; refusing the
+    // whole request here would lose the row as well.
+    vi.mocked(service.createNotification).mockResolvedValue({ id: 'n2' } as never);
     const res = mockResponse();
 
-    await controller.createNotification(mockRequest(body), res, next);
+    await controller.createNotification(
+      mockRequest({ ...validBody, message: "'".repeat(400_000) }),
+      res,
+      vi.fn()
+    );
 
-    expect(service.createNotification).not.toHaveBeenCalled();
-    expect(next).toHaveBeenCalledTimes(1);
-    expect(res.status).not.toHaveBeenCalled();
+    expect(service.createNotification).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   it('accepts an oversize e-mail message when there is no recipient user', async () => {
-    // No `userId` means the service dispatches nothing, so there is no e-mail
-    // to lose; the raw length cap is the only limit that applies.
-    vi.mocked(service.createNotification).mockResolvedValue({ id: 'n2' } as never);
+    vi.mocked(service.createNotification).mockResolvedValue({ id: 'n3' } as never);
     const { userId: _userId, ...noRecipient } = validBody;
     const res = mockResponse();
 
@@ -87,7 +89,22 @@ describe('notificationsController - message size guard before persistence', () =
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  it('does not apply the e-mail guard to bulk creation (it sends nothing)', async () => {
+  it('refuses a message over the raw length limit without persisting it', async () => {
+    const next = vi.fn();
+    const res = mockResponse();
+
+    await controller.createNotification(
+      mockRequest({ ...validBody, message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1) }),
+      res,
+      next
+    );
+
+    expect(service.createNotification).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('does not apply the raw cap to a bulk message within it', async () => {
     vi.mocked(service.createBulkNotifications).mockResolvedValue({ count: 3 } as never);
     const res = mockResponse();
 

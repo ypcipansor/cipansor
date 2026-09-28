@@ -19,7 +19,7 @@ import {
   deliverEmail,
   describeEmailTransport,
   escapeHtml,
-  notificationEmailUnavailableReason,
+  emailHtmlUnavailableReason,
   notificationMessageHtml,
   resetEmailTransport,
   type EmailTransportKind,
@@ -428,17 +428,12 @@ class NotificationService {
       let result: NotificationResult;
 
       switch (channel) {
-        case 'EMAIL': {
-          // An internal caller may bypass the notification schema, which is
-          // where an oversize body is normally refused. Refuse it here too,
-          // before the converter throws and `deliverEmail` is skipped — a
-          // returned failure, not a success with nothing sent.
-          const reason = notificationEmailUnavailableReason(message);
-          result = reason
-            ? { success: false, channel, error: reason }
-            : await this.sendEmail(options);
+        case 'EMAIL':
+          // The size of the body actually sent is checked inside `sendEmail`,
+          // after any template has replaced the plain message — a template that
+          // renders small must not be refused for a message it discards.
+          result = await this.sendEmail(options);
           break;
-        }
         case 'SMS':
           result = await this.sendSMS(options);
           break;
@@ -542,6 +537,18 @@ class NotificationService {
     }
 
     try {
+      // Guard the HTML that is actually sent, not the plain message: when a
+      // template is supplied it has replaced `htmlContent` above, so a small
+      // template over a large discarded message still goes out, and a large
+      // rendered template is refused here rather than throwing inside
+      // `htmlToText`. Internal callers bypass the request schema, so the guard
+      // has to live at this boundary too.
+      const htmlReason = emailHtmlUnavailableReason(htmlContent);
+      if (htmlReason) {
+        logger.warn(`Skipping e-mail to ${recipientEmail}: ${htmlReason}`);
+        return { success: false, channel: 'EMAIL', error: htmlReason };
+      }
+
       const result = await deliverEmail({
         to: recipientEmail,
         subject,

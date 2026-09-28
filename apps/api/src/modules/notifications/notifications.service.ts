@@ -16,8 +16,10 @@ import type {
   UpdateTemplateInput,
   QueryTemplateInput,
 } from './notifications.schema';
+import { MAX_NOTIFICATION_MESSAGE_CHARS } from './notifications.schema';
 import { notificationEmailUnavailableReason } from './email-transport';
 import { logger } from '../../lib/logger';
+import { Errors } from '../../middleware/error';
 import type { NotificationTemplate } from '@cipansor/shared';
 
 // Helper to map shared types to Prisma Enum
@@ -223,6 +225,14 @@ export async function updateChannelPolicy(policy: ChannelPolicy) {
 }
 
 export async function createNotification(data: CreateNotificationInput) {
+  // The HTTP schema caps the message, but services and jobs call this function
+  // directly and never parse it. Without this the 500,000-char bound would hold
+  // only for requests and a direct caller could persist an arbitrarily large
+  // in-app row — the same cap, applied where the row is actually written.
+  if (data.message.length > MAX_NOTIFICATION_MESSAGE_CHARS) {
+    throw Errors.badRequest(`Pesan melebihi batas ${MAX_NOTIFICATION_MESSAGE_CHARS} karakter.`);
+  }
+
   const { dbType, originalType } = mapTypeToPrisma(data.type ?? 'INFO');
 
   // Extract fields that are not in the Prisma model but need to be stored in `data`

@@ -75,12 +75,34 @@ export function notificationMessageHtml(message: string): string {
 }
 
 /**
+ * Whether already-rendered e-mail HTML fits the converter. `false` means
+ * `htmlToText` would refuse it.
+ */
+export function emailHtmlWithinLimit(html: string): boolean {
+  return html.length <= MAX_EMAIL_HTML_CHARS;
+}
+
+/**
  * Whether a plain-text notification message fits the converter on the general
  * e-mail path. `false` means `htmlToText` would refuse it — and, because
  * external delivery is best-effort, the send would be silently dropped.
  */
 export function notificationMessageHtmlWithinLimit(message: string): boolean {
-  return notificationMessageHtml(message).length <= MAX_EMAIL_HTML_CHARS;
+  return emailHtmlWithinLimit(notificationMessageHtml(message));
+}
+
+/**
+ * Why a rendered e-mail HTML must not be dispatched, or `null` if it may.
+ *
+ * Measured on the HTML itself so a template that replaces an oversized plain
+ * message is judged on what it renders, not on the message it discarded.
+ */
+export function emailHtmlUnavailableReason(html: string): string | null {
+  if (emailHtmlWithinLimit(html)) return null;
+  return (
+    `E-mail HTML is larger than the ${MAX_EMAIL_HTML_CHARS}-character ` +
+    `conversion limit; e-mail not attempted.`
+  );
 }
 
 /**
@@ -94,11 +116,7 @@ export function notificationMessageHtmlWithinLimit(message: string): boolean {
  * throw: the in-app row is the record, and a silent drop is the thing to avoid.
  */
 export function notificationEmailUnavailableReason(message: string): string | null {
-  if (notificationMessageHtmlWithinLimit(message)) return null;
-  return (
-    `E-mail body renders to HTML larger than the ${MAX_EMAIL_HTML_CHARS}-character ` +
-    `conversion limit; e-mail not attempted.`
-  );
+  return emailHtmlUnavailableReason(notificationMessageHtml(message));
 }
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';

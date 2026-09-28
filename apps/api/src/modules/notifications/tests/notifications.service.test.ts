@@ -3,6 +3,7 @@ import { createNotification, getChannelPolicy } from '../notifications.service';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../lib/logger';
 import { notificationService as channelService } from '../email-sms.service';
+import { MAX_NOTIFICATION_MESSAGE_CHARS } from '../notifications.schema';
 
 vi.mock('../../../lib/prisma', () => ({
   prisma: {
@@ -50,12 +51,13 @@ describe('Notifications Service - Channel Policy', () => {
 
 /**
  * Services and jobs call `createNotification` directly and never parse the
- * request schema, so the size guard has to hold here too. The in-app row is
- * persisted first and dispatch is best-effort, so an oversized body must not be
- * handed to `dispatchExternal` — that send is silently dropped by the
- * converter, and the caller is told success either way.
+ * request schema, so both guards have to hold here: the raw length cap on the
+ * row, and the e-mail size check. The in-app row is persisted first and
+ * dispatch is best-effort, so an oversized body must not be handed to
+ * `dispatchExternal` — that send is silently dropped by the converter, and the
+ * caller is told success either way.
  */
-describe('Notifications Service - e-mail size guard at the service boundary', () => {
+describe('Notifications Service - guards at the service boundary', () => {
   const base = {
     userId: 'user-1',
     title: 'Pemberitahuan',
@@ -106,5 +108,20 @@ describe('Notifications Service - e-mail size guard at the service boundary', ()
     expect(channelService.dispatchExternal).toHaveBeenCalledWith(
       expect.objectContaining({ channel: 'EMAIL' })
     );
+  });
+
+  it('refuses a message over the raw length limit before persisting anything', async () => {
+    // The HTTP schema caps this, but a direct caller never parses it. Without
+    // the service check the row would be written at any size.
+    await expect(
+      createNotification({
+        ...base,
+        message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1),
+        channels: ['IN_APP'],
+      } as never)
+    ).rejects.toThrow(/karakter/i);
+
+    expect(prisma.notification.create).not.toHaveBeenCalled();
+    expect(channelService.dispatchExternal).not.toHaveBeenCalled();
   });
 });
