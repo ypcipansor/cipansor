@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, UnitType } from '@prisma/client';
+import { currentAccreditations } from '@/modules/units';
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -361,7 +362,8 @@ class DapodikService {
       noFax: '',
       email: unit.email || '',
       website: '',
-      akreditasi: unit.accreditation || '',
+      // The certificate in force (decisions/akreditasi-unit.md), never a guess.
+      akreditasi: (await currentAccreditations([unit.id])).get(unit.id)?.rating ?? '',
       waktuPenyelenggaraan: 'Pagi',
       namaYayasan: 'Yayasan Cipansor',
       skPendirian: '',

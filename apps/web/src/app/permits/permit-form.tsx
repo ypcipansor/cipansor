@@ -35,6 +35,13 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { PERMIT_TYPE_VALUES } from "@cipansor/shared";
 import { useStudents } from "@/hooks/use-students";
 import { PERMIT_TYPES, type PermitType } from "@/hooks/use-permits";
+import {
+  DeciderHint,
+  WHEREABOUTS_MISSING,
+  WhereaboutsField,
+  asksWhereabouts,
+  usePermitDeciderFor,
+} from "@/components/permits/permit-whereabouts";
 
 // The form's own shape: `datetime-local` strings, converted to ISO instants
 // on submit. The API validates again with the shared createPermitSchema.
@@ -46,6 +53,8 @@ const formSchema = z
     startDate: z.string().min(1, "Waktu berangkat wajib diisi"),
     endDate: z.string().min(1, "Waktu kembali wajib diisi"),
     destination: z.string().optional(),
+    /** Asked only of a boarder on SAKIT or OTHER leave; see permit-whereabouts. */
+    offCampus: z.boolean().optional(),
   })
   .refine((d) => new Date(d.endDate) > new Date(d.startDate), {
     message: "Waktu kembali harus sesudah waktu berangkat",
@@ -68,6 +77,7 @@ export function PermitForm({
   submitLabel,
   isSubmitting,
   onSubmit,
+  after,
 }: {
   defaultValues?: Partial<PermitFormValues>;
   student?: PickedStudent | null;
@@ -77,6 +87,8 @@ export function PermitForm({
   submitLabel: string;
   isSubmitting: boolean;
   onSubmit: (values: PermitFormValues) => void | Promise<void>;
+  /** More fields at the end of the details card — the doctor's note on a new permit. */
+  after?: React.ReactNode;
 }) {
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<PickedStudent | null>(student ?? null);
@@ -98,6 +110,34 @@ export function PermitForm({
     },
   });
 
+  const [studentId, type, startDate, endDate, offCampus] = form.watch([
+    "studentId",
+    "type",
+    "startDate",
+    "endDate",
+    "offCampus",
+  ]);
+  const { data: decider } = usePermitDeciderFor({
+    studentId,
+    type,
+    startDate,
+    endDate,
+    offCampus,
+  });
+  const askWhere = asksWhereabouts(type, decider?.boarder);
+
+  const submit = (values: PermitFormValues) => {
+    if (askWhere && values.offCampus === undefined) {
+      form.setError("offCampus", { message: WHEREABOUTS_MISSING });
+      return;
+    }
+    // Only what the form asked: for any other leave the API knows.
+    return onSubmit({
+      ...values,
+      offCampus: askWhere ? values.offCampus : undefined,
+    });
+  };
+
   const pick = (s: PickedStudent) => {
     setPicked(s);
     form.setValue("studentId", s.id, { shouldValidate: true });
@@ -106,7 +146,7 @@ export function PermitForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={form.handleSubmit(submit)} className="space-y-6">
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <CardHeader>
@@ -252,6 +292,17 @@ export function PermitForm({
                 />
               </div>
 
+              {askWhere && (
+                <WhereaboutsField
+                  value={offCampus}
+                  onChange={(v) =>
+                    form.setValue("offCampus", v, { shouldValidate: true })
+                  }
+                  error={form.formState.errors.offCampus?.message}
+                />
+              )}
+              <DeciderHint preview={decider} />
+
               <FormField
                 control={form.control}
                 name="reason"
@@ -283,6 +334,7 @@ export function PermitForm({
                   </FormItem>
                 )}
               />
+              {after}
             </CardContent>
           </Card>
         </div>

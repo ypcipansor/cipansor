@@ -1,6 +1,6 @@
 # Roadmap — what to do next, in order
 
-Ordered backlog as of **2026-09-27**. Defects in detail are in
+Ordered backlog as of **2026-09-28**. Defects in detail are in
 [`known-issues.md`](./known-issues.md); where the work stands (environments,
 what waits on the user, what is in flight) is in [`progress.md`](./progress.md).
 
@@ -15,23 +15,33 @@ items before 2026-09-25 is in the history of this file and of
 00. **The user's answers of 2026-09-27**, smallest and most exposed first
     (each is its own PR, wired end to end, with tests and before/after):
     1. (done: zakat off the donation forms, #584);
-    2. daily attendance per `decisions/absensi-harian.md` — the one page
-       (#585), the Alpa/Terlambat notice with a personal inbox (#587), the
-       follow-up task with a contact log (#588) and the register reminder
-       (#590) are done; left: the pattern flag, whose parameters go to the
-       user first (`progress.md`, "Waiting on the user");
-    3. one TK daily-report page: a *Laporan Harian* item for the TK guru
-       (writes for their class) and the TK kepala sekolah (reads); the other
-       two page trees 308 to it (removal approved);
+    2. daily attendance per `decisions/absensi-harian.md` — done: the one
+       page (#585), the Alpa/Terlambat notice with a personal inbox (#587),
+       the follow-up task with a contact log (#588), the register reminder
+       (#590) and the pattern flag (#596);
+    3. (done: one TK daily-report page, #592);
     4. (done: the Kurikulum list removed, 308 to Kurikulum Merdeka, #589);
-    5. the permit rule's three parameters (`pemutus-izin-santri.md`): an
-       optional attachment, the koordinator asrama for going home or staying
-       overnight, the wali's approval for staff-filed leave off the pondok
-       (schema change);
+    4b. **the units' accreditation** (`decisions/akreditasi-unit.md`,
+       2026-09-28): one official record per unit in the portal, read by the
+       EMIS and Dapodik exports and the SKHUN — and the readiness
+       self-assessment stops overwriting it, the SKHUN stops printing "B" for
+       a unit with none (#597); then the public site (Legalitas and the
+       unit's section, three languages, hidden once expired — #598);
+    5. the permit rule's three parameters (`pemutus-izin-santri.md`): the
+       doctor's note (#606), the koordinator asrama for going home or
+       staying overnight (#607, which added `permits.off_campus`), then the
+       wali's approval for staff-filed leave off the pondok (schema change);
     6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
        the koordinator's placement in their own asrama;
     7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid
        dampingan (`peran-dan-tugas-tambahan.md`).
+    8. **The yayasan's oversight, rebuilt from the closed #508 and #509**
+       (`decisions/pengawasan-dan-rapat-pembina.md`, 2026-09-28): first the
+       parts salvaged from #508 as small PRs — the Pengawasan pages for the
+       yayasan's organs, and whichever of its auth fixes still apply to
+       `main`; then the four open design questions put to the user
+       (Ps. 43 flow, the WBS matrix, TPPK, the Pembina meeting); then the
+       build, into the existing ratification flow and not a new module.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

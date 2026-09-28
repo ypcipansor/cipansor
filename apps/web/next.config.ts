@@ -142,6 +142,26 @@ const nextConfig: NextConfig = {
         destination: "/curriculum/merdeka",
         permanent: true,
       },
+      // One daily-report page (decided 2026-09-27): the TK tree and the wali
+      // kelas copy answer with the page that serves every unit and role.
+      // Specific paths first; `:id` last.
+      ...(
+        [
+          ["/tk/daily-reports", "/daily-report"],
+          ["/tk/daily-reports/new", "/daily-report/new"],
+          ["/tk/daily-reports/create", "/daily-report/bulk"],
+          ["/tk/daily-reports/class", "/daily-report"],
+          ["/tk/daily-reports/check-in", "/daily-report/check-in"],
+          ["/tk/daily-reports/parent", "/parent/daily-report"],
+          ["/tk/daily-reports/:id/edit", "/daily-report/:id/edit"],
+          ["/tk/daily-reports/:id", "/daily-report/:id"],
+          ["/homeroom/daily-report", "/daily-report/bulk"],
+        ] as const
+      ).map(([source, destination]) => ({
+        source,
+        destination,
+        permanent: true,
+      })),
     ];
   },
 

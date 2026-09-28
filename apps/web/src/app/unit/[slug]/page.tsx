@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PublicPage } from "@/components/landing/public-page";
+import { UnitAccreditationLine } from "@/components/landing/unit-accreditations";
 import { siteConfig, educationUnits } from "@/config/site";
 import { unitDetails } from "@/config/content";
 import { pagesContentFor } from "@/config/pages.i18n";
@@ -109,6 +110,7 @@ export default async function UnitDetailPage({
         <p className="leading-relaxed text-muted-foreground">
           {text?.description ?? unit.description}
         </p>
+        <UnitAccreditationLine locale={locale} unitType={unit.unitType} />
 
         <h2 className="pt-4 text-2xl font-semibold tracking-tight">
           {copy.highlightsHeading(unit.shortName)}

@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-27**. What a new session needs to pick up the thread, newest
+Updated **2026-09-28**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -11,10 +11,10 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `cf7c4fd2` (#587) on 2026-09-28,
-  verified read-only (the inbox API answers each role with its own
-  notifications; #584's public form offers no zakat). #588 onward deploy as
-  `main`'s E2E passes.
+  on which CI and E2E (Chromium) pass. At `4004119d` (#594) on 2026-09-28,
+  which holds #588 through #598; verified read-only (the public
+  accreditation list answers `[]` — no certificate recorded on staging — so
+  the section stays hidden). #605 onward deploy as `main`'s E2E passes.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -32,11 +32,10 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
-- **The attendance pattern flag's parameters** (roadmap 00.2): what counts
-  toward the 10% (every absence, as Attendance Works and the DfE count it, or
-  Alpa only), over which period, what "often late" is (Indonesian school
-  rules commonly say 3 times a month), and whether a boarder's musyrif is
-  flagged too. Researched 2026-09-28; the question has not been put yet.
+- **Accreditation certificates of SD IT and SMA Qur'an** — the user is
+  asking the schools for them (2026-09-28); each unit appears on the public
+  site once its certificate is entered. TK Qur'an has none yet — it was
+  only just established — and is not mentioned.
 - **Musyrif assignments in production.** Until the yayasan enters them
   (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record:
   their leave goes to the unit head, visibly so, and their Alpa is followed
@@ -57,15 +56,31 @@ Kurikulum list page folded away (both removals approved). The next production
 release was **deferred** by the user ("tunda dulu … kumpul dulu perbaikan dan
 pengembangannya"), who asked to keep being reminded.
 
+**Answered on 2026-09-28:** the attendance pattern flag's four parameters
+(`absensi-harian`, all the recommended options); the units' accreditation —
+on the public site from one official record in the portal, kept by the unit's
+admin or the Super Admin, a reminder 12 months before it runs out
+(`akreditasi-unit`); a permit's doctor's note — kept to the end of the leave's
+academic year, opened by the decider, the wali and the unit head
+(`pemutus-izin-santri`); PR #508 (Pengawas, WBS, suspension of Pengurus) and #509 (organ
+decisions and minutes) — both **closed** after an audit
+(<https://claude.ai/artifact/Cs8yAjGuZcYJzrVi874k9d>): #508 is split and
+redesigned, #509 becomes a Pembina meeting decision in the existing
+ratification flow (`pengawasan-dan-rapat-pembina`).
+
 ## In flight
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
   daily attendance (#580, one page in #585, its follow-up in #587, #588 and
-  #590), behaviour notes (#581), the Kurikulum list (#589, open). 184 broken
-  calls left, 177 once #589 merges. In flight: one daily-report page (roadmap 00.3), then the pattern
-  flag (its parameters wait on the user — see below).
+  #590, and the pattern flag in #596), behaviour notes (#581), the Kurikulum
+  list (#589), one daily-report page (#592), the units' accreditation record
+  (#597), accreditation on the public site (#598), the permit's doctor's
+  note (#606), the koordinator asrama for izin pulang and bermalam (#607).
+  In flight: the Pengawasan pages for the yayasan's organs, salvaged from
+  #508 (roadmap 00.8); then the wali's approval for staff-filed leave off
+  the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.
@@ -110,6 +125,24 @@ pengembangannya"), who asked to keep being reminded.
   reads it).
 
 ## Recently done (2026-09-24 → 28)
+
+- **A permit's doctor's note (#606, merged 2026-09-28):** the wali or staff
+  attach a photo or PDF (5 MB, type read from the bytes) when filing; the
+  decider, the unit head and the wali open it in the page, each opening
+  audited; everyone else sees that one exists. Kept in the database, erased
+  nightly once the leave's academic year has ended. Also: an upload over
+  multer's limit is a 400, not a 500, on every route. Before/after:
+  <https://claude.ai/artifact/8g9EKudwHe51HuhSfazT2c>.
+- **Project task notice (#605, merged 2026-09-28):** a saved task is no
+  longer reported as failed when telling its assignee fails.
+- **Units' accreditation (#597 record, #598 public site; both on staging
+  2026-09-28):** one official record per unit, kept by the unit's admin or
+  the Super Admin at *Sistem → Profil Unit* with the certificate PDF, read by
+  the EMIS/Dapodik exports and the SKHUN; the public site shows the one in
+  force on *Profil → Legalitas* and the unit's section, in three languages,
+  hidden once expired; a reminder 12 months before. Before/after:
+  <https://claude.ai/artifact/3hknmFTyFDXGC21eRhSaoV>,
+  <https://claude.ai/artifact/4seR52ain9pns4gimg7iz3>.
 
 - **Absence follow-up, tier 2 (#588, merged 2026-09-28):** *Wali Kelas →
   Tindak Lanjut Absensi* (and *Pengasuhan → Tindak Lanjut Absensi* for the

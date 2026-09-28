@@ -10,14 +10,18 @@ import { waitForToast, waitForLoadingComplete } from "./helpers/page-helpers";
 import { DEMO_ACCOUNTS } from "../../../packages/shared/src/types/demo-accounts";
 
 /**
- * Laporan harian TK, one day of it end to end:
+ * Laporan harian TK, one day of it end to end, on the one daily-report page
+ * (decided 2026-09-27; the TK tree and /homeroom/daily-report redirect here):
  *
  * - the TK guru writes a child's day with a photo, from their own menu
- *   (Mutabaah Yaumiyah → Buat Laporan);
+ *   (Mengajar → Laporan Harian → Buat Laporan);
  * - the child's wali reads it, photo included, and acknowledges it;
  * - a wali of another child cannot open it;
- * - the unit's admin uses the TK / PAUD pages: the form with a captioned
- *   photo, the edit page, and the morning check-in for a class.
+ * - the unit's admin (TK / PAUD → Laporan Harian): the form with a captioned
+ *   photo, the edit page from the list's Ubah, the morning check-in for a
+ *   class, and Hapus;
+ * - the TK kepala sekolah reaches it from their menu, SD keeps its Mutabaah
+ *   Yaumiyah, and the old addresses answer with a permanent redirect.
  *
  * Until 2026-09-26 none of it worked: every write was refused (a date where a
  * datetime was wanted, a unit and a year the user object did not carry), the
@@ -115,13 +119,23 @@ test.afterAll(async () => {
 });
 
 test.describe("guru menulis, wali membaca", () => {
-  test("the TK guru writes the day with a photo (Mutabaah Yaumiyah → Buat Laporan)", async ({
+  test("the TK guru writes the day with a photo (Laporan Harian → Buat Laporan)", async ({
     page,
   }) => {
-    // A TK guru's menu has Mutabaah Yaumiyah; the TK / PAUD group is the
-    // unit admin's.
+    // A TK guru's own menu has Laporan Harian (SD's teachers call the same
+    // page Mutabaah Yaumiyah).
     await injectSession(page, guru);
-    await page.goto("/daily-report");
+    await page.goto("/teacher");
+    await page
+      .getByRole("complementary", { name: "Menu utama" })
+      .getByRole("link", { name: "Laporan Harian" })
+      .click();
+    await expect(page).toHaveURL(/\/daily-report$/);
+    await expect(
+      page.getByRole("heading", { name: "Laporan Harian", exact: true }),
+    ).toBeVisible();
+    // Their unit is theirs: there is no unit to pick.
+    await expect(page.getByRole("combobox", { name: "Unit" })).toHaveCount(0);
     await page.getByRole("link", { name: "Buat Laporan" }).first().click();
     await expect(page).toHaveURL(/\/daily-report\/new$/);
     await waitForLoadingComplete(page);
@@ -134,21 +148,19 @@ test.describe("guru menulis, wali membaca", () => {
       await trigger.click();
       await page.getByRole("option", { name: option }).first().click();
     };
-    await pick(/pilih unit/i, /TK/);
     await pick(/pilih kelas/i, /.+/);
-    await pick(/pilih siswa/i, new RegExp(child.name));
+    await pick(/pilih santri/i, new RegExp(child.name));
 
     await page
-      .getByPlaceholder("Apa saja kegiatan siswa hari ini?")
+      .getByPlaceholder("Apa saja kegiatan santri hari ini?")
       .fill(ACTIVITY);
 
-    await page.getByRole("tab", { name: "Foto" }).click();
     await page.locator('input[type="file"]').setInputFiles({
       name: "kegiatan.png",
       mimeType: "image/png",
       buffer: PNG,
     });
-    await expect(page.getByRole("img", { name: "Photo" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "Foto 1" })).toBeVisible();
 
     const response = created(page, /\/daily-report$/);
     await page.getByRole("button", { name: /simpan laporan/i }).click();
@@ -238,12 +250,12 @@ test.describe("guru menulis, wali membaca", () => {
 test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
   test("the form names what is missing", async ({ page }) => {
     await injectSession(page, admin);
-    await page.goto("/tk/daily-reports/new");
+    await page.goto("/daily-report/new");
     await waitForLoadingComplete(page);
 
     await page.getByRole("button", { name: /simpan laporan/i }).click();
 
-    await expect(page.getByText(/siswa wajib dipilih/i)).toBeVisible();
+    await expect(page.getByText(/santri wajib dipilih/i)).toBeVisible();
     await expect(page.getByText(/kelas wajib dipilih/i)).toBeVisible();
   });
 
@@ -251,7 +263,7 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
     page,
   }) => {
     await injectSession(page, admin);
-    await page.goto("/tk/daily-reports/new");
+    await page.goto("/daily-report/new");
     await waitForLoadingComplete(page);
 
     await page
@@ -261,7 +273,7 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
     await page.getByRole("option").first().click();
     const studentSelect = page
       .locator('button[role="combobox"]')
-      .filter({ hasText: /pilih siswa/i });
+      .filter({ hasText: /pilih santri/i });
     await expect(studentSelect).toBeEnabled();
     await studentSelect.click();
     await page
@@ -284,7 +296,7 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
     expect(res.status(), await res.text()).toBe(201);
     adminReportId = (await res.json()).data.id;
     await waitForToast(page, /berhasil/i);
-    await expect(page).toHaveURL(/\/tk\/daily-reports$/);
+    await expect(page).toHaveURL(/\/daily-report$/);
 
     const report = await apiRequest<{
       data: { photos: { caption: string }[] };
@@ -292,10 +304,25 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
     expect(report.data.photos.map((photo) => photo.caption)).toEqual([CAPTION]);
   });
 
-  test("the edit page keeps what it changes", async ({ page }) => {
+  test("the edit page keeps what it changes (Laporan Harian → ⋯ → Ubah)", async ({
+    page,
+  }) => {
     test.skip(!adminReportId, "the admin's report was not made");
     await injectSession(page, admin);
-    await page.goto(`/tk/daily-reports/${adminReportId}/edit`);
+    await page.goto("/daily-report");
+    await waitForLoadingComplete(page);
+    // The list's Ubah went to a page that did not exist until the TK edit
+    // page moved here.
+    await page
+      .getByRole("button", { name: /^Aksi laporan / })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "Ubah" }).click();
+    await expect(page).toHaveURL(/\/daily-report\/[0-9a-f-]{36}\/edit$/);
+    await expect(
+      page.getByRole("heading", { name: "Ubah Laporan Harian" }),
+    ).toBeVisible();
+    await page.goto(`/daily-report/${adminReportId}/edit`);
     await waitForLoadingComplete(page);
 
     const summary = page.getByLabel("Ringkasan Kegiatan Hari Ini");
@@ -316,7 +343,7 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
     page,
   }) => {
     await injectSession(page, admin);
-    await page.goto("/tk/daily-reports/check-in");
+    await page.goto("/daily-report/check-in");
     await waitForLoadingComplete(page);
 
     await page
@@ -324,10 +351,10 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
       .filter({ hasText: /pilih kelas/i })
       .click();
     await page.getByRole("option").first().click();
-    await page.getByRole("button", { name: /muat daftar siswa/i }).click();
+    await page.getByRole("button", { name: /muat daftar santri/i }).click();
 
     const response = created(page, /\/daily-report\/bulk$/);
-    await page.getByRole("button", { name: /^check-in \d+ siswa$/i }).click();
+    await page.getByRole("button", { name: /^check-in \d+ santri$/i }).click();
     const res = await response;
     expect(res.status(), await res.text()).toBe(201);
     const result = (await res.json()).data as {
@@ -358,6 +385,130 @@ test.describe("TK / PAUD → Laporan Harian (admin unit)", () => {
       expect(new Date(report.data.arrivalTime).getTime()).toBe(
         new Date(`${today()}T07:30:00+07:00`).getTime(),
       );
+    }
+  });
+});
+
+test.describe("one page for a child's day", () => {
+  test("Hapus removes a report, after asking", async ({ page }) => {
+    test.skip(!adminReportId, "the admin's report was not made");
+    await injectSession(page, admin);
+    await page.goto("/daily-report");
+    await waitForLoadingComplete(page);
+    const name = (
+      await apiRequest<{ data: { student: { user: { name: string } } } }>(
+        admin,
+        "GET",
+        `/daily-report/${adminReportId}`,
+      )
+    ).data.student.user.name;
+    await page.getByRole("button", { name: `Aksi laporan ${name}` }).click();
+    await page.getByRole("menuitem", { name: "Hapus" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Hapus laporan harian?");
+    await dialog.getByRole("button", { name: "Hapus" }).click();
+    await waitForToast(page, /laporan harian dihapus/i);
+    const gone = await apiRequest(
+      admin,
+      "GET",
+      `/daily-report/${adminReportId}`,
+    ).then(
+      () => 200,
+      (error: Error) => Number(/→ (\d{3})/.exec(error.message)?.[1] ?? 0),
+    );
+    expect(gone).toBe(404);
+    adminReportId = "";
+  });
+
+  test("a mood no one recorded is not shown as one", async ({ page }) => {
+    // Both forms start at Senang, in plain sight; a report written without a
+    // mood (the API allows it) used to be listed as "Biasa" all the same.
+    const checkedIn = (await todaysReports()).find(
+      (report) =>
+        report.id !== guruReportId && report.createdBy?.id === admin.user.id,
+    );
+    test.skip(!checkedIn?.student, "the check-in made no report to reuse");
+    const student = checkedIn!.student!;
+    await apiRequest(admin, "DELETE", `/daily-report/${checkedIn!.id}`);
+    await apiRequest(admin, "POST", "/daily-report", {
+      studentId: student.id,
+      reportDate: today(),
+      activitiesSummary: `Tanpa suasana hati ${stamp}`,
+    });
+
+    await injectSession(page, admin);
+    await page.goto("/daily-report");
+    await waitForLoadingComplete(page);
+    const card = page.getByRole("article", {
+      name: `Laporan ${student.user?.name}`,
+    });
+    await expect(card).toContainText(`Tanpa suasana hati ${stamp}`);
+    await expect(card).toContainText("Belum diisi");
+    await expect(card).not.toContainText("Biasa");
+  });
+
+  test("the TK kepala sekolah reaches it from their menu", async ({ page }) => {
+    await injectSession(page, await apiLogin(account("TKQ_KEPALA_SEKOLAH")));
+    await page.goto("/dashboard");
+    await page
+      .getByRole("complementary", { name: "Menu utama" })
+      .getByRole("link", { name: "Laporan Harian" })
+      .click();
+    await expect(page).toHaveURL(/\/daily-report$/);
+    await expect(
+      page.getByRole("heading", { name: "Laporan Harian", exact: true }),
+    ).toBeVisible();
+  });
+
+  test("the TK admin has one Laporan Harian item, and SD keeps Mutabaah Yaumiyah", async ({
+    page,
+  }) => {
+    await injectSession(page, admin);
+    await page.goto("/dashboard");
+    const menu = page.getByRole("complementary", { name: "Menu utama" });
+    await menu.getByRole("button", { name: "Buka submenu TK / PAUD" }).click();
+    await expect(
+      menu.getByRole("link", { name: /^Laporan Harian/ }),
+    ).toHaveCount(1);
+    await expect(
+      menu.getByRole("link", { name: "Mutabaah Yaumiyah" }),
+    ).toHaveCount(0);
+    await menu.getByRole("link", { name: "Laporan Harian" }).click();
+    await expect(page).toHaveURL(/\/daily-report$/);
+
+    await injectSession(page, await apiLogin(account("SDIT_GURU")));
+    await page.goto("/teacher");
+    const sdMenu = page.getByRole("complementary", { name: "Menu utama" });
+    await expect(
+      sdMenu.getByRole("link", { name: "Mutabaah Yaumiyah" }),
+    ).toHaveAttribute("href", "/daily-report");
+    await expect(
+      sdMenu.getByRole("link", { name: "Laporan Harian" }),
+    ).toHaveCount(0);
+  });
+
+  test("the old addresses answer with a permanent redirect", async ({
+    page,
+  }) => {
+    await injectSession(page, admin);
+    const id = "00000000-0000-4000-8000-000000000000";
+    for (const [from, to] of [
+      ["/tk/daily-reports", "/daily-report"],
+      ["/tk/daily-reports/new", "/daily-report/new"],
+      ["/tk/daily-reports/create", "/daily-report/bulk"],
+      ["/tk/daily-reports/class", "/daily-report"],
+      ["/tk/daily-reports/check-in", "/daily-report/check-in"],
+      ["/tk/daily-reports/parent", "/parent/daily-report"],
+      [`/tk/daily-reports/${id}/edit`, `/daily-report/${id}/edit`],
+      [`/tk/daily-reports/${id}`, `/daily-report/${id}`],
+      ["/homeroom/daily-report", "/daily-report/bulk"],
+    ]) {
+      const res = await page.request.get(from, { maxRedirects: 0 });
+      expect(res.status(), from).toBe(308);
+      expect(
+        new URL(res.headers()["location"], "http://x").pathname,
+        from,
+      ).toBe(to);
     }
   });
 });

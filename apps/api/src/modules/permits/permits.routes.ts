@@ -1,15 +1,18 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_NOTE_MAX_BYTES,
   PERMIT_REQUESTER_ROLE_CODES,
   PERMIT_STAFF_ROLE_CODES,
 } from '@cipansor/shared';
 import * as controller from './permits.controller';
 import { authenticate, authorize } from '../../middleware/auth';
-import { validate, validateQuery } from '../../middleware/error';
+import { Errors, validate, validateQuery } from '../../middleware/error';
 import {
   createPermitSchema,
   listPermitsQuerySchema,
+  permitDeciderQuerySchema,
   rejectPermitSchema,
   returnPermitSchema,
   updatePermitSchema,
@@ -86,6 +89,31 @@ router.post('/', requesters, validate(createPermitSchema), controller.create);
  *       404: { description: No such permit in the caller's scope }
  */
 router.get('/summary', staff, controller.summary);
+
+/**
+ * @swagger
+ * /api/permits/decider:
+ *   get:
+ *     summary: Who would decide a permit with these facts, before it is filed — and whether the learner boards
+ *     tags: [Permits]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: query, name: studentId, required: true, schema: { type: string, format: uuid } }
+ *       - { in: query, name: type, required: true, schema: { type: string, enum: [PULANG, KELUAR, SAKIT, KELUARGA, OTHER] } }
+ *       - { in: query, name: startDate, required: true, schema: { type: string, format: date-time } }
+ *       - { in: query, name: endDate, required: true, schema: { type: string, format: date-time } }
+ *       - { in: query, name: offCampus, description: for SAKIT and OTHER, schema: { type: boolean } }
+ *     responses:
+ *       200: { description: PermitDeciderPreview }
+ *       404: { description: No such learner in the caller's scope }
+ */
+router.get(
+  '/decider',
+  requesters,
+  validateQuery(permitDeciderQuerySchema),
+  controller.deciderPreview
+);
 router.get('/code/:code', staff, controller.getByCode);
 
 /**
@@ -166,6 +194,20 @@ router.patch('/:id', requesters, validate(updatePermitSchema), controller.update
  *       200: { description: Return recorded }
  *       409: { description: Never departed, or already back }
  */
+// A doctor's note (decisions/pemutus-izin-santri.md): anyone who may file the
+// permit attaches it; the service decides who opens it. Held in memory until
+// it is stored in the row — never written under public/uploads.
+const doctorNoteUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PERMIT_NOTE_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.mimetype)) cb(null, true);
+    else cb(Errors.badRequest('Surat dokter harus foto (JPG, PNG, WebP) atau PDF'));
+  },
+}).single('file');
+router.post('/:id/doctor-note', requesters, doctorNoteUpload, controller.attachDoctorNote);
+router.get('/:id/doctor-note', requesters, controller.openDoctorNote);
+
 router.post('/:id/approve', deciders, controller.approve);
 router.post('/:id/reject', deciders, validate(rejectPermitSchema), controller.reject);
 router.post('/:id/cancel', requesters, controller.cancel);

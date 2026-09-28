@@ -12,6 +12,7 @@ import {
   ApiResponse,
   type AttendanceRecorderScope,
   type AttendanceFollowUpItem,
+  type AttendancePatternItem,
   type AttendanceFollowUpChannel,
   type AttendanceFollowUpOutcome,
   type BulkAttendanceResult,
@@ -138,6 +139,23 @@ export function useAttendanceFollowUps() {
     queryFn: async () => {
       const response = await api.get<ApiResponse<AttendanceFollowUpItem[]>>(
         "/attendance/follow-ups",
+      );
+      return response.data.data;
+    },
+  });
+}
+
+/**
+ * The santri the signed-in user is told about whose attendance shows a pattern
+ * now (decided 2026-09-28): their homeroom pupils, the santri mukim they are
+ * musyrif of, and — for a guru BK — their unit's.
+ */
+export function useAttendancePatterns() {
+  return useQuery({
+    queryKey: ["attendance", "patterns"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AttendancePatternItem[]>>(
+        "/attendance/patterns",
       );
       return response.data.data;
     },

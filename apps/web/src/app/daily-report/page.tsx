@@ -8,6 +8,7 @@ import {
   Filter,
   MoreHorizontal,
   Plus,
+  Users,
   CheckCircle2,
   XCircle,
   FileText,
@@ -53,17 +54,46 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 
-import { useDailyReports } from "@/hooks/use-daily-report";
+import { toast } from "sonner";
+import { DAILY_REPORT_STAFF_ROLE_CODES } from "@cipansor/shared";
+import { ConfirmDialog } from "@/components/shared";
+import {
+  useDailyReports,
+  useDeleteDailyReport,
+} from "@/hooks/use-daily-report";
+import { useAuthStore } from "@/stores/auth";
+import { getEffectiveRole, getPrimaryRoleCode } from "@/lib/rbac";
+import { getErrorMessage } from "@/lib/api-error";
 import { useClasses } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
+/**
+ * Laporan Harian — the one page for a child's day (decided 2026-09-27): the
+ * TK guru writes for their class, the TK kepala sekolah reads, SD's teachers
+ * keep it as Mutabaah Yaumiyah. The TK tree (/tk/daily-reports/*) and
+ * /homeroom/daily-report answer with a permanent redirect here.
+ */
 export default function DailyReportPage() {
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
+  const roleCode = getPrimaryRoleCode(user);
+  // Writing is the staff's; the API decides which children (per role and
+  // per child), this only hides buttons a reader could not use.
+  const canWrite =
+    !!roleCode && DAILY_REPORT_STAFF_ROLE_CODES.includes(roleCode);
+  // Everyone but the super admin works in their own unit.
+  const ownUnit =
+    user && getEffectiveRole(user) !== "SUPER_ADMIN" ? (user.unitId ?? "") : "";
+  const deleteReport = useDeleteDailyReport();
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [date, setDate] = useState<Date>(new Date());
   const [search, setSearch] = useState("");
-  const [unitId, setUnitId] = useState<string>("");
+  const [pickedUnit, setUnitId] = useState<string>("");
+  const unitId = ownUnit || pickedUnit;
   const [classId, setClassId] = useState<string>("");
   const [page, setPage] = useState(1);
 
@@ -115,11 +145,18 @@ export default function DailyReportPage() {
           color: "bg-yellow-100 text-yellow-700",
           icon: "🤩",
         };
-      default:
+      case "NEUTRAL":
         return {
           label: "Biasa",
           color: "bg-gray-100 text-gray-700",
           icon: "😐",
+        };
+      default:
+        // Not recorded — saying "Biasa" would tell the wali something no one observed.
+        return {
+          label: "Belum diisi",
+          color: "bg-transparent text-muted-foreground",
+          icon: "",
         };
     }
   };
@@ -127,13 +164,26 @@ export default function DailyReportPage() {
   return (
     <MainLayout>
       <PageHeader
-        title="Laporan Harian (Mutabaah)"
-        description="Kelola laporan harian aktivitas dan perkembangan siswa."
-        action={{
-          label: "Buat Laporan",
-          icon: <Plus className="h-4 w-4" />,
-          href: "/daily-report/new",
-        }}
+        title="Laporan Harian"
+        description="Hari santri untuk walinya: kegiatan, ibadah, makan, dan suasana hati."
+        actions={
+          canWrite ? (
+            <div className="flex gap-2">
+              <Button variant="outline" asChild>
+                <Link href="/daily-report/check-in">
+                  <Users className="mr-2 h-4 w-4" />
+                  Check-in Kelas
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/daily-report/new">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Buat Laporan
+                </Link>
+              </Button>
+            </div>
+          ) : undefined
+        }
       />
 
       {/* Filters */}
@@ -144,7 +194,7 @@ export default function DailyReportPage() {
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Cari siswa..."
+                  placeholder="Cari santri..."
                   className="pl-9"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
@@ -179,26 +229,28 @@ export default function DailyReportPage() {
               </PopoverContent>
             </Popover>
 
-            <Select value={unitId} onValueChange={setUnitId}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Pilih Unit" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Semua Unit</SelectItem>
-                {unitsData?.map((unit) => (
-                  <SelectItem key={unit.id} value={unit.id}>
-                    {unit.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {!ownUnit && (
+              <Select value={unitId} onValueChange={setUnitId}>
+                <SelectTrigger className="w-[200px]" aria-label="Unit">
+                  <SelectValue placeholder="Pilih Unit" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Semua Unit</SelectItem>
+                  {unitsData?.map((unit) => (
+                    <SelectItem key={unit.id} value={unit.id}>
+                      {unit.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
 
             <Select
               value={classId}
               onValueChange={setClassId}
               disabled={!unitId || unitId === "ALL"}
             >
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-[200px]" aria-label="Kelas">
                 <SelectValue placeholder="Pilih Kelas" />
               </SelectTrigger>
               <SelectContent>
@@ -235,9 +287,11 @@ export default function DailyReportPage() {
             <CardContent className="p-8 text-center text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-3 opacity-20" />
               <p>Belum ada laporan harian untuk tanggal ini.</p>
-              <Button variant="link" asChild className="mt-2">
-                <Link href="/daily-report/new">Buat Laporan Baru</Link>
-              </Button>
+              {canWrite && (
+                <Button variant="link" asChild className="mt-2">
+                  <Link href="/daily-report/new">Buat Laporan Baru</Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -248,6 +302,8 @@ export default function DailyReportPage() {
               return (
                 <Card
                   key={report.id}
+                  role="article"
+                  aria-label={`Laporan ${report.student?.user?.name ?? ""}`}
                   className="hover:shadow-md transition-shadow"
                 >
                   <CardHeader className="p-4 pb-2">
@@ -274,6 +330,7 @@ export default function DailyReportPage() {
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
+                            aria-label={`Aksi laporan ${report.student?.user?.name ?? ""}`}
                           >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
@@ -284,11 +341,26 @@ export default function DailyReportPage() {
                               Lihat Detail
                             </Link>
                           </DropdownMenuItem>
-                          <DropdownMenuItem asChild>
-                            <Link href={`/daily-report/${report.id}/edit`}>
-                              Edit
-                            </Link>
-                          </DropdownMenuItem>
+                          {canWrite && (
+                            <>
+                              <DropdownMenuItem asChild>
+                                <Link href={`/daily-report/${report.id}/edit`}>
+                                  Ubah
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-destructive"
+                                onSelect={() =>
+                                  setDeleting({
+                                    id: report.id,
+                                    name: report.student?.user?.name ?? "",
+                                  })
+                                }
+                              >
+                                Hapus
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -304,7 +376,9 @@ export default function DailyReportPage() {
                           variant="outline"
                           className={cn("text-xs font-normal", mood.color)}
                         >
-                          {mood.icon} {mood.label}
+                          {mood.icon
+                            ? `${mood.icon} ${mood.label}`
+                            : mood.label}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-2 justify-end">
@@ -405,6 +479,27 @@ export default function DailyReportPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title="Hapus laporan harian?"
+        description={`Laporan ${deleting?.name ?? ""} tanggal ini dihapus, dan walinya tidak lagi bisa membacanya.`}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        variant="destructive"
+        isLoading={deleteReport.isPending}
+        onConfirm={() => {
+          if (!deleting) return;
+          deleteReport.mutate(deleting.id, {
+            onSuccess: () => {
+              toast.success("Laporan harian dihapus");
+              setDeleting(null);
+            },
+            onError: (error) => toast.error(getErrorMessage(error)),
+          });
+        }}
+      />
     </MainLayout>
   );
 }

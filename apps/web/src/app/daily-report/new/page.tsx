@@ -7,7 +7,6 @@ import {
   Save,
   Loader2,
   Calendar as CalendarIcon,
-  Upload,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id as dateLocale } from "date-fns/locale";
@@ -37,18 +36,22 @@ import {
 } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { LoadingSpinner } from "@/components/shared";
 import {
-  LoadingSpinner,
-  PhotoGallery,
-  type PhotoGalleryItem,
-} from "@/components/shared";
+  PhotoUploader,
+  type PhotoItem,
+} from "@/components/daily-report/PhotoUploader";
 import { toast } from "sonner";
-import { uploadApi } from "@/lib/api";
+import { useAuthStore } from "@/stores/auth";
+import { getEffectiveRole } from "@/lib/rbac";
 
 import { useUnits } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
 import { useClassEnrollments } from "@/hooks/use-class-enrollments";
-import { useCreateDailyReport } from "@/hooks/use-daily-report";
+import {
+  useCreateDailyReport,
+  useUploadDailyReportPhotos,
+} from "@/hooks/use-daily-report";
 import { getErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import type { DailyMood, MealConsumption } from "@cipansor/shared";
@@ -73,9 +76,16 @@ const MEAL_OPTIONS: { value: MealConsumption; label: string }[] = [
 function CreateDailyReportPageContent() {
   const router = useRouter();
   const createReport = useCreateDailyReport();
+  const uploadPhotos = useUploadDailyReportPhotos();
+  const user = useAuthStore((s) => s.user);
 
   // Basic Info
-  const [unitId, setUnitId] = useState<string>("");
+  // Everyone but the super admin writes in their own unit; only the super
+  // admin picks one.
+  const ownUnit =
+    user && getEffectiveRole(user) !== "SUPER_ADMIN" ? (user.unitId ?? "") : "";
+  const [pickedUnit, setUnitId] = useState<string>("");
+  const unitId = ownUnit || pickedUnit;
   const [classId, setClassId] = useState<string>("");
   const [studentId, setStudentId] = useState<string>("");
   const [date, setDate] = useState<Date>(new Date());
@@ -105,8 +115,8 @@ function CreateDailyReportPageContent() {
   const [teacherNotes, setTeacherNotes] = useState("");
   const [homework, setHomework] = useState("");
 
-  // Photos
-  const [photos, setPhotos] = useState<PhotoGalleryItem[]>([]);
+  // Photos, uploaded with their captions when the report is saved.
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
 
   // Queries
   const { data: unitsData } = useUnits();
@@ -117,13 +127,18 @@ function CreateDailyReportPageContent() {
   const classes = classesData?.data || [];
   const students = enrollmentsData || [];
 
+  // The form says what is missing next to the field, not only in a toast.
+  const [tried, setTried] = useState(false);
+
   const handleSubmit = async () => {
+    setTried(true);
     if (!studentId || !date) {
       toast.error("Mohon lengkapi data dasar laporan");
       return;
     }
 
     try {
+      const uploaded = await uploadPhotos.mutateAsync(photos);
       // The unit and the academic year follow from the pupil and the date.
       await createReport.mutateAsync({
         studentId,
@@ -143,7 +158,7 @@ function CreateDailyReportPageContent() {
         behaviorNotes,
         parentNotes: teacherNotes,
         homeworkSuggestion: homework,
-        photos: photos.map((p) => ({ url: p.url, caption: p.caption })),
+        photos: uploaded,
       });
 
       toast.success("Laporan berhasil dibuat");
@@ -151,29 +166,6 @@ function CreateDailyReportPageContent() {
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
-  };
-
-  const handleUploadPhotos = async (files: File[]) => {
-    try {
-      const uploadPromises = files.map((file) => uploadApi.uploadFile(file));
-      const responses = await Promise.all(uploadPromises);
-
-      const newPhotos: PhotoGalleryItem[] = responses.map((res, index) => ({
-        id: `temp-${Date.now()}-${index}`,
-        url: res.data.data.url,
-        uploadedAt: new Date(),
-        category: "Kegiatan", // Default category
-      }));
-
-      setPhotos((prev) => [...prev, ...newPhotos]);
-    } catch (error) {
-      console.error("Upload failed:", error);
-      throw error; // Let PhotoGallery handle the error toast
-    }
-  };
-
-  const handleDeletePhoto = async (photoId: string) => {
-    setPhotos((prev) => prev.filter((p) => p.id !== photoId));
   };
 
   return (
@@ -187,7 +179,7 @@ function CreateDailyReportPageContent() {
             Buat Laporan Baru
           </h1>
           <p className="text-muted-foreground">
-            Laporan harian individual untuk siswa
+            Laporan harian individual untuk santri
           </p>
         </div>
       </div>
@@ -197,24 +189,26 @@ function CreateDailyReportPageContent() {
         <div className="md:col-span-1 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Data Siswa</CardTitle>
+              <CardTitle>Data Santri</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>Unit</Label>
-                <Select value={unitId} onValueChange={setUnitId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pilih Unit" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {units.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id}>
-                        {unit.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!ownUnit && (
+                <div className="space-y-2">
+                  <Label>Unit</Label>
+                  <Select value={unitId} onValueChange={setUnitId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pilih Unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {units.map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id}>
+                          {unit.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label>Kelas</Label>
@@ -234,17 +228,22 @@ function CreateDailyReportPageContent() {
                     ))}
                   </SelectContent>
                 </Select>
+                {tried && !classId && (
+                  <p className="text-sm text-destructive">
+                    Kelas wajib dipilih
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label>Siswa</Label>
+                <Label>Santri</Label>
                 <Select
                   value={studentId}
                   onValueChange={setStudentId}
                   disabled={!classId}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Pilih Siswa" />
+                    <SelectValue placeholder="Pilih Santri" />
                   </SelectTrigger>
                   <SelectContent>
                     {students.map((enrollment) =>
@@ -260,6 +259,11 @@ function CreateDailyReportPageContent() {
                     )}
                   </SelectContent>
                 </Select>
+                {tried && !studentId && (
+                  <p className="text-sm text-destructive">
+                    Santri wajib dipilih
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -298,9 +302,9 @@ function CreateDailyReportPageContent() {
             className="w-full"
             size="lg"
             onClick={handleSubmit}
-            disabled={createReport.isPending}
+            disabled={createReport.isPending || uploadPhotos.isPending}
           >
-            {createReport.isPending ? (
+            {createReport.isPending || uploadPhotos.isPending ? (
               <Loader2 className="w-4 h-4 animate-spin mr-2" />
             ) : (
               <Save className="w-4 h-4 mr-2" />
@@ -312,12 +316,11 @@ function CreateDailyReportPageContent() {
         {/* Right Column: Report Details */}
         <div className="md:col-span-2">
           <Tabs defaultValue="activity" className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="activity">Aktivitas</TabsTrigger>
               <TabsTrigger value="health">Kesehatan</TabsTrigger>
               <TabsTrigger value="meals">Makan</TabsTrigger>
               <TabsTrigger value="notes">Catatan</TabsTrigger>
-              <TabsTrigger value="photos">Foto</TabsTrigger>
             </TabsList>
 
             <TabsContent value="activity" className="space-y-4 mt-4">
@@ -348,7 +351,7 @@ function CreateDailyReportPageContent() {
                   <div className="space-y-2">
                     <Label>Ringkasan Kegiatan</Label>
                     <Textarea
-                      placeholder="Apa saja kegiatan siswa hari ini?"
+                      placeholder="Apa saja kegiatan santri hari ini?"
                       className="min-h-[100px]"
                       value={activities}
                       onChange={(e) => setActivities(e.target.value)}
@@ -372,31 +375,6 @@ function CreateDailyReportPageContent() {
                       onChange={(e) => setTahfidz(e.target.value)}
                     />
                   </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="photos" className="space-y-4 mt-4">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Dokumentasi Kegiatan</CardTitle>
-                  <CardDescription>
-                    Upload foto kegiatan siswa hari ini
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <PhotoGallery
-                    photos={photos}
-                    onUpload={handleUploadPhotos}
-                    onDelete={handleDeletePhoto}
-                    categories={[
-                      "Kegiatan",
-                      "Hasil Karya",
-                      "Makan",
-                      "Tidur",
-                      "Bermain",
-                    ]}
-                  />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -561,6 +539,25 @@ function CreateDailyReportPageContent() {
               </Card>
             </TabsContent>
           </Tabs>
+
+          {/* Outside the tabs: the uploader must live as long as the form, or
+              switching tabs would drop the previews of what is still to send. */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Foto Kegiatan</CardTitle>
+              <CardDescription>
+                Dokumentasi kegiatan hari ini, dengan keterangan bila perlu
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PhotoUploader
+                photos={photos}
+                onChange={setPhotos}
+                maxPhotos={5}
+                showCaption={true}
+              />
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

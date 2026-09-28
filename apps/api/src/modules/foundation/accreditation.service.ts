@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { currentAccreditations } from '@/modules/units';
 import { Decimal } from '@prisma/client/runtime/client';
 
 // =====================================
@@ -309,14 +310,10 @@ export async function createAccreditationAssessment(
     assessedBy: assessor.name,
   };
 
-  // Update unit accreditation
-  await prisma.unit.update({
-    where: { id: unitId },
-    data: {
-      accreditation: grade,
-    },
-  });
-
+  // A self-assessment is readiness, not accreditation: it used to overwrite
+  // the unit's grade, which the EMIS and Dapodik exports and the SKHUN then
+  // printed as if BAN-PDM had given it. The grade in force is the certificate
+  // on record (decisions/akreditasi-unit.md), and only that.
   return result;
 }
 
@@ -330,7 +327,6 @@ export async function getUnitAccreditationStatus(unitId: string) {
     select: {
       id: true,
       name: true,
-      accreditation: true,
       npsn: true,
     },
   });
@@ -338,6 +334,7 @@ export async function getUnitAccreditationStatus(unitId: string) {
   if (!unit) {
     throw new Error('Unit tidak ditemukan');
   }
+  const inForce = (await currentAccreditations([unit.id])).get(unit.id);
 
   // Get teacher statistics for PTK standard
   const teacherStats = await prisma.teacher.aggregate({
@@ -407,7 +404,9 @@ export async function getUnitAccreditationStatus(unitId: string) {
       id: unit.id,
       name: unit.name,
       npsn: unit.npsn,
-      currentAccreditation: unit.accreditation,
+      /** The certificate in force, if any; never the self-assessment's grade. */
+      currentAccreditation: inForce?.rating ?? null,
+      accreditationValidUntil: inForce?.validUntil ?? null,
     },
     statistics: {
       teachers: {

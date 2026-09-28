@@ -33,6 +33,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
+import { PERMIT_OFF_CAMPUS_TYPES } from "@cipansor/shared";
+import { DoctorNoteSection } from "@/components/permits/doctor-note";
 import {
   usePermit,
   useApprovePermit,
@@ -41,10 +43,22 @@ import {
   PERMIT_TYPE_LABELS,
   PERMIT_PHASES,
   permitPhase,
+  PERMIT_MENTOR_LABELS,
   whoDecides,
   type Permit,
 } from "@/hooks/use-permits";
 import { RejectPermitDialog } from "../reject-permit-dialog";
+
+/**
+ * Where a santri mukim is during sick or other leave — it decides whether the
+ * kamar's musyrif or the koordinator asrama decides. The other types say it
+ * themselves, and a day pupil is not on the pondok to begin with.
+ */
+function whereabouts(permit: Permit): string {
+  if (permit.decision.mentorKind === "WALI_KELAS") return "";
+  if (PERMIT_OFF_CAMPUS_TYPES.includes(permit.type)) return "";
+  return permit.offCampus ? " · di luar pondok" : " · di pondok (UKS/asrama)";
+}
 
 /** "Oleh X sebagai musyrif", with the takeover said out loud. */
 function byWhom(permit: Permit): string {
@@ -52,8 +66,7 @@ function byWhom(permit: Permit): string {
   const as = permit.decidedAs
     ? ` sebagai ${PERMIT_DECIDER_LABELS[permit.decidedAs]}`
     : "";
-  const mentor =
-    permit.decision.mentorKind === "MUSYRIF" ? "musyrif" : "wali kelas";
+  const mentor = PERMIT_MENTOR_LABELS[permit.decision.mentorKind];
   const over = permit.tookOver ? `, mengambil alih keputusan ${mentor}` : "";
   return `Oleh ${permit.approvedBy.name}${as}${over}`;
 }
@@ -149,8 +162,7 @@ function PermitDetailPageContent() {
   const isPending = permit.status === "PENDING";
   const phase = PERMIT_PHASES[permitPhase(permit)];
   const { canDecide, asTakeover } = permit.decision;
-  const mentor =
-    permit.decision.mentorKind === "MUSYRIF" ? "musyrif" : "wali kelas";
+  const mentor = PERMIT_MENTOR_LABELS[permit.decision.mentorKind];
   const takeoverNote = `Izin ini keputusan ${mentor} santri (${permit.decision.mentors
     .map((m) => m.name)
     .join(
@@ -270,7 +282,10 @@ function PermitDetailPageContent() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Jenis izin</p>
-                <p className="font-medium">{PERMIT_TYPE_LABELS[permit.type]}</p>
+                <p className="font-medium">
+                  {PERMIT_TYPE_LABELS[permit.type]}
+                  {whereabouts(permit)}
+                </p>
               </div>
             </div>
 
@@ -339,6 +354,9 @@ function PermitDetailPageContent() {
                 </div>
               </>
             )}
+
+            {/* Only those who may file reach this page; the API decides who opens it. */}
+            <DoctorNoteSection permit={permit} canAttach />
           </CardContent>
         </Card>
 

@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { currentAccreditations } from '@/modules/units';
 
 // =====================================
 // TYPES
@@ -272,7 +273,10 @@ export async function generateSkhun(
       name: student.unit.name,
       npsn: student.unit.npsn,
       address: student.unit.address,
-      accreditation: student.unit.accreditation ?? 'B',
+      // The certificate in force (decisions/akreditasi-unit.md). It printed
+      // "B" for a unit with none on record until 2026-09-28.
+      accreditation:
+        (await currentAccreditations([student.unit.id])).get(student.unit.id)?.rating ?? null,
     },
     academicYear: {
       id: academicYear.id,

@@ -197,6 +197,7 @@ enum PermitDecider {
   WALI_KELAS
   KEPALA_SEKOLAH
   PIMPINAN_PESANTREN
+  KOORDINATOR_ASRAMA // a santri mukim going home or staying out overnight (2026-09-27)
 }
 
 enum ViolationType {
@@ -377,7 +378,10 @@ model User {
   recordedTahfidz                   TahfidzRecord[]             @relation("TahfidzRecorder")
   recordedAttendance                Attendance[]                @relation("AttendanceRecorder")
   attendanceFollowUps               AttendanceFollowUp[]        @relation("AttendanceFollowUpBy")
+  unitAccreditationsRecorded        UnitAccreditation[]         @relation("UnitAccreditationRecorder")
   approvedPermits                   Permit[]                    @relation("PermitApprover")
+  permitNotesUploaded               PermitAttachment[]          @relation("PermitAttachmentUploader")
+  permitNotesFirstViewed            PermitAttachment[]          @relation("PermitAttachmentViewer")
   reportedViolations                Violation[]                 @relation("ViolationReporter")
   givenRewards                      Reward[]                    @relation("RewardGiver")
   approvedLeaves                    Leave[]                     @relation("LeaveApprover")
@@ -597,7 +601,10 @@ model Unit {
   email         String?
   logoUrl       String?   @map("logo_url")
   npsn          String?   @unique // Nomor Pokok Sekolah Nasional
-  accreditation String? // A, B, C, or Belum Terakreditasi
+  /// Superseded by `UnitAccreditation` (2026-09-28): nothing reads or writes it
+  /// any more; the readiness self-assessment used to overwrite it. Drop it once
+  /// a release has run without it.
+  accreditation String?
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
@@ -606,6 +613,7 @@ model Unit {
   foundation             Foundation?                 @relation(fields: [foundationId], references: [id])
   users                  User[]
   userRoleAssignments    UserRoleAssignment[] // NEW: Role assignments for this unit
+  accreditations         UnitAccreditation[]
   students               Student[]
   studentUnitEnrollments StudentUnitEnrollment[]
   studentIdentifiers     StudentUnitIdentifier[]
@@ -747,6 +755,44 @@ model Unit {
   @@index([type])
   @@index([foundationId])
   @@map("units")
+}
+
+/// The rating on an accreditation certificate (BAN-PDM, now BSANP).
+enum AccreditationRating {
+  A
+  B
+  C
+}
+
+/// A unit's accreditation as its certificate states it (decided 2026-09-28,
+/// decisions/akreditasi-unit.md): one row per certificate, copied from it by
+/// the unit's admin or the Super Admin, with the PDF itself as the proof. The
+/// unit's accreditation now is its latest certificate still in force; the
+/// public site, the EMIS and Dapodik exports and the SKHUN read it from here.
+model UnitAccreditation {
+  id                String              @id @default(uuid())
+  unitId            String              @map("unit_id")
+  rating            AccreditationRating
+  certificateNumber String              @map("certificate_number")
+  decreeNumber      String              @map("decree_number")
+  decreedAt         DateTime            @map("decreed_at") @db.Date
+  validUntil        DateTime            @map("valid_until") @db.Date
+  /// As printed on the certificate: "BAN-PDM", later "BSANP".
+  issuer            String              @default("BAN-PDM")
+  /// The certificate PDF, kept in the database so the nightly backup holds it.
+  certificatePdf    Bytes               @map("certificate_pdf")
+  certificateSha256 String              @map("certificate_sha256")
+  /// When the kepala and the admin of the unit were told it runs out within a year.
+  reminderSentAt    DateTime?           @map("reminder_sent_at")
+  recordedById      String              @map("recorded_by_id")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  unit       Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  recordedBy User @relation("UnitAccreditationRecorder", fields: [recordedById], references: [id])
+
+  @@index([unitId, validUntil])
+  @@map("unit_accreditations")
 }
 
 /// Teacher - Teacher profile (Guru/Ustadz)
@@ -1102,6 +1148,7 @@ model Student {
   parents                     StudentParent[]
   enrollments                 ClassEnrollment[]
   attendances                 Attendance[]
+  attendancePatternFlags      AttendancePatternFlag[]
   tahfidzRecords              TahfidzRecord[]
   tahfidzTargets              TahfidzTarget[]
   roomAssignments             RoomAssignment[]
@@ -1398,6 +1445,32 @@ model AttendanceFollowUp {
   @@map("attendance_follow_ups")
 }
 
+/// A pattern in a santri's attendance (decided 2026-09-28,
+/// decisions/absensi-harian.md): absent — Alpa, Sakit or Izin — on at least
+/// 10% of the days recorded this semester, once 10 days are recorded; or late
+/// three times in 30 days.
+enum AttendancePatternKind {
+  ABSENCE
+  LATE
+}
+
+/// When a pattern was first raised this semester, so the wali kelas, the guru
+/// BK and a santri mukim's musyrif are told once, not every day. Which santri
+/// show a pattern now is worked out from the register, not from this table.
+model AttendancePatternFlag {
+  id            String                @id @default(uuid())
+  studentId     String                @map("student_id")
+  kind          AttendancePatternKind
+  /// The first day of the semester the pattern belongs to.
+  semesterStart DateTime              @map("semester_start") @db.Date
+  raisedAt      DateTime              @default(now()) @map("raised_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, kind, semesterStart])
+  @@map("attendance_pattern_flags")
+}
+
 /// TahfidzRecord - Quran memorization records
 model TahfidzRecord {
   id           String              @id @default(uuid())
@@ -1554,6 +1627,11 @@ model Permit {
   type          PermitType
   reason        String       @db.Text
   destination   String? // Tujuan
+  // The learner is off the pondok during the leave. PULANG, KELUAR and
+  // KELUARGA always are; for SAKIT and OTHER the filer says (UKS or home).
+  // A santri mukim off the pondok overnight is the koordinator asrama's to
+  // decide (decisions/pemutus-izin-santri.md).
+  offCampus     Boolean      @default(true) @map("off_campus")
   startDate     DateTime     @map("start_date")
   endDate       DateTime     @map("end_date")
   status        PermitStatus @default(PENDING)
@@ -1573,12 +1651,44 @@ model Permit {
   // Relations
   student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   approvedBy User?   @relation("PermitApprover", fields: [approvedById], references: [id])
+  doctorNote PermitAttachment?
 
   @@index([studentId])
   @@index([status])
   @@index([startDate, endDate])
   @@index([code])
   @@map("permits")
+}
+
+/// A doctor's note attached to a permit (decided 2026-09-28,
+/// decisions/pemutus-izin-santri.md). A child's health data: opened only by
+/// whoever decides the permit, the santri's wali and the unit head, each
+/// opening audited; the file is erased when the academic year of the leave
+/// ends (`retainUntil`), and what remains is that one was attached, its
+/// SHA-256, and who saw it first.
+model PermitAttachment {
+  id              String    @id @default(uuid())
+  permitId        String    @unique @map("permit_id")
+  mimeType        String    @map("mime_type")
+  sizeBytes       Int       @map("size_bytes")
+  sha256          String
+  /// The file itself; null once erased.
+  content         Bytes?
+  /// The last day of the academic year the leave starts in.
+  retainUntil     DateTime  @map("retain_until") @db.Date
+  erasedAt        DateTime? @map("erased_at")
+  uploadedById    String    @map("uploaded_by_id")
+  firstViewedById String?   @map("first_viewed_by_id")
+  firstViewedAt   DateTime? @map("first_viewed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  permit        Permit @relation(fields: [permitId], references: [id], onDelete: Cascade)
+  uploadedBy    User   @relation("PermitAttachmentUploader", fields: [uploadedById], references: [id])
+  firstViewedBy User?  @relation("PermitAttachmentViewer", fields: [firstViewedById], references: [id])
+
+  @@index([retainUntil])
+  @@map("permit_attachments")
 }
 
 /// Violation - Pelanggaran santri

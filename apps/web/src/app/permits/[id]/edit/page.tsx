@@ -31,6 +31,7 @@ function EditPermitPageContent() {
           type: values.type,
           reason: values.reason,
           destination: values.destination || undefined,
+          offCampus: values.offCampus,
           startDate: localInputToIso(values.startDate),
           endDate: localInputToIso(values.endDate),
         },
@@ -103,6 +104,7 @@ function EditPermitPageContent() {
           type: permit.type,
           reason: permit.reason,
           destination: permit.destination ?? "",
+          offCampus: permit.offCampus,
           startDate: isoToLocalInput(permit.startDate),
           endDate: isoToLocalInput(permit.endDate),
         }}
