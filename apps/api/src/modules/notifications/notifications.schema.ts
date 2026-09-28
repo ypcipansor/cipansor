@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { partialUpdateSchema } from '@/lib/partial';
+import { emailHtmlWithinLimit } from './email-transport';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -26,10 +27,43 @@ export const RecipientTypeEnum = z.enum(['ALL', 'UNIT', 'CLASS', 'ROLE', 'INDIVI
 
 // ==================== NOTIFICATION ====================
 
-export const createNotificationSchema = z.object({
+/**
+ * Absolute bound on a notification message, on any channel: it bounds the row
+ * we store and the cost of escaping it. `title` has long been capped at 255;
+ * the message had no limit at all.
+ */
+export const MAX_NOTIFICATION_MESSAGE_CHARS = 500_000;
+
+/**
+ * Reject a message whose *rendered* HTML would exceed the converter's cap when
+ * the caller asked for e-mail.
+ *
+ * External delivery is best-effort and must never fail the caller, so without
+ * this the in-app row would be persisted and the request answered with success
+ * while the e-mail was silently dropped by `htmlToText`. The check asks about
+ * the escaped size, not the raw length: `escapeHtml` can grow one character to
+ * six, so the two differ by up to six times.
+ */
+function emailMessageSizeIssue(
+  value: { message: string; channels: string[] },
+  ctx: z.RefinementCtx
+): void {
+  if (!value.channels.includes('EMAIL')) return;
+  if (emailHtmlWithinLimit(value.message.length)) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['message'],
+    message:
+      `Pesan terlalu panjang untuk dikirim lewat email: setelah di-escape dan dibungkus ` +
+      `templat, HTML-nya bisa melebihi batas ukuran yang dapat diproses sistem. ` +
+      `Kirim sebagai IN_APP saja atau perpendek pesannya.`,
+  });
+}
+
+const notificationObjectSchema = z.object({
   userId: z.string().uuid().optional(), // Optional for bulk/system
   title: z.string().min(1).max(255),
-  message: z.string().min(1),
+  message: z.string().min(1).max(MAX_NOTIFICATION_MESSAGE_CHARS),
   type: NotificationTypeEnum.default('INFO'),
   priority: NotificationPriorityEnum.default('NORMAL'),
   channels: z.array(NotificationChannelEnum).default(['IN_APP']),
@@ -47,11 +81,14 @@ export const createNotificationSchema = z.object({
   scheduledAt: z.coerce.date().optional(),
 });
 
-export const createBulkNotificationSchema = createNotificationSchema
-  .extend({
+export const createNotificationSchema = notificationObjectSchema.superRefine(emailMessageSizeIssue);
+
+export const createBulkNotificationSchema = notificationObjectSchema
+  .safeExtend({
     userIds: z.array(z.string().uuid()).min(1),
   })
-  .omit({ userId: true, recipientType: true, recipientIds: true });
+  .omit({ userId: true, recipientType: true, recipientIds: true })
+  .superRefine(emailMessageSizeIssue);
 
 export const queryNotificationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

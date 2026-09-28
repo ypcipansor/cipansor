@@ -46,6 +46,40 @@ const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/mess
  */
 export const MAX_EMAIL_HTML_CHARS = 2_000_000;
 
+/**
+ * Headroom for the e-mail shell the message is poured into
+ * (`renderEmailLayout`: letterhead, footer, styles). Measured at ~4,001 chars
+ * with a maximum-length title; 8,192 leaves room without being tight. A caller
+ * sizing a message against the cap must subtract this, or the wrapper's own
+ * length is the part that tips it over.
+ */
+export const EMAIL_LAYOUT_OVERHEAD_CHARS = 8_192;
+
+/**
+ * The largest the HTML can grow from a plain-text message of a given length,
+ * once it has been escaped for e-mail.
+ *
+ * `escapeHtml` replaces one character with up to six (`'` to `&#039;`), so a
+ * message of `n` characters can become HTML of up to `6n`. A caller that wants
+ * to know "will this message survive the text conversion?" must ask about the
+ * *rendered* size, not the raw length, because the two differ by up to six
+ * times: the difference between a message that converts and one that is
+ * refused.
+ */
+export function worstCaseHtmlLength(messageLength: number): number {
+  return messageLength * 6;
+}
+
+/**
+ * Whether a plain-text message will still fit the converter once it has been
+ * escaped and wrapped in the e-mail layout. `false` means an e-mail built from
+ * this message would be refused by `htmlToText` and, because external delivery
+ * is best-effort, silently dropped.
+ */
+export function emailHtmlWithinLimit(messageLength: number): boolean {
+  return worstCaseHtmlLength(messageLength) + EMAIL_LAYOUT_OVERHEAD_CHARS <= MAX_EMAIL_HTML_CHARS;
+}
+
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
 export interface EmailTransportStatus {

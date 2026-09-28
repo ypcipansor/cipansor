@@ -3,10 +3,12 @@ import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
+  EMAIL_LAYOUT_OVERHEAD_CHARS,
   htmlToText,
   MAX_EMAIL_HTML_CHARS,
   resetEmailTransport,
 } from '../email-transport';
+import { emailHeading, emailSignoff, renderEmailLayout } from '../email-layout';
 
 vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
@@ -783,6 +785,21 @@ describe('htmlToText', () => {
       // Bind the cap to the largest such input so a future reduction cannot
       // quietly re-truncate the suite.
       expect(MAX_EMAIL_HTML_CHARS).toBeGreaterThan(1_500_000);
+    });
+
+    it('reserves enough overhead for the real e-mail shell, with a maximum-length title', () => {
+      // The schema guard rejects a message when `escapeHtml(message) + overhead`
+      // would exceed the cap. If the overhead were smaller than the actual
+      // shell, a message could pass the guard and still be refused by
+      // `htmlToText` — the silent drop the guard exists to prevent. Measure the
+      // real layout, not a remembered number: the letterhead and footer have
+      // grown before.
+      const shell = renderEmailLayout({
+        title: 'X'.repeat(255), // the title's own max
+        preheader: 'p',
+        bodyHtml: emailHeading('Pemberitahuan') + emailSignoff(),
+      });
+      expect(shell.length).toBeLessThanOrEqual(EMAIL_LAYOUT_OVERHEAD_CHARS);
     });
   });
 
