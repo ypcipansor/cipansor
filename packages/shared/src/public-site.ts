@@ -88,6 +88,8 @@ export const addressLines = [
 export const educationUnits = [
   {
     slug: "tkq",
+    /** The portal's `UnitType` of this unit — how an API record finds its page. */
+    unitType: "TK_QURAN",
     name: "TK Qur'an",
     shortName: "TKQ",
     tagline: "Teman Bermain dan Mengaji",
@@ -97,6 +99,7 @@ export const educationUnits = [
   },
   {
     slug: "sdit",
+    unitType: "SD_IT",
     name: "SD IT Cipansor",
     shortName: "SDIT",
     tagline: "Berkarakter Disiplin dan Berprestasi",
@@ -106,6 +109,7 @@ export const educationUnits = [
   },
   {
     slug: "smpit",
+    unitType: "SMP_IT",
     name: "SMP IT Cipansor",
     shortName: "SMPIT",
     tagline: "Berjiwa Islami Berkarakter Tarbawi dan Mandiri",
@@ -115,6 +119,7 @@ export const educationUnits = [
   },
   {
     slug: "sma-quran",
+    unitType: "SMA_QURAN",
     name: "SMA Qur'an",
     shortName: "SMAQURAN",
     tagline: "Membentuk Hafidz yang unggul dan berkarakter rabbani",
@@ -124,6 +129,7 @@ export const educationUnits = [
   },
   {
     slug: "takhosus",
+    unitType: "PESANTREN",
     name: "Takhosus",
     shortName: "TAKHOSUS",
     tagline: "Mencetak penghafal Qur'an bersanad dan mutqin",

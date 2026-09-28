@@ -44,6 +44,7 @@ import { getErrorMessage } from "@/lib/api-error";
 import {
   ACCREDITATION_PDF_MAX_BYTES,
   ACCREDITATION_RATINGS,
+  BAN_PDM_LOOKUP_URL,
   type AccreditationRating,
   type UnitAccreditation,
 } from "@cipansor/shared";
@@ -56,8 +57,6 @@ import {
  * accredited later (TK Qur'an, newly founded, has none yet) only needs its
  * certificate entered here.
  */
-
-const BAN_PDM_LOOKUP = "https://ban-pdm.id/data-akreditasi-sekolah";
 
 const longDate = (day: string) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("id-ID", {
@@ -374,7 +373,7 @@ export function UnitAccreditationCard({ unitId }: { unitId: string }) {
         )}
 
         <a
-          href={BAN_PDM_LOOKUP}
+          href={BAN_PDM_LOOKUP_URL}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"

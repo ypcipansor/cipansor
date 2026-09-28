@@ -7,6 +7,7 @@ import {
   ACCREDITATION_WRITER_ROLE_CODES,
   PRINCIPAL_ROLE_CODES,
   type CreateAccreditationInput,
+  type PublicAccreditation,
   type UnitAccreditation,
   type UnitAccreditationList,
   type UpdateAccreditationInput,
@@ -369,6 +370,56 @@ export async function currentAccreditations(
     });
   }
   return byUnit;
+}
+
+/**
+ * GET /units/public/accreditations — each unit's certificate in force, as the
+ * public site states it. A certificate that has run out is gone from here the
+ * day after its last day, and a unit with none is absent.
+ */
+export async function publicAccreditations(now = new Date()): Promise<PublicAccreditation[]> {
+  const current = await currentAccreditations(undefined, now);
+  if (!current.size) return [];
+  const units = await prisma.unit.findMany({
+    where: { id: { in: [...current.keys()] }, deletedAt: null },
+    select: { id: true, name: true, type: true, npsn: true },
+    orderBy: { name: 'asc' },
+  });
+  return units.map((unit) => {
+    const c = current.get(unit.id)!;
+    return {
+      id: c.id,
+      unitType: unit.type,
+      unitName: unit.name,
+      npsn: unit.npsn,
+      rating: c.rating,
+      certificateNumber: c.certificateNumber,
+      decreeNumber: c.decreeNumber,
+      decreedAt: c.decreedAt,
+      validUntil: c.validUntil,
+      issuer: c.issuer,
+    };
+  });
+}
+
+/**
+ * GET /units/public/accreditations/:accreditationId/certificate — the PDF of
+ * a certificate the public site states, and of no other: one that has run
+ * out, been superseded, or belongs to a deleted unit is "not found".
+ */
+export async function publicCertificate(id: string, now = new Date()) {
+  const row = await prisma.unitAccreditation.findFirst({
+    where: { id, unit: { deletedAt: null } },
+    select: { unitId: true, certificatePdf: true, certificateNumber: true },
+  });
+  const inForce = row && (await currentAccreditations([row.unitId], now)).get(row.unitId);
+  if (!row || inForce?.id !== id) {
+    throw new ApiError(ErrorCode.NOT_FOUND, 'Sertifikat tidak ditemukan');
+  }
+  return {
+    pdf: Buffer.from(row.certificatePdf),
+    fileName: `sertifikat-akreditasi-${row.certificateNumber.replace(/[^A-Za-z0-9]+/g, '-')}.pdf`,
+  };
 }
 
 /**

@@ -7,6 +7,7 @@ import { newsTextFor } from "./news.i18n";
 import { pagesContentFor } from "./pages.i18n";
 import { donationContentFor } from "./donation.i18n";
 import { publicContentFor } from "./content.i18n";
+import { accreditationContentFor } from "./accreditation.i18n";
 import { formatNumber } from "@/lib/locale-format";
 
 /**
@@ -96,6 +97,7 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
   { name: "pages", of: pagesContentFor },
   { name: "donation", of: donationContentFor },
   { name: "profile/legal", of: publicContentFor },
+  { name: "accreditation", of: accreditationContentFor },
 ];
 
 describe.each(SURFACES)("$name content", ({ of }) => {

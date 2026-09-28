@@ -19,6 +19,11 @@ vi.mock('../unit-accreditation.service', () => ({
   correctAccreditation: vi.fn(async () => ({ id: 'acc-1' })),
   deleteAccreditation: vi.fn(async () => undefined),
   certificateOf: vi.fn(async () => ({ pdf: Buffer.from('%PDF-1.7'), fileName: 'sertifikat.pdf' })),
+  publicAccreditations: vi.fn(async () => [{ id: 'acc-1', unitType: 'SMP_IT', rating: 'B' }]),
+  publicCertificate: vi.fn(async () => ({
+    pdf: Buffer.from('%PDF-1.7'),
+    fileName: 'sertifikat.pdf',
+  })),
 }));
 
 import { verifyToken } from '@/lib/jwt';
@@ -27,6 +32,8 @@ import unitRoutes from '../unit.routes';
 import {
   certificateOf,
   listAccreditations,
+  publicAccreditations,
+  publicCertificate,
   recordAccreditation,
 } from '../unit-accreditation.service';
 
@@ -144,5 +151,38 @@ describe('GET /units/:id/accreditations/:accreditationId/certificate', () => {
     expect(res.headers['content-disposition']).toBe('attachment; filename="sertifikat.pdf"');
     expect(res.headers['cache-control']).toBe('private, no-store');
     expect(certificateOf).toHaveBeenCalledWith(UNIT, 'acc-1', expect.any(Object));
+  });
+});
+
+describe('the public site — no session', () => {
+  const ACC = '22222222-2222-4222-8222-222222222222';
+
+  it('GET /units/public/accreditations answers without a token, and is not taken for a unit id', async () => {
+    const res = await request(app).get('/units/public/accreditations');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([{ id: 'acc-1', unitType: 'SMP_IT', rating: 'B' }]);
+    expect(res.headers['cache-control']).toBe('public, max-age=300');
+    expect(publicAccreditations).toHaveBeenCalled();
+    expect(verifyToken).not.toHaveBeenCalled();
+  });
+
+  it('GET …/:accreditationId/certificate opens the PDF in the browser', async () => {
+    const res = await request(app).get(`/units/public/accreditations/${ACC}/certificate`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toBe('inline; filename="sertifikat.pdf"');
+    expect(publicCertificate).toHaveBeenCalledWith(ACC);
+  });
+
+  it('refuses a malformed certificate id before the service: 400', async () => {
+    const res = await request(app).get('/units/public/accreditations/not-an-id/certificate');
+    expect(res.status).toBe(400);
+    expect(publicCertificate).not.toHaveBeenCalled();
+  });
+
+  it('keeps every other accreditation route behind a session: 401', async () => {
+    const res = await request(app).get(`/units/${UNIT}/accreditations`);
+    expect(res.status).toBe(401);
+    expect(listAccreditations).not.toHaveBeenCalled();
   });
 });

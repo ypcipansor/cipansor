@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/prisma', () => {
   const prisma = {
-    unit: { findFirst: vi.fn() },
+    unit: { findFirst: vi.fn(), findMany: vi.fn() },
     unitAccreditation: {
       findMany: vi.fn(),
       findFirst: vi.fn(),
@@ -36,6 +36,8 @@ import {
   currentAccreditations,
   deleteAccreditation,
   listAccreditations,
+  publicAccreditations,
+  publicCertificate,
   recordAccreditation,
 } from '../unit-accreditation.service';
 
@@ -260,6 +262,81 @@ describe('the certificate in force', () => {
     const current = await currentAccreditations(undefined, NOW);
     expect(current.get(SMP)).toMatchObject({ rating: 'B', validUntil: '2028-08-29' });
     expect(current.get('unit-sma')).toMatchObject({ rating: 'A', validUntil: '2027-01-31' });
+  });
+});
+
+describe('the public site — the certificate in force, and nothing else', () => {
+  const SMP_UNIT = { id: SMP, name: 'SMP IT Cipansor', type: 'SMP_IT', npsn: '69988558' };
+
+  it("states each unit's certificate in force with the unit's NPSN, not who recorded it", async () => {
+    vi.mocked(prisma.unitAccreditation.findMany).mockResolvedValue([row('b-2023')] as never);
+    vi.mocked(prisma.unit.findMany).mockResolvedValue([SMP_UNIT] as never);
+    const list = await publicAccreditations(NOW);
+    expect(list).toEqual([
+      {
+        id: 'b-2023',
+        unitType: 'SMP_IT',
+        unitName: 'SMP IT Cipansor',
+        npsn: '69988558',
+        rating: 'B',
+        certificateNumber: '01758/32/SMP/2023',
+        decreeNumber: '036/BAN-PDM/SK/2023',
+        decreedAt: '2023-08-29',
+        validUntil: '2028-08-29',
+        issuer: 'BAN-PDM',
+      },
+    ]);
+    // A deleted unit is not stated, whatever its record says.
+    expect(vi.mocked(prisma.unit.findMany).mock.calls[0][0]).toMatchObject({
+      where: { id: { in: [SMP] }, deletedAt: null },
+    });
+  });
+
+  it('states nothing when no certificate is in force — not even the units', async () => {
+    vi.mocked(prisma.unitAccreditation.findMany).mockResolvedValue([]);
+    expect(await publicAccreditations(NOW)).toEqual([]);
+    expect(prisma.unit.findMany).not.toHaveBeenCalled();
+  });
+
+  it('gives the PDF of the certificate in force', async () => {
+    vi.mocked(prisma.unitAccreditation.findFirst).mockResolvedValue({
+      unitId: SMP,
+      certificatePdf: new Uint8Array(PDF.buffer),
+      certificateNumber: '01758/32/SMP/2023',
+    } as never);
+    vi.mocked(prisma.unitAccreditation.findMany).mockResolvedValue([row('b-2023')] as never);
+    const file = await publicCertificate('b-2023', NOW);
+    expect(file.pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    expect(file.fileName).toBe('sertifikat-akreditasi-01758-32-SMP-2023.pdf');
+    expect(vi.mocked(prisma.unitAccreditation.findFirst).mock.calls[0][0]).toMatchObject({
+      where: { id: 'b-2023', unit: { deletedAt: null } },
+    });
+  });
+
+  it('refuses the PDF of a certificate a later one superseded: 404', async () => {
+    vi.mocked(prisma.unitAccreditation.findFirst).mockResolvedValue({
+      unitId: SMP,
+      certificatePdf: new Uint8Array(PDF.buffer),
+      certificateNumber: '01758/32/SMP/2023',
+    } as never);
+    vi.mocked(prisma.unitAccreditation.findMany).mockResolvedValue([
+      row('b-2023'),
+      row('ext-2026', { decreedAt: day('2026-05-01'), validUntil: day('2029-12-31') }),
+    ] as never);
+    await expect(publicCertificate('b-2023', NOW)).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it('refuses the PDF of one that has run out, or of none: 404', async () => {
+    vi.mocked(prisma.unitAccreditation.findFirst).mockResolvedValue({
+      unitId: SMP,
+      certificatePdf: new Uint8Array(PDF.buffer),
+      certificateNumber: '00001/32/SMP/2018',
+    } as never);
+    vi.mocked(prisma.unitAccreditation.findMany).mockResolvedValue([]);
+    await expect(publicCertificate('old', NOW)).rejects.toMatchObject({ statusCode: 404 });
+
+    vi.mocked(prisma.unitAccreditation.findFirst).mockResolvedValue(null);
+    await expect(publicCertificate('nope', NOW)).rejects.toMatchObject({ statusCode: 404 });
   });
 });
 

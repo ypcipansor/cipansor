@@ -4,6 +4,7 @@ import { ExternalLink, Globe, Landmark, MapPin, Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { PublicPage } from "@/components/landing/public-page";
 import { LegalIdentity } from "@/components/landing/legal-identity";
+import { AccreditationSection } from "@/components/landing/unit-accreditations";
 import { legalIdentity } from "@/config/content";
 import { publicContentFor } from "@/config/content.i18n";
 import { pagesContentFor } from "@/config/pages.i18n";
@@ -170,6 +171,11 @@ export default async function LegalitasPage() {
       <div className="max-w-4xl">
         <LegalIdentity variant="profile" copy={content.legalIdentity} />
       </div>
+
+      {/* Each unit's accreditation in force, from the portal's record
+          (decisions/akreditasi-unit.md). Renders nothing — heading included —
+          while no unit has one. */}
+      <AccreditationSection locale={locale} />
 
       <section aria-labelledby="tata-kelola" className="mt-14 max-w-4xl">
         <h2

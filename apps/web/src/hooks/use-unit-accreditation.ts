@@ -3,6 +3,7 @@ import api from "@/lib/api";
 import type {
   ApiResponse,
   CreateAccreditationInput,
+  PublicAccreditation,
   UnitAccreditation,
   UnitAccreditationList,
   UpdateAccreditationInput,
@@ -116,4 +117,29 @@ export async function downloadAccreditationCertificate(
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/**
+ * Each unit's accreditation in force, for the public site — no session. A
+ * unit with none is absent, and one that ran out is gone the day after its
+ * last day.
+ */
+export function usePublicAccreditations() {
+  return useQuery({
+    queryKey: ["units", "public", "accreditations"] as const,
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<PublicAccreditation[]>>(
+        "/units/public/accreditations",
+      );
+      return response.data.data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Where a visitor opens a certificate in force: the API serves it inline. */
+export function publicCertificateUrl(accreditationId: string) {
+  return api.getUri({
+    url: `/units/public/accreditations/${accreditationId}/certificate`,
+  });
 }
