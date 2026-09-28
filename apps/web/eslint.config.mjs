@@ -6,6 +6,11 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // eslint-config-next pulls in eslint-plugin-react 7.x, which calls the
+    // `context.getFilename()` API ESLint 10 removed. Pinning a concrete React
+    // version makes the plugin skip its version auto-detection — the only code
+    // path that hits that API — and the react/* rules keep working.
+    settings: { react: { version: "19.3.0" } },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": "warn",
