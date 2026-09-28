@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { config } from '../../config';
+import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
   htmlToText,
   resetEmailTransport,
-} from './email-transport';
+} from '../email-transport';
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -132,6 +132,29 @@ describe('email transport selection', () => {
     expect(status.from).toContain('noreply@');
     expect(status.replyTo).not.toContain('noreply@');
     expect(status.replyTo).toBe('halo@cipansor.or.id');
+  });
+
+  it('refuses an oversized body before any transport touches the network', async () => {
+    // The bound `js/loop-bound-injection` (alert 54) asks for, enforced where it
+    // protects the send path itself: `composeRawMessage` and `sendViaSmtp` would
+    // otherwise hand the whole oversized HTML to Nodemailer, so the limit cannot
+    // live only in `htmlToText`'s derivation of the plain-text part.
+    setGmailConfig();
+    const fetchMock = vi.fn(async () => {
+      throw new Error('network must not be touched');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      deliverEmail({
+        to: 'wali@example.test',
+        subject: 'Pengumuman',
+        html: 'x'.repeat(10 * 1024 * 1024 + 1),
+      })
+    ).rejects.toThrow(/over the .* limit/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 
@@ -728,22 +751,20 @@ describe('htmlToText', () => {
       }
     });
 
-    it('bounds the scan to a fixed maximum input length', () => {
+    it('refuses a body over the size limit instead of truncating it', () => {
       // Code scanning alert 54: the loop bound must not be under a caller's
-      // control. `stripHiddenElements` re-enters on a bounded prefix, so an
-      // oversized body is scanned as if it were 100k characters — no markup
-      // past that boundary can be stripped, and no work beyond it is done.
-      const filler = 'x'.repeat(200_000);
-      const oversized = filler + '<script>alert(1)</script>';
+      // control. `stripHiddenElements` refuses an oversized body, so no loop
+      // ever runs past MAX_EMAIL_BODY_LENGTH — and, unlike a silent truncation,
+      // the plain text stays consistent with the HTML it was derived from.
+      const overLimit = 'x'.repeat(10 * 1024 * 1024 + 1);
 
-      const text = htmlToText(oversized);
-      // Everything past the 100k bound is discarded, so the body is scanned as
-      // 100k characters — and the markup that sat beyond it is gone.
-      expect(text).toHaveLength(100_000);
-      expect(text).not.toContain('<script>');
+      expect(() => htmlToText(overLimit)).toThrow(/over the .* limit/);
 
-      // Content up to the boundary is still processed normally.
-      expect(htmlToText('<p>Hi</p>' + filler)).toContain('Hi');
+      // Content at the boundary is still processed normally, and markup inside
+      // it is still removed — nothing is dropped for being "late".
+      expect(htmlToText('<p>Meeting at noon</p>')).toBe('Meeting at noon');
+      const atLimit = 'x'.repeat(10 * 1024 * 1024 - 64) + '<p>Meeting at noon</p>';
+      expect(htmlToText(atLimit)).toContain('Meeting at noon');
     });
   });
 

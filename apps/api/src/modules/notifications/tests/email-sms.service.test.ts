@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Twilio } from 'twilio';
-import { config } from '../../config';
-import { notificationService, templates } from './email-sms.service';
-import { deliverEmail } from './email-transport';
+import { config } from '../../../config';
+import { notificationService, templates } from '../email-sms.service';
+import { deliverEmail } from '../email-transport';
 
 // The SMS path constructs a Twilio client when credentials are present; mocking
 // the class lets a test prove it was never built. A `function`, not an arrow:
@@ -16,7 +16,7 @@ vi.mock('twilio', () => ({
 // Mocked as a module rather than spied on the namespace: the service imports
 // `deliverEmail` as a binding, so a namespace spy would not be the function it
 // calls.
-vi.mock('./email-transport', () => ({
+vi.mock('../email-transport', () => ({
   deliverEmail: vi.fn(),
   describeEmailTransport: vi.fn(() => ({
     kind: 'gmail_api',
@@ -29,7 +29,7 @@ vi.mock('./email-transport', () => ({
 
 const deliverEmailMock = vi.mocked(deliverEmail);
 
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     notification: {
       create: vi.fn().mockResolvedValue({ id: 'notif-123' }),
@@ -43,7 +43,7 @@ vi.mock('../../lib/prisma', () => ({
   },
 }));
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -191,7 +191,7 @@ describe('NotificationService email dispatch', () => {
       description: 'SPP',
     });
 
-    const { prisma } = await import('../../lib/prisma');
+    const { prisma } = await import('../../../lib/prisma');
     expect(prisma.notification.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

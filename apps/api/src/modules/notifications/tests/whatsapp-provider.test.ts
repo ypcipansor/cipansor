@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWhatsAppProvider } from './whatsapp.service';
+import { resolveWhatsAppProvider } from '../whatsapp.service';
 
 describe('resolveWhatsAppProvider', () => {
   it('uses the configured provider when outbound messages are on', () => {

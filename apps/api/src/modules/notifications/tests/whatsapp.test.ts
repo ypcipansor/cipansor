@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('@/lib/prisma', () => ({
   prisma: { notification: { create: vi.fn().mockResolvedValue({ id: 'n1' }) } },
 }));
-vi.mock('./whatsapp.service', () => ({
+vi.mock('../whatsapp.service', () => ({
   whatsAppService: { sendMessage: vi.fn() },
 }));
 
-import { notificationService } from './email-sms.service';
-import { whatsAppService } from './whatsapp.service';
+import { notificationService } from '../email-sms.service';
+import { whatsAppService } from '../whatsapp.service';
 
 const mockSendMessage = whatsAppService.sendMessage as unknown as ReturnType<typeof vi.fn>;
 

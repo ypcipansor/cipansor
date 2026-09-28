@@ -78,7 +78,7 @@ naive reference. 2,189 of those outputs still carried a live `<tag>`: the
 reference modelled quotes with the same wrong assumption, so both were wrong
 together. **Fuzz against an invariant**, not against a copy of yourself: no
 output may match `/<[a-zA-Z\/!?][^<>]*>/`, and real text must come out
-unchanged. The property test is pinned in `email-transport.test.ts`.
+unchanged. The property test is pinned in `tests/email-transport.test.ts`.
 
 ## A distinction the server makes and no screen shows
 

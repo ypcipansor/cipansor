@@ -32,16 +32,21 @@ const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
 /**
- * Upper bound on the input `stripHiddenElements` will scan.
+ * Largest outbound e-mail body this module will process, in UTF-16 code units.
  *
- * The scanners below are linear, but the input is a template body a caller may
- * have built from user text, so its length is not something this function
- * controls. A hard cap keeps a pathological oversized string from costing an
- * unbounded amount of work. The truncation happens before any scan, so the
- * length guard that enforces it is what bounds every loop below (code scanning
- * alert 54). Any real e-mail is orders of magnitude smaller.
+ * The scanners that strip hidden markup are linear, but the body is built from
+ * caller-supplied content, so its length is not something this module controls.
+ * A hard cap keeps a pathological oversized string from costing an unbounded
+ * amount of work — the bound `js/loop-bound-injection` (code scanning alert 54)
+ * asks for.
+ *
+ * It sits at the API's own request-body ceiling (`express.json({ limit: '10mb' })`
+ * in `app.ts`), so nothing the API accepts is refused here, and it is orders of
+ * magnitude above any real e-mail. A body past it is refused, never silently
+ * truncated: a truncated HTML part would no longer match the plain-text part
+ * derived from it (see `htmlToText`).
  */
-const MAX_STRIP_HIDDEN_INPUT_LENGTH = 100_000;
+const MAX_EMAIL_BODY_LENGTH = 10 * 1024 * 1024;
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
@@ -383,12 +388,15 @@ function quotedAttributeMask(text: string): Uint8Array {
  */
 function stripHiddenElements(text: string): string {
   const normalizedText = typeof text === 'string' ? text : String(text ?? '');
-  // Re-enter on the bounded prefix rather than truncating in place: an early
-  // return is what lets a reader (and CodeQL's `js/loop-bound-injection` query,
-  // whose only string barrier is a length check that exits the function) see
-  // that every loop below runs on at most MAX_STRIP_HIDDEN_INPUT_LENGTH chars.
-  if (normalizedText.length > MAX_STRIP_HIDDEN_INPUT_LENGTH) {
-    return stripHiddenElements(normalizedText.slice(0, MAX_STRIP_HIDDEN_INPUT_LENGTH));
+  // Refuse an oversized body instead of truncating it: an early exit is what
+  // bounds every loop below (CodeQL's `js/loop-bound-injection` query, whose
+  // only string barrier is a length check that exits the function), and it also
+  // keeps the plain-text part `htmlToText` derives consistent with the HTML
+  // part it was derived from — a silently truncated prefix would not be.
+  if (normalizedText.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email body is ${normalizedText.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
   }
   const safeText = normalizedText;
 
@@ -694,6 +702,22 @@ async function sendViaSmtp(input: DeliverEmailInput): Promise<DeliverEmailResult
  * caller decides whether that counts as success for its own purposes.
  */
 export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEmailResult> {
+  // Reject at the boundary, before any transport composes or sends anything.
+  // The Gmail/SMTP paths derive a `text/plain` part from `html` when `text` is
+  // omitted, but a caller may pass both, and then nothing below would inspect
+  // the HTML at all — the size limit has to be enforced here to be enforced.
+  // Both parts are checked: a caller can also supply an oversized `text`.
+  if (input.html.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email HTML is ${input.html.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
+  }
+  if (input.text !== undefined && input.text.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email text is ${input.text.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
+  }
+
   if (gmailApiConfigured()) {
     return sendViaGmailApi(input);
   }
