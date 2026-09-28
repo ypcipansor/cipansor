@@ -126,6 +126,15 @@ test.describe("Daily report detail", () => {
       const resolvedPhoto = page.locator('img[src*="token="]').first();
       await expect(resolvedPhoto).toBeVisible({ timeout: 20_000 });
 
+      // ...and the credential must reach the API directly. Next's image
+      // optimizer rejects a credentialed source ("url" parameter is not
+      // allowed), so a tile rendered through `next/image` becomes a
+      // `/_next/image?url=…%3Ftoken%3D…` request that 400s — with the token
+      // URL-encoded, which is why this spec asserted the verbatim src.
+      expect(await resolvedPhoto.getAttribute("src")).not.toContain(
+        "/_next/image",
+      );
+
       // ...anchored to the API ORIGIN, not the origin that served the page. The
       // upload was made against API_URL (host A) while the page runs on the web
       // origin (host B); a host-relative `/uploads/<file>` left unanchored would

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -207,11 +206,18 @@ export function PhotoGallery({
             onClick={() => setSelectedPhoto(photo)}
           >
             {gallerySrc(photo) ? (
-              <Image
+              // A resolved photo URL carries a short-lived SAS/file token in its
+              // query string. Next's image optimizer rejects such a URL
+              // ("url" parameter is not allowed) because it cannot safely
+              // re-fetch an arbitrary credentialed source — routing it through
+              // /_next/image turned every tile into a 400 and the token never
+              // reached the API. A plain <img> fetches the credential-bearing
+              // URL directly, which is exactly what it was minted for.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
                 src={gallerySrc(photo) as string}
                 alt={photo.caption || "Photo"}
-                fill
-                className="object-cover group-hover:scale-105 transition-transform"
+                className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform"
               />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -267,11 +273,13 @@ export function PhotoGallery({
           {selectedPhoto && (
             <div className="relative aspect-video bg-black">
               {gallerySrc(selectedPhoto) && (
-                <Image
+                // Credentialed URL — bypass the optimizer, see the thumbnail
+                // comment above.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
                   src={gallerySrc(selectedPhoto) as string}
                   alt={selectedPhoto.caption || "Photo"}
-                  fill
-                  className="object-contain"
+                  className="absolute inset-0 h-full w-full object-contain"
                 />
               )}
 
@@ -371,11 +379,12 @@ export function DailyReportPhotoPreview({
           }
         >
           {gallerySrc(photo) ? (
-            <Image
+            // Credentialed URL — bypass the optimizer, see PhotoGallery above.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
               src={gallerySrc(photo) as string}
               alt=""
-              fill
-              className="object-cover"
+              className="absolute inset-0 h-full w-full object-cover"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
