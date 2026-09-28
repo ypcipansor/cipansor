@@ -36,8 +36,6 @@ backlog to [`roadmap.md`](roadmap.md).
   asking the schools for them (2026-09-28); each unit appears on the public
   site once its certificate is entered. TK Qur'an has none yet — it was
   only just established — and is not mentioned.
-- **How long a doctor's note attached to a permit is kept** (roadmap 00.5) —
-  researched 2026-09-28, not asked yet.
 - **Musyrif assignments in production.** Until the yayasan enters them
   (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record:
   their leave goes to the unit head, visibly so, and their Alpa is followed
@@ -62,7 +60,9 @@ pengembangannya"), who asked to keep being reminded.
 (`absensi-harian`, all the recommended options); the units' accreditation —
 on the public site from one official record in the portal, kept by the unit's
 admin or the Super Admin, a reminder 12 months before it runs out
-(`akreditasi-unit`).
+(`akreditasi-unit`); a permit's doctor's note — kept to the end of the leave's
+academic year, opened by the decider, the wali and the unit head
+(`pemutus-izin-santri`).
 
 ## In flight
 
@@ -71,9 +71,9 @@ admin or the Super Admin, a reminder 12 months before it runs out
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
   daily attendance (#580, one page in #585, its follow-up in #587, #588 and
   #590, and the pattern flag in #596), behaviour notes (#581), the Kurikulum
-  list (#589), one daily-report page (#592). In flight: the units'
-  accreditation (`akreditasi-unit`) — the portal record (#597), then the
-  public site on top of it.
+  list (#589), one daily-report page (#592), the units' accreditation record
+  (#597). In flight: accreditation on the public site (#598), then the
+  permit's doctor's note (roadmap 00.5, first of three parts).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.

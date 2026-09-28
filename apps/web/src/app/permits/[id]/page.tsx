@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { toast } from "sonner";
 import { MainLayout } from "@/components/layout";
+import { DoctorNoteSection } from "@/components/permits/doctor-note";
 import {
   usePermit,
   useApprovePermit,
@@ -339,6 +340,9 @@ function PermitDetailPageContent() {
                 </div>
               </>
             )}
+
+            {/* Only those who may file reach this page; the API decides who opens it. */}
+            <DoctorNoteSection permit={permit} canAttach />
           </CardContent>
         </Card>
 

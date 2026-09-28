@@ -28,9 +28,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  DoctorNoteField,
+  DoctorNoteSection,
+} from "@/components/permits/doctor-note";
 import { useParentChildren } from "@/hooks/use-parent-portal";
 import {
   usePermits,
+  useAttachDoctorNote,
   useCreatePermit,
   useCancelPermit,
   localInputToIso,
@@ -82,6 +87,8 @@ export default function ParentPermitsPage() {
   );
   const permits = data?.data ?? [];
   const create = useCreatePermit();
+  const attachNote = useAttachDoctorNote();
+  const [note, setNote] = useState<File | null>(null);
   const cancel = useCancelPermit();
 
   const submit = async (e: React.FormEvent) => {
@@ -92,16 +99,31 @@ export default function ParentPermitsPage() {
       return;
     }
     try {
-      await create.mutateAsync({
+      const permit = await create.mutateAsync({
         studentId: selectedChild,
         type: form.type,
         reason: form.reason,
         startDate: localInputToIso(form.startDate),
         endDate: localInputToIso(form.endDate),
       });
-      toast.success("Pengajuan izin terkirim");
+      let noteFailed = false;
+      if (note) {
+        noteFailed = await attachNote
+          .mutateAsync({ id: permit.id, file: note })
+          .then(
+            () => false,
+            () => true,
+          );
+      }
+      if (noteFailed) {
+        // Filed without it; its card offers to attach it again.
+        toast.warning("Izin terkirim, tetapi surat dokter gagal dilampirkan");
+      } else {
+        toast.success("Pengajuan izin terkirim");
+      }
       setDialogOpen(false);
       setForm(EMPTY_FORM);
+      setNote(null);
     } catch {
       // The API client has already shown the server's message.
     }
@@ -220,6 +242,8 @@ export default function ParentPermitsPage() {
                       minLength={10}
                     />
                   </div>
+
+                  <DoctorNoteField file={note} onChange={setNote} />
                 </div>
 
                 <DialogFooter>
@@ -234,6 +258,7 @@ export default function ParentPermitsPage() {
                     type="submit"
                     disabled={
                       create.isPending ||
+                      attachNote.isPending ||
                       !form.type ||
                       form.reason.trim().length < 10
                     }
@@ -305,6 +330,9 @@ export default function ParentPermitsPage() {
                           {permit.rejectionNote}
                         </p>
                       )}
+                      <div className="mt-3">
+                        <DoctorNoteSection permit={permit} canAttach />
+                      </div>
                     </div>
                     <div className="space-y-2 text-sm md:text-right">
                       <p className="text-muted-foreground">

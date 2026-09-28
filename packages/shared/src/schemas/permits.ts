@@ -233,7 +233,38 @@ export interface Permit {
   tookOver: boolean;
   /** Who decides it, worked out for the learner and the caller. */
   decision: PermitDecision;
+  /** The doctor's note, if one was attached — never its content. */
+  doctorNote: PermitDoctorNote | null;
 }
+
+/**
+ * A doctor's note attached to a permit (decided 2026-09-28,
+ * decisions/pemutus-izin-santri.md): a child's health data. Kept until the
+ * academic year of the leave ends, then erased; opened only by whoever
+ * decides the permit, the santri's wali and the unit head. Everyone else who
+ * sees the permit sees that there is one.
+ */
+export interface PermitDoctorNote {
+  attachedAt: string;
+  /** yyyy-MM-dd — the last day of the leave's academic year. */
+  retainUntil: string;
+  /** Set once the file is erased; what remains is that it was attached. */
+  erasedAt: string | null;
+  /** The first of those who may open it to have done so. */
+  firstViewedBy: { id: string; name: string } | null;
+  firstViewedAt: string | null;
+  /** The caller may open it (and it has not been erased). */
+  canOpen: boolean;
+}
+
+/** What a doctor's note may be: a photo or a PDF, up to 5 MB. */
+export const PERMIT_NOTE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+] as const;
+export const PERMIT_NOTE_MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * Who decides a permit, as of now. The mentors are the learner's musyrif (a

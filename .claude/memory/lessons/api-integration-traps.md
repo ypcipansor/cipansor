@@ -1,6 +1,6 @@
 # api-integration-traps
 
-> API-side bugs that stay invisible while you test as Super Admin: an empty permission matrix, Express 5's read-only `req.query`, `/:id` shadowing, and frontend paths the backend never mounted.
+> API-side bugs that stay invisible while you test as Super Admin: an empty permission matrix, Express 5's read-only `req.query`, `/:id` shadowing, frontend paths the backend never mounted, and an upload over the limit answering 500.
 
 Found by the per-role audit of 2026-07-21 and fixed. Every one of them was
 invisible to a Super Admin, which is why they lived so long. **Test as the
@@ -34,6 +34,13 @@ role, not as the admin.**
   `schema.prisma`, `db:generate`, and let `tsc` list every stale reference.
   Before deleting any user, check `pg_constraint`: over a hundred FK columns
   reference `users(id)`, many `ON DELETE RESTRICT`.
+- **A file over multer's limit was a 500 on every route that mounts multer
+  itself.** `middleware/upload.ts` catches `MulterError` in its own callback;
+  a route that uses `multer(...).single()` directly (accreditation
+  certificates, a permit's doctor's note) passed it to `errorHandler`, which
+  did not know the name and answered "Internal server error" — the sender's
+  mistake read as a broken server. Fixed 2026-09-28 in `errorHandler` (400).
+  **Test the limit, not just the happy upload:** send one byte over it.
 
 ## The guards
 

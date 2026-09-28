@@ -224,6 +224,31 @@ export const useReturnPermit = () =>
   );
 
 /**
+ * Attach a doctor's note to a permit, or replace the one there
+ * (decisions/pemutus-izin-santri.md). Multipart: the instance defaults to JSON.
+ */
+export const useAttachDoctorNote = () =>
+  usePermitMutation(({ id, file }: { id: string; file: File }) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.post<ApiResponse<Permit>>(`/permits/${id}/doctor-note`, form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+  });
+
+/**
+ * The note's file, for those who may open it (`permit.doctorNote.canOpen`).
+ * Fetched with the session and held as a Blob, never as a link that could be
+ * shared: the API serves it to the caller only, and audits each opening.
+ */
+export async function fetchDoctorNote(id: string): Promise<Blob> {
+  const response = await api.get<Blob>(`/permits/${id}/doctor-note`, {
+    responseType: "blob",
+  });
+  return response.data;
+}
+
+/**
  * A `datetime-local` value (`2026-09-26T13:00`, the browser's local time) as
  * the ISO instant the API expects.
  */

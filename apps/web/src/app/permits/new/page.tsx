@@ -1,17 +1,26 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { MainLayout } from "@/components/layout";
-import { useCreatePermit, localInputToIso } from "@/hooks/use-permits";
+import { PERMIT_HEAD_AFTER_DAYS } from "@cipansor/shared";
+import { DoctorNoteField } from "@/components/permits/doctor-note";
+import {
+  useAttachDoctorNote,
+  useCreatePermit,
+  localInputToIso,
+} from "@/hooks/use-permits";
 import { PermitForm, type PermitFormValues } from "../permit-form";
 
 function NewPermitPageContent() {
   const router = useRouter();
   const createMutation = useCreatePermit();
+  const attachNote = useAttachDoctorNote();
+  const [note, setNote] = useState<File | null>(null);
 
   const onSubmit = async (values: PermitFormValues) => {
     try {
@@ -23,6 +32,16 @@ function NewPermitPageContent() {
         startDate: localInputToIso(values.startDate),
         endDate: localInputToIso(values.endDate),
       });
+      if (note) {
+        try {
+          await attachNote.mutateAsync({ id: permit.id, file: note });
+        } catch {
+          // Filed without it; the permit page offers to attach it again.
+          toast.warning("Izin diajukan, tetapi surat dokter gagal dilampirkan");
+          router.push(`/permits/${permit.id}`);
+          return;
+        }
+      }
       toast.success("Izin diajukan");
       router.push(`/permits/${permit.id}`);
     } catch {
@@ -41,15 +60,17 @@ function NewPermitPageContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Ajukan Izin</h1>
           <p className="text-muted-foreground">
-            Izin menunggu keputusan kepala unit atau admin unit
+            Diputuskan musyrif santri (santri mukim) atau wali kelasnya; izin
+            lebih dari {PERMIT_HEAD_AFTER_DAYS} hari oleh kepala unit
           </p>
         </div>
       </div>
       <PermitForm
         cancelHref="/permits"
         submitLabel="Ajukan"
-        isSubmitting={createMutation.isPending}
+        isSubmitting={createMutation.isPending || attachNote.isPending}
         onSubmit={onSubmit}
+        after={<DoctorNoteField file={note} onChange={setNote} />}
       />
     </div>
   );

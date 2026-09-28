@@ -1,5 +1,6 @@
 import { PermitDecider, UnitType } from '@prisma/client';
 import {
+  PARENT_ROLE_CODES,
   PERMIT_HEAD_AFTER_DAYS,
   PESANTREN_LEADER_ROLE_CODES,
   PRINCIPAL_ROLE_CODES,
@@ -113,4 +114,23 @@ export function whoDecides(d: PermitDecision): string {
   }
   const names = d.mentors.map((m) => m.name).join(', ');
   return `Izin ini diputuskan oleh ${MENTOR_LABEL[d.mentorKind]} santri (${names})`;
+}
+
+/**
+ * Who opens a permit's doctor's note (decided 2026-09-28,
+ * decisions/pemutus-izin-santri.md): whoever decides it — the learner's
+ * mentor today, or the one who did decide it — the unit head, and the
+ * santri's wali. The caller has already passed the permit's scope, so a wali
+ * here is this learner's wali. Anyone else who sees the permit sees only that
+ * a note is attached.
+ */
+export function mayOpenNote(
+  permit: { approvedBy: { id: string } | null },
+  g: Guardianship,
+  actor: ScopeActor
+): boolean {
+  if (g.mentors.some((m) => m.id === actor.sub)) return true;
+  if (permit.approvedBy?.id === actor.sub) return true;
+  if (headCapacity(actor, g)) return true;
+  return PARENT_ROLE_CODES.includes(actor.roleCode ?? '');
 }
