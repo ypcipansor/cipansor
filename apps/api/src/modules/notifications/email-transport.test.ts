@@ -727,6 +727,27 @@ describe('htmlToText', () => {
         expect(large, `${name} complexity`).toBeLessThan(small * 8);
       }
     });
+
+    it('bounds the scan on oversize input instead of letting the caller set the loop bound', () => {
+      // CodeQL loop-bound injection (alerts 53–57): with no cap the number of
+      // iterations is the attacker's, since `html` comes from request data. The
+      // boundary cap makes the loop bound a constant again. Oversize input is
+      // truncated, not rejected, so a large message still yields a text part.
+      const max = 1_000_000;
+      const oversize = 'a'.repeat(max + 500_000);
+      const start = Date.now();
+      const out = htmlToText(oversize);
+      expect(Date.now() - start).toBeLessThan(2000);
+      expect(out).toBe('a'.repeat(max));
+    });
+
+    it('does not alter input at or under the cap', () => {
+      // The cap must not move the result for a normal message: everything below
+      // the limit is scanned whole, byte for byte.
+      const atLimit = 'b'.repeat(1_000_000);
+      expect(htmlToText(atLimit)).toBe(atLimit);
+      expect(htmlToText('Ringkasan <b>hari ini</b>')).toBe('Ringkasan hari ini');
+    });
   });
 
   describe('entity decoding', () => {

@@ -30,7 +30,18 @@ import { ServiceAccountTokenSource } from '../../lib/google-service-account';
 
 const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
-const MAX_HTML_TO_TEXT_CHARS = 100_000;
+
+/**
+ * Upper bound on the HTML fed to the scanners in `htmlToText`. Every scan in
+ * this file is linear in the input length, but "linear" still means an attacker
+ * who controls the string chooses the constant: an unbounded `html` turns the
+ * loop bound itself into an attacker-supplied value (CodeQL's loop-bound
+ * injection, alerts 53–57). Capping at this boundary — the one entry point
+ * before `stripHiddenElements`, `quotedAttributeMask` and `stripTags` — bounds
+ * every one of those loops at once. Far larger than any mail we compose (the
+ * whole request body is capped at 10 MB), so nothing legitimate is affected.
+ */
+const MAX_HTML_TO_TEXT_CHARS = 1_000_000;
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
@@ -191,11 +202,15 @@ export function describeEmailTransport(): EmailTransportStatus {
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
-  if (html.length > MAX_HTML_TO_TEXT_CHARS) {
-    throw new Error(`HTML content too large to convert safely (max ${MAX_HTML_TO_TEXT_CHARS} chars)`);
-  }
+  // Bound the input before the scanners see it: their loop bounds must not be
+  // attacker-chosen (CodeQL loop-bound injection). Truncating rather than
+  // throwing keeps a large message deliverable — the HTML part is sent whole
+  // and only this plain-text fallback is shortened — and it caps every loop in
+  // `stripHiddenElements`, `quotedAttributeMask` and `stripTags` from one place.
+  const bounded =
+    html.length > MAX_HTML_TO_TEXT_CHARS ? html.slice(0, MAX_HTML_TO_TEXT_CHARS) : html;
 
-  let text = stripHiddenElements(html);
+  let text = stripHiddenElements(bounded);
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
   text = stripTags(text);
 
