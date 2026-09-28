@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { config } from '../../config';
+import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
   htmlToText,
   resetEmailTransport,
-} from './email-transport';
+} from '../email-transport';
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -132,6 +132,29 @@ describe('email transport selection', () => {
     expect(status.from).toContain('noreply@');
     expect(status.replyTo).not.toContain('noreply@');
     expect(status.replyTo).toBe('halo@cipansor.or.id');
+  });
+
+  it('refuses an oversized body before any transport touches the network', async () => {
+    // The bound `js/loop-bound-injection` (alert 54) asks for, enforced where it
+    // protects the send path itself: `composeRawMessage` and `sendViaSmtp` would
+    // otherwise hand the whole oversized HTML to Nodemailer, so the limit cannot
+    // live only in `htmlToText`'s derivation of the plain-text part.
+    setGmailConfig();
+    const fetchMock = vi.fn(async () => {
+      throw new Error('network must not be touched');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      deliverEmail({
+        to: 'wali@example.test',
+        subject: 'Pengumuman',
+        html: 'x'.repeat(10 * 1024 * 1024 + 1),
+      })
+    ).rejects.toThrow(/over the .* limit/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });
 
@@ -726,6 +749,22 @@ describe('htmlToText', () => {
         // measured ~16x here, and ~400x before the per-pass fix).
         expect(large, `${name} complexity`).toBeLessThan(small * 8);
       }
+    });
+
+    it('refuses a body over the size limit instead of truncating it', () => {
+      // Code scanning alert 54: the loop bound must not be under a caller's
+      // control. `stripHiddenElements` refuses an oversized body, so no loop
+      // ever runs past MAX_EMAIL_BODY_LENGTH — and, unlike a silent truncation,
+      // the plain text stays consistent with the HTML it was derived from.
+      const overLimit = 'x'.repeat(10 * 1024 * 1024 + 1);
+
+      expect(() => htmlToText(overLimit)).toThrow(/over the .* limit/);
+
+      // Content at the boundary is still processed normally, and markup inside
+      // it is still removed — nothing is dropped for being "late".
+      expect(htmlToText('<p>Meeting at noon</p>')).toBe('Meeting at noon');
+      const atLimit = 'x'.repeat(10 * 1024 * 1024 - 64) + '<p>Meeting at noon</p>';
+      expect(htmlToText(atLimit)).toContain('Meeting at noon');
     });
   });
 
