@@ -437,14 +437,21 @@ function stripHiddenElements(text: string): string {
  * the two passes consistent on the same input.
  */
 function stripTags(text: string, quoteAware = true): string {
+  const MAX_STRIP_TAGS_INPUT = 200_000;
+  const normalized = typeof text === 'string' ? text : String(text ?? '');
+  const safeText =
+    normalized.length > MAX_STRIP_TAGS_INPUT
+      ? normalized.slice(0, MAX_STRIP_TAGS_INPUT)
+      : normalized;
+
   const out: string[] = [];
   let openStart = -1;
   let openSource = -1;
   let quote = '';
   let canOpenQuote = false;
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = 0; i < safeText.length; i++) {
+    const ch = safeText[i];
     out.push(ch);
     if (openStart === -1) {
       if (ch === '<') {
@@ -479,7 +486,7 @@ function stripTags(text: string, quoteAware = true): string {
   // `openSource`; re-read that tail once without quote handling. The second
   // pass cannot recurse, so the whole strip stays linear.
   if (quoteAware && openStart !== -1) {
-    return out.slice(0, openStart).join('') + stripTags(text.slice(openSource), false);
+    return out.slice(0, openStart).join('') + stripTags(safeText.slice(openSource), false);
   }
 
   return out.join('');
