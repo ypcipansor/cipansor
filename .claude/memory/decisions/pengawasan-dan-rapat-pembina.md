@@ -164,9 +164,28 @@ Riset tambahannya:
    - Berlaku untuk langkah "tetapkan" RPJP/Renstra/RKA dan putusan Ps. 43.
    - Angka kuorum diambil dari AD.
 
-**Masih terbuka:** salinan Anggaran Dasar (akta) yayasan — untuk angka
-kuorum rapat Pembina dan penunjukan Plh. Minta ke pengguna; jangan menebak
-angkanya.
+**Anggaran Dasar diterima 2026-09-28** (akta pendirian 2012; ringkasannya di
+skill `tata-kelola-yayasan/anggaran-dasar.md`). Yang ia putuskan untuk
+rancangan ini:
+- **Kuorum Rapat Pembina:**
+  - 2/3 anggota; rapat kedua (10–21 hari kemudian) lebih dari 1/2;
+  - mufakat, lalu lebih dari 1/2 suara sah; suara sama berarti ditolak;
+  - soal orang dengan suara tertutup;
+  - berita acara ditandatangani ketua dan sekretaris rapat.
+  - Keputusan di luar rapat sah bila **semua** Pembina setuju tertulis
+    (Pasal 11). Ini menguatkan butir 4.
+- **Tidak ada Plh.**
+  - Pasal 27 ayat 4–10 mengulang Ps. 43, dan putusan Pembina harus
+    keputusan Rapat Pembina.
+  - Bila batal demi hukum, yang bersangkutan menjabat kembali.
+  - Bila seluruh Pengurus diberhentikan sementara, Pengawas yang mengurus.
+  - Siapa yang mewakili saat Ketua Umum berhalangan mengikuti Pasal 18
+    ayat 2.
+  - Butir 1 tidak perlu memodelkan Plh.
+- **Pemberhentian sementara adalah tindakan organ Pengawas:** Ketua Pengawas
+  bersama satu anggota Pengawas (Pasal 27 ayat 2). Bila ada dua Pengawas,
+  sistem meminta keduanya.
+- **Masih terbuka:** apakah ada akta perubahan sesudah 2012.
 
 **Urutan bangun:** 4 → 1 (putusan Ps. 43 memakai keputusan rapat) → 3 → 2
 (WBS mengalihkan kekerasan ke tim di butir 3).
