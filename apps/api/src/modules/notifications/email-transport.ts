@@ -447,11 +447,12 @@ function stripHiddenElements(text: string): string {
  */
 function stripTags(text: string, quoteAware = true): string {
   const MAX_STRIP_TAGS_INPUT = 200_000;
-  const normalized = typeof text === 'string' ? text : String(text ?? '');
-  const safeText =
-    normalized.length > MAX_STRIP_TAGS_INPUT
-      ? normalized.slice(0, MAX_STRIP_TAGS_INPUT)
-      : normalized;
+  // `text` arrives from a request body, so it may be an object whose `.length`
+  // is not a character count. Coerce to a primitive, cap the length, and
+  // iterate a plain number — never the input's own `.length` — the same guard
+  // `stripHiddenElements` applies to its scan.
+  const safeText = String(text ?? '').slice(0, MAX_STRIP_TAGS_INPUT);
+  const safeLength = Math.min(safeText.length, MAX_STRIP_TAGS_INPUT);
 
   const out: string[] = [];
   let openStart = -1;
@@ -459,7 +460,7 @@ function stripTags(text: string, quoteAware = true): string {
   let quote = '';
   let canOpenQuote = false;
 
-  for (let i = 0; i < safeText.length; i++) {
+  for (let i = 0; i < safeLength; i++) {
     const ch = safeText[i];
     out.push(ch);
     if (openStart === -1) {

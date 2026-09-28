@@ -671,6 +671,30 @@ describe('htmlToText', () => {
       expect(htmlToText(manyComments)).toBe('');
     });
 
+    it('bounds the scan when .length is not a character count', () => {
+      // Code scanning alert 55 (loop bound injection). `htmlToText` runs on a
+      // request-supplied `html` field, so `text` need not be a string: a body
+      // `{ length: 1e12 }` carries a numeric `.length` that is not a character
+      // count, and a scan that iterated it directly would run a trillion times
+      // over a one-character input. Coercing to a primitive and iterating a
+      // capped number keeps the work proportional to the real input.
+      const payload = { length: 1e12, toString: () => 'x' } as unknown as string;
+
+      const start = Date.now();
+      expect(htmlToText(payload)).toBe('x');
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
+
+    it('caps the scan of an over-long input at a fixed ceiling', () => {
+      // The same guard truncates a genuine string far past the 200_000-char
+      // ceiling, so an enormous body cannot force a proportionally longer walk.
+      // Without the cap this returned all 5,000,000 characters.
+      const start = Date.now();
+      const out = htmlToText('a'.repeat(5_000_000));
+      expect(out.length).toBeLessThanOrEqual(200_000);
+      expect(Date.now() - start).toBeLessThan(1000);
+    });
+
     it('stays linear when a tag is fragmented across many nested layers', () => {
       // Regression for the fixed-point loop. `styleLayer(d)` is `<sty` +
       // layer(d-1) + `le>Y</style>` nested d deep; closing the innermost
