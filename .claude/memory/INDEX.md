@@ -34,7 +34,7 @@ the mechanical cases.
 - [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
-- [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket
+- [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
 
 ## Lessons — traps that already cost time
 

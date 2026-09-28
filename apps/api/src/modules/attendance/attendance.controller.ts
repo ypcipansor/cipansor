@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { attendanceService } from './attendance.service';
 import * as followUpService from './attendance-follow-up.service';
+import { listPatterns } from './attendance-pattern.service';
 import {
   ApiResponse,
   SharedPaginatedResponse,
@@ -14,6 +15,7 @@ import {
   BulkAttendanceResult,
   AttendanceRecorderScope,
   AttendanceFollowUpItem,
+  AttendancePatternItem,
   RecordFollowUpInput,
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
@@ -42,6 +44,16 @@ export const myClasses = asyncHandler(
 export const followUps = asyncHandler(
   async (req: Request, res: Response<ApiResponse<AttendanceFollowUpItem[]>>) => {
     res.json({ success: true, data: await followUpService.listFollowUps(actorOf(req)) });
+  }
+);
+
+/**
+ * The caller's santri whose attendance shows a pattern now
+ * GET /api/attendance/patterns
+ */
+export const patterns = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendancePatternItem[]>>) => {
+    res.json({ success: true, data: await listPatterns(actorOf(req)) });
   }
 );
 

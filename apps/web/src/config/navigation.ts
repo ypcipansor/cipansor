@@ -62,6 +62,7 @@ import {
   ShieldCheck,
   type LucideIcon,
   PhoneCall,
+  CalendarX,
 } from "lucide-react";
 import {
   GURU_BK_ROLE_CODES,
@@ -75,6 +76,10 @@ const TK_TEACHER_ROLE_CODES = SCHOOL_TEACHER_ROLE_CODES.filter((code) =>
 );
 const NON_TK_TEACHER_ROLE_CODES = SCHOOL_TEACHER_ROLE_CODES.filter(
   (code) => !code.startsWith("TKQ_"),
+);
+/** School teachers who are not guru BK. */
+const NON_BK_TEACHER_ROLE_CODES = SCHOOL_TEACHER_ROLE_CODES.filter(
+  (code) => !GURU_BK_ROLE_CODES.includes(code),
 );
 
 export interface NavItem {
@@ -273,6 +278,14 @@ const teacherNavigation: NavGroup[] = [
         icon: HeartHandshake,
         roleCodes: [...GURU_BK_ROLE_CODES],
       },
+      {
+        // A guru BK is told of the attendance patterns of their unit's
+        // santri (decided 2026-09-28).
+        title: "Pola Kehadiran",
+        href: "/attendance/patterns",
+        icon: CalendarX,
+        roleCodes: [...GURU_BK_ROLE_CODES],
+      },
     ],
   },
   {
@@ -297,6 +310,15 @@ const teacherNavigation: NavGroup[] = [
         title: "Tindak Lanjut Absensi",
         href: "/attendance/follow-ups",
         icon: PhoneCall,
+      },
+      {
+        // Absent on 10% of the semester's days, or often late (decided
+        // 2026-09-28): the wali kelas's pupils. A guru BK has it under
+        // Mengajar, for their whole unit, and not twice.
+        title: "Pola Kehadiran",
+        href: "/attendance/patterns",
+        icon: CalendarX,
+        roleCodes: NON_BK_TEACHER_ROLE_CODES,
       },
       {
         title: "Catatan Perilaku",
@@ -1958,6 +1980,12 @@ const pesantrenPengasuhanNavigation: NavGroup[] = [
         title: "Tindak Lanjut Absensi",
         href: "/attendance/follow-ups",
         icon: PhoneCall,
+      },
+      {
+        // A santri mukim's pattern is told to their musyrif too.
+        title: "Pola Kehadiran",
+        href: "/attendance/patterns",
+        icon: CalendarX,
       },
       { title: "Asrama", href: "/dormitories", icon: Home },
       { title: "Musyrif", href: "/musyrif", icon: UserCog },
