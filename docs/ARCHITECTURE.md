@@ -9,7 +9,7 @@ authoritative, area-specific conventions live in the `AGENTS.md` files
 
 ```
 apps/
-  api/        Express 5 + Prisma 7 REST API (+ socket.io realtime, cron jobs)
+  api/        Express 5 + Prisma 7 REST API (+ cron jobs)
   web/        Next.js 16 (App Router) + React Query frontend
 packages/
   shared/     Framework-agnostic DTOs / Zod schemas shared by both apps
@@ -50,10 +50,11 @@ Cross-cutting foundations (reuse, don't reinvent):
 - **Auth / RBAC** — `src/middleware/auth.ts` (`authorize(RoleCode.X)`,
   `hasPermission`, `isAdmin`, …). `req.user` carries `roleCode`, `permissions[]`,
   `unitId`. Gate on `RoleCode`/permissions — not the deprecated `role` string.
-- **Infra** — `src/lib/{prisma,redis,jwt,logger,event-bus,realtime}.ts`.
+- **Infra** — `src/lib/{prisma,redis,jwt,logger,event-bus,dashboard-metrics}.ts`.
 - **Cross-module side effects** — emit typed events on `eventBus` (`AppEvents`);
   don't reach into other modules' services. `notification:send` drives the
-  notifications module; socket.io (`lib/realtime.ts`) pushes live updates.
+  notifications module. Nothing is pushed to browsers: the web polls through
+  React Query (`.claude/memory/decisions/realtime-polling.md`).
 - **Scheduled work** — `src/jobs/` (node-cron): snapshots, summaries, cleanup,
   auto-billing, SPP reminders, identity and transcript purges. The jobs run
   **inside the API process with no lock**, so the design assumes **one API
@@ -109,7 +110,7 @@ web hook (React Query)
   -> controller (asyncHandler)
   -> service (business logic; Prisma via adapter)
   -> ApiResponse envelope { success, data, meta? }
-  -> (side effects) eventBus -> notifications / socket.io realtime
+  -> (side effects) eventBus -> notifications / dashboard cache invalidation
 ```
 
 ## Testing & the green gate
@@ -164,10 +165,8 @@ paths: `/unit/[slug]`.
 Production and staging run on **Azure App Service** as sidecar containers
 (details in [`deploy-azure.md`](deploy-azure.md)): an **nginx** main container
 (`deploy/azure/nginx/nginx.conf`, one catch-all `server` block for every
-hostname) receives all traffic and routes `/api`, `/uploads`, `/socket.io` and
-`/healthz` to the api container and everything else to web. `location ^~
-/socket.io/` → api is required: socket.io lives outside `/api`, so without it
-the handshake is answered by the web container. The root `nginx.conf` and
+hostname) receives all traffic and routes `/api`, `/uploads` and `/healthz` to
+the api container and everything else to web. The root `nginx.conf` and
 `docker-compose.yml` are the earlier single-host deployment.
 
 `/verifikasi` stays on the apex permanently — those URLs are printed on paper.

@@ -12,7 +12,7 @@ monorepo**:
 
 | Workspace | Stack | Purpose |
 |-----------|-------|---------|
-| `apps/api` | Express 5, Prisma 7 (PostgreSQL), Zod, Socket.IO, Redis (ioredis), JWT | REST API + realtime |
+| `apps/api` | Express 5, Prisma 7 (PostgreSQL), Zod, Redis (ioredis), JWT | REST API + scheduled jobs |
 | `apps/web` | Next.js 16 (App Router), React 19, React Query, Tailwind, Radix UI | Web client |
 | `packages/shared` (`@cipansor/shared`) | TypeScript, Zod | Shared DTO types & schemas for both apps |
 

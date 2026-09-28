@@ -39,7 +39,8 @@ items before 2026-09-25 is in the history of this file and of
        (`decisions/pengawasan-dan-rapat-pembina.md`). Done 2026-09-28:
        Pengawasan Internal, Manajemen Risiko and Kepatuhan Syariah open for
        the organs (#609). Next: #508's auth fixes that still apply to `main`,
-       each its own PR. The four design questions were answered the same day;
+       each its own PR. The first: the unused Socket.IO server removed
+       (`decisions/realtime-polling.md`). The four design questions were answered the same day;
        build in this order — the Pembina's decision as a recorded meeting or
        a unanimous written resolution, in the existing ratification flow;
        the Ps. 43 suspension (authority held, 7/7/7 deadlines, void by law);

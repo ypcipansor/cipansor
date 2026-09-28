@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { prisma } from '../../src/lib/prisma';
 import { aggregateDashboardMetrics } from '../../src/jobs/dashboard-metrics.job';
 import { getDashboardMetrics } from '../../src/modules/dashboard/dashboard.controller';
+import { getCurrentDashboardMetrics } from '../../src/lib/dashboard-metrics';
 import { Request, Response } from 'express';
 
 // Mock dependencies
@@ -36,21 +37,15 @@ vi.mock('../../src/lib/prisma', () => ({
   },
 }));
 
-vi.mock('../../src/lib/realtime', async () => {
-  const actual = await vi.importActual('../../src/lib/realtime');
-  return {
-    ...actual,
-    getCurrentDashboardMetrics: vi.fn().mockResolvedValue({
-      students: { total: 100, active: 90, change: 0 },
-      teachers: { total: 10 },
-      attendance: { rate: 95, present: 85, total: 90 },
-      tahfidz: { totalHafidz: 5, avgQuality: 80 },
-      timestamp: new Date().toISOString(),
-    }),
-    publishDashboardMetrics: vi.fn(),
-    publishDashboardAlert: vi.fn(),
-  };
-});
+vi.mock('../../src/lib/dashboard-metrics', () => ({
+  getCurrentDashboardMetrics: vi.fn().mockResolvedValue({
+    students: { total: 100, active: 90, change: 0 },
+    teachers: { total: 10 },
+    attendance: { rate: 95, present: 85, total: 90 },
+    tahfidz: { totalHafidz: 5, avgQuality: 80 },
+    timestamp: new Date().toISOString(),
+  }),
+}));
 
 vi.mock('../../src/lib/logger');
 
@@ -107,6 +102,18 @@ describe('Dashboard Metrics History', () => {
 
       // Total calls: 1 global + 2 units = 3
       expect(prisma.dashboardHistory.create).toHaveBeenCalledTimes(3);
+    });
+
+    it('records fresh figures, never the cached copy of the previous minute', async () => {
+      (prisma.unit.findMany as any).mockResolvedValue([{ id: 'unit-1', name: 'Unit 1' }]);
+
+      await aggregateDashboardMetrics();
+
+      // The job runs every minute against a 60-second cache: reading the cache
+      // would record the previous point again.
+      expect(getCurrentDashboardMetrics).toHaveBeenCalledWith(undefined, { fresh: true });
+      expect(getCurrentDashboardMetrics).toHaveBeenCalledWith('unit-1', { fresh: true });
+      expect(getCurrentDashboardMetrics).toHaveBeenCalledTimes(2);
     });
   });
 

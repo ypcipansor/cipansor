@@ -102,7 +102,7 @@ test.describe("Dashboard - Performance", () => {
     expect(loadTime).toBeLessThan(10000);
   });
 
-  test("should handle real-time updates", async ({ page }) => {
+  test("stays responsive after loading", async ({ page }) => {
     await page.waitForTimeout(3000);
 
     // Check if page is still responsive

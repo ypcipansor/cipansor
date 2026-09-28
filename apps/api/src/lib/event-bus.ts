@@ -3,27 +3,13 @@
  * Centralized event management for cross-module communication
  *
  * This module provides a typed event bus for publishing and subscribing
- * to events across different modules. It integrates with:
- * - Socket.IO for real-time client updates
- * - Redis Pub/Sub for horizontal scaling
- * - Dashboard metrics for live updates
+ * to events across different modules. Handlers send notifications and drop
+ * the cached dashboard metrics whose figures an event changes.
  */
 
 import { EventEmitter } from 'events';
 import { logger } from '@/lib/logger';
-import {
-  broadcastAttendance,
-  broadcastPayment,
-  broadcastTahfidz,
-  publishDashboardMetrics,
-  publishDashboardAlert,
-  invalidateDashboardCache,
-  getCurrentDashboardMetrics,
-  type AttendanceEvent,
-  type PaymentEvent,
-  type TahfidzEvent,
-  type DashboardAlert,
-} from '@/lib/realtime';
+import { invalidateDashboardCache } from '@/lib/dashboard-metrics';
 import { prisma } from '@/lib/prisma';
 import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
@@ -162,7 +148,6 @@ export interface AppEvents {
 
   // Dashboard Events
   'dashboard:refresh': DashboardRefreshEvent;
-  'dashboard:alert': DashboardAlertEvent;
 
   // Health Events
   'health:medical-record-created': HealthMedicalRecordCreatedEvent;
@@ -367,14 +352,6 @@ export interface DashboardRefreshEvent {
   reason: string;
 }
 
-export interface DashboardAlertEvent {
-  id: string;
-  title: string;
-  message: string;
-  severity: 'INFO' | 'WARNING' | 'CRITICAL';
-  unitId?: string;
-}
-
 /**
  * Typed Event Emitter
  */
@@ -411,23 +388,7 @@ export function initializeEventBus(): void {
   eventBus.on('attendance:created', async (event) => {
     logger.info('Attendance created event received', { studentId: event.studentId });
 
-    // Broadcast to WebSocket clients
-    const wsEvent: AttendanceEvent = {
-      studentId: event.studentId,
-      studentName: event.studentName,
-      status: event.status.toLowerCase() as any,
-      unitName: event.unitName,
-      className: event.className,
-      time: event.date.toISOString(),
-    };
-    broadcastAttendance(wsEvent);
-
-    // Invalidate dashboard cache for the unit
     await invalidateDashboardCache(event.unitId);
-
-    // Refresh dashboard metrics
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
   });
 
   eventBus.on('attendance:bulk-created', async (event) => {
@@ -436,10 +397,7 @@ export function initializeEventBus(): void {
       count: event.count,
     });
 
-    // Invalidate and refresh dashboard
     await invalidateDashboardCache(event.unitId);
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
   });
 
   // ===== TAHFIDZ EVENT HANDLERS =====
@@ -450,17 +408,6 @@ export function initializeEventBus(): void {
       surah: event.surahName,
       type: event.activityType,
     });
-
-    // Broadcast to WebSocket clients
-    const wsEvent: TahfidzEvent = {
-      studentId: event.studentId,
-      studentName: event.studentName,
-      surah: event.surahName,
-      ayahCount: event.totalAyah,
-      unitName: event.unitName,
-      time: event.recordedAt.toISOString(),
-    };
-    broadcastTahfidz(wsEvent);
 
     // Email the setoran report to the wali, if channel policy and their own
     // preferences allow it.
@@ -508,27 +455,13 @@ export function initializeEventBus(): void {
       message: getMilestoneMessage(event),
       data: { milestoneType: event.milestoneType },
     });
-
-    // Create dashboard alert for significant milestones
-    if (event.milestoneType === 'full_quran') {
-      const alert: DashboardAlertEvent = {
-        id: `hafidz-${event.studentId}-${Date.now()}`,
-        title: 'Hafidz Baru!',
-        message: `${event.studentName} telah menyelesaikan hafalan 30 Juz Al-Quran`,
-        severity: 'INFO',
-        unitId: event.unitId,
-      };
-      eventBus.emit('dashboard:alert', alert);
-    }
   });
 
   eventBus.on('tahfidz:hafidz-completed', async (event) => {
     logger.info('New Hafidz completed!', { studentId: event.studentId });
 
-    // Refresh dashboard to update hafidz count
+    // The hafidz count changed.
     await invalidateDashboardCache(event.unitId);
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
   });
 
   // ===== FINANCE EVENT HANDLERS =====
@@ -538,17 +471,6 @@ export function initializeEventBus(): void {
       invoiceId: event.invoiceId,
       amount: event.amount,
     });
-
-    // Broadcast to WebSocket clients
-    const wsEvent: PaymentEvent = {
-      invoiceId: event.invoiceId,
-      studentName: event.studentName,
-      amount: event.amount,
-      type: event.paymentMethod,
-      unitName: event.unitName,
-      time: event.paidAt.toISOString(),
-    };
-    broadcastPayment(wsEvent);
 
     // Notify the wali — in-app and, if their preferences allow, by e-mail.
     //
@@ -598,18 +520,6 @@ export function initializeEventBus(): void {
       invoiceId: event.id,
       daysOverdue: event.daysOverdue,
     });
-
-    // Create dashboard alert for overdue invoices
-    if (event.daysOverdue >= 7) {
-      const alert: DashboardAlertEvent = {
-        id: `overdue-${event.id}`,
-        title: 'Tagihan Jatuh Tempo',
-        message: `Tagihan ${event.invoiceNumber} untuk ${event.studentName} sudah jatuh tempo ${event.daysOverdue} hari`,
-        severity: event.daysOverdue >= 30 ? 'CRITICAL' : 'WARNING',
-        unitId: event.unitId,
-      };
-      eventBus.emit('dashboard:alert', alert);
-    }
   });
 
   // ===== STUDENT EVENT HANDLERS =====
@@ -617,10 +527,7 @@ export function initializeEventBus(): void {
   eventBus.on('student:created', async (event) => {
     logger.info('Student created', { studentId: event.id });
 
-    // Refresh dashboard metrics
     await invalidateDashboardCache(event.unitId);
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
   });
 
   eventBus.on('student:graduated', async (event) => {
@@ -636,21 +543,6 @@ export function initializeEventBus(): void {
     logger.info('Dashboard refresh requested', { reason: event.reason });
 
     await invalidateDashboardCache(event.unitId);
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
-  });
-
-  eventBus.on('dashboard:alert', async (event) => {
-    logger.info('Dashboard alert', { title: event.title });
-
-    const alert: DashboardAlert = {
-      id: event.id,
-      title: event.title,
-      message: event.message,
-      severity: event.severity,
-      timestamp: new Date().toISOString(),
-    };
-    await publishDashboardAlert(alert);
   });
 
   // ===== HEALTH EVENT HANDLERS =====
@@ -663,10 +555,6 @@ export function initializeEventBus(): void {
 
     // Invalidate dashboard cache to update Health/UKS stats
     await invalidateDashboardCache(event.unitId);
-
-    // Refresh dashboard metrics
-    const metrics = await getCurrentDashboardMetrics(event.unitId);
-    await publishDashboardMetrics(metrics, event.unitId);
   });
 
   // ===== NOTIFICATION EVENT HANDLERS =====

@@ -24,10 +24,10 @@ shape as `docker-compose.yml`.
 
 | Container | Image | Port | Role |
 |---|---|---|---|
-| `nginx` (main) | `deploy/azure/nginx` | 80 | The only one App Service sends traffic to; routes `/api`, `/uploads`, `/socket.io` to api, the rest to web |
+| `nginx` (main) | `deploy/azure/nginx` | 80 | The only one App Service sends traffic to; routes `/api`, `/uploads` to api, the rest to web |
 | `web` | `apps/web/Dockerfile` | 3000 | Next.js |
-| `api` | `apps/api/Dockerfile` | 3001 | Express, cron jobs, Socket.IO |
-| `redis` | `redis:7-alpine` | 6379 | Cache and realtime fan-out; contents may be lost |
+| `api` | `apps/api/Dockerfile` | 3001 | Express, cron jobs |
+| `redis` | `redis:7-alpine` | 6379 | Cache (dashboard metrics, permissions, chatbot answers); contents may be lost |
 
 The api runs cron jobs in-process, so each app stays at **one instance** with
 Always On. Scaling out would run every job twice.
