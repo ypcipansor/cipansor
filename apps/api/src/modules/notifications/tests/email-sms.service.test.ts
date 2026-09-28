@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Twilio } from 'twilio';
 import { config } from '../../../config';
 import { notificationService, templates } from '../email-sms.service';
+import { MAX_NOTIFICATION_CONTENT_LENGTH } from '../notifications.schema';
 import { deliverEmail } from '../email-transport';
 
 // The SMS path constructs a Twilio client when credentials are present; mocking
@@ -141,6 +142,40 @@ describe('NotificationService email dispatch', () => {
     expect(result.success).toBe(true);
     expect(result.delivered).toBe(false);
     expect(result.transport).toBe('log');
+  });
+
+  it('delivers the largest message the request edge accepts, even when every character expands', async () => {
+    // The defect this pins: the transport bound is measured on the *generated*
+    // HTML, but the request edge used to cap only the raw JSON body (10 MiB).
+    // Escaping expands one character to as many as six, so the API accepted a
+    // ~2 MiB body of quotes, the generated HTML crossed the transport bound,
+    // and the recipient never got the e-mail. The schema now caps raw content
+    // (MAX_NOTIFICATION_CONTENT_LENGTH) so its worst-case expansion stays under
+    // the transport bound. This drives the real transport, not a mock, so the
+    // two limits are exercised against each other.
+    const { deliverEmail: realDeliverEmail, resetEmailTransport } =
+      await vi.importActual<typeof import('../email-transport')>('../email-transport');
+    vi.mocked(deliverEmailMock).mockImplementation(realDeliverEmail);
+    resetEmailTransport();
+
+    const message = '"'.repeat(MAX_NOTIFICATION_CONTENT_LENGTH);
+    expect(message.length).toBe(MAX_NOTIFICATION_CONTENT_LENGTH);
+
+    const result = await notificationService.send({
+      userId: 'user-1',
+      channel: 'EMAIL',
+      type: 'GENERAL',
+      recipientEmail: 'wali@cipansor.or.id',
+      title: 'Pengumuman',
+      message,
+    });
+
+    // The transport is unconfigured here, so `log`/`delivered:false` is the
+    // expected outcome — the point is that it was reached at all. Before the
+    // schema cap this rejected at the transport with `over the … limit`.
+    expect(result.error).toBeUndefined();
+    expect(result.transport).toBe('log');
+    expect(result.delivered).toBe(false);
   });
 
   it('still sends when the recipient has no user account', async () => {

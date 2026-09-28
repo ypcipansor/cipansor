@@ -32,21 +32,27 @@ const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
 /**
- * Largest outbound e-mail body this module will process, in UTF-16 code units.
+ * Largest derived e-mail body this module will process, in UTF-16 code units.
  *
- * The scanners that strip hidden markup are linear, but the body is built from
- * caller-supplied content, so its length is not something this module controls.
- * A hard cap keeps a pathological oversized string from costing an unbounded
- * amount of work — the bound `js/loop-bound-injection` (code scanning alert 54)
- * asks for.
+ * A backstop on what reaches the transport, **not** an equality with the API's
+ * request limit. `sendEmail` HTML-escapes a notification's body and wraps it in
+ * a template before calling here, and escaping turns one character into as many
+ * as six (`"` → `&quot;`, `'` → `&#039;`); the generated HTML is therefore
+ * neither the same string nor the same size as the request that produced it,
+ * and the two limits do not even share a unit (the request limit counts bytes
+ * of raw JSON, this counts code units of generated HTML). The request edge caps
+ * raw content so its worst-case expansion stays under this bound
+ * (`MAX_NOTIFICATION_CONTENT_LENGTH` in `notifications.schema.ts`), which is
+ * what keeps every accepted body deliverable.
  *
- * It sits at the API's own request-body ceiling (`express.json({ limit: '10mb' })`
- * in `app.ts`), so nothing the API accepts is refused here, and it is orders of
- * magnitude above any real e-mail. A body past it is refused, never silently
- * truncated: a truncated HTML part would no longer match the plain-text part
- * derived from it (see `htmlToText`).
+ * What is left for this bound to stop is the pathological body an internal
+ * caller could still hand over: the scanners that strip hidden markup are
+ * linear, but a caller-supplied string is not something this module controls —
+ * the bound `js/loop-bound-injection` (code scanning alert 54) asks for. A body
+ * past it is refused, never silently truncated: a truncated HTML part would no
+ * longer match the plain-text part derived from it (see `htmlToText`).
  */
-const MAX_EMAIL_BODY_LENGTH = 10 * 1024 * 1024;
+export const MAX_EMAIL_BODY_LENGTH = 10 * 1024 * 1024;
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
