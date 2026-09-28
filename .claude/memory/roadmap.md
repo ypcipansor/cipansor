@@ -48,6 +48,22 @@ items before 2026-09-25 is in the history of this file and of
        Aduan & Aspirasi. The deed arrived the same day
        (`skills/tata-kelola-yayasan/anggaran-dasar.md`): quorum 2/3 then
        >1/2, no Plh, the Pengawas acts as its chair plus one member.
+    9. **Sign-in policy** (`decisions/autentikasi-2fa-dan-sandi.md`,
+       2026-09-28), each its own PR, in this order:
+       - 2FA codes that work (recovery codes, typing tolerance, the admin's
+         "turn off 2FA" reachable from the users list) and the 2FA screens in
+         Indonesian — the prerequisite for everything below;
+       - no fallback to the legacy `users.role` on refresh and 2FA, and
+         removing a role ends the sessions it granted;
+       - 2FA mandatory for the unit heads too (the four kepala sekolah and
+         the Pimpinan Pesantren), through `requiresSecondFactor` — any active
+         assignment counts, as it does today;
+       - the post-login invitation for staff and wali ("Nanti saja", no
+         limit; santri not invited);
+       - passwords: a must-change flag (first login, set by someone else,
+         marked compromised, and every account once at that release), length
+         8 with 2FA / 15 without, a local list of common and leaked
+         passwords, no composition rules.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

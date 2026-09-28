@@ -329,7 +329,7 @@ export default function UsersPage() {
                   className="text-amber-600"
                 >
                   <ShieldAlert className="mr-2 h-4 w-4" />
-                  Deactivate 2FA
+                  Matikan verifikasi dua langkah
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
@@ -443,9 +443,12 @@ export default function UsersPage() {
         >
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Admin Verification</DialogTitle>
+              <DialogTitle>Matikan Verifikasi Dua Langkah Pengguna</DialogTitle>
               <DialogDescription>
-                Enter YOUR OTP code to confirm deactivating 2FA for this user.
+                Untuk pengguna yang kehilangan ponsel dan kode pemulihannya.
+                Masukkan kode dari aplikasi autentikator <strong>Anda</strong>{" "}
+                untuk mengonfirmasi. Pengguna itu lalu masuk dengan kata sandi
+                saja, dan bisa mengaktifkannya lagi di Profil.
               </DialogDescription>
             </DialogHeader>
             <TwoFactorVerify
@@ -455,7 +458,7 @@ export default function UsersPage() {
                     token,
                     userId: deactivate2FAUserId!,
                   });
-                  toast.success("User 2FA Disabled");
+                  toast.success("Verifikasi dua langkah pengguna dimatikan");
                   setDeactivate2FAUserId(null);
                   // Refresh data
                   window.location.reload();
@@ -463,6 +466,7 @@ export default function UsersPage() {
                   // Error handled in store/interceptor or verify component props
                 }
               }}
+              submitLabel="Matikan"
             />
           </DialogContent>
         </Dialog>

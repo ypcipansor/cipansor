@@ -57,7 +57,7 @@ export async function loginAsUser(page: Page, user: AuthUser) {
     const secret =
       process.env.E2E_2FA_SECRET || "NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE";
     await otpInput.fill(await generate({ secret }));
-    await page.getByRole("button", { name: /verify/i }).click();
+    await page.getByRole("button", { name: "Verifikasi", exact: true }).click();
   }
 
   // Wait for redirect to dashboard
