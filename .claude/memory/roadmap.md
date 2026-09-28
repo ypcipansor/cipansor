@@ -25,15 +25,13 @@ items before 2026-09-25 is in the history of this file and of
        2026-09-28): one official record per unit in the portal, read by the
        EMIS and Dapodik exports and the SKHUN — and the readiness
        self-assessment stops overwriting it, the SKHUN stops printing "B" for
-       a unit with none (#597, open); then the public site (Legalitas and
-       the unit's section, three languages, hidden once expired — the next
-       PR, stacked on #597);
-    5. the permit rule's three parameters (`pemutus-izin-santri.md`): an
-       optional attachment (ask the user first how long it is kept —
-       researched 2026-09-28; store it the way `utils/identity-document-store.ts`
-       stores KTP scans, readable only through an endpoint that checks who asks), the
-       koordinator asrama for going home or staying overnight, the wali's
-       approval for staff-filed leave off the pondok (schema change);
+       a unit with none (#597); then the public site (Legalitas and the
+       unit's section, three languages, hidden once expired — #598, open);
+    5. the permit rule's three parameters (`pemutus-izin-santri.md`): the
+       doctor's note (retention and access answered 2026-09-28 — in
+       progress), then the koordinator asrama for going home or staying
+       overnight, then the wali's approval for staff-filed leave off the
+       pondok (schema change);
     6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
        the koordinator's placement in their own asrama;
     7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid

@@ -1,12 +1,14 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   PERMIT_DECIDER_ROLE_CODES,
+  PERMIT_NOTE_MAX_BYTES,
   PERMIT_REQUESTER_ROLE_CODES,
   PERMIT_STAFF_ROLE_CODES,
 } from '@cipansor/shared';
 import * as controller from './permits.controller';
 import { authenticate, authorize } from '../../middleware/auth';
-import { validate, validateQuery } from '../../middleware/error';
+import { Errors, validate, validateQuery } from '../../middleware/error';
 import {
   createPermitSchema,
   listPermitsQuerySchema,
@@ -166,6 +168,20 @@ router.patch('/:id', requesters, validate(updatePermitSchema), controller.update
  *       200: { description: Return recorded }
  *       409: { description: Never departed, or already back }
  */
+// A doctor's note (decisions/pemutus-izin-santri.md): anyone who may file the
+// permit attaches it; the service decides who opens it. Held in memory until
+// it is stored in the row — never written under public/uploads.
+const doctorNoteUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PERMIT_NOTE_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.mimetype)) cb(null, true);
+    else cb(Errors.badRequest('Surat dokter harus foto (JPG, PNG, WebP) atau PDF'));
+  },
+}).single('file');
+router.post('/:id/doctor-note', requesters, doctorNoteUpload, controller.attachDoctorNote);
+router.get('/:id/doctor-note', requesters, controller.openDoctorNote);
+
 router.post('/:id/approve', deciders, controller.approve);
 router.post('/:id/reject', deciders, validate(rejectPermitSchema), controller.reject);
 router.post('/:id/cancel', requesters, controller.cancel);

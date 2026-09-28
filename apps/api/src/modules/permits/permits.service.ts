@@ -14,6 +14,7 @@ import {
   PRINCIPAL_ROLE_CODES,
   type CreatePermitInput,
   type PermitDecision,
+  type PermitDoctorNote,
   type UpdatePermitInput,
 } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
@@ -27,7 +28,7 @@ import {
 } from '@/utils/student-scope';
 import { createNotification } from '../notifications/notifications.service';
 import type { ListPermitsQueryParsed } from './permits.schema';
-import { decisionFor, whoDecides, type Guardianship } from './permits.decider';
+import { decisionFor, mayOpenNote, whoDecides, type Guardianship } from './permits.decider';
 import { ACTIVE_ROOM_ASSIGNMENT, activeMusyrifAssignment, coversRoom } from '@/modules/dormitories';
 
 /**
@@ -81,18 +82,31 @@ const PERMIT_SELECT = {
     },
   },
   approvedBy: { select: { id: true, name: true } },
+  // The note's facts; its content is read only by `openDoctorNote`.
+  doctorNote: {
+    select: {
+      updatedAt: true,
+      retainUntil: true,
+      erasedAt: true,
+      firstViewedAt: true,
+      firstViewedBy: { select: { id: true, name: true } },
+    },
+  },
 } satisfies Prisma.PermitSelect;
 
-type PermitRow = Prisma.PermitGetPayload<{ select: typeof PERMIT_SELECT }>;
+export type PermitRow = Prisma.PermitGetPayload<{ select: typeof PERMIT_SELECT }>;
 
-/** A permit as the API sends it: the row, and who decides it. */
-export type PermitView = PermitRow & { decision: PermitDecision };
+/** A permit as the API sends it: the row, who decides it, and its doctor's note. */
+export type PermitView = Omit<PermitRow, 'doctorNote'> & {
+  decision: PermitDecision;
+  doctorNote: PermitDoctorNote | null;
+};
 
 const scopeOf = (actor: ScopeActor): Prisma.PermitWhereInput =>
   onlyScopedStudents(studentScope(actor));
 
 /** Not Found rather than Forbidden outside the caller's scope: the id is not confirmed. */
-async function findInScope(id: string, actor: ScopeActor): Promise<PermitRow> {
+export async function findInScope(id: string, actor: ScopeActor): Promise<PermitRow> {
   const permit = await prisma.permit.findFirst({
     where: { AND: [{ id }, scopeOf(actor)] },
     select: PERMIT_SELECT,
@@ -109,7 +123,7 @@ async function findInScope(id: string, actor: ScopeActor): Promise<PermitRow> {
  * the musyrif assigned to their asrama. A musyrif assigned to the whole asrama
  * (`roomId` null) covers every kamar in it.
  */
-async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guardianship>> {
+export async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guardianship>> {
   const ids = [...new Set(studentIds)];
   if (!ids.length) return new Map();
   const now = new Date();
@@ -161,7 +175,7 @@ async function loadGuardianship(studentIds: string[]): Promise<Map<string, Guard
 }
 
 /** A learner the loader did not return has no mentor on record. */
-const guardianshipOf = (g: Map<string, Guardianship>, row: PermitRow): Guardianship =>
+export const guardianshipOf = (g: Map<string, Guardianship>, row: PermitRow): Guardianship =>
   g.get(row.studentId) ?? {
     unitId: row.student.unit.id,
     unitType: UnitType.OTHER,
@@ -172,7 +186,18 @@ const guardianshipOf = (g: Map<string, Guardianship>, row: PermitRow): Guardians
 function viewOf(row: PermitRow, g: Guardianship, actor: ScopeActor): PermitView {
   // `capacity` is the service's own business; the wire gets the decision.
   const { capacity: _capacity, ...decision } = decisionFor(row, g, actor);
-  return { ...row, decision };
+  const { doctorNote: note, ...rest } = row;
+  const doctorNote: PermitDoctorNote | null = note
+    ? {
+        attachedAt: note.updatedAt.toISOString(),
+        retainUntil: note.retainUntil.toISOString().slice(0, 10),
+        erasedAt: note.erasedAt?.toISOString() ?? null,
+        firstViewedBy: note.firstViewedBy,
+        firstViewedAt: note.firstViewedAt?.toISOString() ?? null,
+        canOpen: !note.erasedAt && mayOpenNote(row, g, actor),
+      }
+    : null;
+  return { ...rest, decision, doctorNote };
 }
 
 async function withDecisions(rows: PermitRow[], actor: ScopeActor): Promise<PermitView[]> {
@@ -180,7 +205,7 @@ async function withDecisions(rows: PermitRow[], actor: ScopeActor): Promise<Perm
   return rows.map((row) => viewOf(row, guardianshipOf(g, row), actor));
 }
 
-const withDecision = async (row: PermitRow, actor: ScopeActor) =>
+export const withDecision = async (row: PermitRow, actor: ScopeActor) =>
   (await withDecisions([row], actor))[0];
 
 /**
@@ -559,7 +584,10 @@ export function daysCovered(start: Date, end: Date): Date[] {
  * and creating the missing ones. A learner with no active class has nothing
  * to write.
  */
-async function recordAttendance(permit: PermitRow, recordedById: string) {
+async function recordAttendance(
+  permit: Pick<PermitRow, 'id' | 'code' | 'studentId' | 'type' | 'startDate' | 'endDate'>,
+  recordedById: string
+) {
   const enrollment = await prisma.classEnrollment.findFirst({
     where: { studentId: permit.studentId, status: 'active' },
     select: { classId: true },

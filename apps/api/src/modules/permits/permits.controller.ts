@@ -3,6 +3,7 @@ import { asyncHandler } from '@/middleware/error';
 import { requireUser } from '@/middleware/auth';
 import { ApiResponse } from '@/utils/response';
 import * as permitService from './permits.service';
+import * as doctorNoteService from './permit-doctor-note.service';
 import type { ListPermitsQueryParsed } from './permits.schema';
 
 // Bodies and queries arrive already parsed by validate()/validateQuery() in
@@ -68,4 +69,22 @@ export const markReturned = asyncHandler(async (req: Request, res: Response) => 
     requireUser(req)
   );
   res.json(ApiResponse.success(permit, 'Kepulangan dicatat'));
+});
+
+export const attachDoctorNote = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await doctorNoteService.attachDoctorNote(
+    req.params.id,
+    req.file,
+    requireUser(req)
+  );
+  res.json(ApiResponse.success(permit, 'Surat dokter dilampirkan'));
+});
+
+/** The note's file; never cached — it is a child's health data. */
+export const openDoctorNote = asyncHandler(async (req: Request, res: Response) => {
+  const note = await doctorNoteService.openDoctorNote(req.params.id, requireUser(req));
+  res.setHeader('Content-Type', note.mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${note.fileName}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(note.content);
 });

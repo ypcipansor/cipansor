@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { PERMIT_HEAD_AFTER_DAYS } from '@cipansor/shared';
-import { calendarDays, headCapacity, routeOf, type Guardianship } from '../permits.decider';
+import {
+  calendarDays,
+  headCapacity,
+  mayOpenNote,
+  routeOf,
+  type Guardianship,
+} from '../permits.decider';
 
 const wib = (local: string) => new Date(`${local}+07:00`);
 
@@ -62,5 +68,40 @@ describe('headCapacity', () => {
     for (const roleCode of ['SDIT_GURU', 'SDIT_ADMIN', 'SUPER_ADMIN', 'YAYASAN_KETUA']) {
       expect(headCapacity({ sub: 'x', roleCode, unitId: 'unit-sd' }, DAY_PUPIL)).toBeNull();
     }
+  });
+});
+
+describe('mayOpenNote — who opens a doctor’s note (decided 2026-09-28)', () => {
+  const BOARDER: Guardianship = {
+    unitId: 'unit-smp',
+    unitType: 'SMP_IT',
+    boarder: true,
+    mentors: [{ id: 'u-musyrif', name: 'Musyrif' }],
+  };
+  const open = (
+    actor: { sub: string; roleCode: string; unitId: string | null },
+    approvedBy?: string
+  ) => mayOpenNote({ approvedBy: approvedBy ? { id: approvedBy } : null }, BOARDER, actor);
+
+  it('the mentor who decides it, the one who did, the heads over the santri, and the wali', () => {
+    expect(open({ sub: 'u-musyrif', roleCode: 'MUSYRIF', unitId: null })).toBe(true);
+    expect(open({ sub: 'u-lama', roleCode: 'MUSYRIF', unitId: null }, 'u-lama')).toBe(true);
+    expect(open({ sub: 'u-kepala', roleCode: 'SMPIT_KEPALA_SEKOLAH', unitId: 'unit-smp' })).toBe(
+      true
+    );
+    // A boarder: the Pimpinan Pesantren is a head over them too.
+    expect(open({ sub: 'u-kiai', roleCode: 'PESANTREN_PENGASUH', unitId: 'unit-pes' })).toBe(true);
+    // Scope already limited the wali to their own child's permit.
+    expect(open({ sub: 'u-wali', roleCode: 'SMPIT_ORANG_TUA', unitId: 'unit-smp' })).toBe(true);
+  });
+
+  it('nobody else: another musyrif, the TU, the nurse, another unit’s head, the Super Admin', () => {
+    expect(open({ sub: 'u-other', roleCode: 'MUSYRIF', unitId: null })).toBe(false);
+    expect(open({ sub: 'u-tu', roleCode: 'SMPIT_TATA_USAHA', unitId: 'unit-smp' })).toBe(false);
+    expect(open({ sub: 'u-nurse', roleCode: 'PERAWAT', unitId: null })).toBe(false);
+    expect(open({ sub: 'u-kepala-sd', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-sd' })).toBe(
+      false
+    );
+    expect(open({ sub: 'u-super', roleCode: 'SUPER_ADMIN', unitId: null })).toBe(false);
   });
 });

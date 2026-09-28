@@ -379,6 +379,8 @@ model User {
   attendanceFollowUps               AttendanceFollowUp[]        @relation("AttendanceFollowUpBy")
   unitAccreditationsRecorded        UnitAccreditation[]         @relation("UnitAccreditationRecorder")
   approvedPermits                   Permit[]                    @relation("PermitApprover")
+  permitNotesUploaded               PermitAttachment[]          @relation("PermitAttachmentUploader")
+  permitNotesFirstViewed            PermitAttachment[]          @relation("PermitAttachmentViewer")
   reportedViolations                Violation[]                 @relation("ViolationReporter")
   givenRewards                      Reward[]                    @relation("RewardGiver")
   approvedLeaves                    Leave[]                     @relation("LeaveApprover")
@@ -1643,12 +1645,44 @@ model Permit {
   // Relations
   student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
   approvedBy User?   @relation("PermitApprover", fields: [approvedById], references: [id])
+  doctorNote PermitAttachment?
 
   @@index([studentId])
   @@index([status])
   @@index([startDate, endDate])
   @@index([code])
   @@map("permits")
+}
+
+/// A doctor's note attached to a permit (decided 2026-09-28,
+/// decisions/pemutus-izin-santri.md). A child's health data: opened only by
+/// whoever decides the permit, the santri's wali and the unit head, each
+/// opening audited; the file is erased when the academic year of the leave
+/// ends (`retainUntil`), and what remains is that one was attached, its
+/// SHA-256, and who saw it first.
+model PermitAttachment {
+  id              String    @id @default(uuid())
+  permitId        String    @unique @map("permit_id")
+  mimeType        String    @map("mime_type")
+  sizeBytes       Int       @map("size_bytes")
+  sha256          String
+  /// The file itself; null once erased.
+  content         Bytes?
+  /// The last day of the academic year the leave starts in.
+  retainUntil     DateTime  @map("retain_until") @db.Date
+  erasedAt        DateTime? @map("erased_at")
+  uploadedById    String    @map("uploaded_by_id")
+  firstViewedById String?   @map("first_viewed_by_id")
+  firstViewedAt   DateTime? @map("first_viewed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  permit        Permit @relation(fields: [permitId], references: [id], onDelete: Cascade)
+  uploadedBy    User   @relation("PermitAttachmentUploader", fields: [uploadedById], references: [id])
+  firstViewedBy User?  @relation("PermitAttachmentViewer", fields: [firstViewedById], references: [id])
+
+  @@index([retainUntil])
+  @@map("permit_attachments")
 }
 
 /// Violation - Pelanggaran santri

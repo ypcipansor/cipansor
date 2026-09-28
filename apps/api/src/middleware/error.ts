@@ -109,6 +109,28 @@ export function errorHandler(error: Error, req: Request, res: Response, next: Ne
     });
   }
 
+  /**
+   * Unggahan yang ditolak multer: berkas melebihi batas, terlalu banyak
+   * berkas, atau kolom yang tidak dikenal. `middleware/upload.ts` menangkapnya
+   * sendiri, tetapi rute yang memasang multer langsung — sertifikat
+   * akreditasi, surat dokter izin — meneruskannya ke sini, dan tanpa cabang ini
+   * sebuah PDF 6 MB dijawab 500 "Internal server error": kesalahan pengirim
+   * terbaca sebagai kerusakan server. Dikenali lewat `name`, tanpa mengimpor
+   * multer.
+   */
+  if (error.name === 'MulterError') {
+    const tooLarge = (error as { code?: string }).code === 'LIMIT_FILE_SIZE';
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: ErrorCode.BAD_REQUEST,
+        message: tooLarge
+          ? 'Berkas melebihi ukuran yang diizinkan'
+          : 'Unggahan tidak dapat diterima',
+      },
+    });
+  }
+
   // Handle JWT errors
   if (error.name === 'JsonWebTokenError') {
     return res.status(401).json({

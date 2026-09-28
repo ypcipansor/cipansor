@@ -31,7 +31,7 @@ the mechanical cases.
 - [chatbot-retrieval-settled](decisions/chatbot-retrieval-settled.md) — the whole corpus goes into every prompt; what was rejected; when to revisit
 - [route-naming](decisions/route-naming.md) — PPDB/PSB → SPMB with permanent redirects; pesantren terms are never translated
 - [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — santri on every screen (murid only in state formats), spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law + what the yayasan offers, target module names
-- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed
+- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed, kept to the end of the academic year, opened by the decider, the wali and the unit head (2026-09-28)
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
 - [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
@@ -45,7 +45,7 @@ the mechanical cases.
 - [student-status-case-mismatch](lessons/student-status-case-mismatch.md) — `'active'` vs `'ACTIVE'`: 43 queries returned zero; one vocabulary + CHECK + scanner
 - [prisma-include-leaks-pii](lessons/prisma-include-leaks-pii.md) — `include: { student }` sends 69 columns of a child's data; always `select`
 - [rbac-nav-contract](lessons/rbac-nav-contract.md) — `navigation.ts` and `rbac.ts` are one contract; the three directions tested, and how they go blind
-- [api-integration-traps](lessons/api-integration-traps.md) — empty permission matrix, Express 5 `req.query`, `/:id` shadowing, unmounted paths
+- [api-integration-traps](lessons/api-integration-traps.md) — empty permission matrix, Express 5 `req.query`, `/:id` shadowing, unmounted paths; a file over multer's limit answering 500
 - [auth-session-traps](lessons/auth-session-traps.md) — refresh-token stampede, pre-rehydration redirects, the 4 KB cookie
 - [stale-temporal-data](lessons/stale-temporal-data.md) — derive dates from now; `isActive` is not a schedule
 - [migration-history-baselined](lessons/migration-history-baselined.md) — `0_init`; `migrate diff` blind to triggers; CI's `db push`; wrap data migrations in BEGIN/COMMIT

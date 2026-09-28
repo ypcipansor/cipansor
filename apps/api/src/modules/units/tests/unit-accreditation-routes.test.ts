@@ -111,6 +111,17 @@ describe('POST /units/:id/accreditations', () => {
     expect(recordAccreditation).not.toHaveBeenCalled();
   });
 
+  it('refuses a PDF over 5 MB with a 400 — not a 500', async () => {
+    const big = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(5 * 1024 * 1024 + 1)]);
+    const res = await post('SMPIT_ADMIN').attach('certificate', big, {
+      filename: 'sertifikat.pdf',
+      contentType: 'application/pdf',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe('Berkas melebihi ukuran yang diizinkan');
+    expect(recordAccreditation).not.toHaveBeenCalled();
+  });
+
   it('refuses an end date before the decree: 400', async () => {
     const res = await request(app)
       .post(`/units/${UNIT}/accreditations`)

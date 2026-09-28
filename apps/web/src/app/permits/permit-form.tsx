@@ -68,6 +68,7 @@ export function PermitForm({
   submitLabel,
   isSubmitting,
   onSubmit,
+  after,
 }: {
   defaultValues?: Partial<PermitFormValues>;
   student?: PickedStudent | null;
@@ -77,6 +78,8 @@ export function PermitForm({
   submitLabel: string;
   isSubmitting: boolean;
   onSubmit: (values: PermitFormValues) => void | Promise<void>;
+  /** More fields at the end of the details card — the doctor's note on a new permit. */
+  after?: React.ReactNode;
 }) {
   const [search, setSearch] = useState("");
   const [picked, setPicked] = useState<PickedStudent | null>(student ?? null);
@@ -283,6 +286,7 @@ export function PermitForm({
                   </FormItem>
                 )}
               />
+              {after}
             </CardContent>
           </Card>
         </div>

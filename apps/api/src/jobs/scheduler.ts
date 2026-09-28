@@ -16,6 +16,7 @@ import { runAttendanceFollowUpReminder } from './attendance-follow-up.job';
 import { runAttendanceRegisterReminder } from './attendance-register-reminder.job';
 import { runAttendancePatternFlags } from './attendance-pattern.job';
 import { runAccreditationReminder } from './accreditation-reminder.job';
+import { runPermitNoteErasure } from './permit-note-erasure.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -382,6 +383,29 @@ export function initializeScheduler(): void {
   scheduledTasks.push(accreditationReminderTask);
   logger.info('[Scheduler] Accreditation reminder scheduled daily at 07:00 WIB');
 
+  /**
+   * Penghapusan surat dokter izin (decisions/pemutus-izin-santri.md,
+   * diputuskan 2026-09-28).
+   *
+   * Pukul 01:15 WIB, sebelum cadangan malam: berkas surat dokter yang tahun
+   * ajarannya sudah berakhir dihapus; faktanya tetap di izin.
+   */
+  const permitNoteErasureTask = cron.schedule(
+    '15 1 * * *',
+    async () => {
+      try {
+        await runPermitNoteErasure();
+      } catch (error) {
+        logger.error('[Scheduler] Permit note erasure failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(permitNoteErasureTask);
+  logger.info("[Scheduler] Doctor's note erasure scheduled daily at 01:15 WIB");
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -413,6 +437,7 @@ export async function runJob(
     | 'attendance-register-reminder'
     | 'attendance-pattern'
     | 'accreditation-reminder'
+    | 'permit-note-erasure'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -458,6 +483,9 @@ export async function runJob(
       break;
     case 'accreditation-reminder':
       await runAccreditationReminder();
+      break;
+    case 'permit-note-erasure':
+      await runPermitNoteErasure();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);
