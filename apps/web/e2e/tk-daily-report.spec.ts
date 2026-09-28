@@ -194,13 +194,20 @@ test.describe("guru menulis, wali membaca", () => {
     await expect(card.getByText(ACTIVITY)).toBeVisible({ timeout: 15000 });
     const photo = card.getByRole("img", { name: "Foto kegiatan" });
     await expect(photo).toBeVisible();
-    // Stored uploads are served only with an access token, which an <img>
-    // cannot send as a header: the page puts the wali's own in the address,
-    // and the file comes back for it. (Whether it paints here depends on the
-    // stack: the API answers same-origin only, and this one runs the web and
-    // the API on two ports.)
+    // Stored uploads are served only with a credential, which an <img> cannot
+    // send as a header: the page resolves the reference through `/upload/sas`
+    // and puts the returned single-file token in the address. That token is
+    // scoped to this path and this actor — deliberately NOT the wali's session
+    // token, which must never travel in a URL. Resolution is async, so poll for
+    // it rather than reading the attribute once. (Whether the tile paints here
+    // depends on the stack: the API answers same-origin only, and this one runs
+    // the web and the API on two ports.)
+    await expect
+      .poll(async () => (await photo.getAttribute("src")) ?? "", {
+        timeout: 15_000,
+      })
+      .toContain("token=");
     const src = (await photo.getAttribute("src")) ?? "";
-    expect(src).toContain(`token=${encodeURIComponent(wali.accessToken)}`);
     const file = await fetch(src);
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toMatch(/^image\/png/);

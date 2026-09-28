@@ -77,15 +77,11 @@ test.describe("Daily report detail", () => {
     // fix, so once uploads land in the private container the tile 403s. It must
     // go through the same resolver as every other private viewer.
     const template = await apiRequest<{
-      data: Array<{
-        studentId: string;
-        unitId: string;
-        academicYearId: string;
-      }>;
+      data: Array<{ studentId: string }>;
     }>(session, "GET", "/daily-report?limit=1");
     const base = template.data[0];
     if (!base) {
-      test.skip(true, "no seeded daily report to derive student/unit/year");
+      test.skip(true, "no seeded daily report to derive a student");
       return;
     }
 
@@ -115,9 +111,7 @@ test.describe("Daily report detail", () => {
       "/daily-report",
       {
         studentId: base.studentId,
-        unitId: base.unitId,
-        academicYearId: base.academicYearId,
-        reportDate: `${reportDate}T00:00:00.000Z`,
+        reportDate,
         activitiesSummary: "E2E tk photo resolution",
         photos: [{ url: photoUrl }],
       },
@@ -174,15 +168,11 @@ test.describe("Daily report detail", () => {
 
   test("create → attach photo → remove photo → delete (real stack)", async () => {
     const template = await apiRequest<{
-      data: Array<{
-        studentId: string;
-        unitId: string;
-        academicYearId: string;
-      }>;
+      data: Array<{ studentId: string }>;
     }>(session, "GET", "/daily-report?limit=1");
     const base = template.data[0];
     if (!base) {
-      test.skip(true, "no seeded daily report to derive student/unit/year");
+      test.skip(true, "no seeded daily report to derive a student");
       return;
     }
 
@@ -214,9 +204,7 @@ test.describe("Daily report detail", () => {
       data: { id: string; photos: Array<{ photoUrl: string }> };
     }>(session, "POST", "/daily-report", {
       studentId: base.studentId,
-      unitId: base.unitId,
-      academicYearId: base.academicYearId,
-      reportDate: `${reportDate}T00:00:00.000Z`,
+      reportDate,
       activitiesSummary: "E2E daily report",
       photos: [{ url: photoUrl }],
     });
