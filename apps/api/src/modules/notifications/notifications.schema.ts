@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { partialUpdateSchema } from '@/lib/partial';
-import { emailHtmlWithinLimit } from './email-transport';
+import { notificationMessageHtmlWithinLimit } from './email-transport';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -35,28 +35,29 @@ export const RecipientTypeEnum = z.enum(['ALL', 'UNIT', 'CLASS', 'ROLE', 'INDIVI
 export const MAX_NOTIFICATION_MESSAGE_CHARS = 500_000;
 
 /**
- * Reject a message whose *rendered* HTML would exceed the converter's cap when
- * the caller asked for e-mail.
+ * Reject a message whose escaped HTML would exceed the converter's cap when
+ * the caller asked for e-mail on the general notification path.
  *
  * External delivery is best-effort and must never fail the caller, so without
  * this the in-app row would be persisted and the request answered with success
- * while the e-mail was silently dropped by `htmlToText`. The check asks about
- * the escaped size, not the raw length: `escapeHtml` can grow one character to
- * six, so the two differ by up to six times.
+ * while the e-mail was silently dropped by `htmlToText`. The check uses the
+ * exact HTML `sendEmail` builds for a notification — `notificationMessageHtml`
+ * — not a worst-case expansion: a message of ordinary text escapes to roughly
+ * its own length, and rejecting it would refuse a mail that was never at risk.
  */
 function emailMessageSizeIssue(
   value: { message: string; channels: string[] },
   ctx: z.RefinementCtx
 ): void {
   if (!value.channels.includes('EMAIL')) return;
-  if (emailHtmlWithinLimit(value.message.length)) return;
+  if (notificationMessageHtmlWithinLimit(value.message)) return;
   ctx.addIssue({
     code: 'custom',
     path: ['message'],
     message:
-      `Pesan terlalu panjang untuk dikirim lewat email: setelah di-escape dan dibungkus ` +
-      `templat, HTML-nya bisa melebihi batas ukuran yang dapat diproses sistem. ` +
-      `Kirim sebagai IN_APP saja atau perpendek pesannya.`,
+      `Pesan terlalu panjang untuk dikirim lewat email: HTML-nya melebihi batas ` +
+      `ukuran yang dapat diproses sistem. Kirim sebagai IN_APP saja atau ` +
+      `perpendek pesannya.`,
   });
 }
 
@@ -83,12 +84,15 @@ const notificationObjectSchema = z.object({
 
 export const createNotificationSchema = notificationObjectSchema.superRefine(emailMessageSizeIssue);
 
+// The bulk path writes rows through `createMany` and dispatches nothing, so the
+// e-mail size guard does not apply to it; the raw length cap on the base object
+// still does. Adding the refinement here would refuse a bulk request over a
+// send it never performs.
 export const createBulkNotificationSchema = notificationObjectSchema
   .safeExtend({
     userIds: z.array(z.string().uuid()).min(1),
   })
-  .omit({ userId: true, recipientType: true, recipientIds: true })
-  .superRefine(emailMessageSizeIssue);
+  .omit({ userId: true, recipientType: true, recipientIds: true });
 
 export const queryNotificationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

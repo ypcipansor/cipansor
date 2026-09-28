@@ -15,17 +15,23 @@ vi.mock('twilio', () => ({
 
 // Mocked as a module rather than spied on the namespace: the service imports
 // `deliverEmail` as a binding, so a namespace spy would not be the function it
-// calls.
-vi.mock('./email-transport', () => ({
-  deliverEmail: vi.fn(),
-  describeEmailTransport: vi.fn(() => ({
-    kind: 'gmail_api',
-    configured: true,
-    from: 'Yayasan Pesantren Cipansor <noreply@cipansor.or.id>',
-    replyTo: 'halo@cipansor.or.id',
-  })),
-  resetEmailTransport: vi.fn(),
-}));
+// calls. The escaping helpers are kept real — the templates' output is what the
+// tests assert, and a stubbed escaper would make them assert nothing.
+vi.mock('./email-transport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./email-transport')>();
+  return {
+    escapeHtml: actual.escapeHtml,
+    notificationMessageHtml: actual.notificationMessageHtml,
+    deliverEmail: vi.fn(),
+    describeEmailTransport: vi.fn(() => ({
+      kind: 'gmail_api',
+      configured: true,
+      from: 'Yayasan Pesantren Cipansor <noreply@cipansor.or.id>',
+      replyTo: 'halo@cipansor.or.id',
+    })),
+    resetEmailTransport: vi.fn(),
+  };
+});
 
 const deliverEmailMock = vi.mocked(deliverEmail);
 

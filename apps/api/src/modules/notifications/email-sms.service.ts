@@ -18,6 +18,8 @@ import { whatsAppService } from './whatsapp.service';
 import {
   deliverEmail,
   describeEmailTransport,
+  escapeHtml,
+  notificationMessageHtml,
   resetEmailTransport,
   type EmailTransportKind,
 } from './email-transport';
@@ -33,19 +35,6 @@ import {
   emailSignoff,
   renderEmailLayout,
 } from './email-layout';
-
-/**
- * Escapes unsafe characters for HTML interpolation.
- */
-function escapeHtml(str: string): string {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
 
 // Notification templates
 const templates = {
@@ -483,7 +472,10 @@ class NotificationService {
     // reason, a reminder. As the body of an e-mail it becomes HTML, so it is
     // escaped: unescaped, a `<a href>` in a reason arrived as a live link in a
     // wali's inbox. The templates below escape their own fields.
-    let htmlContent = escapeHtml(options.message).replace(/\n/g, '<br>');
+    //
+    // Built through `notificationMessageHtml` so the size the notification
+    // schema checked is exactly the size this line produces.
+    let htmlContent = notificationMessageHtml(options.message);
 
     // Build email content from template
     if (templateKey && templateData && templates[templateKey]) {

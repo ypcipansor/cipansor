@@ -3,12 +3,13 @@ import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
-  EMAIL_LAYOUT_OVERHEAD_CHARS,
+  escapeHtml,
   htmlToText,
   MAX_EMAIL_HTML_CHARS,
+  notificationMessageHtml,
+  notificationMessageHtmlWithinLimit,
   resetEmailTransport,
 } from '../email-transport';
-import { emailHeading, emailSignoff, renderEmailLayout } from '../email-layout';
 
 vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
@@ -786,20 +787,44 @@ describe('htmlToText', () => {
       // quietly re-truncate the suite.
       expect(MAX_EMAIL_HTML_CHARS).toBeGreaterThan(1_500_000);
     });
+  });
 
-    it('reserves enough overhead for the real e-mail shell, with a maximum-length title', () => {
-      // The schema guard rejects a message when `escapeHtml(message) + overhead`
-      // would exceed the cap. If the overhead were smaller than the actual
-      // shell, a message could pass the guard and still be refused by
-      // `htmlToText` — the silent drop the guard exists to prevent. Measure the
-      // real layout, not a remembered number: the letterhead and footer have
-      // grown before.
-      const shell = renderEmailLayout({
-        title: 'X'.repeat(255), // the title's own max
-        preheader: 'p',
-        bodyHtml: emailHeading('Pemberitahuan') + emailSignoff(),
-      });
-      expect(shell.length).toBeLessThanOrEqual(EMAIL_LAYOUT_OVERHEAD_CHARS);
+  describe('notificationMessageHtml', () => {
+    it('escapes the message and turns newlines into line breaks', () => {
+      expect(notificationMessageHtml('Rina <b>lulus</b> & siap\nTerima kasih')).toBe(
+        'Rina &lt;b&gt;lulus&lt;/b&gt; &amp; siap<br>Terima kasih'
+      );
+    });
+
+    it('matches sendEmail: escape first, then newline replacement', () => {
+      // `sendEmail` used to inline this; it now calls this helper. Pin the exact
+      // shape so the size guard and the sent HTML stay the same string.
+      const message = 'a&b\nc';
+      expect(notificationMessageHtml(message)).toBe(escapeHtml(message).replace(/\n/g, '<br>'));
+    });
+
+    it('accepts a 400,000-char message of ordinary letters (regression)', () => {
+      // A message this size escapes to 400,000 chars — well under the cap. A
+      // worst-case (6x) check once refused it; the guard must measure the HTML
+      // actually sent, not a sixfold projection.
+      const message = 'a'.repeat(400_000);
+      expect(notificationMessageHtmlWithinLimit(message)).toBe(true);
+    });
+
+    it('accepts the worst-case character at the boundary and rejects one past it', () => {
+      // `'` -> `&#039;` (6 chars), so the raw boundary is floor(2,000,000 / 6).
+      const atLimit = Math.floor(MAX_EMAIL_HTML_CHARS / 6);
+      expect(notificationMessageHtmlWithinLimit("'".repeat(atLimit))).toBe(true);
+      expect(notificationMessageHtmlWithinLimit("'".repeat(atLimit + 1))).toBe(false);
+    });
+
+    it('rejects a message whose escaped HTML exceeds the cap', () => {
+      // 400,000 `'` escape to 2,400,000 chars — over the converter's 2,000,000
+      // cap, yet under the 500,000 raw message cap. The gap is why a raw-length
+      // check alone is not enough.
+      const message = "'".repeat(400_000);
+      expect(notificationMessageHtml(message).length).toBeGreaterThan(MAX_EMAIL_HTML_CHARS);
+      expect(notificationMessageHtmlWithinLimit(message)).toBe(false);
     });
   });
 
