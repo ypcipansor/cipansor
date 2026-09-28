@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { config } from '../../config';
+import { config } from '../../../config';
 import {
   describeEmailTransport,
   deliverEmail,
   htmlToText,
   resetEmailTransport,
-} from './email-transport';
+} from '../email-transport';
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -676,23 +676,41 @@ describe('htmlToText', () => {
       // request-supplied `html` field, so `text` need not be a string: a body
       // `{ length: 1e12 }` carries a numeric `.length` that is not a character
       // count, and a scan that iterated it directly would run a trillion times
-      // over a one-character input. Coercing to a primitive and iterating a
-      // capped number keeps the work proportional to the real input.
+      // over a one-character input. A non-string is dropped rather than coerced
+      // (a coercion re-reads the tainted value), so the work is bounded and the
+      // result is empty — there is no intended text to preserve.
       const payload = { length: 1e12, toString: () => 'x' } as unknown as string;
 
       const start = Date.now();
-      expect(htmlToText(payload)).toBe('x');
+      expect(htmlToText(payload)).toBe('');
       expect(Date.now() - start).toBeLessThan(1000);
     });
 
-    it('caps the scan of an over-long input at a fixed ceiling', () => {
-      // The same guard truncates a genuine string far past the 200_000-char
-      // ceiling, so an enormous body cannot force a proportionally longer walk.
-      // Without the cap this returned all 5,000,000 characters.
-      const start = Date.now();
-      const out = htmlToText('a'.repeat(5_000_000));
-      expect(out.length).toBeLessThanOrEqual(200_000);
-      expect(Date.now() - start).toBeLessThan(1000);
+    it('keeps the plain-text tail of a message past the old 200k cap', () => {
+      // The converter feeds the `text/plain` alternative while the HTML part is
+      // passed to the transport untouched. A cap on the HTML walk therefore
+      // dropped the tail of a long-but-valid message from the plain-text
+      // version only. Nothing here is over the *request* limit; it is simply
+      // longer than the removed per-pass cap.
+      const paragraph = 'a'.repeat(30_000);
+      const input = '<p>' + 'x'.repeat(180_000) + '</p><p>' + paragraph + '</p>';
+
+      const out = htmlToText(input);
+      expect(out).toContain(paragraph);
+      expect(out.endsWith(paragraph)).toBe(true);
+    });
+
+    it('does not leak hidden content when its close tag is far into the input', () => {
+      // A cap that cuts a `<style>`/`<head>` in the middle leaves an opener with
+      // no close in the retained prefix, so the element never matches and its
+      // body survives the tag strip. The type guard does not truncate, so the
+      // element is removed whole as on any other input.
+      const input = 'a'.repeat(199_990) + '<style>SECRET</style>';
+
+      const out = htmlToText(input);
+      expect(out).not.toContain('SECRET');
+      expect(out).not.toContain('SEC');
+      expect(out).toBe('a'.repeat(199_990));
     });
 
     it('stays linear when a tag is fragmented across many nested layers', () => {

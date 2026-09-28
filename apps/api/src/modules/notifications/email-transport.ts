@@ -247,6 +247,10 @@ function isHtmlWhitespace(code: number): boolean {
  * constant number of times, so the mask is O(n).
  */
 function quotedAttributeMask(text: string): Uint8Array {
+  // `stripHiddenElements` already guards before calling, but this scan is a
+  // loop bound of its own and carries the guard so it is safe standalone too.
+  if (typeof text !== 'string') text = '';
+
   const quoted = new Uint8Array(text.length);
   let i = 0;
 
@@ -370,28 +374,30 @@ function quotedAttributeMask(text: string): Uint8Array {
  * which is the incomplete-sanitization class this scan exists to close.
  */
 function stripHiddenElements(text: string): string {
-  const MAX_STRIP_HIDDEN_INPUT = 200_000;
-  const normalized = typeof text === 'string' ? text : String(text ?? '');
-  const bounded =
-    normalized.length > MAX_STRIP_HIDDEN_INPUT
-      ? normalized.slice(0, MAX_STRIP_HIDDEN_INPUT)
-      : normalized;
-  const safeText = String(bounded);
-  const safeLength = Math.min(safeText.length, MAX_STRIP_HIDDEN_INPUT);
+  // `text` arrives from a request body, where it may be an object whose
+  // `.length` is not a character count. Dropping anything that is not a string
+  // is what blocks the loop-bound taint for the whole scan — the fallback must
+  // be a constant, since re-coercing the tainted value (`String(text)`) puts
+  // the taint straight back. This is deliberately NOT a length cap: a cap would
+  // cut the tail mid-element, so a `<style>`/`<head>` whose closing tag lands
+  // past the cutoff never matches and its hidden body leaks into the plain-text
+  // part. The whole string is converted; the request-size limit at the
+  // boundary (express `json({ limit: '10mb' })`) is where oversize is refused.
+  if (typeof text !== 'string') text = '';
 
   const patterns = [
     { open: '<!--', close: '-->' },
     { open: '<style', close: '</style>' },
     { open: '<head', close: '</head>' },
   ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
-  const quoted = quotedAttributeMask(safeText);
+  const quoted = quotedAttributeMask(text);
   const isLiveOpen = (start: number) => !quoted[start];
   const out: string[] = [];
   const outPos: number[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
-  for (let i = 0; i < safeLength; i++) {
-    out.push(safeText[i]);
+  for (let i = 0; i < text.length; i++) {
+    out.push(text[i]);
     outPos.push(i);
 
     for (let p = 0; p < patterns.length; p++) {
@@ -446,13 +452,12 @@ function stripHiddenElements(text: string): string {
  * the two passes consistent on the same input.
  */
 function stripTags(text: string, quoteAware = true): string {
-  const MAX_STRIP_TAGS_INPUT = 200_000;
-  // `text` arrives from a request body, so it may be an object whose `.length`
-  // is not a character count. Coerce to a primitive, cap the length, and
-  // iterate a plain number — never the input's own `.length` — the same guard
-  // `stripHiddenElements` applies to its scan.
-  const safeText = String(text ?? '').slice(0, MAX_STRIP_TAGS_INPUT);
-  const safeLength = Math.min(safeText.length, MAX_STRIP_TAGS_INPUT);
+  // Same request-body guard as `stripHiddenElements`: drop anything that is not
+  // a string so the scan cannot be bounded by an object's `.length`. No cap —
+  // truncating here would drop the tail of a legitimate message from the
+  // plain-text part. The recursive call below passes a real string, so the
+  // guard is a no-op on it.
+  if (typeof text !== 'string') text = '';
 
   const out: string[] = [];
   let openStart = -1;
@@ -460,8 +465,8 @@ function stripTags(text: string, quoteAware = true): string {
   let quote = '';
   let canOpenQuote = false;
 
-  for (let i = 0; i < safeLength; i++) {
-    const ch = safeText[i];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
     out.push(ch);
     if (openStart === -1) {
       if (ch === '<') {
@@ -496,7 +501,7 @@ function stripTags(text: string, quoteAware = true): string {
   // `openSource`; re-read that tail once without quote handling. The second
   // pass cannot recurse, so the whole strip stays linear.
   if (quoteAware && openStart !== -1) {
-    return out.slice(0, openStart).join('') + stripTags(safeText.slice(openSource), false);
+    return out.slice(0, openStart).join('') + stripTags(text.slice(openSource), false);
   }
 
   return out.join('');
