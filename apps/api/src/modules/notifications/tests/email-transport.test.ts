@@ -7,6 +7,7 @@ import {
   htmlToText,
   MAX_EMAIL_HTML_CHARS,
   notificationMessageHtml,
+  notificationEmailUnavailableReason,
   notificationMessageHtmlWithinLimit,
   resetEmailTransport,
 } from '../email-transport';
@@ -825,6 +826,18 @@ describe('htmlToText', () => {
       const message = "'".repeat(400_000);
       expect(notificationMessageHtml(message).length).toBeGreaterThan(MAX_EMAIL_HTML_CHARS);
       expect(notificationMessageHtmlWithinLimit(message)).toBe(false);
+    });
+  });
+
+  describe('notificationEmailUnavailableReason', () => {
+    it('returns null for a message that fits, so the caller sends normally', () => {
+      expect(notificationEmailUnavailableReason('Isi pesan yang wajar')).toBeNull();
+    });
+
+    it('names the cap when the escaped HTML would be refused', () => {
+      const reason = notificationEmailUnavailableReason("'".repeat(400_000));
+      expect(reason).toContain(String(MAX_EMAIL_HTML_CHARS));
+      expect(reason).toMatch(/not attempted/i);
     });
   });
 

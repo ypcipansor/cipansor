@@ -16,6 +16,8 @@ import type {
   UpdateTemplateInput,
   QueryTemplateInput,
 } from './notifications.schema';
+import { notificationEmailUnavailableReason } from './email-transport';
+import { logger } from '../../lib/logger';
 import type { NotificationTemplate } from '@cipansor/shared';
 
 // Helper to map shared types to Prisma Enum
@@ -256,7 +258,20 @@ export async function createNotification(data: CreateNotificationInput) {
     try {
       // Respect the system-wide channel policy (super-admin managed).
       const policy = await getChannelPolicy();
-      const allowed = externalChannels.filter((c) => policy[c]);
+      // The HTTP controller validates the message size, but services and jobs
+      // call this function directly; without this the in-app row below would be
+      // the only thing that happens, and the caller would not know. Drop EMAIL
+      // only — an oversized body must not cost the SMS/WhatsApp that still
+      // fits.
+      const emailUnavailable = notificationEmailUnavailableReason(data.message);
+      const allowed = externalChannels.filter((c) => {
+        if (!policy[c]) return false;
+        if (c === 'EMAIL' && emailUnavailable) {
+          logger.warn(`Skipping e-mail for notification "${data.title}": ${emailUnavailable}`);
+          return false;
+        }
+        return true;
+      });
       const user =
         allowed.length > 0
           ? await prisma.user.findUnique({

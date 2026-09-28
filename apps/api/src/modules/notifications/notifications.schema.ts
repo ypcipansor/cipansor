@@ -44,11 +44,16 @@ export const MAX_NOTIFICATION_MESSAGE_CHARS = 500_000;
  * exact HTML `sendEmail` builds for a notification — `notificationMessageHtml`
  * — not a worst-case expansion: a message of ordinary text escapes to roughly
  * its own length, and rejecting it would refuse a mail that was never at risk.
+ *
+ * Only a notification addressed to a user can reach a mailbox: the service
+ * dispatches only when `data.userId` is set, so a request without one has no
+ * e-mail to lose and must not be refused for the sake of it.
  */
 function emailMessageSizeIssue(
-  value: { message: string; channels: string[] },
+  value: { userId?: string; message: string; channels: string[] },
   ctx: z.RefinementCtx
 ): void {
+  if (!value.userId) return;
   if (!value.channels.includes('EMAIL')) return;
   if (notificationMessageHtmlWithinLimit(value.message)) return;
   ctx.addIssue({

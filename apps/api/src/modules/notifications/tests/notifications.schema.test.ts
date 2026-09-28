@@ -15,7 +15,11 @@ import { MAX_EMAIL_HTML_CHARS, notificationMessageHtml } from '../email-transpor
  * or it refuses messages that were never at risk.
  */
 describe('notification message size guard', () => {
-  const base = { title: 'Pemberitahuan', message: 'Isi pesan yang wajar' };
+  const base = {
+    userId: '00000000-0000-0000-0000-000000000000',
+    title: 'Pemberitahuan',
+    message: 'Isi pesan yang wajar',
+  };
 
   it('accepts an ordinary message with EMAIL selected', () => {
     expect(createNotificationSchema.safeParse({ ...base, channels: ['EMAIL'] }).success).toBe(true);
@@ -63,6 +67,25 @@ describe('notification message size guard', () => {
     ).toBe(false);
     expect(
       createNotificationSchema.safeParse({ ...base, message, channels: ['EMAIL'] }).success
+    ).toBe(false);
+  });
+
+  it('does not apply the e-mail size guard without a recipient user', () => {
+    // The service dispatches only when `data.userId` is set, so a system
+    // notification with no recipient has no e-mail to lose and must not be
+    // refused over one.
+    const message = "'".repeat(400_000);
+    const { userId: _userId, ...noRecipient } = base;
+    expect(
+      createNotificationSchema.safeParse({ ...noRecipient, message, channels: ['EMAIL'] }).success
+    ).toBe(true);
+  });
+
+  it('still caps a recipient-less message at the raw length limit', () => {
+    const message = 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1);
+    const { userId: _userId, ...noRecipient } = base;
+    expect(
+      createNotificationSchema.safeParse({ ...noRecipient, message, channels: ['EMAIL'] }).success
     ).toBe(false);
   });
 

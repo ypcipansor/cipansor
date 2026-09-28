@@ -70,6 +70,23 @@ describe('notificationsController - message size guard before persistence', () =
     expect(res.status).not.toHaveBeenCalled();
   });
 
+  it('accepts an oversize e-mail message when there is no recipient user', async () => {
+    // No `userId` means the service dispatches nothing, so there is no e-mail
+    // to lose; the raw length cap is the only limit that applies.
+    vi.mocked(service.createNotification).mockResolvedValue({ id: 'n2' } as never);
+    const { userId: _userId, ...noRecipient } = validBody;
+    const res = mockResponse();
+
+    await controller.createNotification(
+      mockRequest({ ...noRecipient, message: "'".repeat(400_000) }),
+      res,
+      vi.fn()
+    );
+
+    expect(service.createNotification).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
   it('does not apply the e-mail guard to bulk creation (it sends nothing)', async () => {
     vi.mocked(service.createBulkNotifications).mockResolvedValue({ count: 3 } as never);
     const res = mockResponse();

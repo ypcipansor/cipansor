@@ -19,6 +19,7 @@ import {
   deliverEmail,
   describeEmailTransport,
   escapeHtml,
+  notificationEmailUnavailableReason,
   notificationMessageHtml,
   resetEmailTransport,
   type EmailTransportKind,
@@ -427,9 +428,17 @@ class NotificationService {
       let result: NotificationResult;
 
       switch (channel) {
-        case 'EMAIL':
-          result = await this.sendEmail(options);
+        case 'EMAIL': {
+          // An internal caller may bypass the notification schema, which is
+          // where an oversize body is normally refused. Refuse it here too,
+          // before the converter throws and `deliverEmail` is skipped — a
+          // returned failure, not a success with nothing sent.
+          const reason = notificationEmailUnavailableReason(message);
+          result = reason
+            ? { success: false, channel, error: reason }
+            : await this.sendEmail(options);
           break;
+        }
         case 'SMS':
           result = await this.sendSMS(options);
           break;

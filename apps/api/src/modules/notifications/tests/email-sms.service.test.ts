@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Twilio } from 'twilio';
-import { config } from '../../config';
-import { notificationService, templates } from './email-sms.service';
-import { deliverEmail } from './email-transport';
+import { config } from '../../../config';
+import { notificationService, templates } from '../email-sms.service';
+import { deliverEmail } from '../email-transport';
 
 // The SMS path constructs a Twilio client when credentials are present; mocking
 // the class lets a test prove it was never built. A `function`, not an arrow:
@@ -17,11 +17,12 @@ vi.mock('twilio', () => ({
 // `deliverEmail` as a binding, so a namespace spy would not be the function it
 // calls. The escaping helpers are kept real — the templates' output is what the
 // tests assert, and a stubbed escaper would make them assert nothing.
-vi.mock('./email-transport', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./email-transport')>();
+vi.mock('../email-transport', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../email-transport')>();
   return {
     escapeHtml: actual.escapeHtml,
     notificationMessageHtml: actual.notificationMessageHtml,
+    notificationEmailUnavailableReason: actual.notificationEmailUnavailableReason,
     deliverEmail: vi.fn(),
     describeEmailTransport: vi.fn(() => ({
       kind: 'gmail_api',
@@ -35,7 +36,7 @@ vi.mock('./email-transport', async (importOriginal) => {
 
 const deliverEmailMock = vi.mocked(deliverEmail);
 
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     notification: {
       create: vi.fn().mockResolvedValue({ id: 'notif-123' }),
@@ -49,7 +50,7 @@ vi.mock('../../lib/prisma', () => ({
   },
 }));
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
 
@@ -129,6 +130,24 @@ describe('NotificationService email dispatch', () => {
     expect(sent.html).toContain('<br>Baris kedua');
   });
 
+  it('refuses an oversize e-mail body instead of returning a silent success', async () => {
+    // A direct `send` caller bypasses the notification schema. The converter
+    // would throw on this body and `deliverEmail` would never run, so the
+    // failure must be returned rather than swallowed into a success.
+    const result = await notificationService.send({
+      userId: 'user-1',
+      channel: 'EMAIL',
+      type: 'GENERAL',
+      recipientEmail: 'wali@cipansor.or.id',
+      title: 'Pengumuman',
+      message: "'".repeat(400_000),
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/limit/i);
+    expect(deliverEmailMock).not.toHaveBeenCalled();
+  });
+
   it('reports delivered:false when the transport only logged the message', async () => {
     // The defect this pins: with nothing configured the service returned a
     // plain success, so a discarded e-mail was indistinguishable from a sent
@@ -197,7 +216,7 @@ describe('NotificationService email dispatch', () => {
       description: 'SPP',
     });
 
-    const { prisma } = await import('../../lib/prisma');
+    const { prisma } = await import('../../../lib/prisma');
     expect(prisma.notification.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({

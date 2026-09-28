@@ -83,6 +83,24 @@ export function notificationMessageHtmlWithinLimit(message: string): boolean {
   return notificationMessageHtml(message).length <= MAX_EMAIL_HTML_CHARS;
 }
 
+/**
+ * Why a notification's e-mail must not be dispatched, or `null` if it may.
+ *
+ * The schema applies the same rule when a request comes through the HTTP
+ * controller, but services and jobs call `notifications.service` directly and
+ * never parse it. The service persists the in-app row before dispatching and
+ * swallows a delivery failure, so without this check at the service the caller
+ * is told "success" and no e-mail is sent. Callers log the reason rather than
+ * throw: the in-app row is the record, and a silent drop is the thing to avoid.
+ */
+export function notificationEmailUnavailableReason(message: string): string | null {
+  if (notificationMessageHtmlWithinLimit(message)) return null;
+  return (
+    `E-mail body renders to HTML larger than the ${MAX_EMAIL_HTML_CHARS}-character ` +
+    `conversion limit; e-mail not attempted.`
+  );
+}
+
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
 export interface EmailTransportStatus {
