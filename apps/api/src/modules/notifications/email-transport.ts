@@ -371,9 +371,10 @@ function quotedAttributeMask(text: string): Uint8Array {
  */
 function stripHiddenElements(text: string): string {
   const MAX_STRIP_HIDDEN_INPUT_LENGTH = 100_000;
-  const safeText = text.length > MAX_STRIP_HIDDEN_INPUT_LENGTH
-    ? text.slice(0, MAX_STRIP_HIDDEN_INPUT_LENGTH)
-    : text;
+  const normalizedText = typeof text === 'string' ? text : String(text ?? '');
+  const safeText = normalizedText.length > MAX_STRIP_HIDDEN_INPUT_LENGTH
+    ? normalizedText.slice(0, MAX_STRIP_HIDDEN_INPUT_LENGTH)
+    : normalizedText;
 
   const patterns = [
     { open: '<!--', close: '-->' },
