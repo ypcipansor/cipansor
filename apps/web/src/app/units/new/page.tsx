@@ -39,7 +39,6 @@ const unitSchema = z.object({
   address: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email("Email tidak valid").optional().or(z.literal("")),
-  headName: z.string().optional(),
 });
 
 type UnitFormData = z.infer<typeof unitSchema>;
@@ -64,7 +63,6 @@ export default function NewUnitPage() {
         address: data.address || undefined,
         phone: data.phone || undefined,
         email: data.email || undefined,
-        headName: data.headName || undefined,
       });
       toast.success("Unit berhasil dibuat");
       router.push("/units");
@@ -135,20 +133,6 @@ export default function NewUnitPage() {
                   {errors.type && (
                     <p className="text-sm text-destructive">
                       {errors.type.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="headName">Kepala Unit</Label>
-                  <Input
-                    id="headName"
-                    placeholder="Nama kepala sekolah/pimpinan"
-                    {...register("headName")}
-                  />
-                  {errors.headName && (
-                    <p className="text-sm text-destructive">
-                      {errors.headName.message}
                     </p>
                   )}
                 </div>
