@@ -197,6 +197,7 @@ enum PermitDecider {
   WALI_KELAS
   KEPALA_SEKOLAH
   PIMPINAN_PESANTREN
+  KOORDINATOR_ASRAMA // a santri mukim going home or staying out overnight (2026-09-27)
 }
 
 enum ViolationType {
@@ -1626,6 +1627,11 @@ model Permit {
   type          PermitType
   reason        String       @db.Text
   destination   String? // Tujuan
+  // The learner is off the pondok during the leave. PULANG, KELUAR and
+  // KELUARGA always are; for SAKIT and OTHER the filer says (UKS or home).
+  // A santri mukim off the pondok overnight is the koordinator asrama's to
+  // decide (decisions/pemutus-izin-santri.md).
+  offCampus     Boolean      @default(true) @map("off_campus")
   startDate     DateTime     @map("start_date")
   endDate       DateTime     @map("end_date")
   status        PermitStatus @default(PENDING)

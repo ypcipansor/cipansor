@@ -8,16 +8,17 @@
  * approve while no kepala sekolah could. This walks the chain the way it is
  * meant to run, with the santri's own mentor deciding (2026-09-25):
  *
- *   wali files it → the musyrif of the santri's asrama approves it from
- *   Perizinan → keamanan records leaving and coming back at Pos Gerbang
+ *   wali files izin pulang → the koordinator of the santri's asrama approves
+ *   it from Perizinan (2026-09-27: going home is the koordinator's, not the
+ *   kamar's) → keamanan records leaving and coming back at Pos Gerbang
  *
  * and, for a day pupil at SD IT, the wali kelas deciding or the kepala taking
  * it over.
  *
  * Accounts come from DEMO_ACCOUNTS (the seed links each unit's demo wali to its
  * demo pupil, makes the wali kelas persona wali kelas of that pupil's class and
- * gives the musyrif persona the putra asrama), so no password is written down
- * here a second time.
+ * makes the musyrif persona koordinator of the putra asrama), so no password
+ * is written down here a second time.
  */
 import { test, expect, type Page } from "@playwright/test";
 import {
@@ -95,7 +96,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     await expect(card).toBeVisible();
   });
 
-  test("the wali sees who decides it: the santri boards, so the musyrif", async ({
+  test("the wali sees who decides it: the santri boards and goes home, so the koordinator asrama", async ({
     page,
   }) => {
     await signIn(page, "SMPIT_ORANG_TUA");
@@ -105,7 +106,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
       .filter({ has: page.getByText(reason, { exact: true }) })
       .filter({ has: page.getByText("Diputuskan oleh") })
       .last();
-    await expect(card.getByText(/^Musyrif: /)).toBeVisible();
+    await expect(card.getByText(/^Koordinator asrama: /)).toBeVisible();
   });
 
   test("the kepala SMP IT is not the one to decide it: no button in the list, only a takeover", async ({
@@ -115,7 +116,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     await page.goto("/permits");
     const row = page.getByRole("row", { name: new RegExp(stamp) });
     await expect(row.getByText("Menunggu")).toBeVisible();
-    await expect(row.getByText(/^Musyrif: /)).toBeVisible();
+    await expect(row.getByText(/^Koordinator asrama: /)).toBeVisible();
     await expect(row.getByRole("button", { name: "Setujui" })).toHaveCount(0);
 
     await row.getByRole("link", { name: "Detail" }).click();
@@ -124,7 +125,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     ).toBeVisible();
   });
 
-  test("the wali kelas of a boarder does not decide it (403, naming the musyrif)", async () => {
+  test("the wali kelas of a boarder does not decide it (403, naming the koordinator asrama)", async () => {
     const wali = await apiLogin(demoLogin("SMPIT_ORANG_TUA"));
     const mine = await apiRequest<{ data: { id: string; reason: string }[] }>(
       wali,
@@ -137,10 +138,10 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     const waliKelas = await apiLogin(homeroomLogin("SMP_IT"));
     await expect(
       apiRequest(waliKelas, "POST", `/permits/${permit!.id}/approve`),
-    ).rejects.toThrow(/→ 403.*musyrif/);
+    ).rejects.toThrow(/→ 403.*koordinator asrama/);
   });
 
-  test("the musyrif approves it from Perizinan → Perlu keputusan saya", async ({
+  test("the koordinator asrama approves it from Perizinan → Perlu keputusan saya", async ({
     page,
   }) => {
     await signIn(page, "MUSYRIF");
@@ -166,7 +167,7 @@ test.describe("Perizinan — ajukan, setujui, keluar, kembali", () => {
     await page.getByRole("button", { name: "Perlu keputusan saya" }).click();
     const decided = page.getByRole("row", { name: new RegExp(stamp) });
     await expect(decided.getByText("Disetujui")).toBeVisible();
-    await expect(decided.getByText(/\(musyrif\)/)).toBeVisible();
+    await expect(decided.getByText(/\(koordinator asrama\)/)).toBeVisible();
   });
 
   test("keamanan records leaving and coming back at Pos Gerbang", async ({

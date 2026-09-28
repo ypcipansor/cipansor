@@ -31,6 +31,10 @@ vi.mock('../permits.service', () => {
     cancelPermit: ok,
     departPermit: ok,
     returnPermit: ok,
+    previewDecider: vi.fn(async () => ({
+      boarder: true,
+      decision: { route: 'MENTOR', mentorKind: 'KOORDINATOR', mentors: [] },
+    })),
   };
 });
 
@@ -91,6 +95,11 @@ const VALID_CREATE = {
   endDate: '2026-09-27T17:00:00+07:00',
 };
 
+const DECIDER_QUERY =
+  '/permits/decider?studentId=11111111-1111-4111-8111-111111111111&type=SAKIT' +
+  '&startDate=2026-10-02T07%3A00%3A00%2B07%3A00&endDate=2026-10-04T17%3A00%3A00%2B07%3A00' +
+  '&offCampus=false';
+
 type Call = [method: 'get' | 'post' | 'patch', path: string, body?: object];
 const send = (who: Who, [method, path, body]: Call) => {
   const req = request(app)[method](path).set('Authorization', `Bearer ${who}`);
@@ -122,6 +131,9 @@ const MATRIX: Array<[string, Call, Who[]]> = [
   ['change', ['patch', `/permits/${ID}`, { reason: 'Alasan yang lain sekali' }], REQUESTERS],
   ['withdraw', ['post', `/permits/${ID}/cancel`], REQUESTERS],
   ['summary', ['get', '/permits/summary'], STAFF],
+  // Whoever may file one may ask who would decide it; the service limits it
+  // to learners in their scope (permits.service.test.ts).
+  ['who would decide', ['get', DECIDER_QUERY], REQUESTERS],
   ['gate lookup', ['get', '/permits/code/PMT-AB23CD'], STAFF],
   ['record departure', ['post', `/permits/${ID}/depart`], STAFF],
   ['record return', ['post', `/permits/${ID}/return`], STAFF],
@@ -161,6 +173,25 @@ describe('permit routes — who may call what', () => {
 
   it('no token is 401', async () => {
     expect((await request(app).get('/permits')).status).toBe(401);
+  });
+});
+
+describe('GET /permits/decider', () => {
+  it('reaches the service with the query parsed — offCampus a boolean — and is not taken for an id', async () => {
+    const res = await send('wali', ['get', DECIDER_QUERY]);
+    expect(res.status).toBe(200);
+    expect(vi.mocked(service.getPermit)).not.toHaveBeenCalled();
+    expect(vi.mocked(service.previewDecider).mock.calls[0][0]).toEqual({
+      studentId: '11111111-1111-4111-8111-111111111111',
+      type: 'SAKIT',
+      startDate: '2026-10-02T07:00:00+07:00',
+      endDate: '2026-10-04T17:00:00+07:00',
+      offCampus: false,
+    });
+  });
+
+  it('without a learner or a type is 400', async () => {
+    expect((await send('wali', ['get', '/permits/decider?type=SAKIT'])).status).toBe(400);
   });
 });
 

@@ -29,6 +29,7 @@ function NewPermitPageContent() {
         type: values.type,
         reason: values.reason,
         destination: values.destination || undefined,
+        offCampus: values.offCampus,
         startDate: localInputToIso(values.startDate),
         endDate: localInputToIso(values.endDate),
       });
@@ -60,8 +61,9 @@ function NewPermitPageContent() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Ajukan Izin</h1>
           <p className="text-muted-foreground">
-            Diputuskan musyrif santri (santri mukim) atau wali kelasnya; izin
-            lebih dari {PERMIT_HEAD_AFTER_DAYS} hari oleh kepala unit
+            Diputuskan musyrif santri (santri mukim) atau wali kelasnya; pulang
+            atau menginap oleh koordinator asrama; lebih dari{" "}
+            {PERMIT_HEAD_AFTER_DAYS} hari oleh kepala unit
           </p>
         </div>
       </div>

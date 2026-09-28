@@ -29,6 +29,13 @@ import {
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
+  DeciderHint,
+  WHEREABOUTS_MISSING,
+  WhereaboutsField,
+  asksWhereabouts,
+  usePermitDeciderFor,
+} from "@/components/permits/permit-whereabouts";
+import {
   DoctorNoteField,
   DoctorNoteSection,
 } from "@/components/permits/doctor-note";
@@ -52,6 +59,8 @@ const EMPTY_FORM = {
   reason: "",
   startDate: "",
   endDate: "",
+  /** Asked only for a santri mukim on SAKIT or OTHER leave. */
+  offCampus: undefined as boolean | undefined,
 };
 
 const when = (iso: string) =>
@@ -90,6 +99,15 @@ export default function ParentPermitsPage() {
   const attachNote = useAttachDoctorNote();
   const [note, setNote] = useState<File | null>(null);
   const cancel = useCancelPermit();
+  const { data: decider } = usePermitDeciderFor({
+    studentId: dialogOpen ? selectedChild : undefined,
+    type: form.type || undefined,
+    startDate: form.startDate,
+    endDate: form.endDate,
+    offCampus: form.offCampus,
+  });
+  const askWhere = asksWhereabouts(form.type || undefined, decider?.boarder);
+  const [whereMissing, setWhereMissing] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,11 +116,16 @@ export default function ParentPermitsPage() {
       toast.error("Waktu kembali harus sesudah waktu berangkat");
       return;
     }
+    if (askWhere && form.offCampus === undefined) {
+      setWhereMissing(true);
+      return;
+    }
     try {
       const permit = await create.mutateAsync({
         studentId: selectedChild,
         type: form.type,
         reason: form.reason,
+        offCampus: askWhere ? form.offCampus : undefined,
         startDate: localInputToIso(form.startDate),
         endDate: localInputToIso(form.endDate),
       });
@@ -124,6 +147,7 @@ export default function ParentPermitsPage() {
       setDialogOpen(false);
       setForm(EMPTY_FORM);
       setNote(null);
+      setWhereMissing(false);
     } catch {
       // The API client has already shown the server's message.
     }
@@ -227,6 +251,18 @@ export default function ParentPermitsPage() {
                       />
                     </div>
                   </div>
+
+                  {askWhere && (
+                    <WhereaboutsField
+                      value={form.offCampus}
+                      onChange={(v) => {
+                        setForm({ ...form, offCampus: v });
+                        setWhereMissing(false);
+                      }}
+                      error={whereMissing ? WHEREABOUTS_MISSING : undefined}
+                    />
+                  )}
+                  <DeciderHint preview={decider} />
 
                   <div className="space-y-2">
                     <Label htmlFor="reason">Alasan</Label>

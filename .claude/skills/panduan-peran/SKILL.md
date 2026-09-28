@@ -117,8 +117,9 @@ dibuka untuk satu peran tanpa ikut terbuka bagi seluruh bucket.
 
 **Lapis 4 bisa bergantung pada baris, bukan peran.** "Bisakah wali kelas
 menyetujui izin?" tidak punya jawaban per peran sejak #568: izin santri
-diputuskan musyrif santri itu (santri mukim) atau wali kelasnya, jadi guru yang
-sama boleh untuk satu anak dan 403 untuk anak lain. Jawab dengan menyebut
+diputuskan musyrif santri itu (santri mukim; koordinator asrama bila ia
+pulang atau menginap) atau wali kelasnya, jadi guru yang sama boleh untuk satu
+anak dan 403 untuk anak lain. Jawab dengan menyebut
 aturannya ([`pemutus-izin-santri`](../../memory/decisions/pemutus-izin-santri.md)),
 dan di layar lihat baris "Diputuskan oleh …" pada izin itu.
 
