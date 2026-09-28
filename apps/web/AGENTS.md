@@ -186,8 +186,13 @@ scroller that is `<main>`/`<body>` means the whole content area drags.
 ## Build
 
 - `pnpm build` runs `next build`. `next.config.ts` does NOT ignore type/lint
-  errors — keep the build type-clean. Security headers and Sentry are configured
-  there; don't remove them.
+  errors — keep the build type-clean. Security headers are configured there;
+  don't remove them.
+- No error-monitoring service is connected. A caught UI error goes through
+  `captureError` in `src/lib/report-error.ts` and nowhere else, so the one
+  that is chosen (the release plan points at Azure Application Insights) is
+  wired in one place. Sentry was removed on 2026-09-28: no environment had
+  ever run it.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

@@ -9,7 +9,7 @@ import React, { Component, ReactNode, ErrorInfo } from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { captureError } from "@/lib/sentry";
+import { captureError } from "@/lib/report-error";
 
 interface Props {
   children: ReactNode;
@@ -51,7 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
     // Call custom error handler if provided
     this.props.onError?.(error, errorInfo);
 
-    // Log to error reporting service (e.g., Sentry)
+    // Report it (lib/report-error.ts)
     captureError(error, errorInfo);
   }
 

@@ -36,7 +36,7 @@ else, and never at a server holding real data — several specs write.
 ## Stack
 
 Next.js 16 · React 19 · TypeScript · Tailwind CSS 4 + shadcn/ui · React Query +
-Zustand · Socket.IO client · Sentry · Playwright and Vitest.
+Zustand · Socket.IO client · Playwright and Vitest.
 
 ## Layout
 

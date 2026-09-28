@@ -1,5 +1,4 @@
 import express from 'express';
-import * as Sentry from '@sentry/node';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
@@ -124,9 +123,6 @@ import businessUnitRoutes from '@/modules/business-unit/business-unit.routes';
 
 // Create Express app
 const app = express();
-
-// Sentry Request Handler
-Sentry.setupExpressErrorHandler(app);
 
 // Trust proxy (for production behind reverse proxy)
 app.set('trust proxy', 1);
