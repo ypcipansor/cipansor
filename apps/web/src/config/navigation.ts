@@ -1602,6 +1602,14 @@ const adminNavigation: NavGroup[] = [
     title: "Sistem",
     items: [
       {
+        // The unit's own page: its details and its accreditation
+        // (decisions/akreditasi-unit.md), kept by the unit's admin.
+        title: "Profil Unit",
+        href: "/units/mine",
+        icon: School,
+        roleCodes: ["TKQ_ADMIN", "SDIT_ADMIN", "SMPIT_ADMIN", "SMAQ_ADMIN"],
+      },
+      {
         title: "Yayasan",
         href: "/foundation",
         icon: Building2,
@@ -1700,6 +1708,13 @@ const kepalaSekolahNavigation: NavGroup[] = [
         title: "Reports",
         href: "/reports",
         icon: FileSpreadsheet,
+      },
+      {
+        // The kepala sekolah reads their unit's page and its accreditation;
+        // they are the ones reminded before it runs out.
+        title: "Profil Unit",
+        href: "/units/mine",
+        icon: School,
       },
     ],
   },

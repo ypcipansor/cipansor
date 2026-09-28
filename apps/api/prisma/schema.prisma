@@ -377,6 +377,7 @@ model User {
   recordedTahfidz                   TahfidzRecord[]             @relation("TahfidzRecorder")
   recordedAttendance                Attendance[]                @relation("AttendanceRecorder")
   attendanceFollowUps               AttendanceFollowUp[]        @relation("AttendanceFollowUpBy")
+  unitAccreditationsRecorded        UnitAccreditation[]         @relation("UnitAccreditationRecorder")
   approvedPermits                   Permit[]                    @relation("PermitApprover")
   reportedViolations                Violation[]                 @relation("ViolationReporter")
   givenRewards                      Reward[]                    @relation("RewardGiver")
@@ -597,7 +598,10 @@ model Unit {
   email         String?
   logoUrl       String?   @map("logo_url")
   npsn          String?   @unique // Nomor Pokok Sekolah Nasional
-  accreditation String? // A, B, C, or Belum Terakreditasi
+  /// Superseded by `UnitAccreditation` (2026-09-28): nothing reads or writes it
+  /// any more; the readiness self-assessment used to overwrite it. Drop it once
+  /// a release has run without it.
+  accreditation String?
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
   deletedAt     DateTime? @map("deleted_at")
@@ -606,6 +610,7 @@ model Unit {
   foundation             Foundation?                 @relation(fields: [foundationId], references: [id])
   users                  User[]
   userRoleAssignments    UserRoleAssignment[] // NEW: Role assignments for this unit
+  accreditations         UnitAccreditation[]
   students               Student[]
   studentUnitEnrollments StudentUnitEnrollment[]
   studentIdentifiers     StudentUnitIdentifier[]
@@ -747,6 +752,44 @@ model Unit {
   @@index([type])
   @@index([foundationId])
   @@map("units")
+}
+
+/// The rating on an accreditation certificate (BAN-PDM, now BSANP).
+enum AccreditationRating {
+  A
+  B
+  C
+}
+
+/// A unit's accreditation as its certificate states it (decided 2026-09-28,
+/// decisions/akreditasi-unit.md): one row per certificate, copied from it by
+/// the unit's admin or the Super Admin, with the PDF itself as the proof. The
+/// unit's accreditation now is its latest certificate still in force; the
+/// public site, the EMIS and Dapodik exports and the SKHUN read it from here.
+model UnitAccreditation {
+  id                String              @id @default(uuid())
+  unitId            String              @map("unit_id")
+  rating            AccreditationRating
+  certificateNumber String              @map("certificate_number")
+  decreeNumber      String              @map("decree_number")
+  decreedAt         DateTime            @map("decreed_at") @db.Date
+  validUntil        DateTime            @map("valid_until") @db.Date
+  /// As printed on the certificate: "BAN-PDM", later "BSANP".
+  issuer            String              @default("BAN-PDM")
+  /// The certificate PDF, kept in the database so the nightly backup holds it.
+  certificatePdf    Bytes               @map("certificate_pdf")
+  certificateSha256 String              @map("certificate_sha256")
+  /// When the kepala and the admin of the unit were told it runs out within a year.
+  reminderSentAt    DateTime?           @map("reminder_sent_at")
+  recordedById      String              @map("recorded_by_id")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  unit       Unit @relation(fields: [unitId], references: [id], onDelete: Cascade)
+  recordedBy User @relation("UnitAccreditationRecorder", fields: [recordedById], references: [id])
+
+  @@index([unitId, validUntil])
+  @@map("unit_accreditations")
 }
 
 /// Teacher - Teacher profile (Guru/Ustadz)

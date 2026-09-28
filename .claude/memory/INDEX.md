@@ -35,6 +35,7 @@ the mechanical cases.
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
 - [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
+- [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
 
 ## Lessons — traps that already cost time
 
@@ -55,7 +56,7 @@ the mechanical cases.
 - [pnpm-install-silently-installs-nothing](lessons/pnpm-install-silently-installs-nothing.md) — exit 0, nothing installed; `CI=true`
 - [audit-deps-fails-on-time-not-diff](lessons/audit-deps-fails-on-time-not-diff.md) — the Security job reds on the date, and greens without checking
 - [github-actions-minutes-exhausted](lessons/github-actions-minutes-exhausted.md) — a 2-second job with no steps is a billing wall; read the annotation
-- [gh-cli-and-shell-traps](lessons/gh-cli-and-shell-traps.md) — `gh pr edit` does nothing; unquoted heredocs run backticks
+- [gh-cli-and-shell-traps](lessons/gh-cli-and-shell-traps.md) — `gh pr edit` does nothing; unquoted heredocs run backticks; all green yet BLOCKED = a CodeQL category missing
 - [docker-image-size-traps](lessons/docker-image-size-traps.md) — Prisma's optional peer, `chown -R`, recursive `*.sql` in `.dockerignore`
 - [next-image-optimizer-dead](lessons/next-image-optimizer-dead.md) — `/_next/image` never resizes; ship images at display size
 - [nextjs-loading-boundary-commits-200](lessons/nextjs-loading-boundary-commits-200.md) — a root `loading.tsx` turns every 404 into a 200

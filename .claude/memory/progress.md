@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-27**. What a new session needs to pick up the thread, newest
+Updated **2026-09-28**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -32,11 +32,12 @@ backlog to [`roadmap.md`](roadmap.md).
   scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
-- **The attendance pattern flag's parameters** (roadmap 00.2): what counts
-  toward the 10% (every absence, as Attendance Works and the DfE count it, or
-  Alpa only), over which period, what "often late" is (Indonesian school
-  rules commonly say 3 times a month), and whether a boarder's musyrif is
-  flagged too. Researched 2026-09-28; the question has not been put yet.
+- **Accreditation certificates of SD IT and SMA Qur'an** — the user is
+  asking the schools for them (2026-09-28); each unit appears on the public
+  site once its certificate is entered. TK Qur'an has none yet — it was
+  only just established — and is not mentioned.
+- **How long a doctor's note attached to a permit is kept** (roadmap 00.5) —
+  researched 2026-09-28, not asked yet.
 - **Musyrif assignments in production.** Until the yayasan enters them
   (Asrama → an asrama → Musyrif, #569), a boarder has no musyrif on record:
   their leave goes to the unit head, visibly so, and their Alpa is followed
@@ -57,15 +58,22 @@ Kurikulum list page folded away (both removals approved). The next production
 release was **deferred** by the user ("tunda dulu … kumpul dulu perbaikan dan
 pengembangannya"), who asked to keep being reminded.
 
+**Answered on 2026-09-28:** the attendance pattern flag's four parameters
+(`absensi-harian`, all the recommended options); the units' accreditation —
+on the public site from one official record in the portal, kept by the unit's
+admin or the Super Admin, a reminder 12 months before it runs out
+(`akreditasi-unit`).
+
 ## In flight
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
   daily attendance (#580, one page in #585, its follow-up in #587, #588 and
-  #590), behaviour notes (#581), the Kurikulum list (#589, open). 184 broken
-  calls left, 177 once #589 merges. In flight: one daily-report page (roadmap 00.3), then the pattern
-  flag (its parameters wait on the user — see below).
+  #590, and the pattern flag in #596), behaviour notes (#581), the Kurikulum
+  list (#589), one daily-report page (#592). In flight: the units'
+  accreditation (`akreditasi-unit`) — the portal record (#597), then the
+  public site on top of it.
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.

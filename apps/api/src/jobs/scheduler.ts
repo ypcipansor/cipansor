@@ -15,6 +15,7 @@ import { runChatbotEscalationRetry } from './chatbot-escalation-retry.job';
 import { runAttendanceFollowUpReminder } from './attendance-follow-up.job';
 import { runAttendanceRegisterReminder } from './attendance-register-reminder.job';
 import { runAttendancePatternFlags } from './attendance-pattern.job';
+import { runAccreditationReminder } from './accreditation-reminder.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -357,6 +358,30 @@ export function initializeScheduler(): void {
   scheduledTasks.push(attendancePatternTask);
   logger.info('[Scheduler] Attendance pattern flag scheduled daily at 16:00 WIB');
 
+  /**
+   * Pengingat akreditasi (decisions/akreditasi-unit.md, diputuskan 2026-09-28).
+   *
+   * Pukul 07:00 WIB: unit yang sertifikat akreditasinya berakhir dalam 12
+   * bulan, tanpa sertifikat yang lebih baru, mengingatkan kepala sekolah dan
+   * admin unitnya, sekali.
+   */
+  const accreditationReminderTask = cron.schedule(
+    '0 7 * * *',
+    async () => {
+      try {
+        const { units } = await runAccreditationReminder();
+        if (units) logger.info(`[Scheduler] Accreditation reminders: ${units} unit(s)`);
+      } catch (error) {
+        logger.error('[Scheduler] Accreditation reminder failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(accreditationReminderTask);
+  logger.info('[Scheduler] Accreditation reminder scheduled daily at 07:00 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -387,6 +412,7 @@ export async function runJob(
     | 'attendance-follow-up'
     | 'attendance-register-reminder'
     | 'attendance-pattern'
+    | 'accreditation-reminder'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -429,6 +455,9 @@ export async function runJob(
       break;
     case 'attendance-pattern':
       await runAttendancePatternFlags();
+      break;
+    case 'accreditation-reminder':
+      await runAccreditationReminder();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

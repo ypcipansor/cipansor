@@ -1,6 +1,6 @@
 # gh-cli-and-shell-traps
 
-> Three tools that fail silently: `gh pr edit` changes nothing, `gh pr checks --json` is not supported everywhere, and an unquoted heredoc executes the backticks in a PR body.
+> Tools that fail silently: `gh pr edit` changes nothing, `gh pr checks --json` is not supported everywhere, an unquoted heredoc executes the backticks in a PR body, and a PR with every check green can still be blocked by a CodeQL analysis that was never recorded.
 
 Each of these looks fine on screen and does not do the thing. Each has cost
 time more than once.
@@ -32,3 +32,12 @@ unquoted heredoc.
 `ypcipansor` org, a hook reported "`main` is red" for a run from the old
 personal repo. Check with `gh run list --repo <org>/<repo> --branch main`
 before acting on such a warning.
+
+**Every check green, and still "BLOCKED".** The `main` ruleset's code-scanning
+rule waits for a CodeQL analysis of *every* language category on the PR's
+head commit. On 2026-09-28 a PR's "Analyze (python)" job reported success
+while no python analysis was recorded for that commit, so the PR sat blocked
+with nothing red on the page. Look at what was recorded:
+`gh api "repos/<org>/<repo>/code-scanning/analyses?ref=refs/pull/<N>/head"`.
+CodeQL's default-setup runs cannot be re-run (HTTP 403); push a new commit to
+the branch — an empty one will do, and a squash merge folds it away.
