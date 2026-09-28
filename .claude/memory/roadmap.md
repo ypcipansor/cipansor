@@ -52,9 +52,10 @@ items before 2026-09-25 is in the history of this file and of
        2026-09-28), each its own PR, in this order:
        - 2FA codes that work (recovery codes, typing tolerance, the admin's
          "turn off 2FA" reachable from the users list) and the 2FA screens in
-         Indonesian — the prerequisite for everything below;
-       - no fallback to the legacy `users.role` on refresh and 2FA, and
-         removing a role ends the sessions it granted;
+         Indonesian — the prerequisite for everything below (done, #614);
+       - no fallback to the legacy `users.role` on refresh and 2FA, so a
+         session ends at the next renewal once its last role is gone, and a
+         role that now demands 2FA is not renewed without it (done, #615);
        - 2FA mandatory for the unit heads too (the four kepala sekolah and
          the Pimpinan Pesantren): one list, `SECOND_FACTOR_ROLE_CODES` in
          `@cipansor/shared`, and the profile says "wajib" instead of offering
