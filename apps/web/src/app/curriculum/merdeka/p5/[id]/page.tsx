@@ -394,7 +394,6 @@ export default function P5ProjectDetailPage() {
         description="Detail Proyek Penguatan Profil Pelajar Pancasila (P5)"
         breadcrumbs={[
           { label: "Dashboard", href: "/dashboard" },
-          { label: "Kurikulum", href: "/curriculum" },
           { label: "Kurikulum Merdeka", href: "/curriculum/merdeka" },
           { label: project.title },
         ]}

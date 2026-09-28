@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { murojaahService } from './murojaah.service';
 import { ApiResponse } from '@/utils/response';
+import { assertStudentInScope } from '@/utils/student-scope';
 
 // ============================================
 // Murojaah Controllers
@@ -16,11 +17,7 @@ export const listMurojaah = async (req: Request, res: Response, next: NextFuncti
     // discarded the schema's page=1/limit=20 defaults, so a call that omitted
     // `page` computed `skip: NaN` and Prisma answered with a 500.
     const query = (res.locals.validatedQuery || req.query) as any;
-    const result = await murojaahService.findAll(query, {
-      role: (req.user as any)?.role,
-      roleCode: (req.user as any)?.roleCode,
-      unitId: (req.user as any)?.unitId,
-    });
+    const result = await murojaahService.findAll(query, req.user!);
     res.json(
       ApiResponse.paginated(
         result.records,
@@ -40,7 +37,7 @@ export const listMurojaah = async (req: Request, res: Response, next: NextFuncti
 export const getMurojaahById = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const record = await murojaahService.findById(id);
+    const record = await murojaahService.findById(id, req.user!);
     res.json(ApiResponse.success(record));
   } catch (error) {
     next(error);
@@ -118,7 +115,7 @@ export const getStudentHistory = async (req: Request, res: Response, next: NextF
   try {
     const { studentId } = req.params;
     const query = (res.locals.validatedQuery || req.query) as any;
-    const result = await murojaahService.getStudentHistory(studentId, query);
+    const result = await murojaahService.getStudentHistory(studentId, query, req.user!);
     res.json(
       ApiResponse.paginated(
         result.records,
@@ -138,7 +135,8 @@ export const getStudentHistory = async (req: Request, res: Response, next: NextF
 export const getStudentSummary = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { studentId } = req.params;
-    const query = { studentId, ...req.query } as any;
+    await assertStudentInScope(studentId, req.user!);
+    const query = { ...req.query, studentId } as any;
     const summary = await murojaahService.getStudentSummary(query);
     res.json(ApiResponse.success(summary));
   } catch (error) {
@@ -166,6 +164,7 @@ export const getHalaqohRecords = async (req: Request, res: Response, next: NextF
 export const getMurojaahSchedule = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { studentId } = req.params;
+    await assertStudentInScope(studentId, req.user!);
     const schedule = await murojaahService.getMurojaahSchedule(studentId);
     res.json(ApiResponse.success(schedule));
   } catch (error) {

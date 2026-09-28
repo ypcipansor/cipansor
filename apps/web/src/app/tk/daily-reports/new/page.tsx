@@ -6,7 +6,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
-import { useCreateDailyReport, DailyMood } from "@/hooks/use-daily-report";
+import {
+  useCreateDailyReport,
+  useUploadDailyReportPhotos,
+} from "@/hooks/use-daily-report";
+import { DAILY_MOOD_VALUES, MEAL_CONSUMPTION_VALUES } from "@cipansor/shared";
 import { useClasses } from "@/hooks/use-classes";
 import { useStudents } from "@/hooks/use-students";
 import {
@@ -48,6 +52,7 @@ import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
+import { getErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { MOOD_OPTIONS, CONSUMPTION_OPTIONS } from "../constants";
@@ -55,18 +60,17 @@ import {
   PhotoUploader,
   PhotoItem,
 } from "@/components/daily-report/PhotoUploader";
-import { useAddDailyReportPhoto } from "@/hooks/use-daily-report";
 
 const dailyReportSchema = z.object({
   studentId: z.string().min(1, "Siswa wajib dipilih"),
   classId: z.string().min(1, "Kelas wajib dipilih"),
   reportDate: z.date({ error: "Tanggal wajib diisi" }),
-  morningMood: z.string().optional(),
+  morningMood: z.enum(DAILY_MOOD_VALUES).optional(),
   healthNotes: z.string().optional(),
   temperature: z.number().optional(),
-  breakfastConsumption: z.string().optional(),
-  lunchConsumption: z.string().optional(),
-  snackConsumption: z.string().optional(),
+  breakfastConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
+  lunchConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
+  snackConsumption: z.enum(MEAL_CONSUMPTION_VALUES).optional(),
   napDurationMinutes: z.number().optional(),
   toiletingNotes: z.string().optional(),
   activitiesSummary: z.string().optional(),
@@ -93,7 +97,7 @@ export default function CreateDailyReportPage() {
   });
 
   const createMutation = useCreateDailyReport();
-  const addPhotoMutation = useAddDailyReportPhoto();
+  const uploadPhotos = useUploadDailyReportPhotos();
 
   const form = useForm<DailyReportFormData>({
     resolver: zodResolver(dailyReportSchema),
@@ -120,43 +124,37 @@ export default function CreateDailyReportPage() {
 
   const onSubmit = async (data: DailyReportFormData) => {
     try {
-      // 1. Create Daily Report
-      const report = await createMutation.mutateAsync({
-        ...data,
+      // Photos are stored first; the report carries their addresses. The
+      // unit and the academic year follow from the pupil and the date.
+      const uploaded = await uploadPhotos.mutateAsync(photos);
+      await createMutation.mutateAsync({
+        studentId: data.studentId,
         reportDate: format(data.reportDate, "yyyy-MM-dd"),
-        morningMood: data.morningMood as DailyMood | undefined,
-        unitId: user?.unitId || "",
-        academicYearId: user?.academicYearId || "",
+        morningMood: data.morningMood,
+        healthNotes: data.healthNotes,
+        temperature: data.temperature,
+        breakfastConsumption: data.breakfastConsumption,
+        lunchConsumption: data.lunchConsumption,
+        snackConsumption: data.snackConsumption,
+        napDurationMinutes: data.napDurationMinutes,
+        toiletingNotes: data.toiletingNotes,
+        activitiesSummary: data.activitiesSummary,
+        learningAchievements: data.learningAchievements,
+        surahPractice: data.surahPractice,
+        behaviorNotes: data.behaviorNotes,
+        parentNotes: data.parentNotes,
+        homeworkSuggestion: data.homeworkSuggestion,
+        photos: uploaded,
       });
-
-      // 2. Upload Photos (Mock implementation since we lack a real file upload endpoint)
-      if (photos.length > 0 && report.id) {
-        await Promise.all(
-          photos.map(async (photo) => {
-            // In a real app, we would upload photo.file to S3/Cloudinary here
-            // const url = await uploadService.upload(photo.file);
-
-            // Using a placeholder URL for now to satisfy the requirement
-            const mockUrl = `https://storage.cipansor.or.id/daily-reports/${report.id}/${photo.id}.jpg`;
-
-            if (!photo.file) return;
-
-            return addPhotoMutation.mutateAsync({
-              reportId: report.id,
-              file: photo.file,
-              caption: photo.caption,
-              activityType: "ACTIVITY",
-            });
-          }),
-        );
-      }
 
       toast.success("Laporan harian berhasil dibuat");
       router.push("/tk/daily-reports");
-    } catch {
-      toast.error("Gagal membuat laporan harian");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
     }
   };
+
+  const saving = uploadPhotos.isPending || createMutation.isPending;
 
   const handleClassChange = (classId: string) => {
     setSelectedClassId(classId);
@@ -650,8 +648,8 @@ export default function CreateDailyReportPage() {
               >
                 Batal
               </Button>
-              <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending ? (
+              <Button type="submit" disabled={saving}>
+                {saving ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Menyimpan...

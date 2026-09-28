@@ -1,39 +1,24 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
+import type { ScopeActor } from '@/utils/student-scope';
 import { dailyReportService } from './daily-report.service';
 import type {
   ListDailyReportsQuery,
+  CreateDailyReportInput,
+  UpdateDailyReportInput,
+  ConfirmDailyReportInput,
+  BulkCreateDailyReportsInput,
   StudentDailySummaryQuery,
   ClassDailySummaryQuery,
 } from './daily-report.schema';
-import type {
-  CreateDailyReportInput,
-  UpdateDailyReportInput,
-  BulkCreateDailyReportsInput,
-  DailyMood,
-} from '@cipansor/shared';
 
-// Define local helper for ConfirmReportInput as strict typing for partial/null removal
-interface ConfirmReportInput {
-  isConfirmed: boolean;
-  parentFeedback?: string;
-}
-
-// Helper to clean nulls to undefined for Prisma compatibility with Shared Types
-function cleanInput<T>(obj: T): T {
-  if (Array.isArray(obj)) {
-    return obj.map(cleanInput) as unknown as T;
-  }
-  if (obj !== null && typeof obj === 'object') {
-    return Object.fromEntries(
-      Object.entries(obj as Record<string, unknown>).map(([key, value]) => [
-        key,
-        value === null ? undefined : cleanInput(value),
-      ])
-    ) as unknown as T;
-  }
-  return obj;
-}
+// Bodies and queries arrive parsed by the shared schemas (validate /
+// validateQuery on the route); who is asking is the verified token.
+const actorOf = (req: Request): ScopeActor => ({
+  sub: req.user!.sub,
+  roleCode: req.user!.roleCode,
+  unitId: req.user!.unitId,
+});
 
 // ============================================
 // DAILY REPORT CONTROLLERS
@@ -44,11 +29,8 @@ function cleanInput<T>(obj: T): T {
  * GET /api/daily-report
  */
 export const listDailyReports = asyncHandler(async (req: Request, res: Response) => {
-  const query = (res.locals.validatedQuery || req.query) as ListDailyReportsQuery;
-  const result = await dailyReportService.findAll(query, {
-    role: req.user!.role,
-    unitId: req.user!.unitId,
-  });
+  const query = res.locals.validatedQuery as ListDailyReportsQuery;
+  const result = await dailyReportService.findAll(query, actorOf(req));
 
   res.json({
     success: true,
@@ -64,13 +46,8 @@ export const listDailyReports = asyncHandler(async (req: Request, res: Response)
  * GET /api/daily-report/:id
  */
 export const getDailyReportById = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const report = await dailyReportService.findById(id);
-
-  res.json({
-    success: true,
-    data: report,
-  });
+  const report = await dailyReportService.findById(req.params.id, actorOf(req));
+  res.json({ success: true, data: report });
 });
 
 /**
@@ -78,13 +55,8 @@ export const getDailyReportById = asyncHandler(async (req: Request, res: Respons
  * POST /api/daily-report
  */
 export const createDailyReport = asyncHandler(async (req: Request, res: Response) => {
-  const input = cleanInput(req.body) as CreateDailyReportInput;
-  const report = await dailyReportService.create(input, req.user!.sub);
-
-  res.status(201).json({
-    success: true,
-    data: report,
-  });
+  const report = await dailyReportService.create(req.body as CreateDailyReportInput, actorOf(req));
+  res.status(201).json({ success: true, data: report });
 });
 
 /**
@@ -92,13 +64,11 @@ export const createDailyReport = asyncHandler(async (req: Request, res: Response
  * POST /api/daily-report/bulk
  */
 export const bulkCreateDailyReports = asyncHandler(async (req: Request, res: Response) => {
-  const input = cleanInput(req.body) as BulkCreateDailyReportsInput;
-  const result = await dailyReportService.bulkCreate(input, req.user!.sub);
-
-  res.status(201).json({
-    success: true,
-    data: result,
-  });
+  const result = await dailyReportService.bulkCreate(
+    req.body as BulkCreateDailyReportsInput,
+    actorOf(req)
+  );
+  res.status(201).json({ success: true, data: result });
 });
 
 /**
@@ -106,14 +76,12 @@ export const bulkCreateDailyReports = asyncHandler(async (req: Request, res: Res
  * PUT /api/daily-report/:id
  */
 export const updateDailyReport = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const input = cleanInput(req.body) as UpdateDailyReportInput;
-  const report = await dailyReportService.update(id, input, req.user!.sub);
-
-  res.json({
-    success: true,
-    data: report,
-  });
+  const report = await dailyReportService.update(
+    req.params.id,
+    req.body as UpdateDailyReportInput,
+    actorOf(req)
+  );
+  res.json({ success: true, data: report });
 });
 
 /**
@@ -121,13 +89,8 @@ export const updateDailyReport = asyncHandler(async (req: Request, res: Response
  * DELETE /api/daily-report/:id
  */
 export const deleteDailyReport = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const result = await dailyReportService.delete(id);
-
-  res.json({
-    success: true,
-    data: result,
-  });
+  const result = await dailyReportService.delete(req.params.id, actorOf(req));
+  res.json({ success: true, data: result });
 });
 
 /**
@@ -135,15 +98,12 @@ export const deleteDailyReport = asyncHandler(async (req: Request, res: Response
  * POST /api/daily-report/:id/confirm
  */
 export const confirmDailyReport = asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const input: ConfirmReportInput = req.body;
-  // Service expects ConfirmReportInput which has isConfirmed
-  const report = await dailyReportService.confirmByParent(id, input, req.user!.sub);
-
-  res.json({
-    success: true,
-    data: report,
-  });
+  const report = await dailyReportService.confirmByParent(
+    req.params.id,
+    req.body as ConfirmDailyReportInput,
+    actorOf(req)
+  );
+  res.json({ success: true, data: report });
 });
 
 /**
@@ -151,13 +111,9 @@ export const confirmDailyReport = asyncHandler(async (req: Request, res: Respons
  * GET /api/daily-report/summary/student
  */
 export const getStudentMonthlySummary = asyncHandler(async (req: Request, res: Response) => {
-  const query = (res.locals.validatedQuery || req.query) as StudentDailySummaryQuery;
-  const summary = await dailyReportService.getStudentMonthlySummary(query);
-
-  res.json({
-    success: true,
-    data: summary,
-  });
+  const query = res.locals.validatedQuery as StudentDailySummaryQuery;
+  const summary = await dailyReportService.getStudentMonthlySummary(query, actorOf(req));
+  res.json({ success: true, data: summary });
 });
 
 /**
@@ -165,14 +121,7 @@ export const getStudentMonthlySummary = asyncHandler(async (req: Request, res: R
  * GET /api/daily-report/summary/class
  */
 export const getClassDailySummary = asyncHandler(async (req: Request, res: Response) => {
-  // Extract classId explicitly if it's not in validatedQuery or needs specific handling
-  // validation middleware should handle this, but ensures it's passed
-  const query = (res.locals.validatedQuery || req.query) as ClassDailySummaryQuery;
-
-  const summary = await dailyReportService.getClassDailySummary(query);
-
-  res.json({
-    success: true,
-    data: summary,
-  });
+  const query = res.locals.validatedQuery as ClassDailySummaryQuery;
+  const summary = await dailyReportService.getClassDailySummary(query, actorOf(req));
+  res.json({ success: true, data: summary });
 });

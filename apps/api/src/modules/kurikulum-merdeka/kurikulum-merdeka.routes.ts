@@ -5,7 +5,14 @@ import * as kurikulumMerdekaController from './kurikulum-merdeka.controller';
 
 const router = Router();
 
-// ==================== PUBLIC ROUTES ====================
+// Every route needs a login. The reads below were declared ahead of
+// `router.use(authenticate)` under a "PUBLIC ROUTES" banner, so until
+// 2026-09-24 anyone on the internet could list P5 assessments and assessment
+// results, each carrying the santri's full row (NIK, No. KK, the parents' NIK
+// and income). Rows are further narrowed per account in the service.
+router.use(authenticate);
+
+// ==================== READ ROUTES ====================
 
 // Learning Phases
 router.get('/phases', kurikulumMerdekaController.getPhases);
@@ -47,9 +54,7 @@ router.get('/assessment-results/:id', kurikulumMerdekaController.getMerdekaResul
 // Summary
 router.get('/summary', kurikulumMerdekaController.getSummary);
 
-// ==================== AUTHENTICATED ROUTES ====================
-
-router.use(authenticate);
+// ==================== WRITE ROUTES ====================
 
 // Learning Phases (Admin only)
 router.post('/phases', authorize(UserRole.SUPER_ADMIN), kurikulumMerdekaController.postPhase);

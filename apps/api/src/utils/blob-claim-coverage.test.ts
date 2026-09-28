@@ -86,6 +86,9 @@ const CLIENT_ROOTS = new Set([
   'files',
   'url',
   'urls',
+  // `.map((photo) => ({ photoUrl: photo.url }))` — the uploader/list item shape.
+  'photo',
+  'photos',
 ]);
 
 /** Leftmost identifier of a property-access chain (`a.b.c` -> `a`). */
@@ -101,6 +104,10 @@ function rootIdentifier(node: ts.Expression): string | null {
  */
 function looksLikeUrlIdentifier(node: ts.Expression): boolean {
   if (!ts.isIdentifier(node)) return false;
+  // A bare *blob field* identifier is a read projection (`photo: photoUrl`,
+  // destructured off a server row), not a client-supplied URL. Only the alias
+  // shapes (`photoUrl: url`, `fileUrl: docUrl`) name something else.
+  if (BLOB_FIELD_SET.has(node.text)) return false;
   return /url|photo|file|image|attachment|document|proof|invoice/i.test(node.text);
 }
 
@@ -150,22 +157,25 @@ function isBlobWrite(node: ts.ObjectLiteralElementLike): string | null {
   return name;
 }
 
+/** Is this a function-like node? */
+function isFunctionLike(node: ts.Node): boolean {
+  return (
+    ts.isFunctionDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node)
+  );
+}
+
 /** Every function-like ancestor of a node, nearest first. */
 function ancestorFunctions(node: ts.Node): ts.Node[] {
   const found: ts.Node[] = [];
   let current: ts.Node | undefined = node.parent;
   while (current) {
-    if (
-      ts.isFunctionDeclaration(current) ||
-      ts.isFunctionExpression(current) ||
-      ts.isArrowFunction(current) ||
-      ts.isMethodDeclaration(current) ||
-      ts.isGetAccessorDeclaration(current) ||
-      ts.isSetAccessorDeclaration(current) ||
-      ts.isConstructorDeclaration(current)
-    ) {
-      found.push(current);
-    }
+    if (isFunctionLike(current)) found.push(current);
     current = current.parent;
   }
   return found;
@@ -175,6 +185,10 @@ function functionName(node: ts.Node | undefined, sf: ts.SourceFile): string {
   if (!node) return '<module>';
   const name = (node as ts.NamedDeclaration).name;
   if (name) return String(name.getText(sf));
+  // `const photoRows = (photos) => …`: the arrow carries no name of its own.
+  const parent = node.parent;
+  if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
+  if (ts.isPropertyAssignment(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
   return '<anonymous>';
 }
 
@@ -196,12 +210,41 @@ export function findWriteSites(source: string, fileName = 'service.ts'): WriteSi
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, scriptKind);
   const sites: WriteSite[] = [];
 
+  const declaresClaim = (n: ts.Node): boolean => CLAIM_CALL_RE.test(n.getText(sf));
+
+  /**
+   * A module-scope builder (`const photoRows = (photos) => photos.map((p) => ({
+   * photoUrl: p.url }))`) is called by the claiming create/update method; the
+   * closure has no claim of its own, but the call site takes one. Attribute the
+   * helper's write to a claiming caller when some function-like node references
+   * the helper's name and contains a claim call.
+   */
+  const helperIsClaimed = (owner: ts.Node | undefined): boolean => {
+    if (!owner) return false;
+    const name = functionName(owner, sf);
+    if (name === '<anonymous>' || name === '<module>') return false;
+    const ref = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+    let covered = false;
+    const scan = (node: ts.Node): void => {
+      if (covered) return;
+      if (isFunctionLike(node)) {
+        const text = node.getText(sf);
+        if (declaresClaim(node) && ref.test(text)) covered = true;
+      }
+      ts.forEachChild(node, scan);
+    };
+    scan(sf);
+    return covered;
+  };
+
   const record = (node: ts.Node, field: string): void => {
     const owners = ancestorFunctions(node);
     // A write inside a `.map((url) => ({ photoUrl: url }))` builder is covered
     // by the method that owns the closure, so the whole chain is searched — but
     // a module-scope call cannot cover a nested method.
-    const hasClaim = owners.some((owner) => CLAIM_CALL_RE.test(owner.getText(sf)));
+    const hasClaim =
+      owners.some(declaresClaim) ||
+      (owners.length > 0 && helperIsClaimed(owners[owners.length - 1]));
     sites.push({
       line: sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1,
       field,

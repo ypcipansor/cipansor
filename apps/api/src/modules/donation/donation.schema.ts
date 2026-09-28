@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uploadedFileRefSchema } from '@cipansor/shared';
+import { uploadedFileRefSchema, offeredDonationTypeSchema } from '@cipansor/shared';
 
 // =====================================
 // DONATION ENUMS (matching Prisma schema)
@@ -93,7 +93,7 @@ export const listDonationQuerySchema = z.object({
 export const createDonationSchema = z.object({
   campaignId: z.string().uuid().optional(),
   unitId: z.string().uuid().optional(),
-  type: PublicDonationTypeEnum,
+  type: offeredDonationTypeSchema,
   amount: z.number().min(1000, 'Minimum donation is Rp 1.000'),
   donorName: z.string().min(2, 'Donor name must be at least 2 characters'),
   donorEmail: z.string().email().optional(),
@@ -109,7 +109,9 @@ export const createDonationSchema = z.object({
 
 export const createPublicDonationSchema = z.object({
   campaignId: z.string().uuid().optional(),
-  type: PublicDonationTypeEnum,
+  // Every type a donation can hold is still read and filtered above; a new
+  // one is given only as a type the yayasan offers (no zakat — see shared).
+  type: offeredDonationTypeSchema,
   amount: z.number().min(1000, 'Minimum donation is Rp 1.000'),
   donorName: z.string().min(2, 'Donor name must be at least 2 characters'),
   donorEmail: z.string().email().optional(),

@@ -33,6 +33,13 @@ interface ProtectedRouteProps {
   allowedRoles?: string[]; // Legacy role names (SUPER_ADMIN, UNIT_ADMIN, etc.)
   allowedRoleCodes?: string[]; // New role codes (SMPIT_ADMIN, PAUD_GURU, etc.)
   allowedRealms?: string[]; // Realms (GLOBAL, YAYASAN, PAUD, etc.)
+  /**
+   * API permissions (e.g. STUDENT_UPDATE), any one of which admits the user.
+   * The same list the API's hasPermission() checks: the login and /auth/me
+   * user carries it from the active role. Use it where a legacy bucket is too
+   * coarse: TU holds STUDENT_CREATE/UPDATE but sits in STAFF with the nurse.
+   */
+  allowedPermissions?: string[];
 }
 
 // Map legacy roles to RoleCode categories
@@ -60,6 +67,7 @@ export function ProtectedRoute({
   allowedRoles,
   allowedRoleCodes,
   allowedRealms,
+  allowedPermissions,
 }: ProtectedRouteProps) {
   const router = useRouter();
   const { isAuthenticated, isLoading, user, fetchUser } = useAuthStore();
@@ -87,7 +95,12 @@ export function ProtectedRoute({
     if (!user) return false;
 
     // If no restrictions, allow access
-    if (!allowedRoles && !allowedRoleCodes && !allowedRealms) {
+    if (
+      !allowedRoles &&
+      !allowedRoleCodes &&
+      !allowedRealms &&
+      !allowedPermissions
+    ) {
       return true;
     }
 
@@ -97,6 +110,13 @@ export function ProtectedRoute({
 
     // Super Admin always has access
     if (activeRoleCode === "SUPER_ADMIN") {
+      return true;
+    }
+
+    if (
+      allowedPermissions &&
+      allowedPermissions.some((p) => user.permissions?.includes(p))
+    ) {
       return true;
     }
 
@@ -131,7 +151,14 @@ export function ProtectedRoute({
     }
 
     return false;
-  }, [user, activeRole, allowedRoles, allowedRoleCodes, allowedRealms]);
+  }, [
+    user,
+    activeRole,
+    allowedRoles,
+    allowedRoleCodes,
+    allowedRealms,
+    allowedPermissions,
+  ]);
 
   useEffect(() => {
     if (user && !hasAccess) {

@@ -23,6 +23,21 @@ pnpm run audit:deps                   # the Security job, run against live advis
 ```
 
 Notes:
+- **Run these steps; do not assemble your own.** `pnpm --filter api build`
+  uses `tsconfig.build.json`, which **excludes test files** — only
+  `build:strict` type-checks them. A hand-made gate of `build` + tests +
+  `tsc --noEmit` was reported green and CI failed on four type errors, all in
+  `.test.ts` files. Likewise `tsc --noEmit` is not `next build`.
+- **A missing line is not a failure signal.** In a script, `cmd >/dev/null &&
+  echo ok` fails by printing nothing — one absent "ok" among a dozen present.
+  Capture every step's exit code and print failures loudly
+  (`st=$?; [ $st -eq 0 ] || echo "GATE FAILED: … ($st)"`), then grep the
+  **whole** log for the failure markers before claiming green — a script that
+  carries on after a lint error ends in "done" all the same.
+- **A killed gate looks like a running one.** A container killed for memory
+  stops mid-log with no failure line. A monitor needs a "died before
+  finishing" branch, and `docker ps` needs `--no-trunc` to see the command. On
+  a small host, stop idle browsers and never run `next dev` beside the gate.
 - **Lint is not optional and `build` does not cover it.** The React Compiler
   rules ship as eslint errors, not type errors: `Date.now()` called during
   render passed `build`, `build:strict`, all 1,327 API tests and all 362 web
@@ -65,5 +80,15 @@ Notes:
   with `Failed to pre-authenticate <email> … Invalid email or password`. If a
   change touches seeded emails, passwords, or roles, run e2e locally or expect
   to learn about it 17 minutes into CI.
+- **Running e2e in a container:** the Playwright image tag must match
+  `@playwright/test` in `apps/web/package.json`. A mismatched image turned two
+  specs red with no code change and nearly got reported as a regression.
+- **A new `.spec.ts` is unverified until something runs it.** Write locators
+  against what the component actually renders (a shadcn `CardTitle` is a
+  `<div>`, not a heading) — `components/ui/*.tsx` says.
 - Report the first failure with its output; do not claim green unless every
-  step above exited 0.
+  step above exited 0. **"The gate is green" is a claim about which commands
+  ran — name them**, and say which were skipped and why.
+- The traps behind these notes: `.claude/memory/lessons/` —
+  `audit-deps-fails-on-time-not-diff`, `guard-tests-that-measure-the-wrong-thing`,
+  `branch-switch-stale-artifacts`.

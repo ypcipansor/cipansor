@@ -76,11 +76,11 @@ export default function DailyReportPage() {
     search,
     unitId: unitId || undefined,
     classId: classId || undefined,
-    date: date ? date.toISOString() : undefined,
+    date: date ? format(date, "yyyy-MM-dd") : undefined,
   });
 
   const reports = reportsData?.data || [];
-  const pagination: any = reportsData?.meta || {
+  const pagination = reportsData?.meta?.pagination ?? {
     totalPages: 1,
     page: 1,
     total: 0,

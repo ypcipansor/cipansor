@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
   User,
@@ -39,6 +39,9 @@ import {
   useHomeroomStudentDetail,
   useHomeroomStudentNotes,
 } from "@/hooks/use-homeroom";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Fallback demo data for when API returns empty
 const FALLBACK_STUDENT = {
@@ -104,17 +107,25 @@ const FALLBACK_EXTRACURRICULAR = [
 
 function StudentDetailPageContent() {
   const params = useParams();
+  const router = useRouter();
   const studentId = params.id as string;
   const [activeTab, setActiveTab] = useState("overview");
 
   // Fetch student detail from API
-  const { data: studentData, isLoading: isLoadingStudent } =
-    useHomeroomStudentDetail(studentId);
+  const {
+    data: studentData,
+    isLoading: isLoadingStudent,
+    isError: studentNotReached,
+  } = useHomeroomStudentDetail(studentId);
   const { data: notesData, isLoading: isLoadingNotes } =
     useHomeroomStudentNotes(studentId);
 
   // Use API data or fallback
   const student = studentData || FALLBACK_STUDENT;
+
+  // The pupil's photo lives in the private container; resolve it before render.
+  const resolvedPhotos = useResolvedFileUrls([student.photo]);
+
   const className = student.enrollments?.[0]?.class?.name || "—";
   const classGrade = student.enrollments?.[0]?.class?.grade || 0;
 
@@ -256,6 +267,26 @@ function StudentDetailPageContent() {
     );
   }
 
+  // The API answers 404 for a pupil outside the caller's classes — another
+  // teacher's pupil reads exactly like one that does not exist.
+  if (studentNotReached) {
+    return (
+      <div className="container mx-auto py-6 space-y-6">
+        <Button variant="ghost" onClick={() => router.back()}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Kembali
+        </Button>
+        <Alert>
+          <AlertTitle>Siswa tidak ditemukan</AlertTitle>
+          <AlertDescription>
+            Data siswa dibuka oleh wali kelasnya serta kepala sekolah dan
+            operator unitnya.
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto py-6 space-y-6">
       {/* Header */}
@@ -284,7 +315,12 @@ function StudentDetailPageContent() {
             {/* Photo & Basic Info */}
             <div className="flex flex-col items-center md:items-start gap-4">
               <Avatar className="h-32 w-32">
-                <AvatarImage src={student.photo || undefined} />
+                <AvatarImage
+                  src={
+                    displayableResolvedUrl(student.photo, resolvedPhotos) ??
+                    undefined
+                  }
+                />
                 <AvatarFallback className="text-4xl">
                   {student.name?.charAt(0) || "?"}
                 </AvatarFallback>

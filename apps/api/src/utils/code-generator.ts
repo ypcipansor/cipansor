@@ -1,15 +1,9 @@
-import { prisma } from '@/lib/prisma';
-import { PrismaClient } from '@prisma/client';
-
-type TransactionClient = Omit<
-  PrismaClient,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
->;
+import { prisma, type Db } from '@/lib/prisma';
 
 export const generateUniqueCode = async (
   prefix: string,
   table: string,
-  tx: TransactionClient | PrismaClient = prisma
+  tx: Db = prisma
 ): Promise<string> => {
   const [code] = await generateBulkUniqueCodes(prefix, table, 1, tx);
   return code;
@@ -19,7 +13,7 @@ export const generateBulkUniqueCodes = async (
   prefix: string,
   table: string,
   count: number,
-  tx: TransactionClient | PrismaClient = prisma
+  tx: Db = prisma
 ): Promise<string[]> => {
   if (count < 1) return [];
 

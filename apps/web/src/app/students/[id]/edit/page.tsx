@@ -136,7 +136,10 @@ export default function EditStudentPage() {
   }
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN"]}>
+    <MainLayout
+      allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN"]}
+      allowedPermissions={["STUDENT_UPDATE"]}
+    >
       <div className="space-y-6">
         <PageHeader
           title="Edit Student"

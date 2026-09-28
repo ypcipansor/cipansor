@@ -19,6 +19,7 @@ import {
   queryPrescriptionSchema,
 } from './health.schema';
 import { Errors } from '../../middleware/error';
+import { studentScope } from '@/utils/student-scope';
 import {
   MedicalRecordType,
   CreateMedicalRecordInput,
@@ -31,11 +32,14 @@ import {
 export async function getMedicalRecords(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryMedicalRecordSchema.parse(req.query);
-    const result = await service.getMedicalRecords({
-      ...query,
-      // Pass optional status filter if present
-      status: req.query.status as string,
-    });
+    const result = await service.getMedicalRecords(
+      {
+        ...query,
+        // Pass optional status filter if present
+        status: req.query.status as string,
+      },
+      studentScope(req.user!)
+    );
     res.json(result);
   } catch (error) {
     next(error);
@@ -57,7 +61,7 @@ export async function createGrowthRecord(req: Request, res: Response, next: Next
 export async function getGrowthRecords(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryGrowthRecordSchema.parse(req.query);
-    const result = await service.getGrowthRecords(query);
+    const result = await service.getGrowthRecords(query, studentScope(req.user!));
     res.json(result);
   } catch (error) {
     next(error);
@@ -66,7 +70,7 @@ export async function getGrowthRecords(req: Request, res: Response, next: NextFu
 
 export async function getMedicalRecordById(req: Request, res: Response, next: NextFunction) {
   try {
-    const record = await service.getMedicalRecordById(req.params.id);
+    const record = await service.getMedicalRecordById(req.params.id, studentScope(req.user!));
     if (!record) {
       throw Errors.notFound('Medical record not found');
     }
@@ -92,7 +96,7 @@ export async function createMedicalRecord(req: Request, res: Response, next: Nex
 export async function updateMedicalRecord(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateMedicalRecordSchema.parse(req.body);
-    const record = await service.updateMedicalRecord(req.params.id, data);
+    const record = await service.updateMedicalRecord(req.params.id, data, studentScope(req.user!));
     res.json({ success: true, data: record });
   } catch (error) {
     next(error);
@@ -101,7 +105,7 @@ export async function updateMedicalRecord(req: Request, res: Response, next: Nex
 
 export async function deleteMedicalRecord(req: Request, res: Response, next: NextFunction) {
   try {
-    await service.deleteMedicalRecord(req.params.id);
+    await service.deleteMedicalRecord(req.params.id, studentScope(req.user!));
     res.json({ success: true, message: 'Medical record deleted' });
   } catch (error) {
     next(error);
@@ -110,7 +114,10 @@ export async function deleteMedicalRecord(req: Request, res: Response, next: Nex
 
 export async function getStudentMedicalHistory(req: Request, res: Response, next: NextFunction) {
   try {
-    const history = await service.getStudentMedicalHistory(req.params.studentId);
+    const history = await service.getStudentMedicalHistory(
+      req.params.studentId,
+      studentScope(req.user!)
+    );
     res.json({ success: true, data: history });
   } catch (error) {
     next(error);
@@ -188,7 +195,7 @@ export async function addMedicationStock(req: Request, res: Response, next: Next
 export async function getMedicationUsageLogs(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryMedicationUsageSchema.parse(req.query);
-    const result = await service.getMedicationUsageLogs(query);
+    const result = await service.getMedicationUsageLogs(query, studentScope(req.user!));
     res.json(result);
   } catch (error) {
     next(error);
@@ -272,7 +279,7 @@ export async function createClinicAppointment(req: Request, res: Response, next:
 export async function getClinicAppointments(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryClinicAppointmentSchema.parse(req.query);
-    const result = await service.getClinicAppointments(query);
+    const result = await service.getClinicAppointments(query, studentScope(req.user!));
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);
@@ -297,7 +304,7 @@ export async function createPrescription(req: Request, res: Response, next: Next
 export async function getPrescriptions(req: Request, res: Response, next: NextFunction) {
   try {
     const query = queryPrescriptionSchema.parse(req.query);
-    const result = await service.getPrescriptions(query);
+    const result = await service.getPrescriptions(query, studentScope(req.user!));
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);

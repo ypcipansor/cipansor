@@ -13,7 +13,7 @@ function isLeadershipUser(req: Request): boolean {
  * Peran yang melihat seluruh unit.
  *
  * Dulu memakai `isFoundationScopedRole`, yang hanya mencakup pengurus yayasan
- * dan super admin. Akibatnya PESANTREN_PENGASUH dan PESANTREN_DIREKTUR lolos
+ * dan super admin. Akibatnya pimpinan pesantren (PESANTREN_PENGASUH) lolos
  * penjaga rute, lalu dipatok ke satu unitId dari JWT-nya — melihat angka SMP IT
  * saja, dilabeli seolah gambaran seluruh yayasan, dan ditolak saat membuka
  * rincian SD IT atau SMA Qur'an yang justru mereka asuh. `seesAllUnits`

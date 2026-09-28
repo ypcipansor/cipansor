@@ -30,6 +30,13 @@ describe('shared role codes stay in sync with the Prisma RoleCode enum', () => {
     }
   });
 
+  it('wakasek and wali kelas are duties of a guru, not role codes (2026-09-26)', () => {
+    // Wali kelas is Class.homeroomTeacherId. A role code for a duty drifts from
+    // the relation it names: the seed once had a "Wali Kelas" account that was
+    // wali kelas of no class, and a "Guru" account that was.
+    expect(prismaCodes.filter((c) => /_WAKASEK$|_WALI_KELAS$/.test(c))).toEqual([]);
+  });
+
   it('komite and alumni codes intentionally map to no legacy bucket', () => {
     for (const code of prismaCodes.filter((c) => c.endsWith('_KOMITE') || c.endsWith('_ALUMNI'))) {
       expect(ROLE_CODE_TO_LEGACY[code]).toBeUndefined();

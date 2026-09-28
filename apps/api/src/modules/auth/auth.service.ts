@@ -3,7 +3,12 @@ import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { hashPassword, comparePassword } from '@/lib/password';
 import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken } from '@/lib/jwt';
 import { Errors } from '@/middleware/error';
-import { isAdminRoleCode, isGovernanceRoleCode, deriveLegacyRole } from '@/middleware/auth';
+import {
+  isAdminRoleCode,
+  isGovernanceRoleCode,
+  deriveLegacyRole,
+  requiresSecondFactor,
+} from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput, SSOLoginInput } from './auth.schema';
 import { RoleCode, UnitType, SSOProvider } from '@prisma/client';
@@ -195,8 +200,8 @@ export function resolveLegacyRoleToRoleCode(
   // NOTE on PESANTREN/OTHER units:
   //   - TEACHER maps to MUSYRIF (the generic pesantren teacher role) to preserve
   //     backward compatibility for legacy API clients registering pesantren teachers.
-  //     More specific pesantren roles (MUHAFIDZ, MURABBI, WALI_KAMAR) must be
-  //     selected explicitly via `roleCode` since they are distinct responsibilities.
+  //     Other pesantren roles (USTADZ, MUHAFIDZ) must be selected explicitly
+  //     via `roleCode` since they are distinct responsibilities.
   //   - STAFF/STUDENT/PARENT have NO dedicated pesantren RoleCode. Legacy clients
   //     registering these against PESANTREN/OTHER units must migrate to send
   //     `roleCode` explicitly. Do NOT silently fall back to a school-unit RoleCode
@@ -327,6 +332,8 @@ export class AuthService {
    */
   async login(input: LoginInput, context?: LoginAuditContext) {
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
       where: {
         email: input.email,
         deletedAt: null,
@@ -408,7 +415,8 @@ export class AuthService {
     const roleId = primaryAssignment.roleId;
     const assignmentUnitId = primaryAssignment.unitId;
 
-    const isUserAdmin = isAdminRoleCode(roleCode);
+    // Every active assignment counts, not only the one this login lands on.
+    const mustUseSecondFactor = requiresSecondFactor(user.userRoles.map((r) => r.role.code));
 
     // Build the payload used for all token generation in this method
     const basePayload = {
@@ -447,8 +455,10 @@ export class AuthService {
       };
     }
 
-    // Force 2FA setup for Admin/Super Admin
-    if (isUserAdmin && !user.isTwoFactorEnabled) {
+    // Force 2FA setup for admins and the yayasan organs (decided 2026-09-24:
+    // Pembina, Pengurus and Pengawas sign off the yayasan's plans and budgets,
+    // and their seeded passwords are public).
+    if (mustUseSecondFactor && !user.isTwoFactorEnabled) {
       const tempToken = generateAccessToken({ ...basePayload, isTemp: true }, '10m');
 
       await this.recordLoginAudit({
@@ -1421,6 +1431,8 @@ export class AuthService {
    */
   async changePassword(userId: string, input: ChangePasswordInput) {
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
       where: { id: userId, deletedAt: null },
     });
 
@@ -1598,7 +1610,11 @@ export class AuthService {
    * Enable 2FA
    */
   async enableTwoFactor(userId: string, token: string) {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecretPending: false },
+    });
     if (!user) throw Errors.notFound('User');
 
     if (user.isTwoFactorEnabled) {
@@ -1641,6 +1657,8 @@ export class AuthService {
     }
 
     const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecret: false },
       where: { id: userId, deletedAt: null },
       include: {
         unit: true,
@@ -1748,6 +1766,8 @@ export class AuthService {
    */
   async disableTwoFactor(userId: string, token: string, adminId?: string) {
     const user = await prisma.user.findUnique({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { twoFactorSecret: false },
       where: { id: userId },
       include: {
         userRoles: {
@@ -1765,11 +1785,17 @@ export class AuthService {
     // UserRoleAssignment would have targetRoleCode = '' and isTargetAdmin = false,
     // allowing non-SUPER_ADMIN admins to disable their 2FA.
     const targetRoleCode = primaryTargetRole?.role.code || user.role || '';
-    const isTargetAdmin = isAdminRoleCode(targetRoleCode);
+    // Admins and yayasan organs must keep 2FA, on whichever of their roles.
+    const isTargetAdmin = requiresSecondFactor([
+      targetRoleCode,
+      ...user.userRoles.map((r) => r.role.code),
+    ]);
 
     if (adminId) {
       // Admin disabling for another user (Reset flow)
       const admin = await prisma.user.findUnique({
+        // The client omits credentials by default (lib/prisma.ts); this check needs it.
+        omit: { twoFactorSecret: false },
         where: { id: adminId },
         include: {
           userRoles: {

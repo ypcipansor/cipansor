@@ -13,7 +13,7 @@ router.use(authorize(UserRole.PARENT));
  * @swagger
  * tags:
  *   name: Parent Portal
- *   description: Parent portal API - View children data and manage permits
+ *   description: Parent portal API — the wali's view of their children (permits are filed through /api/permits)
  */
 
 /**
@@ -338,74 +338,6 @@ router.get('/children/:studentId/rewards', parentController.getChildRewards.bind
  *         description: Medical records
  */
 router.get('/children/:studentId/health', parentController.getChildHealth.bind(parentController));
-
-/**
- * @swagger
- * /api/parent/children/{studentId}/permits:
- *   get:
- *     summary: Get child's permits
- *     tags: [Parent Portal]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: studentId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Permit records
- */
-router.get('/children/:studentId/permits', parentController.getChildPermits.bind(parentController));
-
-/**
- * @swagger
- * /api/parent/children/{studentId}/permits:
- *   post:
- *     summary: Create permit request for child
- *     tags: [Parent Portal]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: studentId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - type
- *               - reason
- *               - startDate
- *               - endDate
- *             properties:
- *               type:
- *                 type: string
- *                 enum: [PULANG, KELUAR, SAKIT, KELUARGA, OTHER]
- *               reason:
- *                 type: string
- *               destination:
- *                 type: string
- *               startDate:
- *                 type: string
- *                 format: date
- *               endDate:
- *                 type: string
- *                 format: date
- *     responses:
- *       201:
- *         description: Permit request created
- */
-router.post(
-  '/children/:studentId/permits',
-  parentController.createPermitRequest.bind(parentController)
-);
 
 /**
  * @swagger

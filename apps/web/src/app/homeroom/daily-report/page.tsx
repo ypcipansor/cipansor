@@ -8,6 +8,7 @@ import { z } from "zod";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
 import {
+  describeBulkResult,
   useCreateDailyReport,
   useBulkCreateDailyReports,
 } from "@/hooks/use-daily-report";
@@ -58,6 +59,7 @@ import {
   Bell,
 } from "lucide-react";
 import { format } from "date-fns";
+import { getErrorMessage } from "@/lib/api-error";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
@@ -169,44 +171,31 @@ export default function HomeroomDailyReportPage() {
 
     setIsSubmitting(true);
     try {
+      // Only the pupils marked present get a report. The unit and the
+      // academic year follow from each pupil and the date.
       const reports = Array.from(studentReports.entries())
-        .filter(([_, data]) => data.present) // Only create reports for present students
+        .filter(([, data]) => data.present)
         .map(([studentId, data]) => ({
           studentId,
-          classId: selectedClassId,
-          reportDate: format(selectedDate, "yyyy-MM-dd"),
-          unitId: user?.unitId || "",
-          academicYearId: user?.academicYearId || "",
-          attendanceStatus: "PRESENT" as const,
           activitiesSummary: data.subjects,
           learningAchievements: data.achievements,
           behaviorNotes: data.behaviorNotes,
           surahPractice: data.tahfidzProgress,
           parentNotes: data.teacherNotes,
           homeworkSuggestion: data.homework,
-          sholatDhuhaCompleted: data.sholatDhuha,
+          sholatDhuha: data.sholatDhuha,
         }));
 
-      await bulkCreateMutation.mutateAsync({
-        unitId: user?.unitId || "",
-        academicYearId: user?.academicYearId || "",
+      const result = await bulkCreateMutation.mutateAsync({
         reportDate: format(selectedDate, "yyyy-MM-dd"),
-        reports: reports.map((r) => ({
-          studentId: r.studentId,
-          attendanceStatus: r.attendanceStatus,
-          activitiesSummary: r.activitiesSummary,
-          learningAchievements: r.learningAchievements,
-          behaviorNotes: r.behaviorNotes,
-          surahPractice: r.surahPractice,
-          parentNotes: r.parentNotes,
-          homeworkSuggestion: r.homeworkSuggestion,
-          sholatDhuhaCompleted: r.sholatDhuhaCompleted,
-        })),
-      } as any);
-      toast.success(`${reports.length} laporan harian berhasil dibuat`);
+        reports,
+      });
+      const message = describeBulkResult(result);
+      toast.success(message.created);
+      if (message.skipped) toast.warning(message.skipped);
       router.push("/homeroom");
     } catch (error) {
-      toast.error("Gagal membuat laporan harian");
+      toast.error(getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
     }

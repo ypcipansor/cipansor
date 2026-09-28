@@ -1,5 +1,5 @@
 import { Router, type IRouter } from 'express';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isStaffMember } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/validate';
 import { UserRole } from '@prisma/client';
 import * as controller from './sanad-certificate.controller';
@@ -111,7 +111,15 @@ router.get('/', authenticate, validateQuery(listSanadQuerySchema), controller.li
  *       200:
  *         description: Student sanad summary with progress
  */
-router.get('/students/:studentId/summary', authenticate, controller.getStudentSanadSummary);
+// A santri's sanad record carries NISN, birth date and place; no santri, wali
+// or alumni page reads these two (the alumni directory uses the list and the
+// tree, which carry name, NIS and photo only).
+router.get(
+  '/students/:studentId/summary',
+  authenticate,
+  isStaffMember,
+  controller.getStudentSanadSummary
+);
 
 /**
  * @openapi
@@ -255,7 +263,16 @@ router.post(
  *             schema:
  *               type: string
  */
-router.get('/:id/certificate', authenticate, controller.getCertificatePdf);
+// Opening this mints the santri's certificate the first time (one per santri
+// per juz), so it takes the same issuers as POST /certificate. It used to need
+// only a login: a santri could mint their own certificate with any signatory
+// they typed into ?signedBy=, and the public verify page then attested it.
+router.get(
+  '/:id/certificate',
+  authenticate,
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  controller.getCertificatePdf
+);
 
 /**
  * @openapi
@@ -291,7 +308,7 @@ router.get('/tree', authenticate, controller.getSanadTree);
  *       200:
  *         description: Sanad record details
  */
-router.get('/:id', authenticate, controller.getSanadById);
+router.get('/:id', authenticate, isStaffMember, controller.getSanadById);
 
 /**
  * @openapi

@@ -149,7 +149,7 @@ export default function DailyReportDetailPage() {
           <p className="text-muted-foreground mb-4">
             Laporan harian yang Anda cari tidak ada atau telah dihapus.
           </p>
-          <Button onClick={() => router.push("/paud/daily-reports")}>
+          <Button onClick={() => router.push("/tk/daily-reports")}>
             Kembali ke Daftar
           </Button>
         </div>
@@ -184,7 +184,7 @@ export default function DailyReportDetailPage() {
               <Button
                 variant="outline"
                 onClick={() =>
-                  router.push(`/paud/daily-reports/${reportId}/edit`)
+                  router.push(`/tk/daily-reports/${reportId}/edit`)
                 }
               >
                 <Pencil className="mr-2 h-4 w-4" />

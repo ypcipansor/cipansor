@@ -1,61 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api from "@/lib/api";
+import api, { ApiResponse } from "@/lib/api";
 import { toast } from "sonner";
+import type { HomeroomNote, HomeroomNoteInput } from "@cipansor/shared";
 
-// Define types locally if needed or import from shared
-interface BehaviorRecord {
-  id: string;
-  studentId: string;
-  studentName: string;
-  studentNis: string;
-  type: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
-  category: string;
-  description: string;
-  date: string;
-  points?: number;
-  actionTaken?: string;
-  witnessedBy?: string;
-  createdAt: string;
-}
-
-interface CreateBehaviorRecordInput {
-  studentId: string;
-  behaviorType: "POSITIVE" | "NEGATIVE" | "NEUTRAL";
-  category: string;
-  description: string;
-  points?: number;
-  actionTaken?: string;
-  date: string;
-}
-
-export function useBehaviorRecords(params?: any) {
+/**
+ * A class's notes, newest first, as its wali kelas and the unit's kepala
+ * sekolah and operator read them. Each says whether the caller may change it.
+ */
+export function useBehaviorRecords(classId?: string) {
   return useQuery({
-    queryKey: ["behavior-records", params],
+    queryKey: ["behavior-records", classId],
     queryFn: async () => {
-      const response = await api.get("/homeroom/behavior", { params });
-      const d = response.data?.data;
-      // The endpoint returns { violations, rewards } rather than a flat array.
-      // Normalize into a single tagged list so consumers (which expect an array
-      // of records with behaviorType) don't crash with "filter is not a function".
-      if (Array.isArray(d)) return d;
-      const violations = (d?.violations ?? []).map((v: any) => ({
-        ...v,
-        behaviorType: v.behaviorType ?? "VIOLATION",
-      }));
-      const rewards = (d?.rewards ?? []).map((r: any) => ({
-        ...r,
-        behaviorType: r.behaviorType ?? "REWARD",
-      }));
-      return [...violations, ...rewards];
+      const response = await api.get<ApiResponse<HomeroomNote[]>>(
+        "/homeroom/behavior",
+        { params: { classId } },
+      );
+      return response.data.data;
     },
+    enabled: !!classId,
   });
 }
 
+/** A note by the wali kelas: positive (a reward) or needing attention. */
 export function useCreateBehaviorRecord() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: CreateBehaviorRecordInput) => {
+    mutationFn: async (data: HomeroomNoteInput) => {
       const response = await api.post("/homeroom/behavior", data);
       return response.data.data;
     },
@@ -63,8 +34,36 @@ export function useCreateBehaviorRecord() {
       toast.success("Catatan perilaku berhasil ditambahkan");
       queryClient.invalidateQueries({ queryKey: ["behavior-records"] });
     },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || "Gagal menambahkan catatan");
+    onError: (error: {
+      response?: { data?: { error?: { message?: string } } };
+    }) => {
+      toast.error(
+        error.response?.data?.error?.message || "Gagal menambahkan catatan",
+      );
+    },
+  });
+}
+
+/** Remove a note — only its author, while they write for the class. */
+export function useDeleteBehaviorRecord() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (note: Pick<HomeroomNote, "id" | "kind">) => {
+      await api.delete(`/homeroom/notes/${note.id}`, {
+        params: { noteType: note.kind },
+      });
+    },
+    onSuccess: () => {
+      toast.success("Catatan dihapus");
+      queryClient.invalidateQueries({ queryKey: ["behavior-records"] });
+    },
+    onError: (error: {
+      response?: { data?: { error?: { message?: string } } };
+    }) => {
+      toast.error(
+        error.response?.data?.error?.message || "Gagal menghapus catatan",
+      );
     },
   });
 }

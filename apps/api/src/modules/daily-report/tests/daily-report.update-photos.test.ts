@@ -18,7 +18,7 @@ import { cleanupBlobsBestEffort } from '@/utils/cloud-storage';
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     $transaction: vi.fn(),
-    dailyStudentReport: { update: vi.fn() },
+    dailyStudentReport: { findFirst: vi.fn(), update: vi.fn() },
     dailyReportPhoto: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
     dailyHomework: { deleteMany: vi.fn(), createMany: vi.fn() },
   },
@@ -33,12 +33,14 @@ vi.mock('@/utils/cloud-storage', () => ({
 // its own unit + DB integration tests; here the claim always succeeds so the
 // transaction-boundary behavior under test is unchanged.
 vi.mock('@/utils/blob-claim', () => ({
-  claimBlobsForRecord: vi.fn().mockResolvedValue(true),
+  claimBlobsForRecord: vi.fn().mockResolvedValue([]),
   releaseBlobClaims: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('../notifications', () => ({ whatsAppService: {} }));
+
+const actor = { sub: 'u-guru-tk', roleCode: 'TKQ_GURU', unitId: 'unit-tk' };
 
 const tx = {
   dailyStudentReport: { update: vi.fn() },
@@ -49,6 +51,11 @@ const tx = {
 describe('dailyReportService.update photo replacement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (prisma.dailyStudentReport.findFirst as any).mockResolvedValue({
+      id: 'r1',
+      studentId: 's1',
+      homeActivity: null,
+    });
     (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(tx));
     tx.dailyStudentReport.update.mockResolvedValue({ id: 'r1', photos: [] });
     tx.dailyReportPhoto.findMany.mockResolvedValue([{ photoUrl: '/uploads/old.png' }]);
@@ -61,7 +68,7 @@ describe('dailyReportService.update photo replacement', () => {
   });
 
   it('runs report update, delete and insert inside one transaction', async () => {
-    await dailyReportService.update('r1', { photoUrls: ['/uploads/new.png'] } as any, 'user-1');
+    await dailyReportService.update('r1', { photos: [{ url: '/uploads/new.png' }] } as any, actor);
 
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(tx.dailyStudentReport.update).toHaveBeenCalledTimes(1);
@@ -78,7 +85,7 @@ describe('dailyReportService.update photo replacement', () => {
     tx.dailyReportPhoto.createMany.mockRejectedValue(new Error('insert failed'));
 
     await expect(
-      dailyReportService.update('r1', { photoUrls: ['/uploads/new.png'] } as any, 'user-1')
+      dailyReportService.update('r1', { photos: [{ url: '/uploads/new.png' }] } as any, actor)
     ).rejects.toThrow('insert failed');
 
     expect(cleanupBlobsBestEffort).not.toHaveBeenCalled();
@@ -92,8 +99,8 @@ describe('dailyReportService.update photo replacement', () => {
 
     await dailyReportService.update(
       'r1',
-      { photoUrls: ['/uploads/kept.png', '/uploads/new.png'] } as any,
-      'user-1'
+      { photos: [{ url: '/uploads/kept.png' }, { url: '/uploads/new.png' }] } as any,
+      actor
     );
 
     expect(cleanupBlobsBestEffort).toHaveBeenCalledTimes(1);
@@ -101,8 +108,8 @@ describe('dailyReportService.update photo replacement', () => {
     expect(swept).toEqual(['/uploads/old.png']);
   });
 
-  it('leaves photo rows untouched when photoUrls is not supplied', async () => {
-    await dailyReportService.update('r1', { behaviorNotes: 'ok' } as any, 'user-1');
+  it('leaves photo rows untouched when photos is not supplied', async () => {
+    await dailyReportService.update('r1', { behaviorNotes: 'ok' } as any, actor);
 
     expect(tx.dailyReportPhoto.deleteMany).not.toHaveBeenCalled();
     expect(cleanupBlobsBestEffort).not.toHaveBeenCalled();
@@ -130,7 +137,7 @@ describe('dailyReportService.update homework replacement', () => {
     await dailyReportService.update(
       'r1',
       { homework: [{ subjectName: 'Matematika', description: 'x', dueDate: '2026-01-01' }] } as any,
-      'user-1'
+      actor
     );
 
     expect(tx.dailyStudentReport.update).toHaveBeenCalledTimes(1);
@@ -148,7 +155,7 @@ describe('dailyReportService.update homework replacement', () => {
       dailyReportService.update(
         'r1',
         { homework: [{ subjectName: 'Matematika', description: 'x' }] } as any,
-        'user-1'
+        actor
       )
     ).rejects.toThrow('insert failed');
 
@@ -174,10 +181,10 @@ describe('dailyReportService.update homework replacement', () => {
     const result = await dailyReportService.update(
       'r1',
       {
-        photoUrls: ['/uploads/new.png'],
+        photos: [{ url: '/uploads/new.png' }],
         homework: [{ subjectName: 'Bahasa', description: 'y' }],
       } as any,
-      'user-1'
+      actor
     );
 
     expect(result.photos).toEqual([{ id: 'p2', reportId: 'r1', photoUrl: '/uploads/new.png' }]);

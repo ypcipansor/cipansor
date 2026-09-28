@@ -1,4 +1,4 @@
-import { prisma } from '../../lib/prisma';
+import { prisma, type Db } from '../../lib/prisma';
 import { Asset, Prisma } from '@prisma/client';
 
 // Default Account Codes (Standard Indonesian Accounting)
@@ -10,11 +10,7 @@ const DEFAULT_ACCOUNTS = {
   BANK: '1102', // Bank
 };
 
-export async function createPurchaseJournal(
-  asset: Asset,
-  userId: string,
-  tx: Prisma.TransactionClient = prisma
-) {
+export async function createPurchaseJournal(asset: Asset, userId: string, tx: Db = prisma) {
   if (!asset.purchasePrice || Number(asset.purchasePrice) <= 0) return;
 
   const unitId = asset.unitId;
@@ -81,7 +77,7 @@ export async function createDepreciationJournal(
   amount: number,
   date: Date,
   userId: string,
-  tx: Prisma.TransactionClient = prisma
+  tx: Db = prisma
 ) {
   if (amount <= 0) return;
 

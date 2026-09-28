@@ -2,7 +2,7 @@
 
 import { useState, useCallback, memo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import {
@@ -49,6 +49,12 @@ import { cn } from "@/lib/utils";
 import { useClasses } from "@/hooks/use-classes";
 import { useAuthStore } from "@/stores/auth";
 import { MainLayout } from "@/components/layout";
+import {
+  describeBulkResult,
+  useBulkCreateDailyReports,
+  type BulkCreateDailyReportsInput,
+} from "@/hooks/use-daily-report";
+import { getErrorMessage } from "@/lib/api-error";
 
 // Types for the form state
 interface StudentReportState {
@@ -58,7 +64,7 @@ interface StudentReportState {
   lunchConsumption: "HABIS" | "SETENGAH" | "SEDIKIT" | "TIDAK_MAU";
   napDurationMinutes: number;
   notes: string;
-  tahfidzActivity: string; // ibadahNotes
+  tahfidzActivity: string; // surahPractice
   sholatDhuha: boolean;
   sholatDzuhur: boolean;
   sholatAshar: boolean;
@@ -226,23 +232,7 @@ function BulkDailyReportPageContent() {
     setReports(initialReports);
   }
 
-  // Mutation for bulk create
-  const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const res = await api.post("/daily-report/bulk", data);
-      return res.data;
-    },
-    onSuccess: (data) => {
-      toast.success(`Berhasil menyimpan ${data.data.created} laporan.`);
-      if (data.data.failed > 0) {
-        toast.warning(`${data.data.failed} laporan gagal disimpan.`);
-      }
-      router.push("/daily-report"); // Redirect to list
-    },
-    onError: (error: any) => {
-      toast.error(error.response?.data?.message || error.message);
-    },
-  });
+  const createMutation = useBulkCreateDailyReports();
 
   // Optimized update handler with useCallback
   const handleUpdate = useCallback(
@@ -277,22 +267,18 @@ function BulkDailyReportPageContent() {
   const handleSubmit = () => {
     if (!classId) return;
 
-    // Transform state to API input
-    const payload = {
-      unitId: user?.unitId || "",
-      academicYearId: user?.academicYearId || "", // Assuming user context has this
-      reportDate: date.toISOString(),
+    // Only what the teacher entered in this view; a column the view does not
+    // show stays empty rather than filled with a stock sentence. The unit and
+    // the academic year follow from each pupil and the date.
+    const payload: BulkCreateDailyReportsInput = {
+      reportDate: format(date, "yyyy-MM-dd"),
       reports: Object.values(reports).map((r) => ({
         studentId: r.studentId,
         morningMood: r.morningMood,
         lunchConsumption: r.lunchConsumption,
         napDurationMinutes: r.napDurationMinutes,
-        parentNotes: r.notes, // Mapping notes to teacher/parent notes field
-        // Defaults for required fields not in bulk view
-        healthNotes: r.morningMood === "SICK" ? "Sakit" : "Sehat",
-        breakfastConsumption: "FULL",
-        activitiesSummary: "Mengikuti kegiatan dengan baik",
-        ibadahNotes: r.tahfidzActivity || "-",
+        parentNotes: r.notes || undefined,
+        surahPractice: r.tahfidzActivity || undefined,
         sholatDhuha: r.sholatDhuha,
         sholatDzuhur: r.sholatDzuhur,
         sholatAshar: r.sholatAshar,
@@ -300,7 +286,15 @@ function BulkDailyReportPageContent() {
       })),
     };
 
-    createMutation.mutate(payload);
+    createMutation.mutate(payload, {
+      onSuccess: (result) => {
+        const message = describeBulkResult(result);
+        toast.success(message.created);
+        if (message.skipped) toast.warning(message.skipped);
+        router.push("/daily-report");
+      },
+      onError: (error) => toast.error(getErrorMessage(error)),
+    });
   };
 
   const handleClassChange = (newClassId: string) => {

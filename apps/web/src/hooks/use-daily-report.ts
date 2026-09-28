@@ -1,23 +1,27 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@/lib/api";
+import { api, uploadApi } from "@/lib/api";
 import type {
   CreateDailyReportInput,
   UpdateDailyReportInput,
   BulkCreateDailyReportsInput,
+  BulkCreateDailyReportsResult,
+  ConfirmDailyReportInput,
+  StudentDailySummaryQuery,
+  ClassDailySummaryQuery,
   DailyReport,
+  DailyMood,
 } from "@cipansor/shared";
 
-// Re-export types
+// The request contract is @cipansor/shared's (schemas/daily-report.ts): dates
+// are calendar days "yyyy-MM-dd", and the API takes the unit and the academic
+// year from the pupil and the day.
 export type {
   DailyReport,
+  DailyMood,
   CreateDailyReportInput,
   UpdateDailyReportInput,
   BulkCreateDailyReportsInput,
 };
-
-// Re-export specific enums or types that might be needed by consumers
-export type DailyMood =
-  "HAPPY" | "NEUTRAL" | "SAD" | "TIRED" | "EXCITED" | "SICK";
 
 interface DailyReportListResponse {
   data: DailyReport[];
@@ -62,6 +66,7 @@ interface StudentDailySummaryResponse {
   };
 }
 
+/** Dates are calendar days, "yyyy-MM-dd". */
 interface DailyReportListQuery {
   page?: number;
   limit?: number;
@@ -72,22 +77,8 @@ interface DailyReportListQuery {
   date?: string;
   dateFrom?: string;
   dateTo?: string;
+  mood?: DailyMood;
   search?: string;
-  attendanceStatus?: string;
-}
-
-interface StudentDailySummaryQuery {
-  studentId: string;
-  academicYearId: string;
-  month?: number;
-  year?: number;
-}
-
-interface ClassDailySummaryQuery {
-  unitId: string;
-  classId?: string;
-  academicYearId: string;
-  date?: string;
 }
 
 // API Functions
@@ -111,47 +102,41 @@ export function useDailyReportList(query: DailyReportListQuery) {
   return useQuery({
     queryKey: dailyReportKeys.list(query),
     queryFn: async () => {
+      // A filter left empty ("" before a child or a class is picked) is no
+      // filter; sent as-is it is an invalid id and the API refuses the list.
+      const params = Object.fromEntries(
+        Object.entries(query).filter(([, value]) => value !== ""),
+      );
       const { data } = await api.get<DailyReportListResponse>("/daily-report", {
-        params: query,
+        params,
       });
       return data;
     },
   });
 }
 
-export function useAddDailyReportPhoto() {
-  const queryClient = useQueryClient();
+/**
+ * Stores picked photos through POST /upload and answers with what a report
+ * keeps: the URL the API gave each file, and its caption.
+ */
+export function useUploadDailyReportPhotos() {
   return useMutation({
-    mutationFn: async ({
-      reportId,
-      file,
-      caption,
-      activityType,
-    }: {
-      reportId: string;
-      file: File;
-      caption?: string;
-      activityType?: string;
-    }) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (caption) formData.append("caption", caption);
-      if (activityType) formData.append("activityType", activityType);
-
-      const { data } = await api.post(
-        `/daily-report/${reportId}/photos`,
-        formData,
-        {
-          headers: { "Content-Type": "multipart/form-data" },
-        },
-      );
-      return data;
-    },
-    onSuccess: (_, { reportId }) => {
-      queryClient.invalidateQueries({
-        queryKey: dailyReportKeys.detail(reportId),
-      });
-    },
+    mutationFn: async (
+      photos: { file?: File; caption?: string }[],
+    ): Promise<NonNullable<CreateDailyReportInput["photos"]>> =>
+      Promise.all(
+        photos
+          .filter((photo): photo is { file: File; caption?: string } =>
+            Boolean(photo.file),
+          )
+          .map(async (photo) => {
+            const { data } = await uploadApi.uploadFile(photo.file);
+            return {
+              url: data.data.url,
+              caption: photo.caption?.trim() || undefined,
+            };
+          }),
+      ),
   });
 }
 
@@ -190,7 +175,7 @@ export function useStudentDailySummary(query: StudentDailySummaryQuery) {
       );
       return data.data;
     },
-    enabled: !!query.studentId && !!query.academicYearId,
+    enabled: !!query.studentId,
   });
 }
 
@@ -203,7 +188,7 @@ export function useClassDailySummary(query: ClassDailySummaryQuery) {
       });
       return data.data;
     },
-    enabled: !!query.unitId && !!query.academicYearId,
+    enabled: !!query.unitId || !!query.classId,
   });
 }
 
@@ -229,7 +214,9 @@ export function useBulkCreateDailyReport() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: BulkCreateDailyReportsInput) => {
+    mutationFn: async (
+      input: BulkCreateDailyReportsInput,
+    ): Promise<BulkCreateDailyReportsResult> => {
       const { data } = await api.post("/daily-report/bulk", input);
       return data.data;
     },
@@ -242,6 +229,24 @@ export function useBulkCreateDailyReport() {
 
 // Alias for compatibility
 export const useBulkCreateDailyReports = useBulkCreateDailyReport;
+
+/**
+ * What to tell the teacher after a class's day is saved: how many reports
+ * were made, and how many pupils were left as they were (a report already
+ * existed that day, or the pupil is not theirs).
+ */
+export function describeBulkResult(result: BulkCreateDailyReportsResult): {
+  created: string;
+  skipped?: string;
+} {
+  return {
+    created: `${result.created} laporan harian dibuat`,
+    skipped:
+      result.failed > 0
+        ? `${result.failed} siswa dilewati: laporan tanggal itu sudah ada atau siswa tidak ditemukan`
+        : undefined,
+  };
+}
 
 export function useUpdateDailyReport() {
   const queryClient = useQueryClient();
@@ -290,7 +295,7 @@ export function useAddParentNotes() {
       data,
     }: {
       id: string;
-      data: { parentFeedback: string; isConfirmed: boolean };
+      data: ConfirmDailyReportInput;
     }) => {
       const { data: res } = await api.post(`/daily-report/${id}/confirm`, data);
       return res.data;

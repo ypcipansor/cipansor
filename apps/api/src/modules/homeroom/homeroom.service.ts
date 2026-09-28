@@ -1,7 +1,22 @@
 import { prisma } from '@/lib/prisma';
-import { Errors } from '@/middleware/error';
-import { UserRole, Prisma, ViolationType } from '@prisma/client';
+import { ApiError, ErrorCode, Errors } from '@/middleware/error';
+import { Prisma, ViolationType } from '@prisma/client';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { assertMayWrite, classAccess, notFound, studentAccess, viewerOf } from './homeroom.access';
+import type { HomeroomNote, HomeroomNoteInput } from '@cipansor/shared';
+
+/**
+ * A pupil as the homeroom pages show them. Never the whole row: a Student
+ * carries NIK, No. KK, the parents' NIK and income
+ * (lessons/prisma-include-leaks-pii).
+ */
+const STUDENT_BRIEF = {
+  id: true,
+  nis: true,
+  gender: true,
+  photoUrl: true,
+  user: { select: { name: true } },
+} satisfies Prisma.StudentSelect;
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -22,73 +37,61 @@ export class HomeroomService {
    * Get classes where user is homeroom teacher
    */
   async getMyClasses(currentUser: AuthenticatedUser) {
-    const unitIdFilter = currentUser.role === UserRole.SUPER_ADMIN ? undefined : currentUser.unitId;
-
     const teacher = await prisma.teacher.findFirst({
-      where: {
-        userId: currentUser.sub,
-        deletedAt: null,
-        ...(unitIdFilter ? { unitId: unitIdFilter } : {}),
-      },
+      where: { userId: currentUser.sub, deletedAt: null },
+      select: { id: true },
     });
+    if (!teacher) return [];
 
-    if (!teacher) {
-      return [];
-    }
-
+    const now = new Date();
     const classes = await prisma.class.findMany({
-      where: {
-        homeroomTeacherId: teacher.id,
-        deletedAt: null,
-      },
-      include: {
+      where: { homeroomTeacherId: teacher.id, deletedAt: null },
+      select: {
+        id: true,
+        name: true,
+        level: true,
         unit: { select: { id: true, name: true } },
-        academicYear: { select: { id: true, name: true, isActive: true } },
+        academicYear: { select: { id: true, name: true, startDate: true, endDate: true } },
         _count: { select: { enrollments: { where: { status: 'active' } } } },
       },
-      orderBy: [{ academicYear: { name: 'desc' } }, { name: 'asc' }],
+      orderBy: [{ academicYear: { startDate: 'desc' } }, { name: 'asc' }],
     });
 
-    return classes;
+    // The current year's classes first: the one a wali kelas works in.
+    return classes
+      .map(({ academicYear: { startDate, endDate, ...year }, ...cls }) => ({
+        ...cls,
+        academicYear: year,
+        isCurrent: startDate <= now && endDate >= now,
+      }))
+      .sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
   }
 
   /**
    * Get class dashboard
    */
   async getClassDashboard(classId: string, currentUser: AuthenticatedUser) {
-    const classForAccess = await prisma.class.findFirst({
-      where: { id: classId, deletedAt: null },
-      select: { id: true, unitId: true },
-    });
-
-    if (!classForAccess) throw Errors.notFound('Class not found');
-    if (currentUser.role !== UserRole.SUPER_ADMIN && classForAccess.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+    const access = await classAccess(classId, currentUser);
 
     const classData = await prisma.class.findFirst({
       where: { id: classId, deletedAt: null },
-      include: {
-        unit: true,
-        academicYear: true,
-        homeroomTeacher: {
-          include: { user: { select: { name: true, email: true } } },
-        },
+      select: {
+        id: true,
+        name: true,
+        level: true,
+        academicYearId: true,
+        unit: { select: { id: true, name: true } },
+        academicYear: { select: { id: true, name: true } },
+        homeroomTeacher: { select: { id: true, user: { select: { name: true } } } },
         enrollments: {
           where: { status: 'active' },
-          include: {
-            student: {
-              include: {
-                user: { select: { name: true } },
-              },
-            },
-          },
+          select: { studentId: true, student: { select: STUDENT_BRIEF } },
         },
       },
     });
 
     if (!classData) {
-      throw Errors.notFound('Class not found');
+      throw notFound('Kelas tidak ditemukan');
     }
 
     const studentIds = classData.enrollments.map((e) => e.studentId);
@@ -128,9 +131,7 @@ export class HomeroomService {
     // 3. Recent Violations & Pending Notes
     const recentViolations = await prisma.violation.findMany({
       where: { studentId: { in: studentIds } },
-      include: {
-        student: { include: { user: { select: { name: true } } } },
-      },
+      include: { student: { select: STUDENT_BRIEF } },
       orderBy: { occurredAt: 'desc' },
       take: 5,
     });
@@ -145,9 +146,7 @@ export class HomeroomService {
     // 4. Recent Achievements (Rewards + Tahfidz Assessment)
     const recentRewards = await prisma.reward.findMany({
       where: { studentId: { in: studentIds } },
-      include: {
-        student: { include: { user: { select: { name: true } } } },
-      },
+      include: { student: { select: STUDENT_BRIEF } },
       orderBy: { givenAt: 'desc' },
       take: 5,
     });
@@ -157,9 +156,7 @@ export class HomeroomService {
         studentId: { in: studentIds },
         activityType: 'ASSESSMENT', // Only milestones
       },
-      include: {
-        student: { include: { user: { select: { name: true } } } },
-      },
+      include: { student: { select: STUDENT_BRIEF } },
       orderBy: { recordedAt: 'desc' },
       take: 5,
     });
@@ -235,10 +232,12 @@ export class HomeroomService {
       .filter((item) => item.daysUntil >= 0 && item.daysUntil <= 30)
       .sort((a, b) => a.daysUntil - b.daysUntil);
 
+    const { enrollments, ...classInfo } = classData;
     return {
-      class: classData,
-      studentCount: classData.enrollments.length,
-      students: classData.enrollments.map((e) => e.student),
+      class: classInfo,
+      viewer: viewerOf(access),
+      studentCount: enrollments.length,
+      students: enrollments.map((e) => e.student),
       attendanceSummary: attendanceSummary.map((item) => ({
         status: item.status,
         count: item._count.status,
@@ -258,23 +257,16 @@ export class HomeroomService {
    * Get students in homeroom class
    */
   async getHomeroomStudents(classId: string, currentUser: AuthenticatedUser) {
-    const classData = await prisma.class.findFirst({
-      where: { id: classId, deletedAt: null },
-    });
-
-    if (!classData) {
-      throw Errors.notFound('Class not found');
-    }
-
-    if (currentUser.role !== UserRole.SUPER_ADMIN && classData.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+    await classAccess(classId, currentUser);
 
     const enrollments = await prisma.classEnrollment.findMany({
       where: { classId, status: 'active' },
-      include: {
+      select: {
         student: {
-          include: {
+          select: {
+            ...STUDENT_BRIEF,
+            parentName: true,
+            parentPhone: true,
             user: { select: { id: true, name: true, email: true, phone: true } },
           },
         },
@@ -294,17 +286,7 @@ export class HomeroomService {
     endDate: string,
     currentUser: AuthenticatedUser
   ) {
-    const classData = await prisma.class.findFirst({
-      where: { id: classId, deletedAt: null },
-    });
-
-    if (!classData) {
-      throw Errors.notFound('Class not found');
-    }
-
-    if (currentUser.role !== UserRole.SUPER_ADMIN && classData.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+    await classAccess(classId, currentUser);
 
     const summary = await prisma.attendance.groupBy({
       by: ['studentId', 'status'],
@@ -322,24 +304,17 @@ export class HomeroomService {
    * Get academic monitoring
    */
   async getAcademicMonitoring(classId: string, currentUser: AuthenticatedUser) {
-    const classForAccess = await prisma.class.findFirst({
-      where: { id: classId, deletedAt: null },
-      select: { id: true, unitId: true },
-    });
-
-    if (!classForAccess) throw Errors.notFound('Class not found');
-    if (currentUser.role !== UserRole.SUPER_ADMIN && classForAccess.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+    await classAccess(classId, currentUser);
 
     const classData = await prisma.class.findFirst({
       where: { id: classId, deletedAt: null },
       include: {
         enrollments: {
           where: { status: 'active' },
-          include: {
+          select: {
             student: {
-              include: {
+              select: {
+                id: true,
                 user: { select: { name: true } },
                 tahfidzRecords: {
                   take: 1,
@@ -353,7 +328,7 @@ export class HomeroomService {
     });
 
     if (!classData) {
-      throw Errors.notFound('Class not found');
+      throw notFound('Kelas tidak ditemukan');
     }
 
     return {
@@ -367,30 +342,34 @@ export class HomeroomService {
   }
 
   /**
-   * Get student detail
+   * A pupil's page: who they are, their class, recent tahfidz and attendance.
+   * Shaped for the page rather than the whole row.
    */
   async getStudentDetail(studentId: string, currentUser: AuthenticatedUser) {
-    const studentForAccess = await prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null },
-      select: { id: true, unitId: true },
-    });
-
-    if (!studentForAccess) throw Errors.notFound('Student not found');
-    if (
-      currentUser.role !== UserRole.SUPER_ADMIN &&
-      studentForAccess.unitId !== currentUser.unitId
-    ) {
-      throw Errors.forbidden('Access denied');
-    }
+    const access = await studentAccess(studentId, currentUser);
 
     const student = await prisma.student.findFirst({
       where: { id: studentId, deletedAt: null },
-      include: {
-        user: true,
+      select: {
+        id: true,
+        nis: true,
+        gender: true,
+        birthPlace: true,
+        birthDate: true,
+        address: true,
+        parentName: true,
+        parentPhone: true,
+        parentEmail: true,
+        fatherName: true,
+        fatherPhone: true,
+        motherName: true,
+        motherPhone: true,
+        photoUrl: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
         unit: { select: { id: true, name: true } },
         enrollments: {
           where: { status: 'active' },
-          include: { class: { select: { id: true, name: true } } },
+          select: { id: true, status: true, class: { select: { id: true, name: true } } },
         },
         tahfidzRecords: {
           take: 10,
@@ -399,32 +378,32 @@ export class HomeroomService {
         attendances: {
           take: 30,
           orderBy: { date: 'desc' },
+          select: { id: true, date: true, status: true, notes: true },
         },
       },
     });
 
     if (!student) {
-      throw Errors.notFound('Student not found');
+      throw notFound('Siswa tidak ditemukan');
     }
 
-    return student;
+    const { user, photoUrl, ...rest } = student;
+    return {
+      ...rest,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      photo: photoUrl,
+      user: { id: user.id, name: user.name, email: user.email },
+      viewer: viewerOf(access),
+    };
   }
 
   /**
    * Get student notes - using violations/rewards as notes system
    */
   async getStudentNotes(studentId: string, currentUser: AuthenticatedUser) {
-    const student = await prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null },
-    });
-
-    if (!student) {
-      throw Errors.notFound('Student not found');
-    }
-
-    if (currentUser.role !== UserRole.SUPER_ADMIN && student.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+    await studentAccess(studentId, currentUser);
 
     // Use violations as behavior notes
     const violations = await prisma.violation.findMany({
@@ -446,36 +425,19 @@ export class HomeroomService {
   }
 
   /**
-   * Create student note - using violation/reward system
+   * Create student note - using violation/reward system. Written by the
+   * pupil's wali kelas, in the current academic year.
    */
-  async createStudentNote(
-    input: {
-      studentId: string;
-      type: 'POSITIVE' | 'NEGATIVE';
-      title: string;
-      description?: string;
-      category?: string;
-    },
-    currentUser: AuthenticatedUser
-  ) {
-    const student = await prisma.student.findFirst({
-      where: { id: input.studentId, deletedAt: null },
-    });
+  async createStudentNote(input: HomeroomNoteInput, currentUser: AuthenticatedUser) {
+    assertMayWrite(await studentAccess(input.studentId, currentUser));
 
-    if (!student) {
-      throw Errors.notFound('Student not found');
-    }
-
-    if (currentUser.role !== UserRole.SUPER_ADMIN && student.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
-
+    const text = (input.description || input.title) as string;
     if (input.type === 'POSITIVE') {
       const reward = await prisma.reward.create({
         data: {
           studentId: input.studentId,
           category: input.category || 'general',
-          description: input.description || input.title,
+          description: text,
           points: 0,
           givenById: currentUser.sub,
           givenAt: new Date(),
@@ -488,13 +450,47 @@ export class HomeroomService {
           studentId: input.studentId,
           type: ViolationType.MINOR,
           category: input.category || 'general',
-          description: input.description || input.title,
+          description: text,
+          action: input.action || null,
           points: 0,
           reportedById: currentUser.sub,
           occurredAt: new Date(),
         },
       });
       return { type: 'violation', data: violation };
+    }
+  }
+
+  /**
+   * The note, if the caller may change it: the pupil's wali kelas, in the
+   * current academic year, and only a note they wrote themselves — a
+   * violation the guru BK or kesiswaan recorded is not the wali kelas's to
+   * rewrite or remove.
+   */
+  private async changeableNote(
+    noteId: string,
+    noteType: 'violation' | 'reward',
+    currentUser: AuthenticatedUser
+  ) {
+    const note =
+      noteType === 'violation'
+        ? await prisma.violation
+            .findUnique({ where: { id: noteId }, select: { studentId: true, reportedById: true } })
+            .then((v) => v && { studentId: v.studentId, authorId: v.reportedById })
+        : await prisma.reward
+            .findUnique({ where: { id: noteId }, select: { studentId: true, givenById: true } })
+            .then((r) => r && { studentId: r.studentId, authorId: r.givenById });
+
+    if (!note) throw notFound('Catatan tidak ditemukan');
+    // A note on a pupil the caller does not reach reads as not found.
+    const access = await studentAccess(note.studentId, currentUser).catch((error: unknown) => {
+      if (error instanceof ApiError && error.code === ErrorCode.NOT_FOUND) return null;
+      throw error;
+    });
+    if (!access) throw notFound('Catatan tidak ditemukan');
+    assertMayWrite(access);
+    if (note.authorId !== currentUser.sub) {
+      throw Errors.forbidden('Catatan ini ditulis orang lain');
     }
   }
 
@@ -507,57 +503,15 @@ export class HomeroomService {
     noteType: 'violation' | 'reward',
     currentUser: AuthenticatedUser
   ) {
-    if (noteType === 'violation') {
-      const violation = await prisma.violation.findUnique({
-        where: { id: noteId },
-        include: { student: true },
-      });
+    await this.changeableNote(noteId, noteType, currentUser);
 
-      if (!violation) {
-        throw Errors.notFound('Note not found');
-      }
+    const data: { description?: string; category?: string } = {};
+    if (input.description) data.description = input.description;
+    if (input.category) data.category = input.category;
 
-      if (
-        currentUser.role !== UserRole.SUPER_ADMIN &&
-        violation.student.unitId !== currentUser.unitId
-      ) {
-        throw Errors.forbidden('Access denied');
-      }
-
-      const updateData: { description?: string; category?: string } = {};
-      if (input.description) updateData.description = input.description;
-      if (input.category) updateData.category = input.category;
-
-      return prisma.violation.update({
-        where: { id: noteId },
-        data: updateData,
-      });
-    } else {
-      const reward = await prisma.reward.findUnique({
-        where: { id: noteId },
-        include: { student: true },
-      });
-
-      if (!reward) {
-        throw Errors.notFound('Note not found');
-      }
-
-      if (
-        currentUser.role !== UserRole.SUPER_ADMIN &&
-        reward.student.unitId !== currentUser.unitId
-      ) {
-        throw Errors.forbidden('Access denied');
-      }
-
-      const rewardUpdateData: { description?: string; category?: string } = {};
-      if (input.description) rewardUpdateData.description = input.description;
-      if (input.category) rewardUpdateData.category = input.category;
-
-      return prisma.reward.update({
-        where: { id: noteId },
-        data: rewardUpdateData,
-      });
-    }
+    return noteType === 'violation'
+      ? prisma.violation.update({ where: { id: noteId }, data })
+      : prisma.reward.update({ where: { id: noteId }, data });
   }
 
   /**
@@ -568,35 +522,11 @@ export class HomeroomService {
     noteType: 'violation' | 'reward',
     currentUser: AuthenticatedUser
   ) {
+    await this.changeableNote(noteId, noteType, currentUser);
+
     if (noteType === 'violation') {
-      const violation = await prisma.violation.findUnique({
-        where: { id: noteId },
-        include: { student: { select: { unitId: true } } },
-      });
-
-      if (!violation) throw Errors.notFound('Note not found');
-      if (
-        currentUser.role !== UserRole.SUPER_ADMIN &&
-        violation.student.unitId !== currentUser.unitId
-      ) {
-        throw Errors.forbidden('Access denied');
-      }
-
       await prisma.violation.delete({ where: { id: noteId } });
     } else {
-      const reward = await prisma.reward.findUnique({
-        where: { id: noteId },
-        include: { student: { select: { unitId: true } } },
-      });
-
-      if (!reward) throw Errors.notFound('Note not found');
-      if (
-        currentUser.role !== UserRole.SUPER_ADMIN &&
-        reward.student.unitId !== currentUser.unitId
-      ) {
-        throw Errors.forbidden('Access denied');
-      }
-
       await prisma.reward.delete({ where: { id: noteId } });
     }
     return { success: true };
@@ -605,47 +535,73 @@ export class HomeroomService {
   /**
    * Get behavior records
    */
-  async getBehaviorRecords(classId: string, currentUser: AuthenticatedUser) {
-    const classData = await prisma.class.findFirst({
-      where: { id: classId, deletedAt: null },
-    });
-
-    if (!classData) {
-      throw Errors.notFound('Class not found');
-    }
-
-    if (currentUser.role !== UserRole.SUPER_ADMIN && classData.unitId !== currentUser.unitId) {
-      throw Errors.forbidden('Access denied');
-    }
+  async getBehaviorRecords(
+    classId: string,
+    currentUser: AuthenticatedUser
+  ): Promise<HomeroomNote[]> {
+    if (!classId) throw Errors.badRequest('classId wajib diisi');
+    const { canWrite } = viewerOf(await classAccess(classId, currentUser));
 
     const enrollments = await prisma.classEnrollment.findMany({
       where: { classId, status: 'active' },
       select: { studentId: true },
     });
-
     const studentIds = enrollments.map((e: { studentId: string }) => e.studentId);
 
+    const pupil = { select: { id: true, nis: true, user: { select: { name: true } } } } as const;
+    const author = { select: { id: true, name: true } } as const;
     const [violations, rewards] = await Promise.all([
       prisma.violation.findMany({
         where: { studentId: { in: studentIds } },
-        include: { student: { include: { user: { select: { name: true } } } } },
+        select: {
+          id: true,
+          category: true,
+          description: true,
+          action: true,
+          occurredAt: true,
+          student: pupil,
+          reportedBy: author,
+        },
         orderBy: { occurredAt: 'desc' },
         take: 50,
       }),
       prisma.reward.findMany({
         where: { studentId: { in: studentIds } },
-        include: { student: { include: { user: { select: { name: true } } } } },
+        select: {
+          id: true,
+          category: true,
+          description: true,
+          givenAt: true,
+          student: pupil,
+          givenBy: author,
+        },
         orderBy: { givenAt: 'desc' },
         take: 50,
       }),
     ]);
 
-    return { violations, rewards };
+    // One list, newest first. Only its author, while they still write for the
+    // class, may change or remove a note — as updateStudentNote enforces.
+    const mine = (authorId: string | undefined) => canWrite && authorId === currentUser.sub;
+    return [
+      ...violations.map(({ occurredAt, reportedBy, ...v }) => ({
+        ...v,
+        kind: 'violation' as const,
+        at: occurredAt.toISOString(),
+        author: reportedBy,
+        canChange: mine(reportedBy?.id),
+      })),
+      ...rewards.map(({ givenAt, givenBy, ...r }) => ({
+        ...r,
+        kind: 'reward' as const,
+        action: null,
+        at: givenAt.toISOString(),
+        author: givenBy,
+        canChange: mine(givenBy?.id),
+      })),
+    ].sort((a, b) => b.at.localeCompare(a.at));
   }
 
-  /**
-   * Record behavior
-   */
   /**
    * Cross-class homeroom (wali kelas) performance overview.
    * Composite of measurable signals only: attendance quality + recording
@@ -850,27 +806,9 @@ export class HomeroomService {
     return { items, averageScore };
   }
 
-  async recordBehavior(
-    input: {
-      studentId: string;
-      type: 'POSITIVE' | 'NEGATIVE';
-      title: string;
-      description?: string;
-      category?: string;
-      points?: number;
-    },
-    currentUser: AuthenticatedUser
-  ) {
-    return this.createStudentNote(
-      {
-        studentId: input.studentId,
-        type: input.type,
-        title: input.title,
-        description: input.description,
-        category: input.category,
-      },
-      currentUser
-    );
+  /** POST /homeroom/behavior — the behaviour page's name for a note. */
+  async recordBehavior(input: HomeroomNoteInput, currentUser: AuthenticatedUser) {
+    return this.createStudentNote(input, currentUser);
   }
 }
 

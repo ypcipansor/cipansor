@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import { donationConfig } from "@/config/site";
+import type { OfferedDonationType } from "@cipansor/shared";
 import { LegalIdentity } from "@/components/landing/legal-identity";
 import { publicContentFor } from "@/config/content.i18n";
 import {
@@ -49,9 +50,8 @@ import {
 import {
   usePublicCampaigns,
   useCreatePublicDonation,
-  DONATION_TYPES,
+  OFFERED_DONATION_TYPE_OPTIONS,
   PAYMENT_METHODS,
-  DonationType,
   PaymentMethod,
   DonationCampaign,
   formatCurrency,
@@ -135,7 +135,7 @@ export function DonationPortal({
     donorEmail: "",
     donorAddress: "",
     isAnonymous: false,
-    type: "INFAK" as DonationType,
+    type: "INFAK" as OfferedDonationType,
     amount: "",
     paymentMethod: "BANK_TRANSFER" as PaymentMethod,
     notes: "",
@@ -376,7 +376,7 @@ export function DonationPortal({
                       onClick={() => {
                         setFormData({
                           ...formData,
-                          type: program.type as DonationType,
+                          type: program.type,
                         });
                         setSelectedCampaignId(null);
                         setShowForm(true);
@@ -583,14 +583,14 @@ export function DonationPortal({
               <Select
                 value={formData.type}
                 onValueChange={(v) =>
-                  setFormData({ ...formData, type: v as DonationType })
+                  setFormData({ ...formData, type: v as OfferedDonationType })
                 }
               >
-                <SelectTrigger>
+                <SelectTrigger aria-label={copy.form.typeLabel}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {DONATION_TYPES.map((type) => (
+                  {OFFERED_DONATION_TYPE_OPTIONS.map((type) => (
                     <SelectItem key={type.value} value={type.value}>
                       {copy.donationTypes[type.value] ?? type.label}
                     </SelectItem>

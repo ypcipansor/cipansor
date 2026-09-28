@@ -46,6 +46,7 @@ import { studentStatusOption } from "@/lib/constants";
 import { GraduateStudentDialog } from "@/components/students/graduate-student-dialog";
 import { useAuthStore } from "@/stores/auth";
 import { alumniAccessOf } from "@/lib/alumni-access";
+import { usePermission } from "@/hooks/use-permission";
 import { STUDENT_STATUS } from "@cipansor/shared";
 
 const genderLabels: Record<string, string> = {
@@ -72,6 +73,7 @@ export default function StudentDetailPage() {
   const { user } = useAuthStore();
   // Meluluskan = menulis data alumni: peran yang sama dengan API (admin, TU).
   const { canManage: canGraduate } = alumniAccessOf(user);
+  const canUpdate = usePermission("STUDENT_UPDATE");
 
   if (isLoading) {
     return (
@@ -104,7 +106,9 @@ export default function StudentDetailPage() {
   };
 
   return (
-    <MainLayout allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER"]}>
+    <MainLayout
+      allowedRoles={["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STAFF"]}
+    >
       <div className="space-y-6">
         <PageHeader title={student.name} description={`NIS: ${student.nis}`}>
           <Button variant="outline" asChild>
@@ -121,12 +125,14 @@ export default function StudentDetailPage() {
               className={student.currentClass?.name}
             />
           )}
-          <Button asChild>
-            <Link href={`/students/${student.id}/edit`}>
-              <Pencil className="mr-2 h-4 w-4" />
-              Edit
-            </Link>
-          </Button>
+          {canUpdate && (
+            <Button asChild>
+              <Link href={`/students/${student.id}/edit`}>
+                <Pencil className="mr-2 h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+          )}
         </PageHeader>
 
         {/* Status Banner */}

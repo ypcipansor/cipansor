@@ -61,6 +61,34 @@ router.get('/', authenticate, validateQuery(listSimaanQuerySchema), controller.l
 
 /**
  * @openapi
+ * /api/simaan/upcoming:
+ *   get:
+ *     tags:
+ *       - Simaan
+ *     summary: Get upcoming exams
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: halaqohId
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: days
+ *         schema:
+ *           type: integer
+ *           default: 7
+ *     responses:
+ *       200:
+ *         description: List of upcoming exams
+ */
+// Above `/:id`, which would otherwise answer `/upcoming` as an exam lookup
+// (the Jadwal Simaan page calls it; utils/route-shadowing.guard.test.ts).
+router.get('/upcoming', authenticate, controller.getUpcomingExams);
+
+/**
+ * @openapi
  * /api/simaan/{id}:
  *   get:
  *     tags:
@@ -260,31 +288,5 @@ router.get(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
   controller.getHalaqohRecords
 );
-
-/**
- * @openapi
- * /api/simaan/upcoming:
- *   get:
- *     tags:
- *       - Simaan
- *     summary: Get upcoming exams
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: halaqohId
- *         schema:
- *           type: string
- *           format: uuid
- *       - in: query
- *         name: days
- *         schema:
- *           type: integer
- *           default: 7
- *     responses:
- *       200:
- *         description: List of upcoming exams
- */
-router.get('/upcoming', authenticate, controller.getUpcomingExams);
 
 export default router;

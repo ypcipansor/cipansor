@@ -9,7 +9,7 @@ import { waitForToast } from "./helpers/page-helpers";
  * Sampai 2026-09-14 halaman ini tidak pernah bisa menyimpan: formulirnya
  * mengirim nama isian yang bukan kolom (`fatherNIK`, `isKIP`, `distance`) dan
  * nilai pilihan di luar enum ("MOTOR"), jadi setiap klik Simpan dijawab 500.
- * Tidak ada uji e2e untuk rute ini (COVERAGE.md: ❌), dan uji unit tidak bisa
+ * Tidak ada uji e2e untuk rute ini, dan uji unit tidak bisa
  * melihatnya karena yang rusak adalah KESEPAKATAN antara formulir dan API.
  * Uji ini menjalankan rantai itu dari klik sampai baris tersimpan.
  */

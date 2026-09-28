@@ -790,59 +790,6 @@ export class ParentService {
   }
 
   /**
-   * Get child permits
-   */
-  async getChildPermits(parentId: string, studentId: string) {
-    await this.verifyParentAccess(parentId, studentId);
-
-    const permits = await prisma.permit.findMany({
-      where: { studentId },
-      include: {
-        approvedBy: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-    });
-
-    return permits;
-  }
-
-  /**
-   * Create permit request for child
-   */
-  async createPermitRequest(
-    parentId: string,
-    studentId: string,
-    data: {
-      type: string;
-      reason: string;
-      destination?: string;
-      startDate: string;
-      endDate: string;
-    }
-  ) {
-    await this.verifyParentAccess(parentId, studentId);
-
-    const permit = await prisma.permit.create({
-      data: {
-        studentId,
-        type: data.type as any,
-        reason: data.reason,
-        destination: data.destination,
-        startDate: new Date(data.startDate),
-        endDate: new Date(data.endDate),
-        status: 'PENDING',
-      },
-    });
-
-    return permit;
-  }
-
-  /**
    * Get announcements for parent
    */
   async getAnnouncements(parentId: string) {

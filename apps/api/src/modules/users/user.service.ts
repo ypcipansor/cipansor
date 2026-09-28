@@ -142,8 +142,8 @@ export class UserService {
       throw Errors.notFound('User');
     }
 
-    const { passwordHash, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    // No credential column is loaded: the client omits them (lib/prisma.ts).
+    return user;
   }
 
   /**
@@ -232,8 +232,8 @@ export class UserService {
       include: { unit: true },
     });
 
-    const { passwordHash: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    // No credential column is loaded: the client omits them (lib/prisma.ts).
+    return user;
   }
 
   /**
@@ -292,8 +292,8 @@ export class UserService {
       include: { unit: true },
     });
 
-    const { passwordHash, ...userWithoutPassword } = updated;
-    return userWithoutPassword;
+    // No credential column is loaded: the client omits them (lib/prisma.ts).
+    return updated;
   }
 
   /**

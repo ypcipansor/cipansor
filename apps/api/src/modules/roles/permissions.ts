@@ -190,7 +190,7 @@ const TEACHING: Permission[] = [
   P.TAHFIDZ_VIEW,
 ];
 
-/** Kepala sekolah / wakasek run a unit but do not administer the system. */
+/** Kepala sekolah run a unit but do not administer the system. */
 const UNIT_LEADERSHIP: Permission[] = [
   ...TEACHING,
   P.STUDENT_UPDATE,
@@ -219,8 +219,8 @@ const PENGASUHAN: Permission[] = [
 
 const SUFFIX_PERMISSIONS: Array<[RegExp, Permission[]]> = [
   [/_ADMIN$/, UNIT_ADMIN_PERMISSIONS],
-  [/_KEPALA_SEKOLAH$|_WAKASEK$/, UNIT_LEADERSHIP],
-  [/_WALI_KELAS$|_GURU$|_GURU_BK$/, TEACHING],
+  [/_KEPALA_SEKOLAH$/, UNIT_LEADERSHIP],
+  [/_GURU$|_GURU_BK$/, TEACHING],
   [
     /_TATA_USAHA$/,
     [
@@ -266,7 +266,6 @@ const EXPLICIT_PERMISSIONS: Record<string, Permission[]> = {
   YAYASAN_BENDAHARA: [...YAYASAN_OVERSIGHT, P.FINANCE_MANAGE],
 
   PESANTREN_PENGASUH: [...UNIT_LEADERSHIP, ...PENGASUHAN],
-  PESANTREN_DIREKTUR: [...UNIT_LEADERSHIP, ...PENGASUHAN],
   PESANTREN_TATA_USAHA: [
     P.STUDENT_VIEW,
     P.STUDENT_CREATE,
@@ -276,12 +275,11 @@ const EXPLICIT_PERMISSIONS: Record<string, Permission[]> = {
     P.ADMISSION_VIEW,
   ],
   USTADZ: [...TEACHING, P.DORMITORY_VIEW],
+  // Wali kamar and murabbi are musyrif duties (merged 2026-09-25); the old
+  // WALI_KAMAR set (santri + asrama view only) went with them. Narrowing a
+  // musyrif to one room is a data scope, not a separate role.
   MUSYRIF: PENGASUHAN,
-  MUSYRIFAH: PENGASUHAN,
   MUHAFIDZ: PENGASUHAN,
-  MUHAFIDZAH: PENGASUHAN,
-  MURABBI: PENGASUHAN,
-  WALI_KAMAR: [P.STUDENT_VIEW, P.DORMITORY_VIEW],
 
   PUSTAKAWAN: [P.STUDENT_VIEW, P.LIBRARY_VIEW, P.LIBRARY_MANAGE],
   PERAWAT: [P.STUDENT_VIEW, P.HEALTH_VIEW, P.HEALTH_MANAGE],

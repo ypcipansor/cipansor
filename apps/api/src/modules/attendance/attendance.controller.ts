@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '@/middleware/error';
 import { attendanceService } from './attendance.service';
+import * as followUpService from './attendance-follow-up.service';
 import {
   ApiResponse,
   SharedPaginatedResponse,
@@ -10,8 +11,51 @@ import {
   CreateAttendanceInput,
   BulkAttendanceInput,
   UpdateAttendanceInput,
+  BulkAttendanceResult,
+  AttendanceRecorderScope,
+  AttendanceFollowUpItem,
+  RecordFollowUpInput,
 } from '@cipansor/shared';
 import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.schema';
+
+/** Who is writing, as the relation checks in attendance.access.ts need it. */
+const actorOf = (req: Request) => ({
+  sub: req.user!.sub,
+  roleCode: req.user!.roleCode,
+  unitId: req.user!.unitId,
+});
+
+/**
+ * The classes whose register the caller takes
+ * GET /api/attendance/me/classes
+ */
+export const myClasses = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceRecorderScope>>) => {
+    res.json({ success: true, data: await attendanceService.myClasses(actorOf(req)) });
+  }
+);
+
+/**
+ * The absences the caller follows up
+ * GET /api/attendance/follow-ups
+ */
+export const followUps = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceFollowUpItem[]>>) => {
+    res.json({ success: true, data: await followUpService.listFollowUps(actorOf(req)) });
+  }
+);
+
+/**
+ * Record one contact about an absence
+ * POST /api/attendance/:id/follow-ups
+ */
+export const recordFollowUp = asyncHandler(
+  async (req: Request, res: Response<ApiResponse<AttendanceFollowUpItem>>) => {
+    const input = req.body as RecordFollowUpInput;
+    const item = await followUpService.recordFollowUp(req.params.id, input, actorOf(req));
+    res.status(201).json({ success: true, data: item });
+  }
+);
 
 /**
  * List attendance records
@@ -20,11 +64,7 @@ import type { ListAttendanceQuery, AttendanceSummaryQuery } from './attendance.s
 export const list = asyncHandler(
   async (req: Request, res: Response<SharedPaginatedResponse<Attendance>>) => {
     const query = (res.locals.validatedQuery || req.query) as ListAttendanceQuery;
-    const result = await attendanceService.findAll(query, {
-      role: req.user!.role,
-      roleCode: req.user!.roleCode,
-      unitId: req.user!.unitId,
-    });
+    const result = await attendanceService.findAll(query, req.user!);
 
     res.json({
       success: true,
@@ -43,7 +83,7 @@ export const list = asyncHandler(
 export const getById = asyncHandler(
   async (req: Request, res: Response<ApiResponse<Attendance>>) => {
     const { id } = req.params;
-    const attendance = await attendanceService.findById(id);
+    const attendance = await attendanceService.findById(id, req.user!);
 
     res.json({
       success: true,
@@ -58,7 +98,7 @@ export const getById = asyncHandler(
  */
 export const create = asyncHandler(async (req: Request, res: Response<ApiResponse<Attendance>>) => {
   const input: CreateAttendanceInput = req.body;
-  const attendance = await attendanceService.create(input, req.user!.sub);
+  const attendance = await attendanceService.create(input, actorOf(req));
 
   res.status(201).json({
     success: true,
@@ -71,9 +111,9 @@ export const create = asyncHandler(async (req: Request, res: Response<ApiRespons
  * POST /api/attendance/bulk
  */
 export const bulkCreate = asyncHandler(
-  async (req: Request, res: Response<ApiResponse<{ created: number; skipped: number }>>) => {
+  async (req: Request, res: Response<ApiResponse<BulkAttendanceResult>>) => {
     const input: BulkAttendanceInput = req.body;
-    const result = await attendanceService.bulkCreate(input, req.user!.sub);
+    const result = await attendanceService.bulkCreate(input, actorOf(req));
 
     res.status(201).json({
       success: true,
@@ -89,11 +129,7 @@ export const bulkCreate = asyncHandler(
 export const update = asyncHandler(async (req: Request, res: Response<ApiResponse<Attendance>>) => {
   const { id } = req.params;
   const input: UpdateAttendanceInput = req.body;
-  const attendance = await attendanceService.update(id, input, {
-    role: req.user!.role,
-    roleCode: req.user!.roleCode,
-    unitId: req.user!.unitId,
-  });
+  const attendance = await attendanceService.update(id, input, actorOf(req));
 
   res.json({
     success: true,
@@ -128,11 +164,7 @@ export const remove = asyncHandler(
 export const getSummary = asyncHandler(
   async (req: Request, res: Response<ApiResponse<AttendanceSummary>>) => {
     const query = (res.locals.validatedQuery || req.query) as AttendanceSummaryQuery;
-    const summary = await attendanceService.getSummary(query, {
-      role: req.user!.role,
-      roleCode: req.user!.roleCode,
-      unitId: req.user!.unitId,
-    });
+    const summary = await attendanceService.getSummary(query, req.user!);
 
     res.json({
       success: true,

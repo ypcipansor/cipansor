@@ -6,7 +6,8 @@ import {
   type NotificationChannel,
   type RecipientType,
   type AppNotification,
-  type UserNotification,
+  type MyNotification,
+  type MyNotificationsPage,
   type NotificationTemplate,
   type NotificationStats,
 } from "@cipansor/shared";
@@ -18,7 +19,8 @@ export type {
   NotificationChannel,
   RecipientType,
   AppNotification,
-  UserNotification,
+  MyNotification,
+  MyNotificationsPage,
   NotificationTemplate,
   NotificationStats,
 };
@@ -227,16 +229,7 @@ export function useUserNotifications(params?: {
     queryFn: async () => {
       // Updated: Use /notifications for inbox (getMyNotifications)
       const response = await api.get("/notifications", { params });
-      return response.data as {
-        data: UserNotification[];
-        meta: {
-          total: number;
-          page: number;
-          limit: number;
-          totalPages: number;
-          unreadCount: number;
-        };
-      };
+      return response.data as MyNotificationsPage;
     },
   });
 }

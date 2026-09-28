@@ -1,4 +1,4 @@
-import { prisma } from '../../lib/prisma';
+import { prisma, USER_SECRET_OMIT } from '../../lib/prisma';
 import { Prisma, LeaveStatus, StaffAttendanceStatus, LeaveType, UserRole } from '@prisma/client';
 import {
   mayAdministerEmployeeDocuments,
@@ -225,7 +225,10 @@ const HR_EMPLOYEE_INCLUDE = {
 } satisfies Prisma.UserInclude;
 
 /** A User row with exactly the relations {@link toHrEmployee} reads. */
-type HrEmployeeRow = Prisma.UserGetPayload<{ include: typeof HR_EMPLOYEE_INCLUDE }>;
+type HrEmployeeRow = Prisma.UserGetPayload<{
+  include: typeof HR_EMPLOYEE_INCLUDE;
+  omit: typeof USER_SECRET_OMIT.user;
+}>;
 
 /**
  * The unit that decides an employee's directory scope *and* is reported in the

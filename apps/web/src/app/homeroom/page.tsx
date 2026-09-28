@@ -1,7 +1,7 @@
 "use client";
 import { MainLayout } from "@/components/layout";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Users,
@@ -38,6 +38,15 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useHomeroomClasses, useHomeroomDashboard } from "@/hooks/use-homeroom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useResolvedFileUrls } from "@/hooks/use-resolved-file-url";
+import { displayableResolvedUrl } from "@/lib/files";
 
 function HomeroomDashboardPageContent() {
   const [selectedTab, setSelectedTab] = useState("overview");
@@ -50,7 +59,7 @@ function HomeroomDashboardPageContent() {
     error: classesError,
   } = useHomeroomClasses();
 
-  // Auto-select first class
+  // The API lists the current academic year's class first.
   useEffect(() => {
     if (classes && classes.length > 0 && !selectedClassId) {
       setTimeout(() => setSelectedClassId(classes[0].id), 0);
@@ -63,6 +72,17 @@ function HomeroomDashboardPageContent() {
     isLoading: isLoadingDashboard,
     error: dashboardError,
   } = useHomeroomDashboard(selectedClassId || undefined);
+
+  // Student photos live in the private container; resolve them before render
+  // like every other protected viewer.
+  const photoUrls = useMemo(
+    () =>
+      (dashboardData?.students ?? [])
+        .map((s) => s.photoUrl)
+        .filter((u): u is string => !!u),
+    [dashboardData],
+  );
+  const resolvedPhotos = useResolvedFileUrls(photoUrls);
 
   if (isLoadingClasses) {
     return (
@@ -95,6 +115,8 @@ function HomeroomDashboardPageContent() {
       </div>
     );
   }
+
+  const holdsCurrentClass = classes.some((c) => c.isCurrent);
 
   // Show loading for dashboard if class selected but data not yet loaded
   if (selectedClassId && isLoadingDashboard) {
@@ -162,11 +184,32 @@ function HomeroomDashboardPageContent() {
           </div>
           <h1 className="text-3xl font-bold">Dashboard Wali Kelas</h1>
           <p className="text-muted-foreground">
-            {classInfo.homeroomTeacher.user.name}
+            {classInfo.homeroomTeacher?.user.name ?? "Belum ada wali kelas"} ·{" "}
+            {classInfo.academicYear.name}
           </p>
+          {classes.length > 1 && (
+            <Select
+              value={selectedClassId ?? undefined}
+              onValueChange={setSelectedClassId}
+            >
+              <SelectTrigger
+                className="mt-3 w-full sm:w-72"
+                aria-label="Pilih kelas"
+              >
+                <SelectValue placeholder="Pilih kelas" />
+              </SelectTrigger>
+              <SelectContent>
+                {classes.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name} — {c.academicYear.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/homeroom/attendance">
+          <Link href="/attendance/record">
             <Button>
               <ClipboardList className="h-4 w-4 mr-2" />
               Absensi
@@ -186,6 +229,27 @@ function HomeroomDashboardPageContent() {
           </Link>
         </div>
       </div>
+
+      {!holdsCurrentClass && (
+        <Alert>
+          <AlertTitle>
+            Anda bukan wali kelas kelas mana pun tahun ajaran ini
+          </AlertTitle>
+          <AlertDescription>
+            Kelas dari tahun ajaran sebelumnya dapat dibaca, tetapi catatan baru
+            hanya ditulis oleh wali kelas pada tahun ajaran berjalan.
+          </AlertDescription>
+        </Alert>
+      )}
+      {holdsCurrentClass && !dashboardData.viewer.canWrite && (
+        <Alert>
+          <AlertTitle>Hanya baca</AlertTitle>
+          <AlertDescription>
+            Kelas ini dari tahun ajaran yang sudah lewat; catatan tidak dapat
+            ditambah atau diubah.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Quick Stats */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
@@ -380,7 +444,7 @@ function HomeroomDashboardPageContent() {
                   </div>
                 </div>
                 <div className="mt-4">
-                  <Link href="/homeroom/attendance">
+                  <Link href="/attendance/record">
                     <Button variant="outline" className="w-full">
                       Detail Absensi
                       <ChevronRight className="h-4 w-4 ml-2" />
@@ -549,14 +613,23 @@ function HomeroomDashboardPageContent() {
                         <td className="py-3 px-2">
                           <div className="flex items-center gap-2">
                             <Avatar className="h-8 w-8">
+                              {student.photoUrl && (
+                                <AvatarImage
+                                  src={
+                                    displayableResolvedUrl(
+                                      student.photoUrl,
+                                      resolvedPhotos,
+                                    ) ?? undefined
+                                  }
+                                  alt=""
+                                />
+                              )}
                               <AvatarFallback>
-                                {student.user?.name?.charAt(0) || "?"}
+                                {student.user.name.charAt(0) || "?"}
                               </AvatarFallback>
                             </Avatar>
                             <span className="font-medium">
-                              {student.user?.name ||
-                                student.name ||
-                                "Unknown Student"}
+                              {student.user.name}
                             </span>
                           </div>
                         </td>

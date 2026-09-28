@@ -51,15 +51,14 @@ describe('middleware/auth RBAC', () => {
 
     it('deriveLegacyRole maps the expanded hierarchy roles (rebuilt #319)', () => {
       // Granular school roles
-      expect(deriveLegacyRole(RoleCode.SDIT_WAKASEK)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.SMPIT_WALI_KELAS)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.SMPIT_GURU_BK)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.SMAQ_GURU_BK)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.TKQ_BENDAHARA)).toBe('STAFF');
-      // Pesantren leadership + gender-segregated pembina
+      // Pesantren leadership + pembina
       expect(deriveLegacyRole(RoleCode.PESANTREN_PENGASUH)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.USTADZ)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.MUSYRIFAH)).toBe('TEACHER');
-      expect(deriveLegacyRole(RoleCode.MUHAFIDZAH)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.MUSYRIF)).toBe('TEACHER');
+      expect(deriveLegacyRole(RoleCode.MUHAFIDZ)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.PESANTREN_TATA_USAHA)).toBe('STAFF');
       // Business units map to STAFF — never to an admin bucket
       expect(deriveLegacyRole(RoleCode.BUSINESS_MANAGER)).toBe('STAFF');
@@ -191,12 +190,12 @@ describe('middleware/auth RBAC', () => {
 
     it('isTeacherOrAbove admits the expanded educator roles, denies business staff', () => {
       for (const code of [
-        RoleCode.SDIT_WAKASEK,
-        RoleCode.SMPIT_WALI_KELAS,
+        RoleCode.SDIT_GURU,
+        RoleCode.SMPIT_GURU_BK,
         RoleCode.SMAQ_GURU_BK,
         RoleCode.USTADZ,
-        RoleCode.MUSYRIFAH,
-        RoleCode.MUHAFIDZAH,
+        RoleCode.MUSYRIF,
+        RoleCode.MUHAFIDZ,
         RoleCode.PESANTREN_PENGASUH,
       ]) {
         const n = vi.fn();

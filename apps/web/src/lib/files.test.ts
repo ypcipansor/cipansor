@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   appendFileToken,
   displayableResolvedUrl,
@@ -7,6 +7,8 @@ import {
   isLocalUploadUrl,
   isPrivateAzureBlob,
   needsResolvedAccess,
+  objectUrlForFile,
+  releaseObjectUrl,
   resolveFileUrl,
   resolveFileWithExpiry,
 } from "./files";
@@ -14,6 +16,58 @@ import {
 // Control the /upload/sas response from top level so vi.mock stays hoisted.
 const apiMock = { post: vi.fn() };
 vi.mock("@/lib/api", () => ({ default: apiMock }));
+
+describe("objectUrlForFile", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("returns the blob URL createObjectURL produced", () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(
+      "blob:http://localhost/abc-123",
+    );
+    expect(objectUrlForFile({} as File)).toBe("blob:http://localhost/abc-123");
+  });
+
+  it("returns an IPv6-origin blob URL byte-for-byte", () => {
+    // A blob URL embeds the page origin. On an IPv6 host the serialized host
+    // has square brackets; the browser registered `blob:http://[::1]:3000/abc`
+    // and any re-encoding (`%5B`) names a different, unregistered URL, so the
+    // preview 404s. The exact string must come back.
+    const ipv6Url = "blob:http://[::1]:3000/abc-123";
+    vi.spyOn(URL, "createObjectURL").mockReturnValue(ipv6Url);
+
+    const result = objectUrlForFile({} as File);
+
+    expect(result).toBe(ipv6Url);
+    expect(result).not.toContain("%5B");
+  });
+
+  it("drops anything that is not a blob: URL", () => {
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("javascript:alert(1)");
+    expect(objectUrlForFile({} as File)).toBe("");
+  });
+});
+
+describe("releaseObjectUrl", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("revokes a blob URL", () => {
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    releaseObjectUrl("blob:http://localhost/abc-123");
+    expect(revoke).toHaveBeenCalledWith("blob:http://localhost/abc-123");
+  });
+
+  it("ignores empty and non-blob URLs", () => {
+    const revoke = vi
+      .spyOn(URL, "revokeObjectURL")
+      .mockImplementation(() => {});
+    releaseObjectUrl(null);
+    releaseObjectUrl(undefined);
+    releaseObjectUrl("https://example.com/a.png");
+    expect(revoke).not.toHaveBeenCalled();
+  });
+});
 
 describe("appendFileToken", () => {
   it("appends the token and drops any token already in the URL", () => {

@@ -10,7 +10,7 @@ Shared TypeScript types and Zod schemas consumed by **both** `apps/api` and
 - It is **not** the source of truth for database enums/models — those come from
   `@prisma/client`. Do not duplicate Prisma enums here for server-side DB
   operations. If a DTO needs an enum that mirrors a DB enum, keep the values in
-  exact sync (mismatches caused real bugs — see `docs/KNOWN_ISSUES.md`,
+  exact sync (mismatches caused real bugs — see `.claude/memory/known-issues.md`,
   reception module).
 - **No app-specific imports.** No Express, no Prisma, no Next, no React. Pure
   types + Zod only, so both runtimes can consume it.

@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api, { SharedPaginatedResponse, ApiResponse } from "@/lib/api";
+import api, {
+  SharedPaginatedResponse,
+  PaginatedResponse,
+  ApiResponse,
+} from "@/lib/api";
 import {
   STUDENT_STATUS,
   type StudentStatus,
@@ -148,6 +152,7 @@ export interface StudentListParams {
   unitId?: string;
   status?: string;
   classId?: string;
+  gender?: "MALE" | "FEMALE";
 }
 
 export interface CreateStudentData {
@@ -189,14 +194,37 @@ export function useStudents(params: StudentListParams = {}) {
       const body = response.data;
       return {
         ...body,
+        // GET /students nests its counts as `meta.pagination` (the envelope
+        // the staff dashboards read), not the flat `meta` this type declares.
+        // The roster read `meta.total` and `meta.totalPages`, got nothing, and
+        // showed "0 of 0 results" with a single page — the first 10 santri
+        // were all anyone could reach.
+        meta: studentListMeta(body.meta),
         data: (body.data ?? []).map((s) => ({
           ...s,
           name: s.name ?? (s as { user?: { name?: string } }).user?.name ?? "",
         })),
-      } as SharedPaginatedResponse<Student>;
+      } as PaginatedResponse<Student>;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
+}
+
+type ListMeta = PaginatedResponse<Student>["meta"];
+
+/** Flat pagination meta from either envelope the API uses. */
+export function studentListMeta(
+  meta: ListMeta | { pagination?: ListMeta } | undefined,
+): ListMeta {
+  const m =
+    (meta as { pagination?: ListMeta } | undefined)?.pagination ??
+    (meta as ListMeta | undefined);
+  return {
+    page: m?.page ?? 1,
+    limit: m?.limit ?? 0,
+    total: m?.total ?? 0,
+    totalPages: m?.totalPages ?? 1,
+  };
 }
 
 export function useStudent(id: string) {
