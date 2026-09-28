@@ -30,6 +30,7 @@ import { ServiceAccountTokenSource } from '../../lib/google-service-account';
 
 const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
+const MAX_HTML_TO_TEXT_CHARS = 100_000;
 
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
@@ -190,6 +191,10 @@ export function describeEmailTransport(): EmailTransportStatus {
  * inert only while the consumer does not re-embed it as HTML without escaping.
  */
 export function htmlToText(html: string): string {
+  if (html.length > MAX_HTML_TO_TEXT_CHARS) {
+    throw new Error(`HTML content too large to convert safely (max ${MAX_HTML_TO_TEXT_CHARS} chars)`);
+  }
+
   let text = stripHiddenElements(html);
   text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|tr|h1|h2|h3|li)>/gi, '\n');
   text = stripTags(text);
