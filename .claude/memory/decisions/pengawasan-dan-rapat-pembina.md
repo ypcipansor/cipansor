@@ -3,7 +3,7 @@
 > KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan
 > #509 (keputusan dan risalah organ) ditutup; keduanya dibangun ulang dengan
 > syarat di bawah. Dasar hukum dan standarnya sudah diriset, jangan diulang.
-> Rancangan rincinya masih menunggu persetujuan pengguna.
+> Rancangannya diputuskan pengguna pada hari yang sama (bagian "Diputuskan").
 
 **Keputusan pengguna 2026-09-28**, sesudah audit kedua PR (laporan:
 <https://claude.ai/artifact/Cs8yAjGuZcYJzrVi874k9d>):
@@ -119,16 +119,57 @@ yayasan belum dilihat; tanyakan sebelum membangun.
   (<https://peraturan.bpk.go.id/Details/285721/permendikbudriset-no-46-tahun-2023>);
   PMA 73/2022 untuk kekerasan seksual di satuan pendidikan Kemenag.
 
-## Belum diputuskan — tanyakan (riset dulu, lalu pilihan ganda)
+## Diputuskan pengguna 2026-09-28 (keempat rekomendasi)
 
-1. Rincian alur Ps. 43 di layar: siapa yang diberi tahu, bentuk pembelaan
-   diri, dan siapa Plh menurut AD.
-2. Matriks WBS: penerima per jenis terlapor, jalur untuk laporan tentang
-   Pembina/Kiai, dan siapa yang memutus.
-3. TPPK per unit: anggota, alur, dan hubungannya dengan BK serta konseling
-   rahasia ([peran-dan-tugas-tambahan](./peran-dan-tugas-tambahan.md)).
-4. Bentuk "keputusan rapat Pembina" pada langkah tetapkan: rapat fisik yang
-   dicatat, suara daring, atau keduanya.
+Riset tambahannya:
+- keputusan di luar rapat adalah klausul AD yang lazim, bukan pasal UU:
+  <https://legalitas.org/tulisan/semua-tentang-yayasan>;
+- susunan TPPK menurut Permendikbudristek 46/2023: ganjil, paling sedikit
+  3 orang, pendidik bukan kepala sekolah ditambah komite atau wali, tenaga
+  kependidikan boleh ditambahkan, ditetapkan kepala sekolah;
+- satgas pesantren: PMA 73/2022, KMA 83/2023, dan Kepdirjen Pendis
+  1262/2024 tentang pengasuhan ramah anak.
+
+1. **Ps. 43 — ringkas: kunci kewenangan + tenggat.**
+   - Pengawas mencatat pemberhentian sementara beserta alasannya.
+   - Sistem seketika menahan kewenangan organ orang itu (menyetujui,
+     menandatangani TTE). Akunnya tetap bisa masuk untuk menyiapkan
+     pembelaan.
+   - Semua Pembina dan yang bersangkutan diberi tahu. Tenggat 7/7/7 hari
+     tampil.
+   - Putusan cabut atau berhentikan adalah keputusan rapat Pembina (butir 4).
+   - Kalau tenggat lewat tanpa putusan, pemberhentian **batal demi hukum**
+     dan kewenangan pulih otomatis.
+   - Plh belum dimodelkan; menunggu AD.
+2. **WBS — satu pintu di Aduan & Aspirasi** (modul `complaints`).
+   - Kategori pelanggaran dipisah dari pengaduan layanan.
+   - Penerimanya Pengawas. Laporan tentang Pengawas ke Pembina; tentang
+     Pembina atau Kiai ke Pengawas.
+   - Terlapor tidak pernah bisa membaca laporan tentang dirinya.
+   - Kekerasan terhadap santri dialihkan ke TPPK atau Satgas (butir 3).
+   - Anonim boleh; bukti diunggah, bukan tautan. Super Admin tidak membaca.
+3. **TPPK dan Satgas — tim per unit sebagai penugasan berjangka**, bukan
+   kode peran baru ([peran-dan-tugas-tambahan](./peran-dan-tugas-tambahan.md)).
+   - TPPK di TK, SD, SMP, dan SMA.
+   - Satgas di pesantren.
+   - Laporan kekerasan hanya terbaca tim unit itu, seperti konseling
+     rahasia. Kepala unit menerima rekomendasinya.
+4. **Keputusan Pembina: rapat tercatat ATAU sirkuler bulat.**
+   - (a) Rapat fisik atau daring dicatat: daftar hadir, kuorum, agenda,
+     hasil, pendapat berbeda. Risalah ditandatangani pimpinan dan sekretaris
+     rapat.
+   - (b) Keputusan di luar rapat sah hanya bila **semua** Pembina menyetujui
+     secara tertulis, dengan TTE per anggota (mesin suara Ed25519 dari #509
+     dipakai ulang).
+   - Berlaku untuk langkah "tetapkan" RPJP/Renstra/RKA dan putusan Ps. 43.
+   - Angka kuorum diambil dari AD.
+
+**Masih terbuka:** salinan Anggaran Dasar (akta) yayasan — untuk angka
+kuorum rapat Pembina dan penunjukan Plh. Minta ke pengguna; jangan menebak
+angkanya.
+
+**Urutan bangun:** 4 → 1 (putusan Ps. 43 memakai keputusan rapat) → 3 → 2
+(WBS mengalihkan kekerasan ke tim di butir 3).
 
 Lihat juga [pk-organ-yayasan-tanpa-kontrak](./pk-organ-yayasan-tanpa-kontrak.md)
 dan [eoffice-revocation-authority](./eoffice-revocation-authority.md) (tidak

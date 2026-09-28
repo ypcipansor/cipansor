@@ -36,14 +36,16 @@ items before 2026-09-25 is in the history of this file and of
     7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid
        dampingan (`peran-dan-tugas-tambahan.md`).
     8. **The yayasan's oversight, rebuilt from the closed #508 and #509**
-       (`decisions/pengawasan-dan-rapat-pembina.md`, 2026-09-28): first the
-       parts salvaged from #508 as small PRs — the Pengawasan pages for the
-       yayasan's organs, and whichever of its auth fixes still apply to
-       `main`; then the four open design questions put to the user
-       (Ps. 43 flow, the WBS matrix, TPPK, the Pembina meeting); then the
-       build, into the existing ratification flow and not a new module.
-       Done 2026-09-28: Pengawasan Internal, Manajemen Risiko and Kepatuhan
-       Syariah open for the organs — every unit, a unit filter, in their menu.
+       (`decisions/pengawasan-dan-rapat-pembina.md`). Done 2026-09-28:
+       Pengawasan Internal, Manajemen Risiko and Kepatuhan Syariah open for
+       the organs (#609). Next: #508's auth fixes that still apply to `main`,
+       each its own PR. The four design questions were answered the same day;
+       build in this order — the Pembina's decision as a recorded meeting or
+       a unanimous written resolution, in the existing ratification flow;
+       the Ps. 43 suspension (authority held, 7/7/7 deadlines, void by law);
+       TPPK/Satgas as timed per-unit assignments; violations reported through
+       Aduan & Aspirasi. The AD's quorum and Plh rules wait on a copy of the
+       deed.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

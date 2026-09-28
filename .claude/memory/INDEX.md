@@ -21,7 +21,7 @@ the mechanical cases.
 - [pimpinan-pesantren-kiai](decisions/pimpinan-pesantren-kiai.md) — no Direktur; the Kiai is Pimpinan Pesantren (unit head) and also Pembina, with the legal basis
 - [pk-organ-yayasan-tanpa-kontrak](decisions/pk-organ-yayasan-tanpa-kontrak.md) — Pembina, Pengurus and Pengawas make no PK; a unit head's PK hangs on the unit's ratified RKA
 - [pengesahan-dokumen-yayasan](decisions/pengesahan-dokumen-yayasan.md) — who drafts, reviews and ratifies RPJP/Renstra/RKA; ratified documents freeze
-- [pengawasan-dan-rapat-pembina](decisions/pengawasan-dan-rapat-pembina.md) — #508/#509 closed (2026-09-28); Ps. 43 suspension lapses by law, WBS recusal + TPPK route, Pembina decisions as meetings in the existing ratification flow; never Super Admin
+- [pengawasan-dan-rapat-pembina](decisions/pengawasan-dan-rapat-pembina.md) — #508/#509 closed (2026-09-28); decided: Ps. 43 lean (authority held, 7/7/7, void by law), WBS in Aduan & Aspirasi with recusal, TPPK/Satgas per unit, Pembina decides by recorded meeting or unanimous written resolution; never Super Admin; AD copy awaited
 - [rka-dua-tingkat](decisions/rka-dua-tingkat.md) — four planning levels (RPJP → Renstra → RKA Yayasan → RKA Unit); never propose three
 - [unit-vs-asrama-vs-takhosus](decisions/unit-vs-asrama-vs-takhosus.md) — a unit issues its own graduation; asrama is not a unit; takhosus is `UnitType.PESANTREN`; who manages asrama (Pimpinan + TU Pesantren + SA; koordinator places)
 - [menu-ia-tiga-tingkat](decisions/menu-ia-tiga-tingkat.md) — at most three menu levels, nine groups by discipline; no sub-sub-menus
