@@ -90,7 +90,9 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   Then Pengawasan Internal, Manajemen Risiko and Kepatuhan Syariah for the
   yayasan's organs, salvaged from #508 (#609, roadmap 00.8), Sentry
   removed (#610), and the unused Socket.IO server removed — the web polls
-  (`decisions/realtime-polling.md`, 2026-09-28). Next: the wali's approval for staff-filed leave off the
+  (`decisions/realtime-polling.md`, 2026-09-28). Sign-in (roadmap 00.9):
+  2FA recovery codes that work and the 2FA screens in Indonesian (#614), then
+  sessions that follow the account's live roles (this change). Next: the wali's approval for staff-filed leave off the
   pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
