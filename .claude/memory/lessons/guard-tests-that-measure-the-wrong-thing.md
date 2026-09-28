@@ -207,3 +207,27 @@ teacher of the class, a teacher of none, and the kepala sekolah.
 must be refused. An account that passes every guard proves only that the
 page renders.
 
+## A delivery test that stops before delivery
+
+A test for the e-mail size cap sent a maximum-length message and asserted it
+reached `deliverEmail` — but the transport in the test environment is `log`,
+and that branch returns **before** `htmlToText` or `composeRawMessage` runs.
+Nothing was composed, so the test proved the body cleared a size check, not
+that a configured transport builds and sends the accepted message — the path
+the bug actually broke. Drive the real branch: generate a throwaway RSA key,
+stub the token and send endpoints, and inspect the MIME that would leave the
+building. `log` is a configuration state, not a transport.
+
+## `toContain` on a body is a presence check, not a length check
+
+The same test asserted the MIME contained `&quot;`. One escape satisfies that,
+so a body silently truncated to a handful of characters passes: the escape is
+present, the message is not. Count the occurrences and compare against the
+number the input should produce (`decoded.match(/&quot;/g).length` equals the
+maximum-length body), and undo the transfer encoding first — Nodemailer emits a
+large body as quoted-printable with `=\n` soft breaks, so split escapes must be
+rejoined before counting.
+
+**A guard for "the whole thing arrived" has to measure the whole thing.** Both
+defects here share one shape: the assertion tested that a *representative*
+element was present rather than that the *entire* payload survived.

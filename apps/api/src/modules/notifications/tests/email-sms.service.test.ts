@@ -220,11 +220,20 @@ describe('NotificationService email dispatch', () => {
         'base64url'
       ).toString('utf8');
 
+      // Nodemailer encodes a body this size as quoted-printable, inserting
+      // `=\n` soft breaks; undo them before counting, or the split escapes
+      // would be miscounted.
+      const decoded = mime.replace(/=\r?\n/g, '');
+
       // The message was really composed and carried both parts...
       expect(mime).toContain('text/html');
       expect(mime).toContain('text/plain');
-      // ...with the fully-escaped body, not a refusal.
-      expect(mime).toContain('&quot;');
+      // ...with the *whole* escaped body, not a truncated prefix. A single
+      // `toContain('&quot;')` passes for any prefix, so silent truncation
+      // could have slipped past it; requiring every one of the
+      // MAX_NOTIFICATION_CONTENT_LENGTH escapes proves the full
+      // maximum-length body made it into the message.
+      expect((decoded.match(/&quot;/g) || []).length).toBe(MAX_NOTIFICATION_CONTENT_LENGTH);
     } finally {
       vi.unstubAllGlobals();
       resetEmailTransport();
