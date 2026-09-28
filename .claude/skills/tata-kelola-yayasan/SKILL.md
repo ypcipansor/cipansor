@@ -132,7 +132,8 @@ menu. Tabel ini ikut basi setiap kali menu berubah.
 - `rka-dua-tingkat.md` — empat tingkat;
 - `pk-organ-yayasan-tanpa-kontrak.md` — organ tanpa PK;
 - `pimpinan-pesantren-kiai.md` — Kiai, tanpa Direktur;
-- `unit-vs-asrama-vs-takhosus.md` — apa itu unit.
+- `unit-vs-asrama-vs-takhosus.md` — apa itu unit;
+- `pengawasan-dan-rapat-pembina.md` — pemberhentian sementara Pengurus (Ps. 43), WBS, keputusan rapat Pembina.
 
 Keputusan baru di domain ini disimpan sebagai berkas di `decisions/` dan
 didaftarkan di sini.

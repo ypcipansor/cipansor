@@ -3,7 +3,8 @@ import { asyncHandler } from '@/middleware/error';
 import { requireUser } from '@/middleware/auth';
 import { ApiResponse } from '@/utils/response';
 import * as permitService from './permits.service';
-import type { ListPermitsQueryParsed } from './permits.schema';
+import * as doctorNoteService from './permit-doctor-note.service';
+import type { ListPermitsQueryParsed, PermitDeciderQueryParsed } from './permits.schema';
 
 // Bodies and queries arrive already parsed by validate()/validateQuery() in
 // permits.routes.ts; the caller always comes from the verified token.
@@ -16,6 +17,11 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 
 export const summary = asyncHandler(async (req: Request, res: Response) => {
   res.json(ApiResponse.success(await permitService.getSummary(requireUser(req))));
+});
+
+export const deciderPreview = asyncHandler(async (req: Request, res: Response) => {
+  const query = res.locals.validatedQuery as PermitDeciderQueryParsed;
+  res.json(ApiResponse.success(await permitService.previewDecider(query, requireUser(req))));
 });
 
 export const getByCode = asyncHandler(async (req: Request, res: Response) => {
@@ -68,4 +74,22 @@ export const markReturned = asyncHandler(async (req: Request, res: Response) => 
     requireUser(req)
   );
   res.json(ApiResponse.success(permit, 'Kepulangan dicatat'));
+});
+
+export const attachDoctorNote = asyncHandler(async (req: Request, res: Response) => {
+  const permit = await doctorNoteService.attachDoctorNote(
+    req.params.id,
+    req.file,
+    requireUser(req)
+  );
+  res.json(ApiResponse.success(permit, 'Surat dokter dilampirkan'));
+});
+
+/** The note's file; never cached — it is a child's health data. */
+export const openDoctorNote = asyncHandler(async (req: Request, res: Response) => {
+  const note = await doctorNoteService.openDoctorNote(req.params.id, requireUser(req));
+  res.setHeader('Content-Type', note.mimeType);
+  res.setHeader('Content-Disposition', `inline; filename="${note.fileName}"`);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.send(note.content);
 });

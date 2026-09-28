@@ -31,6 +31,29 @@ import { ServiceAccountTokenSource } from '../../lib/google-service-account';
 const GMAIL_SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
 const GMAIL_SEND_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
+/**
+ * Largest derived e-mail body this module will process, in UTF-16 code units.
+ *
+ * A backstop on what reaches the transport, **not** an equality with the API's
+ * request limit. `sendEmail` HTML-escapes a notification's body and wraps it in
+ * a template before calling here, and escaping turns one character into as many
+ * as six (`"` → `&quot;`, `'` → `&#039;`); the generated HTML is therefore
+ * neither the same string nor the same size as the request that produced it,
+ * and the two limits do not even share a unit (the request limit counts bytes
+ * of raw JSON, this counts code units of generated HTML). The request edge caps
+ * raw content so its worst-case expansion stays under this bound
+ * (`MAX_NOTIFICATION_CONTENT_LENGTH` in `notifications.schema.ts`), which is
+ * what keeps every accepted body deliverable.
+ *
+ * What is left for this bound to stop is the pathological body an internal
+ * caller could still hand over: the scanners that strip hidden markup are
+ * linear, but a caller-supplied string is not something this module controls —
+ * the bound `js/loop-bound-injection` (code scanning alert 54) asks for. A body
+ * past it is refused, never silently truncated: a truncated HTML part would no
+ * longer match the plain-text part derived from it (see `htmlToText`).
+ */
+export const MAX_EMAIL_BODY_LENGTH = 10 * 1024 * 1024;
+
 export type EmailTransportKind = 'gmail_api' | 'smtp' | 'log';
 
 export interface EmailTransportStatus {
@@ -370,19 +393,32 @@ function quotedAttributeMask(text: string): Uint8Array {
  * which is the incomplete-sanitization class this scan exists to close.
  */
 function stripHiddenElements(text: string): string {
+  const normalizedText = typeof text === 'string' ? text : String(text ?? '');
+  // Refuse an oversized body instead of truncating it: an early exit is what
+  // bounds every loop below (CodeQL's `js/loop-bound-injection` query, whose
+  // only string barrier is a length check that exits the function), and it also
+  // keeps the plain-text part `htmlToText` derives consistent with the HTML
+  // part it was derived from — a silently truncated prefix would not be.
+  if (normalizedText.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email body is ${normalizedText.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
+  }
+  const safeText = normalizedText;
+
   const patterns = [
     { open: '<!--', close: '-->' },
     { open: '<style', close: '</style>' },
     { open: '<head', close: '</head>' },
   ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
-  const quoted = quotedAttributeMask(text);
+  const quoted = quotedAttributeMask(safeText);
   const isLiveOpen = (start: number) => !quoted[start];
   const out: string[] = [];
   const outPos: number[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
-  for (let i = 0; i < text.length; i++) {
-    out.push(text[i]);
+  for (let i = 0; i < safeText.length; i++) {
+    out.push(safeText[i]);
     outPos.push(i);
 
     for (let p = 0; p < patterns.length; p++) {
@@ -672,6 +708,22 @@ async function sendViaSmtp(input: DeliverEmailInput): Promise<DeliverEmailResult
  * caller decides whether that counts as success for its own purposes.
  */
 export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEmailResult> {
+  // Reject at the boundary, before any transport composes or sends anything.
+  // The Gmail/SMTP paths derive a `text/plain` part from `html` when `text` is
+  // omitted, but a caller may pass both, and then nothing below would inspect
+  // the HTML at all — the size limit has to be enforced here to be enforced.
+  // Both parts are checked: a caller can also supply an oversized `text`.
+  if (input.html.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email HTML is ${input.html.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
+  }
+  if (input.text !== undefined && input.text.length > MAX_EMAIL_BODY_LENGTH) {
+    throw new Error(
+      `Email text is ${input.text.length} characters, over the ${MAX_EMAIL_BODY_LENGTH} limit`
+    );
+  }
+
   if (gmailApiConfigured()) {
     return sendViaGmailApi(input);
   }

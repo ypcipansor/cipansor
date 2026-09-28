@@ -1,6 +1,6 @@
 # pemutus-izin-santri
 
-> Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali
+> Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali. 2026-09-28: surat dokter disimpan sampai akhir TA, dibuka pemutus + wali + kepala unit (#606); koordinator asrama dibangun — "menginap" = di luar pondok melewati tengah malam WIB
 
 **Kepala sekolah terlalu tinggi untuk izin seorang anak.** Itu kata pengguna
 atas #564, yang menaruh keputusan pada kepala sekolah, Pimpinan Pesantren dan
@@ -26,6 +26,7 @@ sedang disanksi, atau besok ujian.
 | santri mukim (punya kamar aktif) | musyrif yang ditugaskan di kamar itu atau di seluruh asrama |
 | selain itu | wali kelas dari kelas aktifnya |
 | lebih dari `PERMIT_HEAD_AFTER_DAYS` (7) hari kalender WIB | kepala sekolah unitnya; untuk santri mukim atau Takhosus juga Pimpinan Pesantren |
+| santri mukim pulang, atau di luar pondok melewati tengah malam WIB | koordinator asrama (`MusyrifAssignment.role = KOORDINATOR`) |
 | belum ada pembimbing tercatat | kepala unit, dan izinnya menyatakan itu |
 
 - **Ambil alih.** Kepala unit boleh mengambil alih izin milik pembimbing yang
@@ -59,7 +60,7 @@ dan panduan DfE [*Working together to improve school attendance*](https://assets
 2. **Surat dokter diminta bila perlu, bukan wajib.** Wali boleh melampirkannya;
    pembimbing boleh memintanya bila ragu atau santri sering sakit. DfE §374:
    sekolah "should not have blanket rules requiring" bukti medis. UKS pondok
-   sendiri tahu santri mukim yang sakit. Butuh kolom lampiran di izin (belum ada).
+   sendiri tahu santri mukim yang sakit. Dibangun 2026-09-28 — lihat di bawah.
 3. **Santri mukim pulang atau menginap diputuskan koordinator asrama**
    (`MusyrifAssignment.role = KOORDINATOR`), seperti kepala asrama/bagian
    pengasuhan di pondok. Izin keluar singkat tetap musyrif kamar. Asrama tanpa
@@ -70,7 +71,50 @@ dan panduan DfE [*Working together to improve school attendance*](https://assets
    menunggu orang tua. Izin di dalam pondok (sakit di UKS, tidak ikut
    kegiatan) cukup diberitahukan. Butuh perubahan skema.
 
-Butir 2–4 belum dibangun; urutannya di `roadmap.md`.
+Butir 3 dibangun 2026-09-28; butir 4 belum (urutannya di `roadmap.md`).
+
+**Cara butir 3 dibaca sistem.** Izin punya kolom `offCampus` (santri di luar
+pondok selama izin). PULANG, KELUAR dan KELUARGA selalu di luar pondok; untuk
+SAKIT dan OTHER formulir bertanya kepada pengaju, hanya bila santrinya
+mukim ("Pondok — UKS atau asrama" / "Luar pondok"). Koordinator memutuskan
+bila santri mukim di luar pondok **dan** izinnya PULANG atau melewati tengah
+malam WIB; selain itu musyrif kamar. Izin lebih dari 7 hari tetap ke kepala
+unit. Asrama tanpa koordinator → Pimpinan Pesantren, atau kepala sekolah
+santri itu (keduanya kepala atas santri mukim, sama seperti izin panjang).
+Baris lama yang tak pernah mencatat tempat dianggap di luar pondok — bacaan
+yang lebih ketat. Formulir menampilkan "Akan diputuskan oleh …" sebelum
+dikirim (`GET /permits/decider`).
+
+## Surat dokter — penyimpanan dan akses (diputuskan pengguna 2026-09-28)
+
+Surat dokter adalah data kesehatan anak — **data pribadi spesifik** menurut
+UU PDP 27/2022 Ps. 4(2); Ps. 16(2) mewajibkan data dihapus saat masa
+retensinya habis, tanpa memberi angka. JRA Permendikbud 45/2016 hanya untuk
+satuan kerja Kemendikbud, bukan yayasan. Pedoman sekolah Inggris (IRMS
+*Information Management Toolkit for Schools* 2019 §3.3.2) menyimpan surat
+ketidakhadiran selama tahun ajaran berjalan + 2 tahun. Pilihan pengguna, keduanya
+rekomendasi:
+
+1. **Disimpan sampai akhir tahun ajaran izin itu**, lalu berkasnya dihapus
+   otomatis; yang tetap di izin: bahwa surat dokter pernah dilampirkan,
+   SHA-256-nya, dan siapa pemutus yang pertama melihatnya. Rekap Sakit/Izin
+   sudah masuk rapor di akhir semester, jadi berkasnya tak diperlukan lagi.
+   Ditolak: TA + 2 tahun (data kesehatan anak tersimpan sampai tiga tahun),
+   30 hari (bukti hilang sebelum rapor), tanpa berkas sama sekali (wali yang
+   mengajukan dari rumah tak bisa menunjukkan suratnya).
+2. **Dibuka oleh pemutus izin itu** (musyrif atau wali kelas santri, atau
+   yang memutuskannya), **wali santri, dan kepala unit** (yang bisa mengambil
+   alih). Staf lain yang melihat izin hanya melihat tanda "ada surat dokter".
+   Ditolak: semua yang bisa melihat izin (terlalu lebar), hanya pemutus + wali
+   (kepala yang mengambil alih tak bisa melihat dasarnya). Super Admin tidak
+   termasuk.
+
+Siapa pun yang boleh mengajukan izin boleh melampirkan surat dokter selama
+izin menunggu atau sudah disetujui; **mengganti** surat yang sudah ada hanya
+bagi yang boleh membukanya — tidak ada yang menimpa bukti yang tak bisa ia
+lihat. Berkasnya disimpan di basis
+data (bukan `public/uploads`), hanya dibaca lewat endpoint yang memeriksa
+pemanggil, dan setiap pembukaan tercatat di log audit.
 
 Jangan kembalikan keputusan ke kepala sekolah atau admin tanpa alasan baru dari
 yayasan.

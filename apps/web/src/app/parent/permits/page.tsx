@@ -28,9 +28,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import {
+  DeciderHint,
+  WHEREABOUTS_MISSING,
+  WhereaboutsField,
+  asksWhereabouts,
+  usePermitDeciderFor,
+} from "@/components/permits/permit-whereabouts";
+import {
+  DoctorNoteField,
+  DoctorNoteSection,
+} from "@/components/permits/doctor-note";
 import { useParentChildren } from "@/hooks/use-parent-portal";
 import {
   usePermits,
+  useAttachDoctorNote,
   useCreatePermit,
   useCancelPermit,
   localInputToIso,
@@ -47,6 +59,8 @@ const EMPTY_FORM = {
   reason: "",
   startDate: "",
   endDate: "",
+  /** Asked only for a santri mukim on SAKIT or OTHER leave. */
+  offCampus: undefined as boolean | undefined,
 };
 
 const when = (iso: string) =>
@@ -82,7 +96,18 @@ export default function ParentPermitsPage() {
   );
   const permits = data?.data ?? [];
   const create = useCreatePermit();
+  const attachNote = useAttachDoctorNote();
+  const [note, setNote] = useState<File | null>(null);
   const cancel = useCancelPermit();
+  const { data: decider } = usePermitDeciderFor({
+    studentId: dialogOpen ? selectedChild : undefined,
+    type: form.type || undefined,
+    startDate: form.startDate,
+    endDate: form.endDate,
+    offCampus: form.offCampus,
+  });
+  const askWhere = asksWhereabouts(form.type || undefined, decider?.boarder);
+  const [whereMissing, setWhereMissing] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,17 +116,38 @@ export default function ParentPermitsPage() {
       toast.error("Waktu kembali harus sesudah waktu berangkat");
       return;
     }
+    if (askWhere && form.offCampus === undefined) {
+      setWhereMissing(true);
+      return;
+    }
     try {
-      await create.mutateAsync({
+      const permit = await create.mutateAsync({
         studentId: selectedChild,
         type: form.type,
         reason: form.reason,
+        offCampus: askWhere ? form.offCampus : undefined,
         startDate: localInputToIso(form.startDate),
         endDate: localInputToIso(form.endDate),
       });
-      toast.success("Pengajuan izin terkirim");
+      let noteFailed = false;
+      if (note) {
+        noteFailed = await attachNote
+          .mutateAsync({ id: permit.id, file: note })
+          .then(
+            () => false,
+            () => true,
+          );
+      }
+      if (noteFailed) {
+        // Filed without it; its card offers to attach it again.
+        toast.warning("Izin terkirim, tetapi surat dokter gagal dilampirkan");
+      } else {
+        toast.success("Pengajuan izin terkirim");
+      }
       setDialogOpen(false);
       setForm(EMPTY_FORM);
+      setNote(null);
+      setWhereMissing(false);
     } catch {
       // The API client has already shown the server's message.
     }
@@ -206,6 +252,18 @@ export default function ParentPermitsPage() {
                     </div>
                   </div>
 
+                  {askWhere && (
+                    <WhereaboutsField
+                      value={form.offCampus}
+                      onChange={(v) => {
+                        setForm({ ...form, offCampus: v });
+                        setWhereMissing(false);
+                      }}
+                      error={whereMissing ? WHEREABOUTS_MISSING : undefined}
+                    />
+                  )}
+                  <DeciderHint preview={decider} />
+
                   <div className="space-y-2">
                     <Label htmlFor="reason">Alasan</Label>
                     <Textarea
@@ -220,6 +278,8 @@ export default function ParentPermitsPage() {
                       minLength={10}
                     />
                   </div>
+
+                  <DoctorNoteField file={note} onChange={setNote} />
                 </div>
 
                 <DialogFooter>
@@ -234,6 +294,7 @@ export default function ParentPermitsPage() {
                     type="submit"
                     disabled={
                       create.isPending ||
+                      attachNote.isPending ||
                       !form.type ||
                       form.reason.trim().length < 10
                     }
@@ -305,6 +366,9 @@ export default function ParentPermitsPage() {
                           {permit.rejectionNote}
                         </p>
                       )}
+                      <div className="mt-3">
+                        <DoctorNoteSection permit={permit} canAttach />
+                      </div>
                     </div>
                     <div className="space-y-2 text-sm md:text-right">
                       <p className="text-muted-foreground">

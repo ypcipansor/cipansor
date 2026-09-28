@@ -47,6 +47,11 @@ export const unitIdParamSchema = z.object({
   id: z.string().uuid('Invalid unit ID'),
 });
 
+/** A public certificate link; a malformed id is simply not a certificate. */
+export const accreditationIdParamSchema = z.object({
+  accreditationId: z.string().uuid('ID sertifikat tidak sah'),
+});
+
 // Types
 export type ListUnitsQuery = z.infer<typeof listUnitsQuerySchema>;
 export type CreateUnitInput = z.infer<typeof createUnitSchema>;

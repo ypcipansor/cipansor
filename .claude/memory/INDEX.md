@@ -21,6 +21,7 @@ the mechanical cases.
 - [pimpinan-pesantren-kiai](decisions/pimpinan-pesantren-kiai.md) — no Direktur; the Kiai is Pimpinan Pesantren (unit head) and also Pembina, with the legal basis
 - [pk-organ-yayasan-tanpa-kontrak](decisions/pk-organ-yayasan-tanpa-kontrak.md) — Pembina, Pengurus and Pengawas make no PK; a unit head's PK hangs on the unit's ratified RKA
 - [pengesahan-dokumen-yayasan](decisions/pengesahan-dokumen-yayasan.md) — who drafts, reviews and ratifies RPJP/Renstra/RKA; ratified documents freeze
+- [pengawasan-dan-rapat-pembina](decisions/pengawasan-dan-rapat-pembina.md) — #508/#509 closed (2026-09-28); Ps. 43 suspension lapses by law, WBS recusal + TPPK route, Pembina decisions as meetings in the existing ratification flow; never Super Admin
 - [rka-dua-tingkat](decisions/rka-dua-tingkat.md) — four planning levels (RPJP → Renstra → RKA Yayasan → RKA Unit); never propose three
 - [unit-vs-asrama-vs-takhosus](decisions/unit-vs-asrama-vs-takhosus.md) — a unit issues its own graduation; asrama is not a unit; takhosus is `UnitType.PESANTREN`; who manages asrama (Pimpinan + TU Pesantren + SA; koordinator places)
 - [menu-ia-tiga-tingkat](decisions/menu-ia-tiga-tingkat.md) — at most three menu levels, nine groups by discipline; no sub-sub-menus
@@ -31,10 +32,11 @@ the mechanical cases.
 - [chatbot-retrieval-settled](decisions/chatbot-retrieval-settled.md) — the whole corpus goes into every prompt; what was rejected; when to revisit
 - [route-naming](decisions/route-naming.md) — PPDB/PSB → SPMB with permanent redirects; pesantren terms are never translated
 - [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — santri on every screen (murid only in state formats), spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law + what the yayasan offers, target module names
-- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed
+- [pemutus-izin-santri](decisions/pemutus-izin-santri.md) — a santri's leave is decided by their musyrif or wali kelas, not the kepala; heads only after 7 days, no mentor, or takeover; going home → koordinator asrama; staff-filed leave off the pondok waits for the wali; doctor's note only when needed, kept to the end of the TA, opened by decider + wali + head, kept to the end of the academic year, opened by the decider, the wali and the unit head (2026-09-28)
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
-- [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket
+- [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
+- [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
 
 ## Lessons — traps that already cost time
 
@@ -44,7 +46,7 @@ the mechanical cases.
 - [student-status-case-mismatch](lessons/student-status-case-mismatch.md) — `'active'` vs `'ACTIVE'`: 43 queries returned zero; one vocabulary + CHECK + scanner
 - [prisma-include-leaks-pii](lessons/prisma-include-leaks-pii.md) — `include: { student }` sends 69 columns of a child's data; always `select`
 - [rbac-nav-contract](lessons/rbac-nav-contract.md) — `navigation.ts` and `rbac.ts` are one contract; the three directions tested, and how they go blind
-- [api-integration-traps](lessons/api-integration-traps.md) — empty permission matrix, Express 5 `req.query`, `/:id` shadowing, unmounted paths
+- [api-integration-traps](lessons/api-integration-traps.md) — empty permission matrix, Express 5 `req.query`, `/:id` shadowing, unmounted paths; a file over multer's limit answering 500
 - [auth-session-traps](lessons/auth-session-traps.md) — refresh-token stampede, pre-rehydration redirects, the 4 KB cookie
 - [stale-temporal-data](lessons/stale-temporal-data.md) — derive dates from now; `isActive` is not a schedule
 - [migration-history-baselined](lessons/migration-history-baselined.md) — `0_init`; `migrate diff` blind to triggers; CI's `db push`; wrap data migrations in BEGIN/COMMIT
@@ -55,7 +57,7 @@ the mechanical cases.
 - [pnpm-install-silently-installs-nothing](lessons/pnpm-install-silently-installs-nothing.md) — exit 0, nothing installed; `CI=true`
 - [audit-deps-fails-on-time-not-diff](lessons/audit-deps-fails-on-time-not-diff.md) — the Security job reds on the date, and greens without checking
 - [github-actions-minutes-exhausted](lessons/github-actions-minutes-exhausted.md) — a 2-second job with no steps is a billing wall; read the annotation
-- [gh-cli-and-shell-traps](lessons/gh-cli-and-shell-traps.md) — `gh pr edit` does nothing; unquoted heredocs run backticks
+- [gh-cli-and-shell-traps](lessons/gh-cli-and-shell-traps.md) — `gh pr edit` does nothing; unquoted heredocs run backticks; all green yet BLOCKED = a CodeQL category missing
 - [docker-image-size-traps](lessons/docker-image-size-traps.md) — Prisma's optional peer, `chown -R`, recursive `*.sql` in `.dockerignore`
 - [next-image-optimizer-dead](lessons/next-image-optimizer-dead.md) — `/_next/image` never resizes; ship images at display size
 - [nextjs-loading-boundary-commits-200](lessons/nextjs-loading-boundary-commits-200.md) — a root `loading.tsx` turns every 404 into a 200

@@ -70,12 +70,12 @@ test.describe("Daily report detail", () => {
     await expect(page).toHaveURL(new RegExp(`/daily-report/${report.id}/edit`));
   });
 
-  test("the tk detail viewer resolves a private report photo instead of using the raw URL (finding 14)", async ({
+  test("the detail viewer resolves a private report photo instead of using the raw URL (finding 14)", async ({
     page,
   }) => {
-    // `/tk/daily-reports/[id]` renders `photo.photoUrl` directly before the
-    // fix, so once uploads land in the private container the tile 403s. It must
-    // go through the same resolver as every other private viewer.
+    // `/daily-report/[id]` renders `photo.photoUrl` directly before the fix, so
+    // once uploads land in the private container the tile 403s. It must go
+    // through the same resolver as every other private viewer.
     const template = await apiRequest<{
       data: Array<{ studentId: string }>;
     }>(session, "GET", "/daily-report?limit=1");
@@ -118,7 +118,7 @@ test.describe("Daily report detail", () => {
     );
 
     try {
-      await page.goto(`/tk/daily-reports/${created.data.id}`);
+      await page.goto(`/daily-report/${created.data.id}`);
       await page.waitForLoadState("domcontentloaded");
 
       // The reporter photo must be resolved through `/upload/sas` into a

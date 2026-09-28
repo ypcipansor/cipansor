@@ -3,6 +3,7 @@ import { Errors } from '@/middleware/error';
 import { Prisma, UserRole, Gender, UnitType } from '@prisma/client';
 import { STUDENT_STATUS } from '@cipansor/shared';
 import { nisMapForUnit } from '@/utils/student-nis';
+import { currentAccreditations } from '@/modules/units';
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -332,7 +333,9 @@ export class EmisService {
       telepon: unit.phone || '',
       email: unit.email || '',
       website: unit.foundation?.website || '',
-      akreditasi: unit.accreditation || 'Belum Terakreditasi',
+      // The certificate in force (decisions/akreditasi-unit.md), never a guess.
+      akreditasi:
+        (await currentAccreditations([unit.id])).get(unit.id)?.rating ?? 'Belum Terakreditasi',
       namaYayasan: unit.foundation?.name || '-',
       npwpYayasan: unit.foundation?.taxId || '',
       tahunBerdiri: unit.foundation?.foundingDate

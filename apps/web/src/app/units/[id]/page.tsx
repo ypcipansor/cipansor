@@ -30,6 +30,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useUnit, UNIT_TYPES } from "@/hooks/use-units";
+import { UnitAccreditationCard } from "@/components/units/unit-accreditation-card";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { useAuthStore } from "@/stores/auth";
+import { ADMIN_ROLE_CODES } from "@cipansor/shared";
 
 const getUnitTypeLabel = (type: string) => {
   const unitType = UNIT_TYPES.find((t) => t.value === type);
@@ -58,6 +62,10 @@ export default function UnitDetailPage() {
   const unitId = params.id as string;
 
   const { data: unit, isLoading } = useUnit(unitId);
+  // The kepala sekolah and the yayasan's organs read this page (Profil Unit);
+  // editing the unit is the admins' (PUT /units/:id).
+  const roleCode = getPrimaryRoleCode(useAuthStore((s) => s.user));
+  const canEdit = !!roleCode && ADMIN_ROLE_CODES.includes(roleCode);
 
   if (isLoading) {
     return (
@@ -111,12 +119,14 @@ export default function UnitDetailPage() {
               </p>
             </div>
           </div>
-          <Button asChild>
-            <Link href={`/units/${unitId}/edit`}>
-              <Pencil className="h-4 w-4 mr-2" />
-              Edit Unit
-            </Link>
-          </Button>
+          {canEdit && (
+            <Button asChild>
+              <Link href={`/units/${unitId}/edit`}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Unit
+              </Link>
+            </Button>
+          )}
         </div>
 
         <div className="grid gap-6 md:grid-cols-3">
@@ -261,6 +271,8 @@ export default function UnitDetailPage() {
             </CardContent>
           </Card>
         </div>
+
+        <UnitAccreditationCard unitId={unitId} />
 
         {/* Quick Actions */}
         <Card>

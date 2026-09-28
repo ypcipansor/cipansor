@@ -31,13 +31,27 @@ vi.mock('../permits.service', () => {
     cancelPermit: ok,
     departPermit: ok,
     returnPermit: ok,
+    previewDecider: vi.fn(async () => ({
+      boarder: true,
+      decision: { route: 'MENTOR', mentorKind: 'KOORDINATOR', mentors: [] },
+    })),
   };
 });
+
+vi.mock('../permit-doctor-note.service', () => ({
+  attachDoctorNote: vi.fn(async () => ({ id: 'p1' })),
+  openDoctorNote: vi.fn(async () => ({
+    content: Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+    mimeType: 'image/jpeg',
+    fileName: 'surat-dokter-PMT-AB23CD.jpg',
+  })),
+}));
 
 import { verifyToken } from '@/lib/jwt';
 import { errorHandler } from '@/middleware/error';
 import permitRoutes from '../permits.routes';
 import * as service from '../permits.service';
+import * as doctorNotes from '../permit-doctor-note.service';
 
 const ROLES = {
   superAdmin: 'SUPER_ADMIN',
@@ -81,6 +95,11 @@ const VALID_CREATE = {
   endDate: '2026-09-27T17:00:00+07:00',
 };
 
+const DECIDER_QUERY =
+  '/permits/decider?studentId=11111111-1111-4111-8111-111111111111&type=SAKIT' +
+  '&startDate=2026-10-02T07%3A00%3A00%2B07%3A00&endDate=2026-10-04T17%3A00%3A00%2B07%3A00' +
+  '&offCampus=false';
+
 type Call = [method: 'get' | 'post' | 'patch', path: string, body?: object];
 const send = (who: Who, [method, path, body]: Call) => {
   const req = request(app)[method](path).set('Authorization', `Bearer ${who}`);
@@ -112,11 +131,17 @@ const MATRIX: Array<[string, Call, Who[]]> = [
   ['change', ['patch', `/permits/${ID}`, { reason: 'Alasan yang lain sekali' }], REQUESTERS],
   ['withdraw', ['post', `/permits/${ID}/cancel`], REQUESTERS],
   ['summary', ['get', '/permits/summary'], STAFF],
+  // Whoever may file one may ask who would decide it; the service limits it
+  // to learners in their scope (permits.service.test.ts).
+  ['who would decide', ['get', DECIDER_QUERY], REQUESTERS],
   ['gate lookup', ['get', '/permits/code/PMT-AB23CD'], STAFF],
   ['record departure', ['post', `/permits/${ID}/depart`], STAFF],
   ['record return', ['post', `/permits/${ID}/return`], STAFF],
   ['approve', ['post', `/permits/${ID}/approve`], DECIDERS],
   ['reject', ['post', `/permits/${ID}/reject`, { rejectionNote: 'Bentrok ujian' }], DECIDERS],
+  // Who then opens it is the service's rule (permit-doctor-note.test.ts).
+  ['attach a doctor’s note', ['post', `/permits/${ID}/doctor-note`], REQUESTERS],
+  ['open the doctor’s note', ['get', `/permits/${ID}/doctor-note`], REQUESTERS],
 ];
 
 describe('permit routes — who may call what', () => {
@@ -148,6 +173,25 @@ describe('permit routes — who may call what', () => {
 
   it('no token is 401', async () => {
     expect((await request(app).get('/permits')).status).toBe(401);
+  });
+});
+
+describe('GET /permits/decider', () => {
+  it('reaches the service with the query parsed — offCampus a boolean — and is not taken for an id', async () => {
+    const res = await send('wali', ['get', DECIDER_QUERY]);
+    expect(res.status).toBe(200);
+    expect(vi.mocked(service.getPermit)).not.toHaveBeenCalled();
+    expect(vi.mocked(service.previewDecider).mock.calls[0][0]).toEqual({
+      studentId: '11111111-1111-4111-8111-111111111111',
+      type: 'SAKIT',
+      startDate: '2026-10-02T07:00:00+07:00',
+      endDate: '2026-10-04T17:00:00+07:00',
+      offCampus: false,
+    });
+  });
+
+  it('without a learner or a type is 400', async () => {
+    expect((await send('wali', ['get', '/permits/decider?type=SAKIT'])).status).toBe(400);
   });
 });
 
@@ -195,4 +239,49 @@ describe('permit routes — validation at the edge', () => {
       expect(res.status).toBe(404);
     }
   );
+});
+
+describe('the doctor’s note on the wire', () => {
+  const attach = (file: Buffer, name: string, contentType: string) =>
+    request(app)
+      .post(`/permits/${ID}/doctor-note`)
+      .set('Authorization', 'Bearer wali')
+      .attach('file', file, { filename: name, contentType });
+
+  it('takes the file as multipart and hands it to the service', async () => {
+    const res = await attach(
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2]),
+      'surat.jpg',
+      'image/jpeg'
+    );
+    expect(res.status).toBe(200);
+    const [id, file, actor] = vi.mocked(doctorNotes.attachDoctorNote).mock.calls.at(-1)!;
+    expect(id).toBe(ID);
+    expect(file?.buffer.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(actor).toMatchObject({ sub: 'u-wali' });
+  });
+
+  it('refuses a file that is not a photo or a PDF: 400', async () => {
+    const res = await attach(Buffer.from('<svg/>'), 'surat.svg', 'image/svg+xml');
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a file over 5 MB with a 400 — not a 500', async () => {
+    const big = Buffer.concat([Buffer.from('%PDF-'), Buffer.alloc(5 * 1024 * 1024 + 1)]);
+    const res = await attach(big, 'surat.pdf', 'application/pdf');
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe('Berkas melebihi ukuran yang diizinkan');
+  });
+
+  it('sends the file inline and never lets it be cached', async () => {
+    const res = await request(app)
+      .get(`/permits/${ID}/doctor-note`)
+      .set('Authorization', 'Bearer waliKelas');
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(res.headers['content-disposition']).toBe(
+      'inline; filename="surat-dokter-PMT-AB23CD.jpg"'
+    );
+    expect(res.headers['cache-control']).toBe('private, no-store');
+  });
 });

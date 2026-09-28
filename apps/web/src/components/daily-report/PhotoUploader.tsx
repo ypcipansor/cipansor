@@ -152,7 +152,7 @@ export function PhotoUploader({
   // Revoke every outstanding preview URL on unmount. The photos belong to the
   // parent (this is a controlled component), so this is only right while the
   // uploader lives exactly as long as the form that owns them — true on
-  // /tk/daily-reports/new. Inside tabs or steps it would revoke previews the
+  // /daily-report/new (a card outside its tabs). Inside tabs or steps it would revoke previews the
   // parent still shows; move the cleanup to the owner then.
   // `removePhoto` only frees
   // the ones the user deletes; the ones still present when the page is

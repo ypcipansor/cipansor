@@ -25,12 +25,29 @@ export const NotificationPriorityEnum = z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT
 export const NotificationChannelEnum = z.enum(['IN_APP', 'EMAIL', 'SMS', 'PUSH', 'WHATSAPP']);
 export const RecipientTypeEnum = z.enum(['ALL', 'UNIT', 'CLASS', 'ROLE', 'INDIVIDUAL']);
 
+/**
+ * Largest raw notification body a request may carry, in characters.
+ *
+ * The email channel escapes this text into HTML before sending, and escaping
+ * turns one character into as many as six (`"` → `&quot;`, `'` → `&#039;`).
+ * With the template shell (~4 KB) that worst case has to stay under the
+ * transport's `MAX_EMAIL_BODY_LENGTH` (10 MiB), or the API would accept a body
+ * the email channel then refuses and the recipient never gets it. 1 MiB raw ×
+ * 6 + 4 KB ≈ 6 MiB, comfortably inside 10 MiB, and far above any real
+ * pengumuman or notification message.
+ *
+ * The 10 MiB `express.json` limit is a separate, coarser backstop on the whole
+ * request; this one is the semantic cap that keeps an accepted message
+ * deliverable on every channel.
+ */
+export const MAX_NOTIFICATION_CONTENT_LENGTH = 1_048_576;
+
 // ==================== NOTIFICATION ====================
 
 export const createNotificationSchema = z.object({
   userId: z.string().uuid().optional(), // Optional for bulk/system
   title: z.string().min(1).max(255),
-  message: z.string().min(1),
+  message: z.string().min(1).max(MAX_NOTIFICATION_CONTENT_LENGTH),
   type: NotificationTypeEnum.default('INFO'),
   priority: NotificationPriorityEnum.default('NORMAL'),
   channels: z.array(NotificationChannelEnum).default(['IN_APP']),
@@ -101,7 +118,7 @@ export const queryStatsSchema = z.object({
 export const createAnnouncementSchema = z.object({
   unitId: z.string().uuid().optional(),
   title: z.string().min(1).max(255),
-  content: z.string().min(1),
+  content: z.string().min(1).max(MAX_NOTIFICATION_CONTENT_LENGTH),
   type: NotificationTypeEnum.default('ANNOUNCEMENT'),
   priority: z.coerce.number().int().min(0).max(2).default(0), // Keep int for existing logic
   publishedAt: z.coerce.date().optional(),

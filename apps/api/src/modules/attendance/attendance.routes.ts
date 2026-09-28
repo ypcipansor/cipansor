@@ -57,6 +57,21 @@ router.get('/follow-ups', recorders, controller.followUps);
 
 /**
  * @swagger
+ * /api/attendance/patterns:
+ *   get:
+ *     summary: The caller's santri whose attendance shows a pattern now
+ *     description: Absent (Alpa, Sakit or Izin) on at least 10% of the days recorded this semester once 10 are recorded, or late 3 times in 30 days — among the caller's homeroom pupils, the santri mukim they are musyrif of, and their unit's pupils for a guru BK.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The santri with a pattern, the most absent first
+ */
+router.get('/patterns', recorders, controller.patterns);
+
+/**
+ * @swagger
  * /api/attendance:
  *   get:
  *     summary: List attendance records

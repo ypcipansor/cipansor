@@ -32,7 +32,6 @@ const KNOWN_MISSING = new Set([
   "/calendar/events/X",
   "/calendar/events/X/edit",
   "/curriculum/schedules",
-  "/daily-report/X/edit",
   "/donation/X",
   "/donation/campaigns/X/edit",
   "/extracurricular/X/edit",
