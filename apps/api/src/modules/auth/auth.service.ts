@@ -185,7 +185,7 @@ export class AuthService {
     // cannot log in — assign a role via /users/:id/roles first.
     const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
     if (!primaryAssignment) {
-      throw Errors.forbidden('No active role assignment found for this user');
+      throw Errors.forbidden('Akun ini tidak memiliki peran aktif. Hubungi admin unit Anda.');
     }
 
     const roleCode = primaryAssignment.role.code;
@@ -487,28 +487,32 @@ export class AuthService {
       where: { id: storedToken.id },
     });
 
-    // Get primary role — with legacy fallback for unmigrated users
+    // The session follows the account's live assignments, read afresh on every
+    // refresh. There is no fallback to the legacy `users.role` column: it kept
+    // minting sessions for an account whose every role had been removed or had
+    // expired, which login itself refuses. The old token is already deleted,
+    // so a refusal here ends the session.
     const primaryAssignment =
       storedToken.user.userRoles.find((r) => r.isPrimary) || storedToken.user.userRoles[0];
-
-    let refreshRoleCode: string;
-    let permissions: string[];
-    let refreshRoleId: string | undefined;
-    let refreshUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      refreshRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      refreshRoleId = primaryAssignment.roleId;
-      refreshUnitId = primaryAssignment.unitId;
-    } else if (storedToken.user.role) {
-      refreshRoleCode = storedToken.user.role;
-      permissions = [];
-      refreshRoleId = undefined;
-      refreshUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
+    if (!primaryAssignment) {
+      throw Errors.forbidden('Akun ini tidak lagi memiliki peran aktif. Hubungi admin unit Anda.');
     }
+
+    // A role that demands 2FA may have been granted after this session signed
+    // in; login and switching roles check it, and so must renewing the session.
+    if (
+      requiresSecondFactor(storedToken.user.userRoles.map((r) => r.role.code)) &&
+      !storedToken.user.isTwoFactorEnabled
+    ) {
+      throw Errors.unauthorized(
+        'Peran Anda kini mewajibkan verifikasi dua langkah. Masuk kembali untuk mengaktifkannya.'
+      );
+    }
+
+    const refreshRoleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const refreshRoleId = primaryAssignment.roleId;
+    const refreshUnitId = primaryAssignment.unitId;
 
     // Generate new tokens
     const tokens = generateTokenPair({
@@ -863,6 +867,15 @@ export class AuthService {
       throw Errors.unauthorized('Verifikasi dua langkah tidak aktif untuk akun ini');
     }
 
+    // The role this session will carry, decided before any code is checked: an
+    // account left without an active role is refused without spending one of
+    // its recovery codes. No fallback to the legacy `users.role` column, as in
+    // login and refresh.
+    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    if (!primaryAssignment) {
+      throw Errors.forbidden('Akun ini tidak lagi memiliki peran aktif. Hubungi admin unit Anda.');
+    }
+
     let isValid = await totpMatches(token, user.twoFactorSecret);
 
     // Otherwise a recovery code, spent in the same statement that finds it so
@@ -887,27 +900,10 @@ export class AuthService {
       );
     }
 
-    // Generate tokens — with legacy fallback for unmigrated users
-    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
-
-    let twoFaRoleCode: string;
-    let permissions: string[];
-    let twoFaRoleId: string | undefined;
-    let twoFaUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      twoFaRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      twoFaRoleId = primaryAssignment.roleId;
-      twoFaUnitId = primaryAssignment.unitId;
-    } else if (user.role) {
-      twoFaRoleCode = user.role;
-      permissions = [];
-      twoFaRoleId = undefined;
-      twoFaUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
-    }
+    const twoFaRoleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const twoFaRoleId = primaryAssignment.roleId;
+    const twoFaUnitId = primaryAssignment.unitId;
 
     const tokens = generateTokenPair({
       id: user.id,

@@ -296,6 +296,12 @@ decision.
 
 ## Tests
 
+- **`spmb-workflow.spec.ts` leaves an active admission period behind on every
+  run** ("SPMB E2E Auto …"). On a fresh CI database that is one extra period;
+  on a local stack reused across runs they pile up, push the seeded
+  "Gelombang 1" out of the Admissions overview, and `admissions-funnel.spec.ts`
+  fails (seen after three full runs, 2026-09-28). The spec should delete what it
+  creates, or the funnel test should look the seeded period up by name.
 - **About a hundred e2e heading assertions are unscoped** (103 by a plain grep,
   2026-09-25). `getByRole("heading", …)` in `apps/web/e2e` without a `<main>`
   scope can match a sidebar group title

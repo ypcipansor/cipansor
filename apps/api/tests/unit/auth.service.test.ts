@@ -441,6 +441,8 @@ describe('AuthService', () => {
           role: UserRole.SUPER_ADMIN,
           unitId: 'unit-1',
           isActive: true,
+          // A Super Admin session is renewed only with 2FA on.
+          isTwoFactorEnabled: true,
           // refreshToken() reads the primary role assignment to mint new tokens.
           userRoles: [
             {
@@ -501,7 +503,7 @@ describe('AuthService', () => {
       mockPrisma.refreshToken.delete.mockResolvedValue({});
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
-        'No active role assignment found'
+        'tidak lagi memiliki peran aktif'
       );
       // The token is consumed, but no new one is minted.
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
