@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../../middleware/auth';
+import { BENDAHARA_ROLE_CODES } from '@cipansor/shared';
 import { UserRole } from '@prisma/client';
 import { validate } from '../../middleware/validate';
 import * as controller from './payroll.controller';
@@ -20,6 +21,12 @@ const router = Router();
 
 // Apply authentication to all routes
 router.use(authenticate);
+
+// Salaries, slips and the bank accounts on them are for the people who run
+// payroll: Super Admin, the unit's operator and the yayasan board, and the
+// bendahara who pays. Until 2026-09-24 every read here was open to any
+// signed-in account, santri included. Writes keep their stricter guards below.
+router.use(authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, ...BENDAHARA_ROLE_CODES));
 
 // ============================================
 // SALARY COMPONENTS

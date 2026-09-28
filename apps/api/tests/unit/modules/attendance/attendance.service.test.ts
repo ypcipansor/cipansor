@@ -20,14 +20,6 @@ import { AttendanceService } from '../../../../src/modules/attendance/attendance
 import { prisma } from '../../../../src/lib/prisma';
 import { AttendanceStatus } from '@cipansor/shared';
 
-const UserRole = {
-  TEACHER: 'TEACHER',
-  SUPER_ADMIN: 'SUPER_ADMIN',
-  ADMIN: 'ADMIN',
-  PARENT: 'PARENT',
-  STUDENT: 'STUDENT',
-};
-
 // Mock prisma
 vi.mock('../../../../src/lib/prisma', () => ({
   prisma: {
@@ -84,7 +76,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.findMany as any).mockResolvedValue(mockRecords);
       (prisma.attendance.count as any).mockResolvedValue(1);
 
-      const result = await service.findAll(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.findAll(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.records).toHaveLength(1);
       expect(result.records[0].status).toBe(AttendanceStatus.PRESENT);
@@ -114,7 +110,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(25);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.total).toBe(25);
       expect(result.counts.present).toBe(20);
@@ -133,7 +133,11 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(3);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.excused).toBe(3);
       expect(result.percentages.excused).toBe('100.0');
@@ -150,59 +154,15 @@ describe('AttendanceService', () => {
       (prisma.attendance.groupBy as any).mockResolvedValue(mockGroupBy);
       (prisma.attendance.count as any).mockResolvedValue(5);
 
-      const result = await service.getSummary(query, { role: UserRole.TEACHER, unitId: 'unit1' });
+      const result = await service.getSummary(query, {
+        sub: 'u-guru',
+        roleCode: 'SMPIT_GURU',
+        unitId: 'unit1',
+      });
 
       expect(result.counts.excused).toBe(5); // 2 + 3
     });
   });
 
-  describe('update', () => {
-    it('should update attendance successfully when ignoring self in duplicate check', async () => {
-      const id = 'att1';
-      const input = { status: AttendanceStatus.ABSENT };
-      const currentUser = { role: UserRole.TEACHER, unitId: 'unit1' };
-
-      const existingRecord = {
-        id: 'att1',
-        studentId: 's1',
-        classId: 'c1',
-        date: new Date('2023-10-27T00:00:00Z'),
-        status: 'PRESENT',
-        student: { unitId: 'unit1' },
-      };
-
-      (prisma.attendance.findUnique as any).mockResolvedValue(existingRecord);
-      // Mock findMany returns nothing (no OTHER duplicates) OR returns self
-      // The service logic: findMany checks for matching student/class/date.
-      // It might return 'att1' itself.
-      (prisma.attendance.findMany as any).mockResolvedValue([{ id: 'att1', studentId: 's1' }]);
-
-      const updatedRecord = { ...existingRecord, status: 'ABSENT' };
-      (prisma.attendance.update as any).mockResolvedValue(updatedRecord);
-
-      const result = await service.update(id, input, currentUser);
-
-      expect(result.status).toBe(AttendanceStatus.ABSENT);
-      expect(prisma.attendance.update).toHaveBeenCalled();
-    });
-
-    it('should throw forbidden error if updating attendance from another unit', async () => {
-      const id = 'att1';
-      const input = { status: AttendanceStatus.ABSENT };
-      const currentUser = { role: UserRole.TEACHER, unitId: 'unit2' }; // Different unit
-
-      const existingRecord = {
-        id: 'att1',
-        studentId: 's1',
-        classId: 'c1',
-        date: new Date('2023-10-27T00:00:00Z'),
-        status: 'PRESENT',
-        student: { unitId: 'unit1' },
-      };
-
-      (prisma.attendance.findUnique as any).mockResolvedValue(existingRecord);
-
-      await expect(service.update(id, input, currentUser)).rejects.toThrow('Access denied');
-    });
-  });
+  // update: src/modules/attendance/tests/attendance-recording.test.ts
 });

@@ -1,10 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import * as curriculumService from './curriculum.service';
 import {
-  createSubjectSchema,
-  updateSubjectSchema,
   subjectQuerySchema,
-  assignTeacherSubjectSchema,
   createLessonPlanSchema,
   updateLessonPlanSchema,
   lessonPlanQuerySchema,
@@ -12,6 +9,9 @@ import {
   updateScheduleSchema,
   scheduleQuerySchema,
 } from './curriculum.schema';
+import { asyncHandler, Errors } from '@/middleware/error';
+import { requireUser } from '@/middleware/auth';
+import { ApiResponse } from '@/utils/response';
 
 // =====================================
 // SUBJECT CONTROLLERS
@@ -27,83 +27,47 @@ export async function getSubjects(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function getSubjectById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const subject = await curriculumService.getSubjectById(id);
-    if (!subject) {
-      return res.status(404).json({ success: false, error: 'Subject not found' });
-    }
-    res.json({ success: true, data: subject });
-  } catch (error) {
-    next(error);
-  }
-}
+// The writes below receive bodies already parsed by validate() in
+// curriculum.routes.ts, against the contract in @cipansor/shared.
 
-export async function createSubject(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createSubjectSchema.parse(req.body);
-    const subject = await curriculumService.createSubject(data);
-    res.status(201).json({ success: true, data: subject });
-  } catch (error) {
-    next(error);
-  }
-}
+export const getSubjectById = asyncHandler(async (req: Request, res: Response) => {
+  const subject = await curriculumService.getSubjectById(req.params.id);
+  if (!subject) throw Errors.notFound('Mata pelajaran tidak ditemukan');
+  res.json(ApiResponse.success(subject));
+});
 
-export async function updateSubject(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    const data = updateSubjectSchema.parse(req.body);
-    const subject = await curriculumService.updateSubject(id, data);
-    res.json({ success: true, data: subject });
-  } catch (error) {
-    next(error);
-  }
-}
+export const createSubject = asyncHandler(async (req: Request, res: Response) => {
+  const subject = await curriculumService.createSubject(requireUser(req), req.body);
+  res.status(201).json(ApiResponse.success(subject, 'Mata pelajaran ditambahkan'));
+});
 
-export async function deleteSubject(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    await curriculumService.deleteSubject(id);
-    res.json({ success: true, message: 'Subject deleted successfully' });
-  } catch (error) {
-    next(error);
-  }
-}
+export const updateSubject = asyncHandler(async (req: Request, res: Response) => {
+  const subject = await curriculumService.updateSubject(requireUser(req), req.params.id, req.body);
+  res.json(ApiResponse.success(subject, 'Mata pelajaran diperbarui'));
+});
+
+export const deleteSubject = asyncHandler(async (req: Request, res: Response) => {
+  await curriculumService.deleteSubject(requireUser(req), req.params.id);
+  res.json(ApiResponse.success(null, 'Mata pelajaran dihapus'));
+});
 
 // =====================================
-// TEACHER SUBJECT CONTROLLERS
+// TEACHER SUBJECT CONTROLLERS (guru pengampu)
 // =====================================
 
-export async function assignTeacherToSubject(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = assignTeacherSubjectSchema.parse(req.body);
-    const assignment = await curriculumService.assignTeacherToSubject(data);
-    res.status(201).json({ success: true, data: assignment });
-  } catch (error) {
-    next(error);
-  }
-}
+export const assignTeacherToSubject = asyncHandler(async (req: Request, res: Response) => {
+  const assignment = await curriculumService.assignTeacherToSubject(requireUser(req), req.body);
+  res.status(201).json(ApiResponse.success(assignment, 'Guru pengampu ditugaskan'));
+});
 
-export async function removeTeacherFromSubject(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id } = req.params;
-    await curriculumService.removeTeacherFromSubject(id);
-    res.json({ success: true, message: 'Teacher assignment removed' });
-  } catch (error) {
-    next(error);
-  }
-}
+export const removeTeacherFromSubject = asyncHandler(async (req: Request, res: Response) => {
+  await curriculumService.removeTeacherFromSubject(requireUser(req), req.params.id);
+  res.json(ApiResponse.success(null, 'Penugasan guru pengampu diakhiri'));
+});
 
-export async function getTeacherSubjects(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { teacherId } = req.params;
-    const subjects = await curriculumService.getTeacherSubjects(teacherId);
-    res.json({ success: true, data: subjects });
-  } catch (error) {
-    next(error);
-  }
-}
+export const getTeacherSubjects = asyncHandler(async (req: Request, res: Response) => {
+  res.json(ApiResponse.success(await curriculumService.getTeacherSubjects(req.params.teacherId)));
+});
 
 // =====================================
 // LESSON PLAN CONTROLLERS

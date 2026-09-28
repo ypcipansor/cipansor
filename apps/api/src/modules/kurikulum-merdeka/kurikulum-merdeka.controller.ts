@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { studentScope } from '@/utils/student-scope';
 import * as kurikulumMerdekaService from './kurikulum-merdeka.service';
 import {
   listLearningOutcomesQuerySchema,
@@ -446,7 +447,7 @@ export async function getP5Projects(req: Request, res: Response, next: NextFunct
 export async function getP5Project(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = getP5ProjectByIdSchema.parse(req.params);
-    const project = await kurikulumMerdekaService.getP5ProjectById(id);
+    const project = await kurikulumMerdekaService.getP5ProjectById(id, studentScope(req.user!));
 
     if (!project) {
       return res.status(404).json({
@@ -514,7 +515,7 @@ export async function removeP5Project(req: Request, res: Response, next: NextFun
 export async function getP5Assessments(req: Request, res: Response, next: NextFunction) {
   try {
     const query = listP5AssessmentsQuerySchema.parse(req.query);
-    const result = await kurikulumMerdekaService.listP5Assessments(query);
+    const result = await kurikulumMerdekaService.listP5Assessments(query, studentScope(req.user!));
 
     res.json({
       success: true,
@@ -528,7 +529,10 @@ export async function getP5Assessments(req: Request, res: Response, next: NextFu
 export async function getP5Assessment(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const assessment = await kurikulumMerdekaService.getP5AssessmentById(id);
+    const assessment = await kurikulumMerdekaService.getP5AssessmentById(
+      id,
+      studentScope(req.user!)
+    );
 
     if (!assessment) {
       return res.status(404).json({
@@ -610,7 +614,10 @@ export async function getMerdekaAssessments(req: Request, res: Response, next: N
 export async function getMerdekaAssessment(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = getMerdekaAssessmentByIdSchema.parse(req.params);
-    const assessment = await kurikulumMerdekaService.getMerdekaAssessmentById(id);
+    const assessment = await kurikulumMerdekaService.getMerdekaAssessmentById(
+      id,
+      studentScope(req.user!)
+    );
 
     if (!assessment) {
       return res.status(404).json({
@@ -678,7 +685,7 @@ export async function removeMerdekaAssessment(req: Request, res: Response, next:
 export async function getMerdekaResults(req: Request, res: Response, next: NextFunction) {
   try {
     const query = listMerdekaResultsQuerySchema.parse(req.query);
-    const result = await kurikulumMerdekaService.listMerdekaResults(query);
+    const result = await kurikulumMerdekaService.listMerdekaResults(query, studentScope(req.user!));
 
     res.json({
       success: true,
@@ -692,7 +699,7 @@ export async function getMerdekaResults(req: Request, res: Response, next: NextF
 export async function getMerdekaResult(req: Request, res: Response, next: NextFunction) {
   try {
     const { id } = req.params;
-    const result = await kurikulumMerdekaService.getMerdekaResultById(id);
+    const result = await kurikulumMerdekaService.getMerdekaResultById(id, studentScope(req.user!));
 
     if (!result) {
       return res.status(404).json({

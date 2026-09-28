@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/prisma';
-import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { STUDENT_SAFE_SELECT, studentScope, type ScopeActor } from '@/utils/student-scope';
 import { certificateVerificationUrl } from '@/utils/verification-url';
 import { logger } from '@/lib/logger';
 import { Errors } from '@/middleware/error';
@@ -108,23 +108,16 @@ export class TahfidzService {
   /**
    * Get tahfidz records with pagination
    */
-  async findAll(
-    query: ListTahfidzQuery,
-    currentUser: { role: string; roleCode?: string | null; unitId: string | null }
-  ) {
+  async findAll(query: ListTahfidzQuery, currentUser: ScopeActor) {
     const { page, limit, studentId, activityType, startDate, endDate, surah } = query;
     const skip = (page - 1) * limit;
 
-    const where: Prisma.TahfidzRecordWhereInput = {};
-
     // A muhafidz teaches santri from every academic unit that boards, so
     // pinning them to their own unitId silently hid the SD IT santri they
-    // teach. seesAllUnits() also restores the yayasan board's oversight view.
-    if (!seesAllUnits(currentUser)) {
-      where.student = {
-        unitId: currentUser.unitId || 'none',
-      };
-    }
+    // teach; studentScope() gives them (and the yayasan board) every unit. A
+    // santri sees their own setoran and a wali their children's — filtering by
+    // unit alone gave a santri 5,089 rows of the whole school.
+    const where: Prisma.TahfidzRecordWhereInput = { student: studentScope(currentUser) };
 
     if (studentId) {
       where.studentId = studentId;
@@ -154,14 +147,7 @@ export class TahfidzService {
         orderBy: { recordedAt: 'desc' },
         include: {
           student: {
-            include: {
-              user: {
-                select: { id: true, name: true },
-              },
-              unit: {
-                select: { id: true, name: true },
-              },
-            },
+            select: { ...STUDENT_SAFE_SELECT, unit: { select: { id: true, name: true } } },
           },
           recordedBy: {
             select: { id: true, name: true },
@@ -185,15 +171,12 @@ export class TahfidzService {
   /**
    * Get tahfidz record by ID
    */
-  async findById(id: string) {
-    const record = await prisma.tahfidzRecord.findUnique({
-      where: { id },
+  async findById(id: string, currentUser: ScopeActor) {
+    const record = await prisma.tahfidzRecord.findFirst({
+      where: { id, student: studentScope(currentUser) },
       include: {
         student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            unit: { select: { id: true, name: true } },
-          },
+          select: { ...STUDENT_SAFE_SELECT, unit: { select: { id: true, name: true } } },
         },
         recordedBy: { select: { id: true, name: true } },
       },
@@ -349,9 +332,9 @@ export class TahfidzService {
    * Get student tahfidz summary/progress
    * Optimized with Promise.all for parallel execution
    */
-  async getStudentSummary(studentId: string) {
+  async getStudentSummary(studentId: string, currentUser: ScopeActor) {
     const student = await prisma.student.findFirst({
-      where: { id: studentId, deletedAt: null },
+      where: { AND: [{ id: studentId, deletedAt: null }, studentScope(currentUser)] },
       include: {
         user: { select: { id: true, name: true } },
         unit: { select: { id: true, name: true } },
@@ -630,7 +613,7 @@ export class TahfidzService {
     const [topStudentDetails, allJuzCounts] = await Promise.all([
       prisma.student.findMany({
         where: { id: { in: topStudentIds } },
-        include: { user: { select: { name: true } } },
+        select: { id: true, nis: true, user: { select: { name: true } } },
       }),
       prisma.tahfidzRecord.groupBy({
         by: ['studentId', 'juz'],
@@ -661,10 +644,7 @@ export class TahfidzService {
       take: 10,
       include: {
         student: {
-          include: {
-            user: { select: { id: true, name: true } },
-            unit: { select: { id: true, name: true } },
-          },
+          select: { ...STUDENT_SAFE_SELECT, unit: { select: { id: true, name: true } } },
         },
         recordedBy: { select: { id: true, name: true } },
       },

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AttendanceService } from '../../src/modules/attendance/attendance.service';
 import { prisma } from '../../src/lib/prisma';
-import { AttendanceStatus, UserRole } from '@prisma/client';
+import { AttendanceStatus } from '@prisma/client';
 
 // Mock Prisma
 vi.mock('../../src/lib/prisma', () => ({
@@ -54,7 +54,7 @@ describe('AttendanceService', () => {
 
       const result = await service.findAll(
         { page: 1, limit: 10 },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.records).toHaveLength(1);
@@ -63,37 +63,7 @@ describe('AttendanceService', () => {
     });
   });
 
-  describe('create', () => {
-    it('should create attendance record', async () => {
-      const input = {
-        studentId: 'student-1',
-        classId: 'class-1',
-        date: new Date(),
-        status: 'PRESENT' as any, // Using string to simulate shared type input
-      };
-
-      (prisma.student.findFirst as any).mockResolvedValue({ id: 'student-1' });
-      (prisma.classEnrollment.findFirst as any).mockResolvedValue({ id: 'enrollment-1' });
-      (prisma.attendance.findFirst as any).mockResolvedValue(null); // No duplicate
-      (prisma.attendance.create as any).mockResolvedValue({
-        id: 'att-1',
-        ...input,
-        status: AttendanceStatus.PRESENT,
-        student: {
-          unitId: 'unit-1',
-          user: { id: 'u-1', name: 'Test Student' },
-          unit: { id: 'unit-1', name: 'Unit 1' },
-        },
-        class: { id: 'class-1', name: 'Class 1' },
-      });
-
-      const result = await service.create(input, 'user-1');
-
-      expect(result.id).toBe('att-1');
-      expect(result.status).toBe('PRESENT');
-      expect(prisma.attendance.create).toHaveBeenCalled();
-    });
-  });
+  // create/bulkCreate/update: src/modules/attendance/tests/attendance-recording.test.ts
 
   describe('getSummary', () => {
     it('should calculate attendance summary correctly', async () => {
@@ -109,7 +79,7 @@ describe('AttendanceService', () => {
 
       const result = await service.getSummary(
         { startDate: '2023-01-01', endDate: '2023-01-31' },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.counts.total).toBe(100);
@@ -129,7 +99,7 @@ describe('AttendanceService', () => {
 
       const result = await service.getSummary(
         { startDate: '2023-01-01', endDate: '2023-01-31' },
-        { role: UserRole.SUPER_ADMIN, unitId: null }
+        { sub: 'u-sa', roleCode: 'SUPER_ADMIN', unitId: null }
       );
 
       expect(result.counts.total).toBe(0);

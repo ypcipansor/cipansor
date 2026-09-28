@@ -1,11 +1,20 @@
 import { Router } from 'express';
 import * as controller from './health.controller';
-import { authenticate } from '../../middleware/auth';
+import { authenticate, hasPermission } from '../../middleware/auth';
+import { PERMISSIONS } from '../roles/permissions';
 
 const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Reading needs HEALTH_VIEW, anything else HEALTH_MANAGE (the nurse, the unit
+// admin). Until 2026-09-24 there was no check at all: a santri account read
+// every santri's diagnosis and could create, edit and delete medical records.
+// Wali read their child's health through /parent/children/:id/health, not here.
+const viewHealth = hasPermission(PERMISSIONS.HEALTH_VIEW);
+const manageHealth = hasPermission(PERMISSIONS.HEALTH_MANAGE);
+router.use((req, res, next) => (req.method === 'GET' ? viewHealth : manageHealth)(req, res, next));
 
 // ==================== MEDICAL RECORDS ====================
 

@@ -150,29 +150,6 @@ export interface ParentPortalMessage {
   replies?: ParentPortalMessage[];
 }
 
-export interface ChildDailyReport {
-  id: string;
-  date: string;
-  studentId: string;
-  attendance: "PRESENT" | "ABSENT" | "SICK" | "PERMITTED";
-  activities: Array<{
-    time: string;
-    activity: string;
-    notes?: string;
-  }>;
-  meals: Array<{
-    type: "BREAKFAST" | "LUNCH" | "SNACK";
-    status: "ATE_WELL" | "ATE_LITTLE" | "DID_NOT_EAT";
-    notes?: string;
-  }>;
-  mood?: "HAPPY" | "NEUTRAL" | "SAD" | "TIRED";
-  teacherNotes?: string;
-  photos?: Array<{
-    url: string;
-    caption?: string;
-  }>;
-}
-
 // ==================== HOOKS: CHILDREN ====================
 
 /**
@@ -347,49 +324,6 @@ export function useMarkParentMessageAsRead() {
   });
 }
 
-// ==================== HOOKS: DAILY REPORTS ====================
-
-/**
- * Get daily reports for child (PAUD/TK)
- */
-export function useChildDailyReports(
-  studentId: string,
-  params?: {
-    startDate?: string;
-    endDate?: string;
-    page?: number;
-    limit?: number;
-  },
-) {
-  return useQuery({
-    queryKey: ["parent", "children", studentId, "daily-reports", params],
-    queryFn: async () => {
-      const response = await api.get<PaginatedResponse<ChildDailyReport>>(
-        `/parent/children/${studentId}/daily-reports`,
-        { params },
-      );
-      return response.data;
-    },
-    enabled: !!studentId,
-  });
-}
-
-/**
- * Get single daily report
- */
-export function useChildDailyReport(studentId: string, reportId: string) {
-  return useQuery({
-    queryKey: ["parent", "children", studentId, "daily-reports", reportId],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<ChildDailyReport>>(
-        `/parent/children/${studentId}/daily-reports/${reportId}`,
-      );
-      return response.data.data;
-    },
-    enabled: !!studentId && !!reportId,
-  });
-}
-
 // ==================== HOOKS: ATTENDANCE ====================
 
 /**
@@ -556,70 +490,6 @@ export function useChildWallet(
         }>
       >(`/parent/children/${studentId}/wallet`, { params });
       return response.data.data;
-    },
-    enabled: !!studentId,
-  });
-}
-
-// ==================== HOOKS: PERMITS ====================
-
-/**
- * Request permit for child
- */
-export function useRequestChildPermit() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: {
-      studentId: string;
-      type: "SICK" | "FAMILY" | "OTHER";
-      startDate: string;
-      endDate: string;
-      reason: string;
-      attachmentUrl?: string;
-    }) => {
-      const response = await api.post<ApiResponse<any>>(
-        "/parent/permits",
-        data,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: ["parent", "children", variables.studentId, "permits"],
-      });
-    },
-  });
-}
-
-/**
- * Get child permit history
- */
-export function useChildPermits(
-  studentId: string,
-  params?: {
-    status?: "PENDING" | "APPROVED" | "REJECTED";
-    page?: number;
-    limit?: number;
-  },
-) {
-  return useQuery({
-    queryKey: ["parent", "children", studentId, "permits", params],
-    queryFn: async () => {
-      const response = await api.get<
-        PaginatedResponse<{
-          id: string;
-          type: string;
-          startDate: string;
-          endDate: string;
-          reason: string;
-          status: "PENDING" | "APPROVED" | "REJECTED";
-          approvedBy?: string;
-          rejectionReason?: string;
-          createdAt: string;
-        }>
-      >(`/parent/children/${studentId}/permits`, { params });
-      return response.data;
     },
     enabled: !!studentId,
   });

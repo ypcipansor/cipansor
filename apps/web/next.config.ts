@@ -94,6 +94,14 @@ const nextConfig: NextConfig = {
         destination: "/public/verify-letter",
         permanent: true,
       },
+      // The Mutabaah form follows the "…/new" convention for create pages;
+      // its buttons had always pointed there, and /daily-report/new landed
+      // on the detail page with "new" taken for an id.
+      {
+        source: "/daily-report/create",
+        destination: "/daily-report/new",
+        permanent: true,
+      },
       // Manajemen Kinerja diremajakan sebagai /kinerja. Buku penanda dan hasil
       // pencarian lama masih membawa /pkg, dan halaman lamanya sudah dihapus —
       // tanpa pengalihan ini bookmark lama berakhir di 404.
@@ -105,6 +113,33 @@ const nextConfig: NextConfig = {
       {
         source: "/pkg/:path*",
         destination: "/kinerja/:path*",
+        permanent: true,
+      },
+      // The gate check belongs to Perizinan: it looks up a permit and records
+      // leaving and coming back. Under /reception it had no menu entry at all.
+      {
+        source: "/reception/gate",
+        destination: "/permits/gate",
+        permanent: true,
+      },
+      // One register, one page (decided 2026-09-27): Wali Kelas → Absensi
+      // Harian had its own copy of the daily register. The page it opens now
+      // starts on the wali kelas's own class.
+      {
+        source: "/homeroom/attendance",
+        destination: "/attendance/record",
+        permanent: true,
+      },
+      // The Kurikulum list had no table and no API behind it; the curriculum
+      // in force is Kurikulum Merdeka (removal approved 2026-09-27).
+      {
+        source: "/curriculum/curriculums",
+        destination: "/curriculum/merdeka",
+        permanent: true,
+      },
+      {
+        source: "/curriculum/curriculums/:path*",
+        destination: "/curriculum/merdeka",
         permanent: true,
       },
     ];

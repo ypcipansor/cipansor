@@ -46,6 +46,12 @@ enum Realm {
 }
 
 // RoleCode - All possible role codes in the system
+//
+// A role code is a function a person holds (guru, kepala sekolah, tata usaha,
+// …). Duties added on top of a function are not role codes: wali kelas is
+// `Class.homeroomTeacherId`, and wakasek and the other tugas tambahan are not
+// modelled yet. `*_WAKASEK` and `*_WALI_KELAS` were merged into `*_GURU` on
+// 2026-09-26 (migration 20260926120000_teacher_duties_not_roles).
 enum RoleCode {
   // Global
   SUPER_ADMIN
@@ -67,9 +73,7 @@ enum RoleCode {
   // TK Qur'an roles
   TKQ_ADMIN
   TKQ_KEPALA_SEKOLAH
-  TKQ_WAKASEK // Wakil kepala sekolah
   TKQ_GURU
-  TKQ_WALI_KELAS // Wali kelas
   // No TKQ_GURU_BK: a dedicated counselling teacher is not part of the TK
   // Qur'an establishment.
   TKQ_TATA_USAHA
@@ -85,9 +89,7 @@ enum RoleCode {
   // SD IT (Islam Terpadu) roles
   SDIT_ADMIN
   SDIT_KEPALA_SEKOLAH
-  SDIT_WAKASEK
   SDIT_GURU
-  SDIT_WALI_KELAS
   // No SDIT_GURU_BK: counselling at SD IT is handled by the wali kelas.
   SDIT_TATA_USAHA
   SDIT_BENDAHARA
@@ -100,9 +102,7 @@ enum RoleCode {
   // SMP IT (Islam Terpadu) roles
   SMPIT_ADMIN
   SMPIT_KEPALA_SEKOLAH
-  SMPIT_WAKASEK
   SMPIT_GURU
-  SMPIT_WALI_KELAS
   SMPIT_GURU_BK
   SMPIT_TATA_USAHA
   SMPIT_BENDAHARA
@@ -114,9 +114,7 @@ enum RoleCode {
   // SMA Qur'an roles
   SMAQ_ADMIN
   SMAQ_KEPALA_SEKOLAH
-  SMAQ_WAKASEK
   SMAQ_GURU
-  SMAQ_WALI_KELAS
   SMAQ_GURU_BK
   SMAQ_TATA_USAHA
   SMAQ_BENDAHARA
@@ -126,16 +124,11 @@ enum RoleCode {
   SMAQ_ALUMNI
 
   // Pesantren roles (cross-unit)
-  PESANTREN_PENGASUH // Kyai / pimpinan tertinggi pesantren
-  PESANTREN_DIREKTUR // Pengelola operasional harian
+  PESANTREN_PENGASUH // Pimpinan Pesantren (Kiai) — no separate direktur (2026-09-25)
   PESANTREN_TATA_USAHA // Admin pesantren
   USTADZ // Guru pengampu kitab/pesantren
-  MUSYRIF // Pembina asrama (putra)
-  MUSYRIFAH // Pembina asrama (putri)
-  MUHAFIDZ // Pengampu tahfidz (putra)
-  MUHAFIDZAH // Pengampu tahfidz (putri)
-  MURABBI // Pembina akhlaq
-  WALI_KAMAR // Penanggung jawab kamar
+  MUSYRIF // Pembina asrama, wali kamar, murabbi — putra atau putri
+  MUHAFIDZ // Pengampu tahfidz — putra atau putri
 
   // Cross-unit support staff (yayasan-wide services backed by real modules:
   // library, clinic/health, permits/gate security, practicum labs)
@@ -193,6 +186,17 @@ enum PermitStatus {
   REJECTED
   COMPLETED
   CANCELLED
+}
+
+// Who decides a learner's leave (2026-09-25): the learner's own mentor — the
+// musyrif of their asrama for a boarder, the wali kelas otherwise — and the
+// unit head only for long leave, when no mentor is on record, or on taking
+// over. See `modules/permits/permits.decider.ts`.
+enum PermitDecider {
+  MUSYRIF
+  WALI_KELAS
+  KEPALA_SEKOLAH
+  PIMPINAN_PESANTREN
 }
 
 enum ViolationType {
@@ -398,6 +402,7 @@ model User {
   parentOf                          StudentParent[]
   recordedTahfidz                   TahfidzRecord[]             @relation("TahfidzRecorder")
   recordedAttendance                Attendance[]                @relation("AttendanceRecorder")
+  attendanceFollowUps               AttendanceFollowUp[]        @relation("AttendanceFollowUpBy")
   approvedPermits                   Permit[]                    @relation("PermitApprover")
   reportedViolations                Violation[]                 @relation("ViolationReporter")
   givenRewards                      Reward[]                    @relation("RewardGiver")
@@ -1392,14 +1397,52 @@ model Attendance {
   updatedAt    DateTime         @updatedAt @map("updated_at")
 
   // Relations
-  student    Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  class      Class   @relation(fields: [classId], references: [id])
-  recordedBy User    @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+  student    Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  class      Class                @relation(fields: [classId], references: [id])
+  recordedBy User                 @relation("AttendanceRecorder", fields: [recordedById], references: [id])
+  followUps  AttendanceFollowUp[]
 
   @@unique([studentId, classId, date])
   @@index([date])
   @@index([status])
   @@map("attendances")
+}
+
+/// How an unexplained absence was followed up (decisions/absensi-harian.md):
+/// the wali kelas (a day pupil) or the musyrif (a santri mukim) contacts the
+/// wali and records what came of it. One absence may take several contacts.
+enum AttendanceFollowUpChannel {
+  PHONE
+  WHATSAPP
+  IN_PERSON
+  OTHER
+}
+
+/// What a contact found. ILL and EXCUSED give the reason, and the mark becomes
+/// SICK or EXCUSED; NO_REASON closes the absence as Alpa; UNREACHABLE leaves
+/// it open for another try.
+enum AttendanceFollowUpOutcome {
+  ILL
+  EXCUSED
+  NO_REASON
+  UNREACHABLE
+}
+
+model AttendanceFollowUp {
+  id            String                    @id @default(uuid())
+  attendanceId  String                    @map("attendance_id")
+  contactedById String                    @map("contacted_by_id")
+  channel       AttendanceFollowUpChannel
+  outcome       AttendanceFollowUpOutcome
+  note          String?                   @db.Text
+  createdAt     DateTime                  @default(now()) @map("created_at")
+
+  attendance  Attendance @relation(fields: [attendanceId], references: [id], onDelete: Cascade)
+  contactedBy User       @relation("AttendanceFollowUpBy", fields: [contactedById], references: [id])
+
+  @@index([attendanceId])
+  @@index([contactedById])
+  @@map("attendance_follow_ups")
 }
 
 /// TahfidzRecord - Quran memorization records
@@ -1567,6 +1610,10 @@ model Permit {
   departedAt    DateTime?    @map("departed_at")
   returnedAt    DateTime?    @map("returned_at")
   code          String?      @unique // Unique short code for scanning
+  // In what capacity `approvedBy` decided, and whether a unit head decided
+  // what was the learner's own musyrif or wali kelas to decide.
+  decidedAs     PermitDecider? @map("decided_as")
+  tookOver      Boolean        @default(false) @map("took_over")
   createdAt     DateTime     @default(now()) @map("created_at")
   updatedAt     DateTime     @updatedAt @map("updated_at")
 

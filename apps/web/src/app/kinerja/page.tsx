@@ -50,7 +50,6 @@ function KinerjaHubPageContent() {
     "SMPIT_KEPALA_SEKOLAH",
     "SMAQ_KEPALA_SEKOLAH",
     "PESANTREN_PENGASUH",
-    "PESANTREN_DIREKTUR",
     "UNIT_ADMIN",
   ];
 

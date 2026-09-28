@@ -1,11 +1,15 @@
 import { Router } from 'express';
-import { authenticate, isAdmin } from '@/middleware/auth';
+import { authenticate, authorize, isAdmin } from '@/middleware/auth';
 import { validate, validateQuery, validateParams } from '@/middleware/error';
 import * as controller from './attendance.controller';
 import {
-  createAttendanceSchema,
+  ATTENDANCE_RECORDER_ROUTE_ROLE_CODES,
   bulkAttendanceSchema,
+  createAttendanceSchema,
+  recordFollowUpSchema,
   updateAttendanceSchema,
+} from '@cipansor/shared';
+import {
   listAttendanceQuerySchema,
   attendanceIdParamSchema,
   attendanceSummaryQuerySchema,
@@ -15,6 +19,41 @@ const router = Router();
 
 // All routes require authentication
 router.use(authenticate);
+
+// Teachers, kepala sekolah and unit operators reach the write routes; which
+// classes each records is the class's relation to them, in the service
+// (attendance.access.ts).
+const recorders = authorize(...ATTENDANCE_RECORDER_ROUTE_ROLE_CODES);
+
+/**
+ * @swagger
+ * /api/attendance/me/classes:
+ *   get:
+ *     summary: The classes whose daily register the caller takes
+ *     description: ALL for the super admin, UNIT for a unit's operator, otherwise the current academic year's classes the caller is wali kelas of or teaches in.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: "{ scope: ALL | UNIT | ASSIGNED, unitId, classes }"
+ */
+router.get('/me/classes', controller.myClasses);
+
+/**
+ * @swagger
+ * /api/attendance/follow-ups:
+ *   get:
+ *     summary: The Alpa marks the caller follows up
+ *     description: Alpa within the last 7 days with no explanation yet — the santri mukim of the asrama the caller is musyrif of, and the other pupils of the caller's homeroom classes (a santri mukim among them only when no musyrif covers them) — with whom to contact and what was tried.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: The open absences, newest first
+ */
+router.get('/follow-ups', recorders, controller.followUps);
 
 /**
  * @swagger
@@ -155,7 +194,7 @@ router.get('/:id', validateParams(attendanceIdParamSchema), controller.getById);
  * @swagger
  * /api/attendance:
  *   post:
- *     summary: Record attendance (Admin/Teacher)
+ *     summary: Record one pupil's day (the class's wali kelas, a teacher with a lesson in it, or the unit's operator)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -176,22 +215,23 @@ router.get('/:id', validateParams(attendanceIdParamSchema), controller.getById);
  *               date:
  *                 type: string
  *                 format: date
+ *                 example: '2026-09-27'
  *               status:
  *                 type: string
- *                 enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                 enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *               notes:
  *                 type: string
  *     responses:
  *       201:
  *         description: Attendance recorded
  */
-router.post('/', isAdmin, validate(createAttendanceSchema), controller.create);
+router.post('/', recorders, validate(createAttendanceSchema), controller.create);
 
 /**
  * @swagger
  * /api/attendance/bulk:
  *   post:
- *     summary: Bulk record attendance (Admin/Teacher)
+ *     summary: Record a class's day; pupils already recorded that day are updated
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -219,20 +259,20 @@ router.post('/', isAdmin, validate(createAttendanceSchema), controller.create);
  *                       format: uuid
  *                     status:
  *                       type: string
- *                       enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                       enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *                     notes:
  *                       type: string
  *     responses:
  *       201:
  *         description: Attendance bulk recorded
  */
-router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCreate);
+router.post('/bulk', recorders, validate(bulkAttendanceSchema), controller.bulkCreate);
 
 /**
  * @swagger
  * /api/attendance/{id}:
  *   patch:
- *     summary: Update attendance (Admin/Teacher)
+ *     summary: Change one pupil's day (whoever records the class's register)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []
@@ -251,7 +291,7 @@ router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCre
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [PRESENT, ABSENT, LATE, SICK, PERMISSION]
+ *                 enum: [PRESENT, ABSENT, LATE, SICK, EXCUSED]
  *               notes:
  *                 type: string
  *     responses:
@@ -260,7 +300,7 @@ router.post('/bulk', isAdmin, validate(bulkAttendanceSchema), controller.bulkCre
  */
 router.patch(
   '/:id',
-  isAdmin,
+  recorders,
   validateParams(attendanceIdParamSchema),
   validate(updateAttendanceSchema),
   controller.update
@@ -268,9 +308,53 @@ router.patch(
 
 /**
  * @swagger
+ * /api/attendance/{id}/follow-ups:
+ *   post:
+ *     summary: Record one contact about an Alpa the caller follows up
+ *     description: ILL makes the mark Sakit, EXCUSED makes it Izin, NO_REASON closes it as Alpa, UNREACHABLE leaves it open. 404 for an absence the caller does not follow up; 409 once it is no longer Alpa, is closed, or is older than 7 days.
+ *     tags: [Attendance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [channel, outcome]
+ *             properties:
+ *               channel:
+ *                 type: string
+ *                 enum: [PHONE, WHATSAPP, IN_PERSON, OTHER]
+ *               outcome:
+ *                 type: string
+ *                 enum: [ILL, EXCUSED, NO_REASON, UNREACHABLE]
+ *               note:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: The absence with its follow-ups
+ */
+router.post(
+  '/:id/follow-ups',
+  recorders,
+  validateParams(attendanceIdParamSchema),
+  validate(recordFollowUpSchema),
+  controller.recordFollowUp
+);
+
+/**
+ * @swagger
  * /api/attendance/{id}:
  *   delete:
- *     summary: Delete attendance (Admin/Teacher)
+ *     summary: Delete an attendance record (the unit's operator)
  *     tags: [Attendance]
  *     security:
  *       - bearerAuth: []

@@ -10,6 +10,12 @@ import {
   UpdateAttendanceInput,
   SharedPaginatedResponse,
   ApiResponse,
+  type AttendanceRecorderScope,
+  type AttendanceFollowUpItem,
+  type AttendanceFollowUpChannel,
+  type AttendanceFollowUpOutcome,
+  type BulkAttendanceResult,
+  type RecordFollowUpInput,
 } from "@cipansor/shared";
 
 // Re-export shared types for convenience
@@ -103,6 +109,105 @@ export function useClassAttendance(classId: string, date: string) {
   });
 }
 
+/**
+ * The classes whose daily register the signed-in user takes: every class
+ * (super admin), every class of their unit (its operator), or the ones they
+ * are wali kelas of or teach in this academic year.
+ */
+export function useAttendanceRecorderScope() {
+  return useQuery({
+    queryKey: ["attendance", "me", "classes"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AttendanceRecorderScope>>(
+        "/attendance/me/classes",
+      );
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * The Alpa marks the signed-in user follows up, within the last 7 days and
+ * not yet explained: the santri mukim of the asrama they are musyrif of, and
+ * the other pupils of their homeroom classes.
+ */
+export function useAttendanceFollowUps() {
+  return useQuery({
+    queryKey: ["attendance", "follow-ups"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<AttendanceFollowUpItem[]>>(
+        "/attendance/follow-ups",
+      );
+      return response.data.data;
+    },
+  });
+}
+
+export function useRecordFollowUp() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      attendanceId,
+      data,
+    }: {
+      attendanceId: string;
+      data: RecordFollowUpInput;
+    }) => {
+      const response = await api.post<ApiResponse<AttendanceFollowUpItem>>(
+        `/attendance/${attendanceId}/follow-ups`,
+        data,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance", "follow-ups"] });
+      // A reason changes the mark itself (Alpa → Sakit or Izin).
+      queryClient.invalidateQueries({ queryKey: ["attendances"] });
+    },
+  });
+}
+
+export const FOLLOW_UP_CHANNEL_LABELS: Record<
+  AttendanceFollowUpChannel,
+  string
+> = {
+  PHONE: "Telepon",
+  WHATSAPP: "WhatsApp",
+  IN_PERSON: "Bertemu langsung",
+  OTHER: "Lainnya",
+};
+
+/** What each outcome does to the mark, in the words the page shows. */
+export const FOLLOW_UP_OUTCOME_LABELS: Record<
+  AttendanceFollowUpOutcome,
+  { label: string; effect: string }
+> = {
+  ILL: { label: "Sakit", effect: "Absensi diubah menjadi Sakit" },
+  EXCUSED: { label: "Izin", effect: "Absensi diubah menjadi Izin" },
+  NO_REASON: {
+    label: "Tanpa keterangan",
+    effect: "Tetap Alpa; tindak lanjut selesai",
+  },
+  UNREACHABLE: {
+    label: "Wali tidak terhubungi",
+    effect: "Tetap di daftar untuk dicoba lagi",
+  },
+};
+
+/** "Kehadiran disimpan: 28 baru, 2 diperbarui" — what a save did. */
+export function describeAttendanceSave({
+  created,
+  updated,
+}: BulkAttendanceResult): string {
+  const parts = [
+    created > 0 ? `${created} baru` : null,
+    updated > 0 ? `${updated} diperbarui` : null,
+  ].filter(Boolean);
+  return `Kehadiran disimpan: ${parts.join(", ") || "tidak ada perubahan"}`;
+}
+
 export function useCreateAttendance() {
   const queryClient = useQueryClient();
 
@@ -125,9 +230,10 @@ export function useBulkCreateAttendance() {
 
   return useMutation({
     mutationFn: async (data: BulkAttendanceInput) => {
-      const response = await api.post<
-        ApiResponse<{ created: number; skipped: number }>
-      >("/attendance/bulk", data);
+      const response = await api.post<ApiResponse<BulkAttendanceResult>>(
+        "/attendance/bulk",
+        data,
+      );
       return response.data.data;
     },
     onSuccess: (_, variables) => {

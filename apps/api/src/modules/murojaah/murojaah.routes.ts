@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { authenticate, authorize } from '@/middleware/auth';
+import { authenticate, authorize, isStaffMember } from '@/middleware/auth';
 import { validate, validateQuery } from '@/middleware/validate';
 import {
   listMurojaahQuerySchema,
@@ -285,7 +285,12 @@ router.get(
  *       200:
  *         description: Quality distribution data
  */
-router.get('/analytics/quality-distribution', authenticate, controller.getQualityDistribution);
+router.get(
+  '/analytics/quality-distribution',
+  authenticate,
+  isStaffMember,
+  controller.getQualityDistribution
+);
 
 /**
  * @openapi
@@ -300,7 +305,12 @@ router.get('/analytics/quality-distribution', authenticate, controller.getQualit
  *       200:
  *         description: Mistake patterns data
  */
-router.get('/analytics/mistake-patterns', authenticate, controller.getMistakePatterns);
+router.get(
+  '/analytics/mistake-patterns',
+  authenticate,
+  isStaffMember,
+  controller.getMistakePatterns
+);
 
 /**
  * @openapi
@@ -315,7 +325,12 @@ router.get('/analytics/mistake-patterns', authenticate, controller.getMistakePat
  *       200:
  *         description: Consistency score data
  */
-router.get('/analytics/consistency-score', authenticate, controller.getConsistencyScore);
+router.get(
+  '/analytics/consistency-score',
+  authenticate,
+  isStaffMember,
+  controller.getConsistencyScore
+);
 
 /**
  * @openapi
@@ -336,6 +351,6 @@ router.get('/analytics/consistency-score', authenticate, controller.getConsisten
  *       200:
  *         description: Top performers list
  */
-router.get('/analytics/top-performers', authenticate, controller.getTopPerformers);
+router.get('/analytics/top-performers', authenticate, isStaffMember, controller.getTopPerformers);
 
 export default router;

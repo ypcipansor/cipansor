@@ -45,11 +45,14 @@ import { Badge } from "@/components/ui/badge";
 import { useClasses, useClassEnrollments } from "@/hooks/use-classes";
 import { useUnits } from "@/hooks/use-units";
 import {
+  describeAttendanceSave,
+  useAttendanceRecorderScope,
   useBulkCreateAttendance,
   useClassAttendance,
   ATTENDANCE_STATUSES,
   AttendanceStatus,
 } from "@/hooks/use-attendance";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 
 interface StudentAttendance {
@@ -77,9 +80,32 @@ function RecordAttendanceContent() {
   const initializedRef = useRef(false);
   const lastDataKeyRef = useRef<string>("");
 
+  // Which registers this user takes: any class, their unit's classes, or
+  // the ones they are wali kelas of or teach in (the API decides).
+  const { data: recorder, isLoading: recorderLoading } =
+    useAttendanceRecorderScope();
+  const assigned = recorder?.scope === "ASSIGNED";
+  const unitScoped = recorder?.scope === "UNIT";
+
   const { data: units } = useUnits();
   const { data: classesData } = useClasses({ unitId: unitId || undefined });
-  const classes = classesData?.data || [];
+  const classes = assigned
+    ? (recorder?.classes ?? []).map((c) => ({
+        id: c.id,
+        name: `${c.name} · ${c.as === "HOMEROOM" ? "Wali Kelas" : "Mengajar"}`,
+      }))
+    : classesData?.data || [];
+
+  // An operator records their own unit only; a teacher starts on their own
+  // class (listed first), unless the link named another one they record.
+  useEffect(() => {
+    if (unitScoped && recorder?.unitId && !unitId) {
+      setUnitId(recorder.unitId);
+    }
+    if (assigned && recorder && !classId && recorder.classes.length > 0) {
+      setClassId(recorder.classes[0].id);
+    }
+  }, [assigned, unitScoped, recorder, unitId, classId]);
 
   const { data: enrollments, isLoading: enrollmentsLoading } =
     useClassEnrollments(classId);
@@ -88,12 +114,14 @@ function RecordAttendanceContent() {
 
   const bulkCreate = useBulkCreateAttendance();
 
-  // Initialize student attendances when enrollments load
+  // Initialize student attendances when enrollments and the day's register
+  // have both loaded — the saved statuses, not "Hadir" for everyone.
   useEffect(() => {
     if (!enrollments || enrollments.length === 0) return;
+    if (existingAttendance === undefined) return;
 
     // Create a key to track if data has changed
-    const dataKey = `${classId}-${format(date, "yyyy-MM-dd")}-${enrollments.length}`;
+    const dataKey = `${classId}-${format(date, "yyyy-MM-dd")}-${enrollments.length}-${existingAttendance.length}`;
 
     // Only initialize if data key changed
     if (dataKey === lastDataKeyRef.current) return;
@@ -146,7 +174,7 @@ function RecordAttendanceContent() {
     }
 
     try {
-      await bulkCreate.mutateAsync({
+      const result = await bulkCreate.mutateAsync({
         classId,
         date: format(date, "yyyy-MM-dd"),
         records: studentAttendances.map((s) => ({
@@ -155,7 +183,7 @@ function RecordAttendanceContent() {
           notes: s.notes || undefined,
         })),
       });
-      toast.success("Kehadiran berhasil disimpan");
+      toast.success(describeAttendanceSave(result));
       router.push("/attendance");
     } catch (error: unknown) {
       const errorMessage =
@@ -198,13 +226,13 @@ function RecordAttendanceContent() {
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" asChild>
-            <Link href="/attendance">
+            <Link href="/attendance" aria-label="Kembali ke Kehadiran">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
-              Input Kehadiran
+              Absensi Harian
             </h1>
             <p className="text-muted-foreground">
               Catat kehadiran siswa per kelas
@@ -248,27 +276,30 @@ function RecordAttendanceContent() {
                 </PopoverContent>
               </Popover>
 
-              <Select
-                value={unitId}
-                onValueChange={(v) => {
-                  setUnitId(v);
-                  setClassId("");
-                }}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Pilih Unit" />
-                </SelectTrigger>
-                <SelectContent>
-                  {units?.map((unit) => (
-                    <SelectItem key={unit.id} value={unit.id}>
-                      {unit.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!assigned && (
+                <Select
+                  value={unitId}
+                  onValueChange={(v) => {
+                    setUnitId(v);
+                    setClassId("");
+                  }}
+                  disabled={unitScoped}
+                >
+                  <SelectTrigger className="w-[180px]" aria-label="Unit">
+                    <SelectValue placeholder="Pilih Unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units?.map((unit) => (
+                      <SelectItem key={unit.id} value={unit.id}>
+                        {unit.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               <Select value={classId} onValueChange={setClassId}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-[220px]" aria-label="Kelas">
                   <SelectValue placeholder="Pilih Kelas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -280,6 +311,17 @@ function RecordAttendanceContent() {
                 </SelectContent>
               </Select>
             </div>
+
+            {assigned && !recorderLoading && classes.length === 0 && (
+              <Alert className="mt-4">
+                <AlertTitle>Tidak ada kelas untuk dicatat</AlertTitle>
+                <AlertDescription>
+                  Absensi harian dicatat oleh wali kelas, guru yang mengajar di
+                  kelas itu, dan operator unit. Anda belum menjadi wali kelas
+                  atau mengajar di kelas mana pun tahun ajaran ini.
+                </AlertDescription>
+              </Alert>
+            )}
 
             {hasExistingData && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
@@ -384,6 +426,7 @@ function RecordAttendanceContent() {
                     {studentAttendances.map((student, index) => (
                       <div
                         key={student.studentId}
+                        data-testid={`attendance-row-${student.studentId}`}
                         className="flex items-center gap-4 p-3 border rounded-lg hover:bg-muted/50"
                       >
                         <span className="w-8 text-sm text-muted-foreground">
@@ -417,6 +460,10 @@ function RecordAttendanceContent() {
                                 )
                               }
                               title={statusOption.label}
+                              aria-label={statusOption.label}
+                              aria-pressed={
+                                student.status === statusOption.value
+                              }
                             >
                               {getStatusIcon(statusOption.value)}
                             </Button>

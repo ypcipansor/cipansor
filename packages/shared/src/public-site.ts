@@ -16,6 +16,8 @@
  * importing `@/config/site` unchanged.
  */
 
+import type { OfferedDonationType } from "./schemas/donation";
+
 export const siteConfig = {
   name: "Pesantren Cipansor",
   legalName: "Yayasan Pesantren Cipansor",
@@ -261,7 +263,11 @@ export const donationConfig = {
       description:
         "Dukungan dana untuk kelancaran kegiatan belajar-mengajar harian serta pemeliharaan fasilitas pesantren setiap harinya.",
     },
-  ],
+  ] satisfies ReadonlyArray<{
+    title: string;
+    type: OfferedDonationType;
+    description: string;
+  }>,
   /**
    * The three steps as published on the yayasan's donation poster.
    *

@@ -5,13 +5,13 @@ import { useRouter } from "next/navigation";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
 import {
+  describeBulkResult,
   useBulkCreateDailyReports,
   DailyMood,
   BulkCreateDailyReportsInput,
 } from "@/hooks/use-daily-report";
 import { useClasses } from "@/hooks/use-classes";
 import { useStudents } from "@/hooks/use-students";
-import { useAcademicYears } from "@/hooks/use-academic-years";
 import {
   Card,
   CardContent,
@@ -46,10 +46,11 @@ import {
   Users,
   Info,
 } from "lucide-react";
-import { format, set, parse } from "date-fns";
+import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
 import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
+import { getErrorMessage } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { MOOD_OPTIONS, HEALTH_OPTIONS, ATTENDANCE_OPTIONS } from "../constants";
 
@@ -73,9 +74,6 @@ export default function BulkCheckInPage() {
   const [selectAll, setSelectAll] = useState(false);
 
   const { data: classes } = useClasses({ unitId: user?.unitId });
-  // Need academic year for creation
-  const { data: academicYears } = useAcademicYears({ isActive: true });
-  const activeAcademicYear = academicYears?.data?.[0];
 
   const { data: studentData, isLoading: studentsLoading } = useStudents({
     classId: classId || undefined,
@@ -145,11 +143,6 @@ export default function BulkCheckInPage() {
   };
 
   const handleSubmit = async () => {
-    if (!user?.unitId || !activeAcademicYear?.id) {
-      toast.error("Data unit atau tahun ajaran tidak ditemukan");
-      return;
-    }
-
     const selectedStudents = students.filter((s) => s.selected);
 
     if (selectedStudents.length === 0) {
@@ -158,43 +151,25 @@ export default function BulkCheckInPage() {
     }
 
     try {
+      // A calendar day and a time of day in WIB; the unit and the academic
+      // year follow from each pupil and the date.
       const payload: BulkCreateDailyReportsInput = {
-        unitId: user.unitId,
-        academicYearId: activeAcademicYear.id,
-        reportDate: date.toISOString(),
-        reports: selectedStudents.map((s) => {
-          // Construct full ISO datetime for arrivalTime
-          let arrivalTime: string | undefined = undefined;
-          if (s.checkInTime) {
-            const timeParts = s.checkInTime.split(":");
-            if (timeParts.length === 2) {
-              const checkInDate = set(date, {
-                hours: parseInt(timeParts[0], 10),
-                minutes: parseInt(timeParts[1], 10),
-                seconds: 0,
-                milliseconds: 0,
-              });
-              arrivalTime = checkInDate.toISOString();
-            }
-          }
-
-          return {
-            studentId: s.studentId,
-            arrivalTime: arrivalTime,
-            morningMood: s.moodStatus,
-            healthNotes: s.healthStatus,
-            // Other fields optional as per shared type
-          };
-        }),
+        reportDate: format(date, "yyyy-MM-dd"),
+        reports: selectedStudents.map((s) => ({
+          studentId: s.studentId,
+          arrivalTime: s.checkInTime || undefined,
+          morningMood: s.moodStatus,
+          healthNotes: s.healthStatus,
+        })),
       };
 
-      await bulkCreateMutation.mutateAsync(payload);
-
-      toast.success(`${selectedStudents.length} siswa berhasil check-in`);
-      router.push("/paud/daily-reports");
+      const result = await bulkCreateMutation.mutateAsync(payload);
+      const message = describeBulkResult(result);
+      toast.success(message.created);
+      if (message.skipped) toast.warning(message.skipped);
+      router.push("/tk/daily-reports");
     } catch (error) {
-      toast.error("Gagal melakukan bulk check-in");
-      console.error(error);
+      toast.error(getErrorMessage(error));
     }
   };
 

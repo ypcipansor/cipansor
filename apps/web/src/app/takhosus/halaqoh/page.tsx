@@ -92,7 +92,7 @@ function HalaqohPageContent() {
           >
             <Target className="mr-2 h-4 w-4" /> Atur Target
           </Button>
-          <Button onClick={() => router.push("/takhosus/halaqoh/create")}>
+          <Button onClick={() => router.push("/takhosus/halaqoh/new")}>
             Buat Halaqoh
           </Button>
         </div>

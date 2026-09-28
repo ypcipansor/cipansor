@@ -7,11 +7,20 @@ import {
   getDashboardForRole,
   getEffectiveRole,
   isLegacyRole,
+  roleCodeRouteAccess,
   roleRouteAccess,
   type LegacyRole,
 } from "./rbac";
-import { getNavigationForRoleCode, type NavGroup } from "@/config/navigation";
-import { DEMO_ACCOUNTS, pengawasanAccessOf } from "@cipansor/shared";
+import {
+  getNavigationForRoleCode,
+  withDutiesHeld,
+  type NavGroup,
+} from "@/config/navigation";
+import {
+  DEMO_ACCOUNTS,
+  PRINCIPAL_ROLE_CODES,
+  pengawasanAccessOf,
+} from "@cipansor/shared";
 
 /**
  * Semua href dalam menu sebuah peran, TERMASUK submenu.
@@ -78,6 +87,61 @@ describe("navigasi — filter roleCodes berjalan rekursif ke submenu", () => {
   });
 });
 
+describe("navigasi — Bimbingan Konseling untuk pembacanya", () => {
+  // Guru BK membaca sesi rahasia unitnya, kepala sekolah rujukannya; sampai
+  // 2026-09-26 keduanya tak punya butir menu ke /counseling. Menu guru dulu
+  // juga tidak menyaring roleCodes sama sekali.
+  it("guru BK dan kepala sekolah punya menunya", () => {
+    for (const role of [
+      "SMPIT_GURU_BK",
+      "SMAQ_GURU_BK",
+      "SMPIT_KEPALA_SEKOLAH",
+    ]) {
+      expect(navHrefs(role), role).toContain("/counseling");
+    }
+  });
+
+  it("guru lain tidak", () => {
+    for (const role of ["TKQ_GURU", "SDIT_GURU", "SMPIT_GURU", "SMAQ_GURU"]) {
+      expect(navHrefs(role), role).not.toContain("/counseling");
+    }
+  });
+});
+
+describe("navigasi — grup Wali Kelas hanya bagi pemegang tugasnya", () => {
+  // Wali kelas adalah tugas guru atas satu kelas pada satu tahun ajaran, bukan
+  // peran (2026-09-26). Sidebar menanyakan GET /homeroom/my-classes; grupnya
+  // tampil hanya bila guru itu wali kelas sebuah kelas tahun ajaran berjalan.
+  const titles = (groups: NavGroup[]) => groups.map((g) => g.title);
+
+  it("menu guru menandai grup Wali Kelas sebagai tugas", () => {
+    for (const role of ["TKQ_GURU", "SDIT_GURU", "SMPIT_GURU", "SMAQ_GURU"]) {
+      const group = getNavigationForRoleCode(role).find(
+        (g) => g.title === "Wali Kelas",
+      );
+      expect(group?.duty, role).toBe("homeroom");
+    }
+  });
+
+  it("tampil bagi wali kelas, hilang bagi guru lain", () => {
+    const menu = getNavigationForRoleCode("SDIT_GURU");
+    expect(titles(withDutiesHeld(menu, { homeroom: true }))).toContain(
+      "Wali Kelas",
+    );
+    const other = withDutiesHeld(menu, { homeroom: false });
+    expect(titles(other)).not.toContain("Wali Kelas");
+    // Grup lain tidak tersentuh.
+    expect(other).toHaveLength(menu.length - 1);
+  });
+
+  it("peran tanpa grup tugas tidak berubah", () => {
+    for (const role of ["SDIT_KEPALA_SEKOLAH", "MUSYRIF", "SDIT_TATA_USAHA"]) {
+      const menu = getNavigationForRoleCode(role);
+      expect(withDutiesHeld(menu, { homeroom: false }), role).toEqual(menu);
+    }
+  });
+});
+
 describe("rbac — legacy bucket derivation", () => {
   it("identifies the six legacy buckets", () => {
     for (const role of [
@@ -117,15 +181,14 @@ describe("rbac — legacy bucket derivation", () => {
 
   it("maps the expanded hierarchy (rebuilt #319) like the backend", () => {
     // Granular school roles
-    expect(deriveLegacyRole("SDIT_WAKASEK")).toBe("TEACHER");
-    expect(deriveLegacyRole("SMPIT_WALI_KELAS")).toBe("TEACHER");
+    expect(deriveLegacyRole("SMPIT_GURU_BK")).toBe("TEACHER");
     expect(deriveLegacyRole("SMAQ_GURU_BK")).toBe("TEACHER");
     expect(deriveLegacyRole("TKQ_BENDAHARA")).toBe("STAFF");
-    // Pesantren leadership + gender-segregated pembina
+    // Pesantren leadership + pembina
     expect(deriveLegacyRole("PESANTREN_PENGASUH")).toBe("TEACHER");
     expect(deriveLegacyRole("USTADZ")).toBe("TEACHER");
-    expect(deriveLegacyRole("MUSYRIFAH")).toBe("TEACHER");
-    expect(deriveLegacyRole("MUHAFIDZAH")).toBe("TEACHER");
+    expect(deriveLegacyRole("MUSYRIF")).toBe("TEACHER");
+    expect(deriveLegacyRole("MUHAFIDZ")).toBe("TEACHER");
     expect(deriveLegacyRole("PESANTREN_TATA_USAHA")).toBe("STAFF");
     // Business units → STAFF, never an admin bucket
     expect(deriveLegacyRole("BUSINESS_MANAGER")).toBe("STAFF");
@@ -274,25 +337,28 @@ describe("rbac — navigation and route access stay in sync", () => {
   // what a role is shown, rbac.ts decides what it may open. When they drift the
   // sidebar renders links that bounce the user to /unauthorized — which is
   // exactly what happened before this suite existed (188 of 292 links dead).
-  const navToBucket: Array<[NavGroup[], LegacyRole]> = [
-    [getNavigationForRoleCode("SUPER_ADMIN"), "SUPER_ADMIN"],
-    [getNavigationForRoleCode("YAYASAN_KETUA"), "UNIT_ADMIN"],
-    [getNavigationForRoleCode("SMPIT_GURU"), "TEACHER"],
-    [getNavigationForRoleCode("SMPIT_KEPALA_SEKOLAH"), "TEACHER"],
-    [getNavigationForRoleCode("PESANTREN_PENGASUH"), "TEACHER"],
-    [getNavigationForRoleCode("MUSYRIF"), "TEACHER"],
-    [getNavigationForRoleCode("SMPIT_TATA_USAHA"), "STAFF"],
-    [getNavigationForRoleCode("SDIT_KOMITE"), "STAFF"],
-    [getNavigationForRoleCode("SMPIT_SISWA"), "STUDENT"],
-    [getNavigationForRoleCode("SMPIT_ALUMNI"), "STUDENT"],
-    [getNavigationForRoleCode("SMPIT_ORANG_TUA"), "PARENT"],
+  const navToBucket: Array<[string, LegacyRole]> = [
+    ["SUPER_ADMIN", "SUPER_ADMIN"],
+    ["YAYASAN_KETUA", "UNIT_ADMIN"],
+    ["SMPIT_GURU", "TEACHER"],
+    ["SMPIT_KEPALA_SEKOLAH", "TEACHER"],
+    ["PESANTREN_PENGASUH", "TEACHER"],
+    ["MUSYRIF", "TEACHER"],
+    ["SMPIT_TATA_USAHA", "STAFF"],
+    ["SDIT_KOMITE", "STAFF"],
+    ["SMPIT_SISWA", "STUDENT"],
+    ["SMPIT_ALUMNI", "STUDENT"],
+    ["SMPIT_ORANG_TUA", "PARENT"],
+    ["PUSTAKAWAN", "STAFF"],
+    ["LABORAN", "STAFF"],
+    ["BUSINESS_MANAGER", "STAFF"],
   ];
 
   it.each(navToBucket)(
-    "every rendered sidebar link is reachable by its bucket",
-    (nav, bucket) => {
-      const unreachable = hrefsOf(nav).filter(
-        (href) => !canAccessRoute(bucket, href),
+    "every link in %s's sidebar is reachable by its bucket",
+    (roleCode, bucket) => {
+      const unreachable = navHrefs(roleCode).filter(
+        (href) => !canAccessRoute(bucket, href, roleCode),
       );
       expect(unreachable).toEqual([]);
     },
@@ -389,7 +455,9 @@ describe("navigation — every menu link is one its own role may open", () => {
 
       const unopenable = [
         ...new Set(
-          navHrefs(roleCode).filter((href) => !canAccessRoute(legacy, href)),
+          navHrefs(roleCode).filter(
+            (href) => !canAccessRoute(legacy, href, roleCode),
+          ),
         ),
       ];
 
@@ -1021,14 +1089,12 @@ describe("e-office menu coverage", () => {
     "YAYASAN_PENGAWAS",
     "SMPIT_ADMIN",
     "SMPIT_KEPALA_SEKOLAH",
-    "SMPIT_WAKASEK",
     "SMPIT_GURU",
-    "SMPIT_WALI_KELAS",
+    "SMPIT_GURU_BK",
     "SMPIT_TATA_USAHA",
     "SMPIT_BENDAHARA",
     "TKQ_GURU",
     "TKQ_TATA_USAHA",
-    "PESANTREN_DIREKTUR",
     "PESANTREN_PENGASUH",
     "PESANTREN_TATA_USAHA",
     "USTADZ",
@@ -1110,5 +1176,77 @@ describe("pengawasan governance control visibility", () => {
   it("denies every control to an anonymous visitor", () => {
     const access = pengawasanAccessOf(null);
     expect(Object.values(access).some(Boolean)).toBe(false);
+  });
+});
+
+describe("pages a role needs beyond its bucket (2026-09-25)", () => {
+  // Printing every role's menu found pages refused to the very role they
+  // exist for, while the API admitted it. Each case below is one of them, with
+  // its bucket-mate that must stay out.
+  it.each([
+    ["SMPIT_KEPALA_SEKOLAH", "TEACHER", "/perencanaan/abc", true],
+    ["SMPIT_GURU", "TEACHER", "/perencanaan", false],
+    ["PUSTAKAWAN", "STAFF", "/library/digital", true],
+    ["SMPIT_TATA_USAHA", "STAFF", "/library", false],
+    ["PERAWAT", "STAFF", "/library", false],
+    ["LABORAN", "STAFF", "/inventory", true],
+    ["LABORAN", "STAFF", "/practicum", false],
+    ["BUSINESS_STAFF", "STAFF", "/canteen", true],
+    ["BUSINESS_STAFF", "STAFF", "/unit-usaha", false],
+    ["BUSINESS_MANAGER", "STAFF", "/unit-usaha", true],
+  ] as const)("%s (%s) → %s: %s", (roleCode, bucket, path, expected) => {
+    expect(canAccessRoute(bucket, path, roleCode)).toBe(expected);
+  });
+
+  it("the extras never apply without a role code", () => {
+    expect(canAccessRoute("STAFF", "/library")).toBe(false);
+    expect(canAccessRoute("TEACHER", "/perencanaan")).toBe(false);
+  });
+
+  it("every kepala sekolah gets the planning page, and nobody else by code", () => {
+    const withPlanning = Object.entries(roleCodeRouteAccess)
+      .filter(([, routes]) => routes.includes("/perencanaan"))
+      .map(([code]) => code)
+      .sort();
+    expect(withPlanning).toEqual([...PRINCIPAL_ROLE_CODES].sort());
+  });
+
+  it("every key is a real role code", () => {
+    const unknown = Object.keys(roleCodeRouteAccess).filter(
+      (code) => !ALL_ROLE_CODES.includes(code),
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  it("the yayasan organs and every kepala sekolah see the planning link", () => {
+    const planners = [
+      "YAYASAN_PEMBINA",
+      "YAYASAN_KETUA",
+      "YAYASAN_PENGAWAS",
+      ...PRINCIPAL_ROLE_CODES,
+    ];
+    const missing = planners.filter(
+      (code) => !navHrefs(code).includes("/perencanaan"),
+    );
+    expect(missing).toEqual([]);
+    expect(navHrefs("SMPIT_GURU")).not.toContain("/perencanaan");
+  });
+
+  it("each service page is shown only to the staff role that runs it", () => {
+    expect(navHrefs("PUSTAKAWAN")).toContain("/library");
+    expect(navHrefs("LABORAN")).toContain("/inventory");
+    expect(navHrefs("BUSINESS_STAFF")).toEqual(
+      expect.arrayContaining(["/canteen", "/laundry"]),
+    );
+    expect(navHrefs("BUSINESS_STAFF")).not.toContain("/unit-usaha");
+    expect(navHrefs("BUSINESS_MANAGER")).toContain("/unit-usaha");
+    for (const code of ["SMPIT_TATA_USAHA", "SMPIT_BENDAHARA", "PERAWAT"]) {
+      const services = navHrefs(code).filter((href) =>
+        ["/library", "/inventory", "/canteen", "/laundry", "/unit-usaha"].some(
+          (p) => href === p || href.startsWith(`${p}/`),
+        ),
+      );
+      expect(services, code).toEqual([]);
+    }
   });
 });

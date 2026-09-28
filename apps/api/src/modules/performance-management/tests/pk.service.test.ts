@@ -64,6 +64,14 @@ describe('PerformanceAgreementService', () => {
       expect(codes).toContain('YAYASAN_KETUA');
       expect(codes).toContain('SDIT_KEPALA_SEKOLAH');
     });
+
+    it('tidak menawarkan pemanggil sebagai atasannya sendiri', async () => {
+      mocked.user.findMany.mockResolvedValue([]);
+      mocked.userRoleAssignment.findMany.mockResolvedValue([]);
+      await pkService.getSupervisors({ roleCode: 'SMPIT_KEPALA_SEKOLAH', unitId: 'u-smp' }, 'u-me');
+
+      expect(mocked.user.findMany.mock.calls[0][0].where.id).toEqual({ not: 'u-me' });
+    });
   });
 
   describe('getSupervisors unit scoping', () => {
@@ -548,14 +556,9 @@ describe('PerformanceAgreementService', () => {
     });
 
     it('melepaskan peran yang memang lintas unit tanpa menyentuh basis data', async () => {
-      // Pengurus yayasan, pengasuh dan direktur pesantren, super admin.
+      // Pengurus yayasan, pimpinan pesantren (Kiai), super admin.
       // Kalau ini salah, mereka justru terkunci dari unit yang mereka asuh.
-      for (const roleCode of [
-        'SUPER_ADMIN',
-        'YAYASAN_KETUA',
-        'PESANTREN_PENGASUH',
-        'PESANTREN_DIREKTUR',
-      ]) {
+      for (const roleCode of ['SUPER_ADMIN', 'YAYASAN_KETUA', 'PESANTREN_PENGASUH']) {
         await expect(
           pkService.assertUnitScope({ pkId: 'pk-mana-pun' }, { roleCode, unitId: null })
         ).resolves.toBeUndefined();
@@ -920,6 +923,101 @@ describe('PerformanceAgreementService', () => {
       await expect(
         pkService.createPK({ ...dto, userId: 'u-guru', supervisorId: 'u-kepsek' })
       ).rejects.toThrow(/approved PK/i);
+    });
+  });
+
+  describe('atasan penilai divalidasi server', () => {
+    // approvePK hanya memeriksa supervisorId === callerId, jadi siapa pun yang
+    // bisa MENUNJUK atasan bisa menyetujui PK-nya sendiri. Formulir menyaring
+    // calon; server dulu tidak.
+    const dto = {
+      userId: 'u-ustadz',
+      periodStart: '2027-01-01T00:00:00.000Z',
+      periodEnd: '2027-12-31T00:00:00.000Z',
+    };
+    const asRoles = (self: string[], supervisor: string[]) => {
+      mocked.userRoleAssignment.findMany
+        .mockResolvedValueOnce(self.map((code) => ({ role: { code } })))
+        .mockResolvedValueOnce(supervisor.map((code) => ({ role: { code } })));
+    };
+    // clearAllMocks keeps queued mockResolvedValueOnce values, and a rejected
+    // call leaves its later ones unconsumed; start this block from empty queues.
+    beforeEach(() => {
+      mocked.userRoleAssignment.findMany.mockReset();
+      mocked.performanceAgreement.findUnique.mockReset();
+      mocked.performanceAgreement.findFirst.mockReset();
+    });
+
+    it('menolak pemilik PK sebagai atasannya sendiri', async () => {
+      // Kiai yang juga Pembina menyusun PK sebagai Pimpinan Pesantren; ia
+      // tidak boleh sekaligus menjadi penilainya. Ditolak sebelum peran
+      // atasannya dibaca, jadi hanya peran pemilik yang diantrekan.
+      mocked.userRoleAssignment.findMany.mockResolvedValueOnce([
+        { role: { code: 'PESANTREN_PENGASUH' } },
+        { role: { code: 'YAYASAN_PEMBINA' } },
+      ]);
+      await expect(
+        pkService.createPK({ ...dto, userId: 'u-kiai', supervisorId: 'u-kiai' })
+      ).rejects.toThrow(/pemilik Perjanjian Kinerja/);
+      expect(mocked.performanceAgreement.create).not.toHaveBeenCalled();
+    });
+
+    it.each([[['YAYASAN_PEMBINA']], [['YAYASAN_PENGAWAS']], [[]]])(
+      'menolak atasan dengan peran %j',
+      async (supervisorRoles) => {
+        asRoles(['USTADZ'], supervisorRoles);
+        await expect(pkService.createPK({ ...dto, supervisorId: 'u-atasan' })).rejects.toThrow(
+          /berwenang menilai/
+        );
+        expect(mocked.performanceAgreement.create).not.toHaveBeenCalled();
+      }
+    );
+
+    it('Kiai (Pimpinan + Pembina) tetap boleh menilai ustadz di pesantrennya', async () => {
+      asRoles(['USTADZ'], ['PESANTREN_PENGASUH', 'YAYASAN_PEMBINA']);
+      mocked.performanceAgreement.findFirst.mockResolvedValue({ id: 'pk-kiai' });
+      mocked.performanceAgreement.create.mockResolvedValue({ id: 'pk-ustadz' });
+
+      await pkService.createPK({ ...dto, supervisorId: 'u-kiai' });
+      expect(mocked.performanceAgreement.create).toHaveBeenCalled();
+    });
+
+    it('updatePK menolak mengganti atasan menjadi diri sendiri atau Pengawas', async () => {
+      const draft = { id: 'pk-1', userId: 'u-ustadz', status: 'DRAFT' };
+      const owner = { id: 'u-ustadz', isAdmin: false };
+
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce(draft);
+      await expect(pkService.updatePK('pk-1', owner, { supervisorId: 'u-ustadz' })).rejects.toThrow(
+        /pemilik Perjanjian Kinerja/
+      );
+
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce(draft);
+      mocked.userRoleAssignment.findMany.mockResolvedValueOnce([
+        { role: { code: 'YAYASAN_PENGAWAS' } },
+      ]);
+      await expect(
+        pkService.updatePK('pk-1', owner, { supervisorId: 'u-pengawas' })
+      ).rejects.toThrow(/berwenang menilai/);
+      expect(mocked.performanceAgreement.update).not.toHaveBeenCalled();
+    });
+
+    it('updatePK menerima atasan yang berwenang', async () => {
+      mocked.performanceAgreement.findUnique.mockResolvedValueOnce({
+        id: 'pk-1',
+        userId: 'u-guru',
+        status: 'DRAFT',
+      });
+      mocked.userRoleAssignment.findMany.mockResolvedValueOnce([
+        { role: { code: 'SMPIT_KEPALA_SEKOLAH' } },
+      ]);
+      mocked.performanceAgreement.update.mockResolvedValue({ id: 'pk-1' });
+
+      await pkService.updatePK(
+        'pk-1',
+        { id: 'u-guru', isAdmin: false },
+        { supervisorId: 'u-kepsek' }
+      );
+      expect(mocked.performanceAgreement.update).toHaveBeenCalled();
     });
   });
 

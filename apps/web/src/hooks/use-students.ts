@@ -148,6 +148,7 @@ export interface StudentListParams {
   unitId?: string;
   status?: string;
   classId?: string;
+  gender?: "MALE" | "FEMALE";
 }
 
 export interface CreateStudentData {

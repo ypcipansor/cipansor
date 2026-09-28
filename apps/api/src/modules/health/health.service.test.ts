@@ -46,7 +46,7 @@ vi.mock('../../lib/prisma', () => ({
 
 vi.mock('../attendance/attendance.service', () => ({
   attendanceService: {
-    create: vi.fn(),
+    recordFromIntegration: vi.fn(),
   },
 }));
 
@@ -90,7 +90,7 @@ describe('Health Service', () => {
       const result = await healthService.createMedicalRecord(dto, 'user-1');
 
       expect(prisma.medicalRecord.create).toHaveBeenCalled();
-      expect(attendanceService.create).not.toHaveBeenCalled();
+      expect(attendanceService.recordFromIntegration).not.toHaveBeenCalled();
 
       // eventBus.emit is always called for dashboard update
       expect(eventBus.emit).toHaveBeenCalledWith(
@@ -121,10 +121,11 @@ describe('Health Service', () => {
         where: { studentId: 'std-1', status: 'active' },
         select: { classId: true },
       });
-      expect(attendanceService.create).toHaveBeenCalledWith(
+      expect(attendanceService.recordFromIntegration).toHaveBeenCalledWith(
         expect.objectContaining({
           studentId: 'std-1',
           classId: 'cls-1',
+          on: dto.visitDate,
           status: 'SICK',
         }),
         'user-1'

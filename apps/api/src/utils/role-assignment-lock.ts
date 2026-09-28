@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { Errors } from '@/middleware/error';
+import type { Db } from '@/lib/prisma';
 
 /**
  * The single lock protocol every writer of `user_role_assignments` follows.
@@ -71,10 +72,7 @@ export async function lockUserAndAssignments(
 }
 
 /** The role codes a user holds through currently-effective assignments. */
-export async function effectiveRoleCodes(
-  tx: Prisma.TransactionClient,
-  userId: string
-): Promise<string[]> {
+export async function effectiveRoleCodes(tx: Db, userId: string): Promise<string[]> {
   const assignments = await tx.userRoleAssignment.findMany({
     where: {
       userId,
@@ -127,14 +125,14 @@ export async function assertActorHoldsEffectiveRole(
  * serialising against writers, which a pure read does not need.
  */
 export async function assertActorHoldsEffectiveRoleUnlocked(
-  client: Pick<Prisma.TransactionClient, 'userRoleAssignment'>,
+  client: Db,
   actorId: string | undefined,
   allowedRoleCodes: readonly string[]
 ): Promise<string> {
   if (!actorId) {
     throw Errors.forbidden('Peran Anda tidak lagi aktif untuk melakukan tindakan ini.');
   }
-  const codes = await effectiveRoleCodes(client as Prisma.TransactionClient, actorId);
+  const codes = await effectiveRoleCodes(client, actorId);
   const matched = codes.find((code) => allowedRoleCodes.includes(code));
   if (!matched) {
     throw Errors.forbidden('Peran Anda tidak lagi aktif untuk melakukan tindakan ini.');

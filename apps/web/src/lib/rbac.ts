@@ -48,7 +48,7 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SMPIT_ADMIN: "UNIT_ADMIN",
   SMAQ_ADMIN: "UNIT_ADMIN",
 
-  // Teachers + kepala sekolah/wakasek/wali kelas/guru BK + pesantren
+  // Teachers + kepala sekolah/guru BK + pesantren
   // educators (incl. gender-segregated variants) + PT academics → TEACHER
   TKQ_GURU: "TEACHER",
   SDIT_GURU: "TEACHER",
@@ -58,25 +58,12 @@ export const ROLE_CODE_TO_LEGACY: Record<string, LegacyRole> = {
   SDIT_KEPALA_SEKOLAH: "TEACHER",
   SMPIT_KEPALA_SEKOLAH: "TEACHER",
   SMAQ_KEPALA_SEKOLAH: "TEACHER",
-  TKQ_WAKASEK: "TEACHER",
-  SDIT_WAKASEK: "TEACHER",
-  SMPIT_WAKASEK: "TEACHER",
-  SMAQ_WAKASEK: "TEACHER",
-  TKQ_WALI_KELAS: "TEACHER",
-  SDIT_WALI_KELAS: "TEACHER",
-  SMPIT_WALI_KELAS: "TEACHER",
-  SMAQ_WALI_KELAS: "TEACHER",
   SMPIT_GURU_BK: "TEACHER",
   SMAQ_GURU_BK: "TEACHER",
   PESANTREN_PENGASUH: "TEACHER",
-  PESANTREN_DIREKTUR: "TEACHER",
   USTADZ: "TEACHER",
   MUSYRIF: "TEACHER",
-  MUSYRIFAH: "TEACHER",
   MUHAFIDZ: "TEACHER",
-  MUHAFIDZAH: "TEACHER",
-  MURABBI: "TEACHER",
-  WALI_KAMAR: "TEACHER",
 
   // Tata usaha + bendahara + pesantren administration + business units
   // → STAFF (business managers are NOT admins — see backend note)
@@ -356,6 +343,19 @@ export interface RbacUser {
 }
 
 /**
+ * The RoleCode of the user's active (primary) assignment — the code the API
+ * reads from the token — or undefined when the user has none.
+ */
+export function getActiveRoleCode(
+  user: RbacUser | null | undefined,
+): string | undefined {
+  const assignments = user?.userRoles ?? [];
+  const primary =
+    assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
+  return primary?.role?.code ?? undefined;
+}
+
+/**
  * Resolve the effective legacy bucket for a user.
  *
  * Backward-compatible by design: the legacy `user.role` field (still emitted
@@ -375,10 +375,7 @@ export function getEffectiveRole(
   // Pengurus by assignment — was bounced from /perencanaan to /staff by the web
   // while the API served the page, and switching roles never changed which
   // pages the web allowed.
-  const assignments = user.userRoles ?? [];
-  const primary =
-    assignments.find((a) => a?.isPrimary) ?? assignments[0] ?? undefined;
-  const code = primary?.role?.code;
+  const code = getActiveRoleCode(user);
   if (code) {
     const derived = deriveLegacyRole(code);
     if (derived) return derived;
@@ -393,19 +390,54 @@ export function getEffectiveRole(
   return undefined;
 }
 
-/** Can this role reach `pathname`? */
+/**
+ * Pages one RoleCode needs beyond its bucket.
+ *
+ * The buckets are coarse: every kepala sekolah shares TEACHER with every guru,
+ * and the pustakawan shares STAFF with tata usaha and the nurse. Opening these
+ * pages to a whole bucket would show them to everyone in it, so each entry
+ * opens a page to the one role whose job it is. The API still decides what
+ * the role may do there.
+ *
+ * Found on 2026-09-25 by printing every role's menu
+ * (`apps/web/scripts/role-menus.ts`): each page below was refused to the very
+ * role it exists for, while the API already admitted that role. Model A
+ * (roadmap §1.2) replaces the buckets and this map with a permission per
+ * feature.
+ */
+export const roleCodeRouteAccess: Readonly<Record<string, readonly string[]>> =
+  {
+    // The head drafts the RKA Unit their PK must anchor to
+    // (`canAuthorUnitPlan` on the API).
+    TKQ_KEPALA_SEKOLAH: ["/perencanaan"],
+    SDIT_KEPALA_SEKOLAH: ["/perencanaan"],
+    SMPIT_KEPALA_SEKOLAH: ["/perencanaan"],
+    SMAQ_KEPALA_SEKOLAH: ["/perencanaan"],
+    PUSTAKAWAN: ["/library"],
+    // Laboratory equipment: the role holds INVENTORY_VIEW / INVENTORY_MANAGE.
+    // `/practicum` is Amaliyah Tadris (teaching practice), not a laboratory.
+    LABORAN: ["/inventory"],
+    BUSINESS_MANAGER: ["/canteen", "/laundry", "/unit-usaha"],
+    BUSINESS_STAFF: ["/canteen", "/laundry"],
+  };
+
+/**
+ * Can this role reach `pathname`? `roleCode`, when given, adds the pages in
+ * `roleCodeRouteAccess` to what the bucket allows.
+ */
 export function canAccessRoute(
   role: LegacyRole | undefined,
   pathname: string,
+  roleCode?: string | null,
 ): boolean {
   if (!role) return false;
-  const allowed = roleRouteAccess[role];
-  if (!allowed || allowed.length === 0) return false;
+  const allowed = roleRouteAccess[role] ?? [];
   if (allowed.includes("*")) return true;
+  const extra = (roleCode && roleCodeRouteAccess[roleCode]) || [];
   // Match on segment boundaries, not raw string prefixes: a plain startsWith
   // would let "/student" also grant "/students" (the whole admin student
   // roster) to every student.
-  return allowed.some(
+  return [...allowed, ...extra].some(
     (route) => pathname === route || pathname.startsWith(`${route}/`),
   );
 }

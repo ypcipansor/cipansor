@@ -46,9 +46,16 @@ export function PageHeader({
     <div className="mb-6">
       {/* Breadcrumbs */}
       {breadcrumbs && breadcrumbs.length > 0 && (
-        <nav className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
-          <Link href="/dashboard" className="hover:text-foreground">
-            <Home className="h-4 w-4" />
+        <nav
+          aria-label="Jejak halaman"
+          className="flex items-center gap-1 text-sm text-muted-foreground mb-3"
+        >
+          <Link
+            href="/dashboard"
+            aria-label="Beranda"
+            className="hover:text-foreground"
+          >
+            <Home className="h-4 w-4" aria-hidden />
           </Link>
           {breadcrumbs.map((item, index) => (
             <span key={index} className="flex items-center gap-1">

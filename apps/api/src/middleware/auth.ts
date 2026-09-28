@@ -2,8 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { RoleCode } from '@prisma/client';
 import {
   ADMIN_ROLE_CODES as SHARED_ADMIN_ROLE_CODES,
+  ALUMNI_ROLE_CODES,
   GOVERNANCE_ROLE_CODES as SHARED_GOVERNANCE_ROLE_CODES,
+  KOMITE_ROLE_CODES,
   LEGACY_ROLE_EXPANSION as SHARED_LEGACY_ROLE_EXPANSION,
+  PARENT_ROLE_CODES,
+  STUDENT_ROLE_CODES,
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
@@ -478,6 +482,38 @@ export function isTeacherOrAbove(req: Request, res: Response, next: NextFunction
 }
 
 /**
+ * RoleCodes held by people outside the staff — santri, wali, alumni and
+ * komite. Each has its own portal; school-wide lists and dashboards are not
+ * theirs to read.
+ */
+const EXTERNAL_ROLE_CODES: string[] = [
+  ...STUDENT_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+  ...ALUMNI_ROLE_CODES,
+  ...KOMITE_ROLE_CODES,
+];
+
+export function isExternalRoleCode(roleCode: string): boolean {
+  return EXTERNAL_ROLE_CODES.includes(roleCode);
+}
+
+/**
+ * Staff of any kind (teachers, TU, support, the yayasan board, admins); refuses
+ * santri, wali, alumni and komite accounts.
+ */
+export function isStaffMember(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    return next(Errors.unauthorized());
+  }
+
+  if (isExternalRoleCode(req.user.roleCode)) {
+    return next(Errors.forbidden('Staff access required'));
+  }
+
+  next();
+}
+
+/**
  * Check if user belongs to the same unit
  */
 export function sameUnit(paramName: string = 'unitId') {
@@ -526,4 +562,15 @@ const GOVERNANCE_ROLE_CODES: string[] = [...SHARED_GOVERNANCE_ROLE_CODES];
  */
 export function isGovernanceRoleCode(roleCode: string): boolean {
   return GOVERNANCE_ROLE_CODES.includes(roleCode);
+}
+
+/**
+ * Accounts that must use a second factor: anyone holding an admin role or a
+ * yayasan organ role (Pembina, Pengurus, Pengawas) in **any** active
+ * assignment — not only the primary one, or an account could sign in on a
+ * teaching role and switch into its Pembina role without 2FA (the yayasan
+ * decided on 2026-09-24 that the Kiai is both pimpinan pesantren and Pembina).
+ */
+export function requiresSecondFactor(roleCodes: Array<string | null | undefined>): boolean {
+  return roleCodes.some((c) => !!c && (isAdminRoleCode(c) || isGovernanceRoleCode(c)));
 }

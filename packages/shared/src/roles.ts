@@ -79,35 +79,45 @@ export const PENGURUS_ROLE_CODES: readonly string[] = [
 export const PRINCIPAL_ROLE_CODES: readonly string[] =
   perSchool("KEPALA_SEKOLAH");
 
-/** Wakil kepala sekolah. */
-export const VICE_PRINCIPAL_ROLE_CODES: readonly string[] =
-  perSchool("WAKASEK");
-
-/** Classroom teachers, homeroom teachers, and BK counselors. */
-export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
-  ...perSchool("GURU"),
-  ...perSchool("WALI_KELAS"),
-  // BK counselors exist only at the secondary units (TK Qur'an and SD IT
-  // have none), matching the RoleCode enum.
+/**
+ * Guru BK — the school counsellors. They exist only at the secondary units
+ * (TK Qur'an and SD IT have none), matching the RoleCode enum. Besides a
+ * session's own counsellor, they are the only readers of a unit's
+ * confidential counselling sessions (decided 2026-09-26).
+ */
+export const GURU_BK_ROLE_CODES: readonly string[] = [
   "SMPIT_GURU_BK",
   "SMAQ_GURU_BK",
 ];
 
-/** Pesantren leadership (kyai / operational director). */
-export const PESANTREN_LEADER_ROLE_CODES: readonly string[] = [
-  "PESANTREN_PENGASUH",
-  "PESANTREN_DIREKTUR",
+/**
+ * Teachers and BK counsellors. Wakasek and wali kelas are duties a guru holds,
+ * not role codes of their own (merged into `*_GURU` on 2026-09-26): wali kelas
+ * is `Class.homeroomTeacherId`.
+ */
+export const SCHOOL_TEACHER_ROLE_CODES: readonly string[] = [
+  ...perSchool("GURU"),
+  ...GURU_BK_ROLE_CODES,
 ];
 
-/** Pesantren educators & dormitory mentors (incl. gender-segregated variants). */
+/**
+ * Pesantren leadership: the Kiai, Pimpinan Pesantren (UU 18/2019 Ps. 9 ayat 2,
+ * "pemimpin tertinggi Pesantren"). Cipansor has no separate operational
+ * director, so PESANTREN_DIREKTUR was removed on 2026-09-25.
+ */
+export const PESANTREN_LEADER_ROLE_CODES: readonly string[] = [
+  "PESANTREN_PENGASUH",
+];
+
+/**
+ * Pesantren educators and dormitory mentors. One role per duty, not per
+ * gender: putra/putri follows the asrama or halaqah served, and wali kamar and
+ * murabbi are musyrif duties (merged 2026-09-25).
+ */
 export const PESANTREN_EDUCATOR_ROLE_CODES: readonly string[] = [
   "USTADZ",
   "MUSYRIF",
-  "MUSYRIFAH",
   "MUHAFIDZ",
-  "MUHAFIDZAH",
-  "MURABBI",
-  "WALI_KAMAR",
 ];
 
 /** Tata usaha (administrative office) across school units and pesantren. */
@@ -231,7 +241,6 @@ export const ALL_ROLE_CODES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
   ...GOVERNANCE_ROLE_CODES,
   ...PRINCIPAL_ROLE_CODES,
-  ...VICE_PRINCIPAL_ROLE_CODES,
   ...SCHOOL_TEACHER_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
   ...PESANTREN_EDUCATOR_ROLE_CODES,
@@ -275,7 +284,6 @@ export const LEGACY_ROLE_EXPANSION: Record<LegacyRole, string[]> = {
   TEACHER: [
     ...SCHOOL_TEACHER_ROLE_CODES,
     ...PRINCIPAL_ROLE_CODES,
-    ...VICE_PRINCIPAL_ROLE_CODES,
     ...PESANTREN_LEADER_ROLE_CODES,
     ...PESANTREN_EDUCATOR_ROLE_CODES,
   ],
@@ -414,7 +422,6 @@ export const PENGAWASAN_AUDIT_GENERAL_ROLES: readonly string[] = [
   ...ADMIN_ROLE_CODES,
   ...SCHOOL_TEACHER_ROLE_CODES,
   ...PRINCIPAL_ROLE_CODES,
-  ...VICE_PRINCIPAL_ROLE_CODES,
   ...PESANTREN_LEADER_ROLE_CODES,
   ...PESANTREN_EDUCATOR_ROLE_CODES,
   ...TATA_USAHA_ROLE_CODES,

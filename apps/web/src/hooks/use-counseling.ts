@@ -1,5 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+import type {
+  CounselingNote,
+  CounselingReferral,
+  CounselingViewerAccess,
+} from "@cipansor/shared";
 
 // Types
 export type CounselingCategory =
@@ -67,7 +72,26 @@ export interface CounselingSession {
     notes: number;
     referrals: number;
   };
+
+  /** Sent with the session detail; notes are absent when withheld. */
+  notes?: (CounselingNote & { createdBy?: { id: string; name: string } })[];
+  referrals?: (CounselingReferral & {
+    createdBy?: { id: string; name: string };
+  })[];
+  /**
+   * A confidential session is read in full by its counsellor and the unit's
+   * guru BK only; the kepala sekolah gets REFERRALS_ONLY (content withheld).
+   */
+  viewerAccess?: CounselingViewerAccess;
 }
+
+/** Referral destinations, as the API's ReferralType names them. */
+export const REFERRAL_TYPE_LABELS: Record<string, string> = {
+  INTERNAL: "Guru/pembimbing lain",
+  EXTERNAL: "Psikolog/profesional",
+  PARENT: "Orang tua",
+  MEDICAL: "Tenaga medis",
+};
 
 export interface CounselingStats {
   totalSessions: number;

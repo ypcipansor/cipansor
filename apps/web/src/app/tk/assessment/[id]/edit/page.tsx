@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { authFileUrl } from "@/lib/files";
+import { useFilePreviews } from "@/hooks/use-file-previews";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -151,16 +152,33 @@ export default function EditTKAssessmentPage() {
   });
 
   const [step, setStep] = useState(1);
-  const [files, setFiles] = useState<File[]>([]);
-  const [previews, setPreviews] = useState<string[]>([]);
+  const {
+    files: newFiles,
+    previews,
+    addFiles,
+    removeAt: removeNewFile,
+  } = useFilePreviews();
   const [existingEvidences, setExistingEvidences] = useState<any[]>([]);
 
   const updateMutation = useUpdateTKAssessment();
   const addEvidenceMutation = useAddEvidence();
   const deleteEvidenceMutation = useDeleteEvidence();
 
+  // Derive booleans so the reset effect below does not depend on the React
+  // Query result objects, which are recreated every render (that would re-run
+  // the reset and discard anything the user has typed).
+  const hasStudents = (students?.data?.length ?? 0) > 0;
+  const hasAcademicYears = (academicYears?.data?.length ?? 0) > 0;
+
   useEffect(() => {
-    if (assessment) {
+    // The student/year lists load async, and the Radix selects below register
+    // their hidden native <option>s only once those render. Resetting the
+    // controlled value in that same commit lets the bubble <select> coerce it to
+    // "" (no matching option yet) and dispatch a change that clears the field,
+    // so the wizard never leaves step 1. Wait for the lists, then defer a frame.
+    if (!assessment || loadingStudents || !hasStudents || !hasAcademicYears)
+      return;
+    const raf = requestAnimationFrame(() => {
       form.reset({
         studentId: assessment.studentId,
         academicYearId: assessment.academicYearId,
@@ -175,22 +193,12 @@ export default function EditTKAssessmentPage() {
         recommendations: assessment.recommendations || "",
       });
       setExistingEvidences(assessment.evidences || []);
-    }
-  }, [assessment, form]);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [assessment, hasStudents, hasAcademicYears, loadingStudents, form]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      const newFiles = Array.from(e.target.files);
-      setFiles((prev) => [...prev, ...newFiles]);
-
-      const newPreviews = newFiles.map((file) => URL.createObjectURL(file));
-      setPreviews((prev) => [...prev, ...newPreviews]);
-    }
-  };
-
-  const removeNewFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-    setPreviews((prev) => prev.filter((_, i) => i !== index));
+    if (e.target.files) addFiles(Array.from(e.target.files));
   };
 
   const deleteExistingEvidence = async (evidenceId: string) => {
@@ -214,8 +222,8 @@ export default function EditTKAssessmentPage() {
       });
 
       // Upload new evidence if any
-      if (files.length > 0) {
-        for (const file of files) {
+      if (newFiles.length > 0) {
+        for (const file of newFiles) {
           const formData = new FormData();
           formData.append("file", file);
           formData.append(
@@ -765,12 +773,17 @@ export default function EditTKAssessmentPage() {
               </Button>
 
               <div className="flex gap-3">
+                {/* Distinct keys matter: without them React reuses the same
+                    <button> node across the step-3 -> 4 flip from
+                    type="button" to type="submit", and the click that advances
+                    the step also submits the form. */}
                 {step < 4 ? (
-                  <Button type="button" onClick={nextStep}>
+                  <Button key="next" type="button" onClick={nextStep}>
                     Lanjut
                   </Button>
                 ) : (
                   <Button
+                    key="submit"
                     type="submit"
                     disabled={
                       updateMutation.isPending || addEvidenceMutation.isPending

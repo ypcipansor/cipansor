@@ -7,7 +7,7 @@
 [![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
 [![Prisma](https://img.shields.io/badge/Prisma-7-blueviolet.svg)](https://www.prisma.io/)
 [![Express](https://img.shields.io/badge/Express-5-green.svg)](https://expressjs.com/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Lisensi: Proprietary](https://img.shields.io/badge/Lisensi-Proprietary-red.svg)](LICENSE)
 
 ---
 
@@ -463,19 +463,24 @@ Contoh endpoint utama:
 
 ## 🤝 Kontribusi
 
-Kami menyambut kontribusi dari komunitas! Silakan ikuti langkah berikut:
+Pengembangan dilakukan oleh pihak yang ditugaskan atau dikontrak Yayasan
+Pesantren Cipansor. Repositori ini tidak menerima kontribusi dari luar.
 
-1.  Fork repository ini.
-2.  Buat branch fitur baru (`git checkout -b fitur-keren`).
-3.  Commit perubahan Anda (`git commit -m 'Menambahkan fitur keren'`).
-4.  Push ke branch (`git push origin fitur-keren`).
-5.  Buat Pull Request.
+Alur kerjanya ada di [`AGENTS.md`](AGENTS.md): kerjakan di branch fitur, jalankan
+gerbang mutu lokal, lalu buka Pull Request ke `main` — tidak pernah push langsung
+ke `main`.
 
 ---
 
 ## 📄 Lisensi
 
-Proyek ini dilisensikan di bawah [MIT License](LICENSE).
+Hak Cipta © 2025–2026 Yayasan Pesantren Cipansor. Seluruh hak dilindungi.
+
+Perangkat lunak ini **proprietary, bukan sumber terbuka**. Tidak ada lisensi yang
+diberikan untuk menyalin, mengubah, mendistribusikan, atau memakainya di luar
+operasional Yayasan — lihat [`LICENSE`](LICENSE). Repositori ini dapat terlihat
+publik untuk sementara, dan keterlihatan itu tidak memberikan hak apa pun.
+Komponen pihak ketiga tetap tunduk pada lisensinya masing-masing.
 
 ---
 

@@ -6,7 +6,7 @@ import { SUPPORT_ROLE_CODES } from '@cipansor/shared';
 import type { CreateRoleInput, UpdateRoleInput } from './roles.schema';
 import { findOrganConflict } from '@/utils/role-eligibility';
 import { isParentRole } from '@/utils/parent-scope';
-import { isAdminRoleCode, isGovernanceRoleCode } from '@/middleware/auth';
+import { isAdminRoleCode, isGovernanceRoleCode, requiresSecondFactor } from '@/middleware/auth';
 import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
@@ -545,18 +545,19 @@ export class RolesService {
         throw Errors.notFound('Role assignment');
       }
 
-      // An admin session must not be obtainable without the second factor.
+      // An admin or yayasan-organ session must not be obtainable without the
+      // second factor.
       //
-      // Login forces an admin account through 2FA setup before it will issue a
+      // Login forces such an account through 2FA setup before it will issue a
       // session-at-rest (`AuthService.login` → `requiresTwoFactorSetup`). Switch
       // is a second door to the same session and did not enforce it: an account
       // whose *primary* role is non-admin (so login never challenged it) could
-      // hold an admin assignment and switch straight into it, minting an admin
-      // access+refresh pair with 2FA never enabled — the very state login
-      // refuses to produce. The check is the same set login enforces
-      // (`isAdminRoleCode`); governance roles are not forced through 2FA at
-      // login either, so switch stays consistent with login on that point.
-      if (isAdminRoleCode(assignment.role.code) && !assignment.user.isTwoFactorEnabled) {
+      // hold an admin or governance assignment and switch straight into it,
+      // minting an access+refresh pair with 2FA never enabled — the very state
+      // login refuses to produce. The check is the same set login enforces
+      // (`requiresSecondFactor`: admin roles plus the yayasan organs), so switch
+      // stays consistent with login.
+      if (requiresSecondFactor([assignment.role.code]) && !assignment.user.isTwoFactorEnabled) {
         throw Errors.forbidden(
           'Aktifkan autentikasi dua faktor (2FA) sebelum beralih ke peran admin.'
         );
