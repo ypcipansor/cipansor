@@ -282,6 +282,64 @@ describe('Gmail API delivery', () => {
       false
     );
   });
+
+  it('refuses an oversize HTML body even when the caller supplies the text', async () => {
+    // A supplied `text` short-circuits `htmlToText`, so the converter's own
+    // cap never runs. Without a check on the HTML itself the oversized body
+    // would ride along beside the text and reach Gmail unmeasured.
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'gmail-msg-2' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const oversize = 'a'.repeat(MAX_EMAIL_HTML_CHARS + 1) + 'END';
+
+    await expect(
+      deliverEmail({
+        to: 'wali@example.test',
+        subject: 'Pemberitahuan',
+        html: oversize,
+        text: 'ringkasan pendek',
+      })
+    ).rejects.toThrow(/too large/i);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversize supplied text body', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'gmail-msg-3' })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      deliverEmail({
+        to: 'wali@example.test',
+        subject: 'Pemberitahuan',
+        html: '<p>Halo</p>',
+        text: 'a'.repeat(MAX_EMAIL_HTML_CHARS + 1),
+      })
+    ).rejects.toThrow(/too large/i);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still delivers when both the HTML and the supplied text are within the cap', async () => {
+    const fetchMock = vi.fn(async (url: string | URL) => {
+      if (hasHostname(url, 'oauth2.googleapis.com')) {
+        return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ id: 'gmail-msg-4' }), { status: 200 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await deliverEmail({
+      to: 'wali@example.test',
+      subject: 'Pemberitahuan',
+      html: '<p>Halo</p>',
+      text: 'Halo',
+    });
+
+    expect(result.delivered).toBe(true);
+  });
 });
 
 describe('hasHostname exact matching', () => {

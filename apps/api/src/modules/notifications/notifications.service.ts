@@ -224,14 +224,26 @@ export async function updateChannelPolicy(policy: ChannelPolicy) {
   });
 }
 
+/**
+ * Refuse a notification message over the absolute length cap.
+ *
+ * Enforced in the service as well as the HTTP schema: services and jobs call
+ * the writers directly and never parse the schema, and the bulk writers in
+ * particular are used by the scheduler. Kept in one place so the single, bulk
+ * and many writers cannot drift apart.
+ */
+function assertNotificationMessageWithinCap(message: string): void {
+  if (message.length > MAX_NOTIFICATION_MESSAGE_CHARS) {
+    throw Errors.badRequest(`Pesan melebihi batas ${MAX_NOTIFICATION_MESSAGE_CHARS} karakter.`);
+  }
+}
+
 export async function createNotification(data: CreateNotificationInput) {
   // The HTTP schema caps the message, but services and jobs call this function
   // directly and never parse it. Without this the 500,000-char bound would hold
   // only for requests and a direct caller could persist an arbitrarily large
   // in-app row — the same cap, applied where the row is actually written.
-  if (data.message.length > MAX_NOTIFICATION_MESSAGE_CHARS) {
-    throw Errors.badRequest(`Pesan melebihi batas ${MAX_NOTIFICATION_MESSAGE_CHARS} karakter.`);
-  }
+  assertNotificationMessageWithinCap(data.message);
 
   const { dbType, originalType } = mapTypeToPrisma(data.type ?? 'INFO');
 
@@ -317,6 +329,10 @@ export async function createNotification(data: CreateNotificationInput) {
 }
 
 export async function createBulkNotifications(data: CreateBulkNotificationInput) {
+  // Bulk writers are direct callers too (the scheduler uses them and never
+  // parses the HTTP schema), so the raw message cap has to hold here as well.
+  assertNotificationMessageWithinCap(data.message);
+
   const { userIds, ...notificationData } = data;
   const { dbType, originalType } = mapTypeToPrisma(notificationData.type);
   const { priority, channels, ...rest } = notificationData;
@@ -339,6 +355,12 @@ export async function createBulkNotifications(data: CreateBulkNotificationInput)
 }
 
 export async function createManyNotifications(data: CreateNotificationInput[]) {
+  // Each row is capped like a single `createNotification`; the array itself is
+  // not (it is a batch, and each element becomes its own row).
+  for (const item of data) {
+    assertNotificationMessageWithinCap(item.message);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const notifications: any[] = data.map((item) => {
     const { dbType, originalType } = mapTypeToPrisma(item.type ?? 'INFO');

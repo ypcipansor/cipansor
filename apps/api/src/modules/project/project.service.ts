@@ -10,6 +10,7 @@ import {
   UpdateColumnInput,
 } from './project.schema';
 import { createNotification } from '../notifications/notifications.service';
+import { logger } from '../../lib/logger';
 
 export async function createProject(data: CreateProjectInput) {
   return prisma.$transaction(async (tx) => {
@@ -155,16 +156,28 @@ export async function createTask(
   });
 
   if (data.assigneeId && data.assigneeId !== creatorId) {
-    await createNotification({
-      userId: data.assigneeId,
-      type: 'INFO',
-      title: 'New Task Assigned',
-      message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
-      link: `/project/${projectId}`,
-      priority: 'NORMAL',
-      channels: ['IN_APP'],
-      recipientType: 'INDIVIDUAL',
-    });
+    // Best-effort, like every other external side effect here: the task is
+    // already committed above, so a notification failure must not turn a saved
+    // task into a failed request (the caller would retry and duplicate it). A
+    // derived message can exceed the notification size cap for a very long
+    // title even though the title itself is valid, so this path is reachable.
+    try {
+      await createNotification({
+        userId: data.assigneeId,
+        type: 'INFO',
+        title: 'New Task Assigned',
+        message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
+        link: `/project/${projectId}`,
+        priority: 'NORMAL',
+        channels: ['IN_APP'],
+        recipientType: 'INDIVIDUAL',
+      });
+    } catch (error) {
+      logger.warn('[Project] Task saved but assignment notification failed', {
+        taskId: task.id,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   return task;

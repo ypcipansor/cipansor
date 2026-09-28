@@ -765,6 +765,29 @@ async function sendViaSmtp(input: DeliverEmailInput): Promise<DeliverEmailResult
 }
 
 /**
+ * The first body part that exceeds the converter's cap, as a message, or
+ * `null`. Applied to the HTML *and* to a caller-supplied `text`, because a
+ * supplied text skips `htmlToText` entirely: without this check an oversized
+ * HTML body rides along beside it and reaches Gmail or SMTP unmeasured, which
+ * is the resource bound this file exists to keep.
+ */
+function emailContentTooLargeReason(input: DeliverEmailInput): string | null {
+  const parts: ReadonlyArray<[string, string | undefined]> = [
+    ['HTML', input.html],
+    ['text', input.text],
+  ];
+  for (const [part, body] of parts) {
+    if (body !== undefined && body.length > MAX_EMAIL_HTML_CHARS) {
+      return (
+        `E-mail ${part} content too large to send safely ` +
+        `(${body.length} chars, max ${MAX_EMAIL_HTML_CHARS})`
+      );
+    }
+  }
+  return null;
+}
+
+/**
  * Send one message through whichever transport is configured.
  *
  * Throws on a real delivery failure. Returns `delivered: false` only for the
@@ -772,6 +795,9 @@ async function sendViaSmtp(input: DeliverEmailInput): Promise<DeliverEmailResult
  * caller decides whether that counts as success for its own purposes.
  */
 export async function deliverEmail(input: DeliverEmailInput): Promise<DeliverEmailResult> {
+  const tooLarge = emailContentTooLargeReason(input);
+  if (tooLarge) throw new Error(tooLarge);
+
   if (gmailApiConfigured()) {
     return sendViaGmailApi(input);
   }

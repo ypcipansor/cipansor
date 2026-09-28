@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createNotification, getChannelPolicy } from '../notifications.service';
+import {
+  createBulkNotifications,
+  createManyNotifications,
+  createNotification,
+  getChannelPolicy,
+} from '../notifications.service';
 import { prisma } from '../../../lib/prisma';
 import { logger } from '../../../lib/logger';
 import { notificationService as channelService } from '../email-sms.service';
@@ -8,7 +13,7 @@ import { MAX_NOTIFICATION_MESSAGE_CHARS } from '../notifications.schema';
 vi.mock('../../../lib/prisma', () => ({
   prisma: {
     setting: { findFirst: vi.fn() },
-    notification: { create: vi.fn() },
+    notification: { create: vi.fn(), createMany: vi.fn() },
     user: { findUnique: vi.fn() },
   },
 }));
@@ -123,5 +128,52 @@ describe('Notifications Service - guards at the service boundary', () => {
 
     expect(prisma.notification.create).not.toHaveBeenCalled();
     expect(channelService.dispatchExternal).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The bulk writers are direct callers too — the scheduler uses them and never
+ * parses the HTTP schema — so the same raw cap has to hold there.
+ */
+describe('Notifications Service - raw cap on the bulk writers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (prisma.notification.createMany as any).mockResolvedValue({ count: 1 });
+  });
+
+  it('refuses a bulk message over the raw length limit without writing rows', async () => {
+    await expect(
+      createBulkNotifications({
+        userIds: ['user-1'],
+        title: 'Pemberitahuan',
+        message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1),
+      } as never)
+    ).rejects.toThrow(/karakter/i);
+
+    expect(prisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses a create-many row over the raw length limit', async () => {
+    await expect(
+      createManyNotifications([
+        {
+          userId: 'user-1',
+          title: 'Pemberitahuan',
+          message: 'a'.repeat(MAX_NOTIFICATION_MESSAGE_CHARS + 1),
+        },
+      ] as never)
+    ).rejects.toThrow(/karakter/i);
+
+    expect(prisma.notification.createMany).not.toHaveBeenCalled();
+  });
+
+  it('writes a bulk message within the limit', async () => {
+    await createBulkNotifications({
+      userIds: ['user-1', 'user-2'],
+      title: 'Pemberitahuan',
+      message: 'Isi pesan yang wajar',
+    } as never);
+
+    expect(prisma.notification.createMany).toHaveBeenCalledTimes(1);
   });
 });

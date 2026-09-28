@@ -10,6 +10,7 @@ import { JournalReferenceType } from '@cipansor/shared';
 import { prisma, type Db } from '../../lib/prisma';
 import { config } from '../../config';
 import { createNotification } from '../notifications/notifications.service';
+import { logger } from '../../lib/logger';
 import { createPurchaseJournal } from './asset-accounting.service';
 import type {
   CreateInventoryCategoryInput,
@@ -353,6 +354,9 @@ export async function createMaintenanceRequest(
     select: { id: true },
   });
 
+  // Best-effort: the maintenance row above is already committed, so a
+  // notification failure (e.g. a derived message over the size cap for a very
+  // long description) must not fail the request. Logged rather than thrown.
   Promise.all(
     admins.map((admin) =>
       createNotification({
@@ -366,7 +370,12 @@ export async function createMaintenanceRequest(
         recipientType: 'ROLE',
       })
     )
-  ).catch((err) => console.error('Failed to send maintenance notifications', err));
+  ).catch((err) =>
+    logger.error('[Inventory] Maintenance saved but notifications failed', {
+      assetId: asset.id,
+      message: err instanceof Error ? err.message : String(err),
+    })
+  );
 
   return maintenance;
 }

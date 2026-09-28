@@ -56,6 +56,10 @@ vi.mock('../../../../src/lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
+vi.mock('../../../../src/lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 // Mock notifications service with correct relative path (4 levels up)
 vi.mock('../../../../src/modules/notifications/notifications.service', () => ({
   createNotification: vi.fn(),
@@ -114,6 +118,36 @@ describe('Inventory Service', () => {
           type: 'ALERT',
         })
       );
+    });
+
+    it('still returns the saved maintenance when notifications fail', async () => {
+      // The row is committed before the notifications fan out. A derived
+      // message can exceed the notification size cap for a very long
+      // description, so the notify must not fail the request.
+      const input = {
+        assetId: 'asset-1',
+        type: 'repair',
+        description: 'x'.repeat(500_000),
+      };
+
+      prismaMock.asset.findUnique.mockResolvedValue({
+        id: 'asset-1',
+        code: 'AST-001',
+        name: 'Laptop',
+        unitId: 'unit-1',
+      });
+      prismaMock.assetMaintenance.create.mockResolvedValue({
+        id: 'maintenance-2',
+        ...input,
+        status: AssetMaintenanceStatus.PENDING,
+      });
+      prismaMock.user.findMany.mockResolvedValue([{ id: 'admin-1' }]);
+      vi.mocked(createNotification).mockRejectedValue(new Error('Pesan melebihi batas'));
+
+      const result = await createMaintenanceRequest(input, 'user-1');
+
+      expect(result.id).toBe('maintenance-2');
+      await new Promise(process.nextTick);
     });
   });
 

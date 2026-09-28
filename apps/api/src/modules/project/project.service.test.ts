@@ -35,6 +35,10 @@ vi.mock('../notifications/notifications.service', () => ({
   createNotification: vi.fn(),
 }));
 
+vi.mock('../../lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
 describe('Project Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -118,6 +122,37 @@ describe('Project Service', () => {
       );
 
       expect(result).toEqual(mockTask);
+    });
+
+    it('still returns the saved task when the assignment notification fails', async () => {
+      // The task is committed before the notification. A derived message can
+      // exceed the notification size cap for a very long title, so the notify
+      // must not turn a saved task into a failed request (retries duplicate it).
+      const dto = {
+        title: 'x'.repeat(500_000),
+        assigneeId: 'user-2',
+        priority: 'NORMAL',
+      };
+      const mockCol = { id: 'col-1', order: 0 };
+      const mockTask = {
+        id: 'task-2',
+        ...dto,
+        columnId: 'col-1',
+        order: 0,
+        project: { name: 'PPDB 2026' },
+      };
+
+      vi.mocked(prisma.projectColumn.findFirst).mockResolvedValue(mockCol as any);
+      vi.mocked(prisma.projectTask.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.projectTask.create).mockResolvedValue(mockTask as any);
+      vi.mocked(notificationService.createNotification).mockRejectedValue(
+        new Error('Pesan melebihi batas')
+      );
+
+      const result = await projectService.createTask('proj-1', dto as any, 'user-1');
+
+      expect(result).toEqual(mockTask);
+      expect(prisma.projectTask.create).toHaveBeenCalledTimes(1);
     });
   });
 
