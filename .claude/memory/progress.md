@@ -67,6 +67,11 @@ decisions and minutes) — both **closed** after an audit
 (<https://claude.ai/artifact/Cs8yAjGuZcYJzrVi874k9d>): #508 is split and
 redesigned, #509 becomes a Pembina meeting decision in the existing
 ratification flow (`pengawasan-dan-rapat-pembina`).
+Also on 2026-09-28, after an audit of the Dependabot majors #601–#604:
+Sentry is **removed** rather than upgraded (#601–#603 closed) — no
+environment ever ran it, and v11 collects cookies, bodies and local
+variables by default; error monitoring is to be chosen before launch (the
+release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
@@ -78,9 +83,10 @@ ratification flow (`pengawasan-dan-rapat-pembina`).
   list (#589), one daily-report page (#592), the units' accreditation record
   (#597), accreditation on the public site (#598), the permit's doctor's
   note (#606), the koordinator asrama for izin pulang and bermalam (#607).
-  In flight: the Pengawasan pages for the yayasan's organs, salvaged from
-  #508 (roadmap 00.8); then the wali's approval for staff-filed leave off
-  the pondok (roadmap 00.5, third part).
+  Then Pengawasan Internal, Manajemen Risiko and Kepatuhan Syariah for the
+  yayasan's organs, salvaged from #508 (roadmap 00.8). Next: removing
+  Sentry (below), then the wali's approval for staff-filed leave off the
+  pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.

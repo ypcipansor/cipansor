@@ -1,6 +1,7 @@
 export interface Risk {
   id: string;
   unitId: string;
+  unit?: { id: string; name: string };
   academicYearId?: string;
   code: string;
   description: string;

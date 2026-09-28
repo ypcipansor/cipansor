@@ -11,44 +11,27 @@ import {
   updateFollowUpSchema,
   listAuditQuerySchema,
 } from './pengawasan.validation';
-import { UserRole } from '@prisma/client';
+import { assertReachesUnit, listUnitScope, writeUnitScope } from '@/utils/resolve-unit-id';
 
-const PRIVILEGED_ROLES: string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
-
-function isPrivileged(role?: string): boolean {
-  return role ? PRIVILEGED_ROLES.includes(role) : false;
-}
+// Which units a request reaches is one rule, in resolve-unit-id.ts: the
+// yayasan's organs oversee every unit, everyone else their own.
 
 // ==================== AUDITS ====================
 
 export const listAudits = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.user?.unitId;
-  const isPrivilegedUser = isPrivileged(req.user?.role);
-
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-  const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
-  // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
-  if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
-    throw Errors.badRequest('Unit ID required');
-  }
-
+  const unitId = listUnitScope(req);
   const query = listAuditQuerySchema.parse({
     status: req.query.status,
     auditType: req.query.auditType,
   });
 
-  const audits = await pengawasanService.getAudits(targetUnitId, query);
+  const audits = await pengawasanService.getAudits(unitId, query);
   res.json({ success: true, data: audits });
 });
 
 export const getAudit = asyncHandler(async (req: Request, res: Response) => {
   const audit = await pengawasanService.getAuditById(req.params.id);
-  if (!audit) throw Errors.notFound('Audit not found');
-
-  if (!isPrivileged(req.user?.role) && audit.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, audit?.unitId ?? null, 'Audit');
 
   res.json({ success: true, data: audit });
 });
@@ -58,15 +41,7 @@ export const createAudit = asyncHandler(async (req: Request, res: Response) => {
   if (!userId) throw Errors.unauthorized('User context missing');
 
   const body = createAuditSchema.parse(req.body);
-  let targetUnitId = req.user?.unitId;
-
-  if (!targetUnitId) {
-    if (isPrivileged(req.user?.role) && body.unitId) {
-      targetUnitId = body.unitId;
-    } else {
-      throw Errors.badRequest('Unit ID is required');
-    }
-  }
+  const targetUnitId = writeUnitScope(req, body.unitId);
 
   const audit = await pengawasanService.createAudit({
     ...body,
@@ -78,12 +53,7 @@ export const createAudit = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const updateAudit = asyncHandler(async (req: Request, res: Response) => {
-  const existing = await pengawasanService.getAuditById(req.params.id);
-  if (!existing) throw Errors.notFound('Audit not found');
-
-  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, await pengawasanService.auditUnitId(req.params.id), 'Audit');
 
   const body = updateAuditSchema.parse(req.body);
   const updateData: any = { ...body };
@@ -96,12 +66,7 @@ export const updateAudit = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const deleteAudit = asyncHandler(async (req: Request, res: Response) => {
-  const existing = await pengawasanService.getAuditById(req.params.id);
-  if (!existing) throw Errors.notFound('Audit not found');
-
-  if (!isPrivileged(req.user?.role) && existing.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, await pengawasanService.auditUnitId(req.params.id), 'Audit');
 
   await pengawasanService.deleteAudit(req.params.id);
   res.json({ success: true, message: 'Audit deleted' });
@@ -111,17 +76,20 @@ export const deleteAudit = asyncHandler(async (req: Request, res: Response) => {
 
 export const createFinding = asyncHandler(async (req: Request, res: Response) => {
   const body = createFindingSchema.parse(req.body);
+  assertReachesUnit(req, await pengawasanService.auditUnitId(body.auditId), 'Audit');
   const finding = await pengawasanService.createFinding(body);
   res.status(201).json({ success: true, data: finding });
 });
 
 export const updateFinding = asyncHandler(async (req: Request, res: Response) => {
+  assertReachesUnit(req, await pengawasanService.findingUnitId(req.params.id), 'Finding');
   const body = updateFindingSchema.parse(req.body);
   const finding = await pengawasanService.updateFinding(req.params.id, body);
   res.json({ success: true, data: finding });
 });
 
 export const deleteFinding = asyncHandler(async (req: Request, res: Response) => {
+  assertReachesUnit(req, await pengawasanService.findingUnitId(req.params.id), 'Finding');
   await pengawasanService.deleteFinding(req.params.id);
   res.json({ success: true, message: 'Finding deleted' });
 });
@@ -130,17 +98,20 @@ export const deleteFinding = asyncHandler(async (req: Request, res: Response) =>
 
 export const createFollowUp = asyncHandler(async (req: Request, res: Response) => {
   const body = createFollowUpSchema.parse(req.body);
+  assertReachesUnit(req, await pengawasanService.findingUnitId(body.findingId), 'Finding');
   const followUp = await pengawasanService.createFollowUp(body);
   res.status(201).json({ success: true, data: followUp });
 });
 
 export const updateFollowUp = asyncHandler(async (req: Request, res: Response) => {
+  assertReachesUnit(req, await pengawasanService.followUpUnitId(req.params.id), 'Follow-up');
   const body = updateFollowUpSchema.parse(req.body);
   const followUp = await pengawasanService.updateFollowUp(req.params.id, body, req.user?.sub);
   res.json({ success: true, data: followUp });
 });
 
 export const deleteFollowUp = asyncHandler(async (req: Request, res: Response) => {
+  assertReachesUnit(req, await pengawasanService.followUpUnitId(req.params.id), 'Follow-up');
   await pengawasanService.deleteFollowUp(req.params.id);
   res.json({ success: true, message: 'Follow-up deleted' });
 });
@@ -148,27 +119,7 @@ export const deleteFollowUp = asyncHandler(async (req: Request, res: Response) =
 // ==================== SUGGESTIONS ====================
 
 export const getAuditSuggestions = asyncHandler(async (req: Request, res: Response) => {
-  const isPrivilegedUser = isPrivileged(req.user?.role);
-  const unitId = req.user?.unitId;
-
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-
-  // Privileged users can:
-  //   - pass ?unitId=<uuid> to scope to a specific unit
-  //   - pass ?unitId=all   to get cross-unit suggestions (global view)
-  //   - omit ?unitId       to default to their own token unitId (or cross-unit if token has none)
-  // Non-privileged users always use their token unitId.
-  let targetUnitId: string | undefined = unitId ?? undefined;
-  if (isPrivilegedUser) {
-    const queryUnitId = req.query.unitId ? String(req.query.unitId) : undefined;
-    if (queryUnitId === 'all') {
-      targetUnitId = undefined;
-    } else if (queryUnitId) {
-      targetUnitId = queryUnitId;
-    }
-    // else: no query param → falls through to token unitId (may be undefined for tokenless admins)
-  }
-
-  const suggestions = await pengawasanService.suggestAuditSchedules(targetUnitId);
+  // `?unitId=all`, or none, is every unit for the yayasan's organs.
+  const suggestions = await pengawasanService.suggestAuditSchedules(listUnitScope(req));
   res.json({ success: true, data: suggestions });
 });

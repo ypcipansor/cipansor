@@ -213,6 +213,16 @@ decision.
   `/assessment/skhun` prints a document not issued since the national exam was
   abolished (2021). 50 English menu labels in an Indonesian UI; 27 paths with
   more than one label. Full table: the audit report linked in `progress.md`.
+- **Manajemen Risiko is still half English.** The list page was translated
+  when the yayasan's organs were given it (2026-09-28); the heatmap
+  ("Risk Heatmap", "Almost Certain" … "Catastrophic"), the create page
+  ("Create New Risk", every label and message), the detail page and the raw
+  enum values in the table (`FINANCIAL`, `HIGH`, `OPEN`) are not.
+- **`lingkungan` still decides unit scope on the legacy `role`.** Internal
+  audit, risk and sharia compliance moved to the helpers in
+  `apps/api/src/utils/resolve-unit-id.ts` (`listUnitScope`,
+  `assertReachesUnit`, `writeUnitScope`) on 2026-09-28; `lingkungan` has the
+  same hand-written `isPrivileged` and should move too.
 - **One concept, several modules** (audit 2026-09-25): tahfidz across five
   modules (`takhosus` re-exposes murojaah, simaan, sanad and halaqoh on the same
   tables), report cards in five places, lesson plans in three models, P5 in two
