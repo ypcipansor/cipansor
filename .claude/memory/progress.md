@@ -88,8 +88,9 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   (#597), accreditation on the public site (#598), the permit's doctor's
   note (#606), the koordinator asrama for izin pulang and bermalam (#607).
   Then Pengawasan Internal, Manajemen Risiko and Kepatuhan Syariah for the
-  yayasan's organs, salvaged from #508 (#609, roadmap 00.8), and Sentry
-  removed (below). Next: the wali's approval for staff-filed leave off the
+  yayasan's organs, salvaged from #508 (#609, roadmap 00.8), Sentry
+  removed (#610), and the unused Socket.IO server removed — the web polls
+  (`decisions/realtime-polling.md`, 2026-09-28). Next: the wali's approval for staff-filed leave off the
   pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and

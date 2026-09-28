@@ -1,20 +1,16 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { DashboardPage } from "./page-objects";
-import {
-  waitForLoadingComplete,
-  waitForWebSocket,
-} from "./helpers/page-helpers";
+import { waitForLoadingComplete } from "./helpers/page-helpers";
 
 /**
- * Dashboard Real-time Integration E2E Tests
- * Tests WebSocket connection, real-time updates, and caching
+ * Dashboard data refresh, caching and load time.
+ *
+ * The dashboard stays fresh by polling (React Query); there is no push channel
+ * (decision `realtime-polling` in the project memory).
  */
 
-test.describe("Dashboard Real-time Features", () => {
-  let dashboardPage: DashboardPage;
-
-  test.beforeEach(async ({ page }) => {
-    // Login
+test.describe("Dashboard Data Refresh", () => {
+  test("should use cached data on initial load", async ({ page }) => {
     const loginPage = await import("./page-objects");
     const login = new loginPage.LoginPage(page);
     await login.goto();
@@ -23,97 +19,7 @@ test.describe("Dashboard Real-time Features", () => {
       "SuperAdmin123!",
     );
 
-    // Navigate to dashboard
-    dashboardPage = new DashboardPage(page);
-    await dashboardPage.goto();
-    await dashboardPage.waitForDataLoad();
-  });
-
-  test("should establish WebSocket connection", async ({ page }) => {
-    // Wait for WebSocket connection
-    await waitForWebSocket(page);
-
-    // Check for real-time indicator
-    const indicator = page.locator(
-      '[data-testid="realtime-indicator"], .ws-status',
-    );
-    if (await indicator.isVisible({ timeout: 3000 }).catch(() => false)) {
-      // Should show connected status
-      const text = await indicator.textContent();
-      expect(text?.toLowerCase()).toMatch(/connect|terhubung|online/i);
-    } else {
-      console.log(
-        "Real-time indicator not found, checking console for WebSocket",
-      );
-
-      // Alternative: check console for WebSocket connection
-      const logs: string[] = [];
-      page.on("console", (msg) => {
-        if (msg.text().includes("WebSocket") || msg.text().includes("socket")) {
-          logs.push(msg.text());
-        }
-      });
-
-      await page.waitForTimeout(2000);
-      console.log("WebSocket logs:", logs);
-    }
-  });
-
-  test("should receive real-time metric updates", async ({ page }) => {
-    // Get initial metric value
-    const studentCard = dashboardPage.totalStudentsCard;
-    await expect(studentCard).toBeVisible({ timeout: 10000 });
-
-    const initialValue = await studentCard.textContent();
-    console.log("Initial total students:", initialValue);
-
-    // Set up listener for metric updates
-    let updateReceived = false;
-    page.on("websocket", (ws) => {
-      ws.on("framereceived", (event) => {
-        const data = event.payload;
-        if (data.includes("dashboard:metrics") || data.includes("metrics")) {
-          updateReceived = true;
-          console.log("Received metric update:", data);
-        }
-      });
-    });
-
-    // Wait for potential update (real-time updates happen every 60s)
-    // For testing, we'll wait a shorter time
-    await page.waitForTimeout(3000);
-
-    // Verify data is still displayed (even if no update occurred)
-    await expect(studentCard).toBeVisible();
-  });
-
-  test("should handle WebSocket disconnection gracefully", async ({ page }) => {
-    // Wait for initial connection
-    await waitForWebSocket(page);
-
-    // Simulate network offline
-    await page.context().setOffline(true);
-    await page.waitForTimeout(2000);
-
-    // Check for disconnection indicator
-    const indicator = page.locator('[data-testid="realtime-indicator"]');
-    if (await indicator.isVisible({ timeout: 3000 }).catch(() => false)) {
-      const text = await indicator.textContent();
-      expect(text?.toLowerCase()).toMatch(/disconnect|terputus|offline/i);
-    }
-
-    // Reconnect
-    await page.context().setOffline(false);
-    await page.waitForTimeout(3000);
-
-    // Should reconnect and show connected status
-    if (await indicator.isVisible({ timeout: 3000 }).catch(() => false)) {
-      const text = await indicator.textContent();
-      expect(text?.toLowerCase()).toMatch(/connect|terhubung|online/i);
-    }
-  });
-
-  test("should use cached data on initial load", async ({ page }) => {
+    const dashboardPage = new DashboardPage(page);
     // First visit - data is fetched from API
     await dashboardPage.goto();
     await dashboardPage.waitForDataLoad();
@@ -136,30 +42,6 @@ test.describe("Dashboard Real-time Features", () => {
     expect(cachedValue).toBe(firstLoadValue);
   });
 
-  test("should display reconnection attempts", async ({ page }) => {
-    // Wait for connection
-    await waitForWebSocket(page);
-
-    // Simulate disconnection
-    await page.context().setOffline(true);
-    await page.waitForTimeout(2000);
-
-    // Look for reconnection indicator
-    const reconnecting = page.getByText(/reconnecting|menghubungkan kembali/i);
-    const hasReconnectingIndicator = await reconnecting
-      .isVisible({ timeout: 5000 })
-      .catch(() => false);
-
-    if (hasReconnectingIndicator) {
-      await expect(reconnecting).toBeVisible();
-    }
-
-    // Restore connection
-    await page.context().setOffline(false);
-  });
-});
-
-test.describe("Dashboard Data Refresh", () => {
   test("should manually refresh dashboard data", async ({ page }) => {
     // Login and navigate
     const loginPage = await import("./page-objects");

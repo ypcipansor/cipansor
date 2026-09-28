@@ -286,6 +286,13 @@ decision.
   built from the same Dockerfile. The fix is a runtime-image change (musl
   `sharp` in the runner, or a glibc base). Until then ship images at display
   size — `galleryThumb()` in `packages/shared/src/public-site.ts` does.
+- **The dashboard trend has no page.** `jobs/dashboard-metrics.job.ts` runs
+  every minute and writes 6 `dashboard_history` rows (8,640 a day, pruned to
+  24 hours) for `GET /dashboard/metrics`. Its only web consumer,
+  `useDashboardMetrics` in `hooks/use-dashboard.ts`, is used by no page
+  (found 2026-09-28, while removing Socket.IO). Either show the trend on a
+  dashboard, or drop the job, the endpoint and the hook together. That is a
+  product decision.
 
 ## Tests
 

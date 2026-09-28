@@ -70,7 +70,8 @@ a route or `src/config/navigation.ts`.
 ## State & providers
 
 - React Query provider: `src/components/providers/query-provider.tsx`.
-- Realtime: `src/providers/socket-provider.tsx` (Socket.IO).
+- Freshness: React Query polling (`refetchInterval`) — there is no push
+  channel (`.claude/memory/decisions/realtime-polling.md`).
 - Auth state: `src/stores/auth.ts`.
 
 ## Blob preview URLs

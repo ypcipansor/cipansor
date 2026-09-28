@@ -8,7 +8,7 @@ vi.mock('@/lib/prisma', () => ({
     examAttempt: { count: vi.fn(), aggregate: vi.fn() },
   },
 }));
-vi.mock('@/lib/realtime', () => ({
+vi.mock('@/lib/dashboard-metrics', () => ({
   getCurrentDashboardMetrics: vi.fn(),
 }));
 

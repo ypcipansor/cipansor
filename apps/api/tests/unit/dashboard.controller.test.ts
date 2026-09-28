@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Request, Response } from 'express';
 import { prisma } from '@/lib/prisma';
 import { getDashboardMetrics } from '@/modules/dashboard/dashboard.controller';
-import { getCurrentDashboardMetrics } from '@/lib/realtime';
+import { getCurrentDashboardMetrics } from '@/lib/dashboard-metrics';
 
 // Mock dependencies
 vi.mock('@/lib/prisma', () => ({
@@ -44,7 +44,7 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-vi.mock('@/lib/realtime', () => ({
+vi.mock('@/lib/dashboard-metrics', () => ({
   getCurrentDashboardMetrics: vi.fn(),
 }));
 
