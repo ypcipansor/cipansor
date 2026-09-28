@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prisma } from '../../lib/prisma';
-import * as projectService from './project.service';
-import * as notificationService from '../notifications/notifications.service';
+import { prisma } from '../../../lib/prisma';
+import * as projectService from '../project.service';
+import * as notificationService from '../../notifications/notifications.service';
 import { ProjectStatus, TaskPriority } from '@prisma/client';
 
 // Mock all external dependencies
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     project: {
       create: vi.fn(),
@@ -31,11 +31,11 @@ vi.mock('../../lib/prisma', () => ({
   },
 }));
 
-vi.mock('../notifications/notifications.service', () => ({
+vi.mock('../../notifications/notifications.service', () => ({
   createNotification: vi.fn(),
 }));
 
-vi.mock('../../lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
@@ -153,6 +153,59 @@ describe('Project Service', () => {
 
       expect(result).toEqual(mockTask);
       expect(prisma.projectTask.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('updateTask', () => {
+    it('reassigns and notifies the new assignee', async () => {
+      vi.mocked(prisma.projectTask.findUnique).mockResolvedValue({ assigneeId: 'user-1' } as any);
+      const mockTask = {
+        id: 'task-1',
+        title: 'Design brosur',
+        projectId: 'proj-1',
+        assigneeId: 'user-2',
+        project: { name: 'PPDB 2026' },
+      };
+      vi.mocked(prisma.projectTask.update).mockResolvedValue(mockTask as any);
+      vi.mocked(notificationService.createNotification).mockResolvedValue({ id: 'n1' } as any);
+
+      const result = await projectService.updateTask(
+        'task-1',
+        { assigneeId: 'user-2' } as any,
+        'user-3'
+      );
+
+      expect(result).toEqual(mockTask);
+      expect(notificationService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-2', title: 'Task Assignment Updated' })
+      );
+    });
+
+    it('still returns the saved reassignment when the notification fails', async () => {
+      // The reassignment is committed before the notification. A long title
+      // makes the derived message exceed the notification cap, so the notify
+      // must not turn a saved update into a failed request.
+      vi.mocked(prisma.projectTask.findUnique).mockResolvedValue({ assigneeId: 'user-1' } as any);
+      const mockTask = {
+        id: 'task-2',
+        title: 'x'.repeat(499_990),
+        projectId: 'proj-1',
+        assigneeId: 'user-2',
+        project: { name: 'PPDB 2026' },
+      };
+      vi.mocked(prisma.projectTask.update).mockResolvedValue(mockTask as any);
+      vi.mocked(notificationService.createNotification).mockRejectedValue(
+        new Error('Pesan melebihi batas')
+      );
+
+      const result = await projectService.updateTask(
+        'task-2',
+        { assigneeId: 'user-2' } as any,
+        'user-3'
+      );
+
+      expect(result).toEqual(mockTask);
+      expect(prisma.projectTask.update).toHaveBeenCalledTimes(1);
     });
   });
 

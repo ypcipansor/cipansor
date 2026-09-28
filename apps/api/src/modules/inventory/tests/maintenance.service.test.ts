@@ -4,7 +4,7 @@ import {
   updateMaintenanceStatus,
   disposeAsset,
   getQrCode,
-} from '../../../../src/modules/inventory/inventory.service';
+} from '../inventory.service';
 import { AssetStatus, AssetMaintenanceStatus, AssetDisposalReason } from '@prisma/client';
 
 // Mock Enums
@@ -52,20 +52,20 @@ const prismaMock = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock('../../../../src/lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: prismaMock,
 }));
 
-vi.mock('../../../../src/lib/logger', () => ({
+vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 // Mock notifications service with correct relative path (4 levels up)
-vi.mock('../../../../src/modules/notifications/notifications.service', () => ({
+vi.mock('../../notifications/notifications.service', () => ({
   createNotification: vi.fn(),
 }));
 
-import { createNotification } from '../../../../src/modules/notifications/notifications.service';
+import { createNotification } from '../../notifications/notifications.service';
 
 describe('Inventory Service', () => {
   beforeEach(() => {

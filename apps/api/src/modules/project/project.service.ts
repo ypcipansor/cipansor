@@ -12,6 +12,33 @@ import {
 import { createNotification } from '../notifications/notifications.service';
 import { logger } from '../../lib/logger';
 
+/**
+ * Send a task-assignment notification without letting its failure fail the
+ * request. The task is already committed when this runs, so a rejection would
+ * report failure for a saved row and a retry would duplicate or re-apply it.
+ * A derived message can exceed the notification size cap for a long title even
+ * though the title itself is valid, so this path is reachable.
+ */
+async function notifyAssignmentBestEffort(
+  notification: { userId: string; title: string; message: string; link: string },
+  taskId: string
+): Promise<void> {
+  try {
+    await createNotification({
+      ...notification,
+      type: 'INFO',
+      priority: 'NORMAL',
+      channels: ['IN_APP'],
+      recipientType: 'INDIVIDUAL',
+    });
+  } catch (error) {
+    logger.warn('[Project] Task saved but assignment notification failed', {
+      taskId,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function createProject(data: CreateProjectInput) {
   return prisma.$transaction(async (tx) => {
     const project = await tx.project.create({
@@ -158,26 +185,16 @@ export async function createTask(
   if (data.assigneeId && data.assigneeId !== creatorId) {
     // Best-effort, like every other external side effect here: the task is
     // already committed above, so a notification failure must not turn a saved
-    // task into a failed request (the caller would retry and duplicate it). A
-    // derived message can exceed the notification size cap for a very long
-    // title even though the title itself is valid, so this path is reachable.
-    try {
-      await createNotification({
+    // task into a failed request (the caller would retry and duplicate it).
+    await notifyAssignmentBestEffort(
+      {
         userId: data.assigneeId,
-        type: 'INFO',
         title: 'New Task Assigned',
         message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
         link: `/project/${projectId}`,
-        priority: 'NORMAL',
-        channels: ['IN_APP'],
-        recipientType: 'INDIVIDUAL',
-      });
-    } catch (error) {
-      logger.warn('[Project] Task saved but assignment notification failed', {
-        taskId: task.id,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    }
+      },
+      task.id
+    );
   }
 
   return task;
@@ -206,16 +223,17 @@ export async function updateTask(id: string, data: UpdateProjectTaskInput, updat
     data.assigneeId !== updaterId &&
     data.assigneeId !== existingTask?.assigneeId
   ) {
-    await createNotification({
-      userId: data.assigneeId,
-      type: 'INFO',
-      title: 'Task Assignment Updated',
-      message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
-      link: `/project/${task.projectId}`,
-      priority: 'NORMAL',
-      channels: ['IN_APP'],
-      recipientType: 'INDIVIDUAL',
-    });
+    // Best-effort, same as `createTask`: the reassignment is already committed,
+    // so a notification failure must not report the update as failed.
+    await notifyAssignmentBestEffort(
+      {
+        userId: data.assigneeId,
+        title: 'Task Assignment Updated',
+        message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
+        link: `/project/${task.projectId}`,
+      },
+      task.id
+    );
   }
 
   return task;
