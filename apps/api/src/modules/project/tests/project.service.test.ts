@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prisma } from '../../lib/prisma';
-import * as projectService from './project.service';
-import * as notificationService from '../notifications/notifications.service';
+import { prisma } from '../../../lib/prisma';
+import * as projectService from '../project.service';
+import * as notificationService from '../../notifications/notifications.service';
 import { ProjectStatus, TaskPriority } from '@prisma/client';
 
 // Mock all external dependencies
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     project: {
       create: vi.fn(),
@@ -31,7 +31,10 @@ vi.mock('../../lib/prisma', () => ({
   },
 }));
 
-vi.mock('../notifications/notifications.service', () => ({
+vi.mock('../../../lib/logger', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('../../notifications/notifications.service', () => ({
   createNotification: vi.fn(),
 }));
 
@@ -113,11 +116,66 @@ describe('Project Service', () => {
       expect(notificationService.createNotification).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'user-2',
-          title: 'New Task Assigned',
+          title: 'Tugas baru untuk Anda',
         })
       );
 
       expect(result).toEqual(mockTask);
+    });
+  });
+
+  describe('a notification that fails after the task is saved', () => {
+    // The task is saved before its assignee is told. A failure to tell them —
+    // the notifications table unavailable, say — must not answer the request
+    // with an error: the caller would retry and save the task twice.
+    const saved = {
+      id: 'task-2',
+      title: 'Design brosur',
+      projectId: 'proj-1',
+      assigneeId: 'user-2',
+      project: { name: 'PPDB 2026' },
+    };
+
+    it('createTask still returns the saved task', async () => {
+      vi.mocked(prisma.projectColumn.findFirst).mockResolvedValue({ id: 'col-1', order: 0 } as any);
+      vi.mocked(prisma.projectTask.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.projectTask.create).mockResolvedValue(saved as any);
+      vi.mocked(notificationService.createNotification).mockRejectedValue(
+        new Error('notifications unavailable')
+      );
+
+      const result = await projectService.createTask(
+        'proj-1',
+        { title: 'Design brosur', assigneeId: 'user-2', priority: 'NORMAL' } as any,
+        'user-1'
+      );
+
+      expect(result).toEqual(saved);
+      expect(prisma.projectTask.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('updateTask still returns the saved reassignment, and tells the new assignee in Indonesian', async () => {
+      vi.mocked(prisma.projectTask.findUnique).mockResolvedValue({ assigneeId: 'user-1' } as any);
+      vi.mocked(prisma.projectTask.update).mockResolvedValue(saved as any);
+      vi.mocked(notificationService.createNotification).mockRejectedValue(
+        new Error('notifications unavailable')
+      );
+
+      const result = await projectService.updateTask(
+        'task-2',
+        { assigneeId: 'user-2' } as any,
+        'user-3'
+      );
+
+      expect(result).toEqual(saved);
+      expect(notificationService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-2',
+          title: 'Tugas dialihkan kepada Anda',
+          message: 'Anda ditugaskan pada "Design brosur" di proyek "PPDB 2026"',
+          link: '/project/proj-1',
+        })
+      );
     });
   });
 

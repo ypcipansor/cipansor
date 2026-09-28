@@ -10,6 +10,7 @@ import {
   UpdateColumnInput,
 } from './project.schema';
 import { createNotification } from '../notifications/notifications.service';
+import { logger } from '@/lib/logger';
 
 export async function createProject(data: CreateProjectInput) {
   return prisma.$transaction(async (tx) => {
@@ -115,6 +116,36 @@ export async function getTaskById(id: string) {
   });
 }
 
+/**
+ * Tell a task's new assignee, without letting that fail the request: the task
+ * is already saved when this runs, so an error here would report a saved task
+ * as failed — and the retry that follows would save it twice.
+ */
+async function notifyAssignee(
+  userId: string,
+  title: string,
+  task: { id: string; title: string; project: { name: string } },
+  projectId: string
+) {
+  try {
+    await createNotification({
+      userId,
+      type: 'INFO',
+      title,
+      message: `Anda ditugaskan pada "${task.title}" di proyek "${task.project.name}"`,
+      link: `/project/${projectId}`,
+      priority: 'NORMAL',
+      channels: ['IN_APP'],
+      recipientType: 'INDIVIDUAL',
+    });
+  } catch (error) {
+    logger.warn('[Project] Task saved; its assignment notification failed', {
+      taskId: task.id,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 export async function createTask(
   projectId: string,
   data: CreateProjectTaskInput,
@@ -155,16 +186,7 @@ export async function createTask(
   });
 
   if (data.assigneeId && data.assigneeId !== creatorId) {
-    await createNotification({
-      userId: data.assigneeId,
-      type: 'INFO',
-      title: 'New Task Assigned',
-      message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
-      link: `/project/${projectId}`,
-      priority: 'NORMAL',
-      channels: ['IN_APP'],
-      recipientType: 'INDIVIDUAL',
-    });
+    await notifyAssignee(data.assigneeId, 'Tugas baru untuk Anda', task, projectId);
   }
 
   return task;
@@ -193,16 +215,7 @@ export async function updateTask(id: string, data: UpdateProjectTaskInput, updat
     data.assigneeId !== updaterId &&
     data.assigneeId !== existingTask?.assigneeId
   ) {
-    await createNotification({
-      userId: data.assigneeId,
-      type: 'INFO',
-      title: 'Task Assignment Updated',
-      message: `You have been assigned to task "${task.title}" in project "${task.project.name}"`,
-      link: `/project/${task.projectId}`,
-      priority: 'NORMAL',
-      channels: ['IN_APP'],
-      recipientType: 'INDIVIDUAL',
-    });
+    await notifyAssignee(data.assigneeId, 'Tugas dialihkan kepada Anda', task, task.projectId);
   }
 
   return task;
