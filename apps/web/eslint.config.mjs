@@ -1,16 +1,26 @@
+import { createRequire } from "node:module";
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+
+// The React this app is built with, read rather than written down, so the
+// setting below cannot fall behind a React upgrade.
+const reactVersion = createRequire(import.meta.url)(
+  "react/package.json",
+).version;
 
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
     // eslint-config-next pulls in eslint-plugin-react 7.x, which calls the
-    // `context.getFilename()` API ESLint 10 removed. Pinning a concrete React
-    // version makes the plugin skip its version auto-detection — the only code
-    // path that hits that API — and the react/* rules keep working.
-    settings: { react: { version: "19.3.0" } },
+    // `context.getFilename()` API ESLint 10 removed. A concrete React version
+    // makes the plugin skip its version auto-detection — the only code path
+    // the rules enabled here reach — and the react/* rules keep working.
+    // (`react/forward-ref-uses-ref` and `react/jsx-filename-extension` call
+    // removed APIs too; enabling either needs @eslint/compat's fixupConfigRules
+    // or an eslint-plugin-react that supports ESLint 10.)
+    settings: { react: { version: reactVersion } },
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/no-unused-vars": "warn",
