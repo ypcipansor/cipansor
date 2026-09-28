@@ -370,19 +370,26 @@ function quotedAttributeMask(text: string): Uint8Array {
  * which is the incomplete-sanitization class this scan exists to close.
  */
 function stripHiddenElements(text: string): string {
+  const MAX_STRIP_HIDDEN_INPUT = 200_000;
+  const normalized = typeof text === 'string' ? text : String(text ?? '');
+  const safeText =
+    normalized.length > MAX_STRIP_HIDDEN_INPUT
+      ? normalized.slice(0, MAX_STRIP_HIDDEN_INPUT)
+      : normalized;
+
   const patterns = [
     { open: '<!--', close: '-->' },
     { open: '<style', close: '</style>' },
     { open: '<head', close: '</head>' },
   ].map((p) => ({ open: p.open.toLowerCase(), close: p.close.toLowerCase() }));
-  const quoted = quotedAttributeMask(text);
+  const quoted = quotedAttributeMask(safeText);
   const isLiveOpen = (start: number) => !quoted[start];
   const out: string[] = [];
   const outPos: number[] = [];
   const openStart: number[] = patterns.map(() => -1);
 
-  for (let i = 0; i < text.length; i++) {
-    out.push(text[i]);
+  for (let i = 0; i < safeText.length; i++) {
+    out.push(safeText[i]);
     outPos.push(i);
 
     for (let p = 0; p < patterns.length; p++) {
