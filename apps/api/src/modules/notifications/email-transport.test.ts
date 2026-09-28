@@ -727,6 +727,24 @@ describe('htmlToText', () => {
         expect(large, `${name} complexity`).toBeLessThan(small * 8);
       }
     });
+
+    it('bounds the scan to a fixed maximum input length', () => {
+      // Code scanning alert 54: the loop bound must not be under a caller's
+      // control. `stripHiddenElements` re-enters on a bounded prefix, so an
+      // oversized body is scanned as if it were 100k characters — no markup
+      // past that boundary can be stripped, and no work beyond it is done.
+      const filler = 'x'.repeat(200_000);
+      const oversized = filler + '<script>alert(1)</script>';
+
+      const text = htmlToText(oversized);
+      // Everything past the 100k bound is discarded, so the body is scanned as
+      // 100k characters — and the markup that sat beyond it is gone.
+      expect(text).toHaveLength(100_000);
+      expect(text).not.toContain('<script>');
+
+      // Content up to the boundary is still processed normally.
+      expect(htmlToText('<p>Hi</p>' + filler)).toContain('Hi');
+    });
   });
 
   describe('entity decoding', () => {
