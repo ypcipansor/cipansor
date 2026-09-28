@@ -16,9 +16,12 @@ memilih dari opsi yang disertai riset berikut.
   Pengawas), dan **kepala setiap unit**:
   - kepala sekolah TK Qur'an, SD IT, SMP IT dan SMA Qur'an;
   - Pimpinan Pesantren.
-  Kewajiban berlaku bila **salah satu** penugasan aktifnya memegang peran itu,
-  sama seperti aturan yang sudah ada (`requiresSecondFactor` di
-  `apps/api/src/middleware/auth.ts`).
+  Kewajiban berlaku bila **salah satu** penugasan aktifnya memegang peran itu.
+  Daftarnya satu: `SECOND_FACTOR_ROLE_CODES` di `packages/shared/src/roles.ts`,
+  dibaca `requiresSecondFactor` (login, perpindahan peran, pembaruan sesi, dan
+  larangan mematikan) dan oleh seed `E2E_FIXED_2FA`. Akun wajib hanya bisa
+  dimatikan 2FA-nya oleh Super Admin, untuk pengguna yang kehilangan ponsel
+  sekaligus kode pemulihannya.
 - **Diajak, tidak wajib:** semua staf dan pendidik yang tidak wajib, dan wali
   santri. Jendela ajakan muncul sesudah login, dengan tombol **"Nanti saja"
   tanpa batas**, dan muncul lagi pada login berikutnya. Karena sesi bertahan 30

@@ -19,6 +19,7 @@ import {
   RoleAssignment,
   SwitchRoleResponse,
   AssignRoleRequest,
+  TwoFactorStatus,
   ApiResponse,
   PaginatedResponse as SharedPaginatedResponse,
   TahfidzRecord,
@@ -38,9 +39,7 @@ export interface TwoFactorEnableResponse {
   recoveryCodes: string[];
 }
 
-export interface TwoFactorStatusResponse {
-  isEnabled: boolean;
-}
+export type TwoFactorStatusResponse = TwoFactorStatus;
 
 // Explicitly export SharedPaginatedResponse for new modules
 export type { SharedPaginatedResponse };

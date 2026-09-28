@@ -766,7 +766,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.disableTwoFactor('admin-1', '123456')).rejects.toThrow(
-        'Verifikasi dua langkah wajib untuk akun admin'
+        'Verifikasi dua langkah wajib untuk peran Anda'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -791,11 +791,11 @@ describe('AuthService', () => {
 
   describe('getTwoFactorStatus', () => {
     it('reports the enabled flag', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ isTwoFactorEnabled: true });
+      mockPrisma.user.findUnique.mockResolvedValue({ isTwoFactorEnabled: true, userRoles: [] });
 
       const result = await authService.getTwoFactorStatus('user-1');
 
-      expect(result).toEqual({ isEnabled: true });
+      expect(result).toEqual({ isEnabled: true, isRequired: false });
     });
 
     it('throws for a non-existent user', async () => {

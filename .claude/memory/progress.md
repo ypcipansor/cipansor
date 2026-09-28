@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-28**. What a new session needs to pick up the thread, newest
+Updated **2026-09-29**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -11,10 +11,11 @@ backlog to [`roadmap.md`](roadmap.md).
   releases the SHA staging reports at `/healthz`, not the head of `main`.
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
-  on which CI and E2E (Chromium) pass. At `4004119d` (#594) on 2026-09-28,
-  which holds #588 through #598; verified read-only (the public
-  accreditation list answers `[]` — no certificate recorded on staging — so
-  the section stays hidden). #605 onward deploy as `main`'s E2E passes.
+  on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
+  documentation-only merge is not rebuilt). At `3caefaf6` (#614) on
+  2026-09-29. SMP IT's accreditation certificate was recorded there on
+  2026-09-29 at the user's request, by the SMP admin demo account — which
+  therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
   `code_scanning`, errors and high-or-higher alerts). The user's caveat: it
   may be dropped if the repository goes private and code scanning would need
@@ -91,9 +92,11 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   yayasan's organs, salvaged from #508 (#609, roadmap 00.8), Sentry
   removed (#610), and the unused Socket.IO server removed — the web polls
   (`decisions/realtime-polling.md`, 2026-09-28). Sign-in (roadmap 00.9):
-  2FA recovery codes that work and the 2FA screens in Indonesian (#614), then
-  sessions that follow the account's live roles (this change). Next: the wali's approval for staff-filed leave off the
-  pondok (roadmap 00.5, third part).
+  2FA recovery codes that work and the 2FA screens in Indonesian (#614),
+  sessions that follow the account's live roles (#615), and 2FA mandatory for
+  the head of every unit (this change). Next in 00.9: the post-login
+  invitation, then the password policy. Then the wali's approval for
+  staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.
