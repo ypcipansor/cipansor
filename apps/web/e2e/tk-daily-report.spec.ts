@@ -194,14 +194,17 @@ test.describe("guru menulis, wali membaca", () => {
     await expect(card.getByText(ACTIVITY)).toBeVisible({ timeout: 15000 });
     const photo = card.getByRole("img", { name: "Foto kegiatan" });
     await expect(photo).toBeVisible();
-    // Stored uploads are served only with an access token, which an <img>
-    // cannot send as a header: the page puts the wali's own in the address,
-    // and the file comes back for it. (Whether it paints here depends on the
-    // stack: the API answers same-origin only, and this one runs the web and
-    // the API on two ports.)
+    // The session is an `HttpOnly` cookie now, so the address carries no token:
+    // putting the credential in a URL would leak it into the access log and the
+    // `Referer` header. The file is served for the session instead.
     const src = (await photo.getAttribute("src")) ?? "";
-    expect(src).toContain(`token=${encodeURIComponent(wali.accessToken)}`);
-    const file = await fetch(src);
+    expect(src).not.toContain("token=");
+    expect(src).toMatch(/\/uploads\/[^/]+$/);
+    // A plain Node `fetch` has no cookie jar, so present the session the way a
+    // native client does — the `Authorization` path the API checks first.
+    const file = await fetch(src, {
+      headers: { authorization: `Bearer ${wali.accessToken}` },
+    });
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toMatch(/^image\/png/);
 

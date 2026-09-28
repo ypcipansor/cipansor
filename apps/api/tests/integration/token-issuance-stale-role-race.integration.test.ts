@@ -15,6 +15,12 @@
  * holds the assignment row, then commits the revocation. The issuance must lose
  * and leave no token stamped with the revoked role.
  *
+ * The login fixtures hold ordinary roles on purpose. Since 2026-09-25 an
+ * admin or yayasan-organ assignment forces 2FA setup at login
+ * (`requiresSecondFactor`, #548), and that branch returns before the token
+ * transaction this suite exercises — so a governance fixture would test the
+ * 2FA gate instead of the issuance race. The mechanism is role-agnostic.
+ *
  * Opt-in via RUN_DB_TESTS=1, like the other DB suites.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -43,18 +49,17 @@ const PASSWORD_HASH = '$2b$10$DiF7tk0FeH3XfovpHZeo5uJVMwufjDKw5WAHxEhcDfpSqIntOL
 
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
-  ('role-ketua', 'YAYASAN_KETUA', 'Ketua Yayasan', 'YAYASAN', '[]'::jsonb, now()),
   ('role-guru', 'SDIT_GURU', 'Guru', 'SD_IT', '[]'::jsonb, now()),
   ('role-admin', 'SDIT_ADMIN', 'Admin Unit', 'SD_IT', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, password_hash, is_active, updated_at) VALUES
-  ('u-stale', 'Ketua Stale', 'stale@example.com', '${PASSWORD_HASH}', true, now()),
+  ('u-stale', 'Guru Stale', 'stale@example.com', '${PASSWORD_HASH}', true, now()),
   ('u-escalate', 'Guru Eskalasi', 'escalate@example.com', '${PASSWORD_HASH}', true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
-  ('a-stale', 'u-stale', 'role-ketua', true, true, now()),
+  ('a-stale', 'u-stale', 'role-guru', true, true, now()),
   ('a-guru', 'u-escalate', 'role-guru', true, true, now()),
-  ('a-admin', 'u-escalate', 'role-admin', false, true, now());
+  ('a-admin', 'u-escalate', 'role-admin', false, false, now());
 `;
 
 async function withClient<T>(url: string, fn: (db: Client) => Promise<T>): Promise<T> {
@@ -134,10 +139,14 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
         `UPDATE users SET is_active = true, deleted_at = NULL WHERE id IN ('u-stale', 'u-escalate')`
       );
       await db.query(`UPDATE users SET is_two_factor_enabled = false WHERE id = 'u-escalate'`);
+      // Both accounts start on ordinary roles, so login reaches the issuance
+      // transaction rather than the 2FA gate. `a-admin` is an *unheld* grant
+      // the escalation test switches on while the login is blocked.
       await db.query(`UPDATE user_role_assignments SET is_active = true WHERE id = 'a-stale'`);
       await db.query(
-        `UPDATE user_role_assignments SET is_primary = (id = 'a-guru'), is_active = true
-         WHERE user_id = 'u-escalate'`
+        `UPDATE user_role_assignments
+            SET is_primary = (id = 'a-guru'), is_active = (id <> 'a-admin')
+          WHERE user_id = 'u-escalate'`
       );
       await db.query(
         `DELETE FROM board_member_suspensions WHERE user_id IN ('u-stale', 'u-escalate')`
@@ -190,11 +199,11 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
       id: 'u-stale',
       sub: 'u-stale',
       email: 'stale@example.com',
-      roleId: 'role-ketua',
-      roleCode: 'YAYASAN_KETUA',
+      roleId: 'role-guru',
+      roleCode: 'SDIT_GURU',
       unitId: null,
       permissions: [],
-      role: 'SUPER_ADMIN',
+      role: 'TEACHER',
     });
     await withClient(targetUrl, async (db) => {
       await db.query(
@@ -240,10 +249,14 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
   it('login refuses and mints nothing when an admin assignment wins the primary race', async () => {
     // Reviewer finding 1 (CWE-287). The password step is answered against the
     // snapshot's ordinary SDIT_GURU role, so no second factor is demanded. A
-    // concurrent grant then makes the SDIT_ADMIN assignment primary and commits
-    // before login's locked re-read. Without a re-check the login would mint an
-    // admin session with no second factor at all � so it must refuse (409) and
-    // leave no refresh token behind.
+    // concurrent grant then makes the SDIT_ADMIN assignment primary *and*
+    // active — login's pre-flight snapshot read sees only the primary guru
+    // assignment, so `requiresSecondFactor` is false and the 2FA gate is
+    // skipped. The grant commits before login's locked re-read, which now sees
+    // an admin `effective` whose role differs from the password-verified
+    // snapshot. Without the re-check the login would mint an admin session with
+    // no second factor at all — so it must refuse (409) and leave no refresh
+    // token behind.
     await resetUser();
     const { service, previousUrl } = await loadAuthService();
     const blocker = new Client({ connectionString: targetUrl });
@@ -251,7 +264,9 @@ describeDb('token issuance vs role revocation (real PostgreSQL)', () => {
     try {
       await blocker.query('BEGIN');
       await blocker.query(
-        `UPDATE user_role_assignments SET is_primary = (id = 'a-admin') WHERE user_id = 'u-escalate'`
+        `UPDATE user_role_assignments
+            SET is_active = true, is_primary = (id = 'a-admin')
+          WHERE user_id = 'u-escalate'`
       );
 
       const pending = service.login({ email: 'escalate@example.com', password: 'Password123!' });

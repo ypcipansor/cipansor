@@ -43,19 +43,23 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 180_000 });
 
 // bcrypt hash of "Password123!" — minted once so the login path can verify a
 // real credential without paying for a fresh hash in every seed.
+//
+// The fixtures hold ordinary roles on purpose: an admin or yayasan-organ
+// assignment forces 2FA setup at login (`requiresSecondFactor`, #548), whose
+// branch returns before the token-issuance transaction these tests race.
 const PASSWORD_HASH = '$2b$10$DiF7tk0FeH3XfovpHZeo5uJVMwufjDKw5WAHxEhcDfpSqIntOLlC2';
 
 const SEED = `
 INSERT INTO roles (id, code, name, realm, permissions, updated_at) VALUES
-  ('role-ketua', 'YAYASAN_KETUA', 'Ketua Yayasan', 'YAYASAN', '[]'::jsonb, now());
+  ('role-guru', 'SDIT_GURU', 'Guru', 'SD_IT', '[]'::jsonb, now());
 
 INSERT INTO users (id, name, email, password_hash, is_active, updated_at) VALUES
-  ('u-login',   'Ketua Login',   'login@example.com',   '${PASSWORD_HASH}', true, now()),
-  ('u-switch',  'Ketua Switch',  'switch@example.com',  '${PASSWORD_HASH}', true, now());
+  ('u-login',   'Guru Login',   'login@example.com',   '${PASSWORD_HASH}', true, now()),
+  ('u-switch',  'Guru Switch',  'switch@example.com',  '${PASSWORD_HASH}', true, now());
 
 INSERT INTO user_role_assignments (id, user_id, role_id, is_primary, is_active, updated_at) VALUES
-  ('a-login',  'u-login',  'role-ketua', true,  true, now()),
-  ('a-switch', 'u-switch', 'role-ketua', false, true, now());
+  ('a-login',  'u-login',  'role-guru', true,  true, now()),
+  ('a-switch', 'u-switch', 'role-guru', false, true, now());
 `;
 
 async function withClient<T>(url: string, fn: (db: Client) => Promise<T>): Promise<T> {
