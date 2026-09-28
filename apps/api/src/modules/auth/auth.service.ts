@@ -11,6 +11,7 @@ import {
 } from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
+import type { TwoFactorStatus } from '@cipansor/shared';
 import { RoleCode, UnitType } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
@@ -1016,7 +1017,9 @@ export class AuthService {
         }
         // Peer protection: non-SUPER_ADMIN admin cannot disable other admins
         if (isTargetAdmin) {
-          throw Errors.forbidden('Admin tidak dapat mematikan verifikasi dua langkah admin lain');
+          throw Errors.forbidden(
+            'Hanya Super Admin yang dapat mematikan verifikasi dua langkah akun yang wajib memakainya'
+          );
         }
       }
 
@@ -1036,7 +1039,7 @@ export class AuthService {
       // User disabling their own
       if (isTargetAdmin) {
         throw Errors.forbidden(
-          'Verifikasi dua langkah wajib untuk akun admin dan tidak dapat dimatikan'
+          'Verifikasi dua langkah wajib untuk peran Anda dan tidak dapat dimatikan'
         );
       }
 
@@ -1067,15 +1070,22 @@ export class AuthService {
   /**
    * Get 2FA Status
    */
-  async getTwoFactorStatus(userId: string) {
+  async getTwoFactorStatus(userId: string): Promise<TwoFactorStatus> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { isTwoFactorEnabled: true },
+      select: {
+        isTwoFactorEnabled: true,
+        userRoles: { where: activeRoleWhere(), select: { role: { select: { code: true } } } },
+      },
     });
 
     if (!user) throw Errors.notFound('User');
 
-    return { isEnabled: user.isTwoFactorEnabled };
+    return {
+      isEnabled: user.isTwoFactorEnabled,
+      // The profile shows "wajib" instead of a button the API would refuse.
+      isRequired: requiresSecondFactor(user.userRoles.map((r) => r.role.code)),
+    };
   }
 
   private generateRecoveryCodes(): string[] {

@@ -25,6 +25,8 @@ import { ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 
 export function TwoFactorSettings() {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
+  // One of the account's roles makes 2FA mandatory: there is nothing to turn off.
+  const [isRequired, setIsRequired] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [isDisableOpen, setIsDisableOpen] = useState(false);
@@ -33,6 +35,7 @@ export function TwoFactorSettings() {
     try {
       const res = await authApi.get2FAStatus();
       setIsEnabled(res.data.data.isEnabled);
+      setIsRequired(res.data.data.isRequired);
     } catch {
       toast.error("Gagal memuat status verifikasi dua langkah");
     } finally {
@@ -94,7 +97,13 @@ export function TwoFactorSettings() {
             )}
           </div>
 
-          {!isEnabled ? (
+          {isEnabled && isRequired ? (
+            <p className="max-w-xs text-right text-sm text-muted-foreground">
+              Wajib untuk peran Anda. Kehilangan ponsel? Pakai kode pemulihan,
+              atau minta Super Admin mematikannya agar Anda bisa memasangnya
+              lagi.
+            </p>
+          ) : !isEnabled ? (
             <Dialog open={isSetupOpen} onOpenChange={setIsSetupOpen}>
               <DialogTrigger asChild>
                 <Button>Aktifkan</Button>

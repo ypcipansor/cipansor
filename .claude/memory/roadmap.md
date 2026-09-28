@@ -56,8 +56,9 @@ items before 2026-09-25 is in the history of this file and of
        - no fallback to the legacy `users.role` on refresh and 2FA, and
          removing a role ends the sessions it granted;
        - 2FA mandatory for the unit heads too (the four kepala sekolah and
-         the Pimpinan Pesantren), through `requiresSecondFactor` — any active
-         assignment counts, as it does today;
+         the Pimpinan Pesantren): one list, `SECOND_FACTOR_ROLE_CODES` in
+         `@cipansor/shared`, and the profile says "wajib" instead of offering
+         to turn it off (this change);
        - the post-login invitation for staff and wali ("Nanti saja", no
          limit; santri not invited);
        - passwords: a must-change flag (first login, set by someone else,

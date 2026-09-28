@@ -7,6 +7,7 @@ import {
   KOMITE_ROLE_CODES,
   LEGACY_ROLE_EXPANSION as SHARED_LEGACY_ROLE_EXPANSION,
   PARENT_ROLE_CODES,
+  SECOND_FACTOR_ROLE_CODES,
   STUDENT_ROLE_CODES,
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
@@ -518,12 +519,13 @@ export function isGovernanceRoleCode(roleCode: string): boolean {
 }
 
 /**
- * Accounts that must use a second factor: anyone holding an admin role or a
- * yayasan organ role (Pembina, Pengurus, Pengawas) in **any** active
- * assignment — not only the primary one, or an account could sign in on a
- * teaching role and switch into its Pembina role without 2FA (the yayasan
- * decided on 2026-09-24 that the Kiai is both pimpinan pesantren and Pembina).
+ * Accounts that must use a second factor: anyone holding a role in
+ * `SECOND_FACTOR_ROLE_CODES` (admins, the yayasan's organs, the unit heads) in
+ * **any** active assignment — not only the primary one, or an account could
+ * sign in on a teaching role and switch into its Pembina role without 2FA (the
+ * yayasan decided on 2026-09-24 that the Kiai is both pimpinan pesantren and
+ * Pembina).
  */
 export function requiresSecondFactor(roleCodes: Array<string | null | undefined>): boolean {
-  return roleCodes.some((c) => !!c && (isAdminRoleCode(c) || isGovernanceRoleCode(c)));
+  return roleCodes.some((c) => !!c && SECOND_FACTOR_ROLE_CODES.includes(c));
 }
