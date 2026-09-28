@@ -62,7 +62,11 @@ on the public site from one official record in the portal, kept by the unit's
 admin or the Super Admin, a reminder 12 months before it runs out
 (`akreditasi-unit`); a permit's doctor's note — kept to the end of the leave's
 academic year, opened by the decider, the wali and the unit head
-(`pemutus-izin-santri`).
+(`pemutus-izin-santri`); PR #508 (Pengawas, WBS, suspension of Pengurus) and #509 (organ
+decisions and minutes) — both **closed** after an audit
+(<https://claude.ai/artifact/Cs8yAjGuZcYJzrVi874k9d>): #508 is split and
+redesigned, #509 becomes a Pembina meeting decision in the existing
+ratification flow (`pengawasan-dan-rapat-pembina`).
 
 ## In flight
 
@@ -73,8 +77,10 @@ academic year, opened by the decider, the wali and the unit head
   #590, and the pattern flag in #596), behaviour notes (#581), the Kurikulum
   list (#589), one daily-report page (#592), the units' accreditation record
   (#597), accreditation on the public site (#598), the permit's doctor's
-  note (#606). In flight: the koordinator asrama for izin pulang and
-  bermalam (roadmap 00.5, second of three parts).
+  note (#606), the koordinator asrama for izin pulang and bermalam (#607).
+  In flight: the Pengawasan pages for the yayasan's organs, salvaged from
+  #508 (roadmap 00.8); then the wali's approval for staff-filed leave off
+  the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.

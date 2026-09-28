@@ -29,13 +29,19 @@ items before 2026-09-25 is in the history of this file and of
        unit's section, three languages, hidden once expired — #598);
     5. the permit rule's three parameters (`pemutus-izin-santri.md`): the
        doctor's note (#606), the koordinator asrama for going home or
-       staying overnight (in progress; adds `permits.off_campus`, which the
-       next part reads), then the wali's approval for staff-filed leave off
-       the pondok (schema change);
+       staying overnight (#607, which added `permits.off_campus`), then the
+       wali's approval for staff-filed leave off the pondok (schema change);
     6. who manages asrama (`unit-vs-asrama-vs-takhosus.md`): the list, and
        the koordinator's placement in their own asrama;
     7. guru wali at SMP IT and SMA Qur'an as a relation guru → murid
        dampingan (`peran-dan-tugas-tambahan.md`).
+    8. **The yayasan's oversight, rebuilt from the closed #508 and #509**
+       (`decisions/pengawasan-dan-rapat-pembina.md`, 2026-09-28): first the
+       parts salvaged from #508 as small PRs — the Pengawasan pages for the
+       yayasan's organs, and whichever of its auth fixes still apply to
+       `main`; then the four open design questions put to the user
+       (Ps. 43 flow, the WBS matrix, TPPK, the Pembina meeting); then the
+       build, into the existing ratification flow and not a new module.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
