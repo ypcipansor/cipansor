@@ -14,6 +14,11 @@ import {
   useCreateFollowUp,
 } from "@/hooks/use-pengawasan";
 import { PageHeader } from "@/components/shared/page-header";
+import {
+  UnitScopeFilter,
+  UnitSelect,
+  useOverseesAllUnits,
+} from "@/components/shared/unit-scope";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import {
   Card,
@@ -69,6 +74,8 @@ const auditFormSchema = z.object({
   plannedDate: z.string().min(1, "Tanggal wajib"),
   scope: z.string().optional(),
   methodology: z.string().optional(),
+  // Asked only of the yayasan's organs, who belong to no unit.
+  unitId: z.string().optional(),
 });
 
 const findingFormSchema = z.object({
@@ -88,6 +95,13 @@ const followUpFormSchema = z.object({
 type AuditFormValues = z.infer<typeof auditFormSchema>;
 
 // ─── Constants ──────────────────────────────────────
+const statusLabel: Record<string, string> = {
+  PLANNED: "Terjadwal",
+  IN_PROGRESS: "Berjalan",
+  COMPLETED: "Selesai",
+  CANCELLED: "Dibatalkan",
+};
+
 const statusColor: Record<string, string> = {
   PLANNED: "bg-blue-100 text-blue-700",
   IN_PROGRESS: "bg-yellow-100 text-yellow-700",
@@ -121,6 +135,8 @@ function AuditFormDialog({
   const createAudit = useCreateAudit();
   const updateAudit = useUpdateAudit();
   const isEdit = !!editData;
+  // An audit belongs to a unit; the yayasan's organs say which.
+  const asksUnit = useOverseesAllUnits() && !isEdit;
 
   const form = useForm<AuditFormValues>({
     resolver: zodResolver(auditFormSchema),
@@ -133,13 +149,19 @@ function AuditFormDialog({
         : "",
       scope: editData?.scope || "",
       methodology: editData?.methodology || "",
+      unitId: "",
     },
   });
 
-  const onSubmit = async (values: AuditFormValues) => {
+  const onSubmit = async ({ unitId, ...values }: AuditFormValues) => {
+    if (asksUnit && !unitId) {
+      form.setError("unitId", { message: "Unit wajib dipilih" });
+      return;
+    }
     const payload = {
       ...values,
       plannedDate: new Date(values.plannedDate).toISOString(),
+      ...(asksUnit && { unitId }),
     };
     if (isEdit) {
       await updateAudit.mutateAsync({ id: editData.id, ...payload });
@@ -165,6 +187,23 @@ function AuditFormDialog({
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {asksUnit && (
+            <FormField
+              control={form.control}
+              name="unitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel htmlFor="audit-unit">Unit yang diaudit</FormLabel>
+                  <UnitSelect
+                    id="audit-unit"
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <FormField
             control={form.control}
             name="title"
@@ -185,12 +224,10 @@ function AuditFormDialog({
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Tipe Audit</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
+                  {/* Controlled: an uncontrolled "" showed a blank box, not "Pilih tipe". */}
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Pilih tipe" />
                       </SelectTrigger>
                     </FormControl>
@@ -429,10 +466,13 @@ function PengawasanPageContent() {
   const [editItem, setEditItem] = useState<any>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [findingAuditId, setFindingAuditId] = useState<string | null>(null);
+  const overseesAll = useOverseesAllUnits();
+  const [unitId, setUnitId] = useState<string | undefined>();
 
-  const { data: audits, isLoading } = useAudits(
-    filterStatus ? { status: filterStatus } : undefined,
-  );
+  const { data: audits, isLoading } = useAudits({
+    ...(filterStatus && { status: filterStatus }),
+    ...(unitId && { unitId }),
+  });
   const deleteAudit = useDeleteAudit();
 
   const totalFindings =
@@ -529,6 +569,7 @@ function PengawasanPageContent() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
         <Filter className="h-4 w-4 text-muted-foreground" />
+        {overseesAll && <UnitScopeFilter value={unitId} onChange={setUnitId} />}
         <Select
           value={filterStatus || "ALL"}
           onValueChange={(v) => setFilterStatus(v === "ALL" ? undefined : v)}
@@ -584,6 +625,9 @@ function PengawasanPageContent() {
                   <div>
                     <CardTitle className="text-lg">{audit.title}</CardTitle>
                     <CardDescription>
+                      {overseesAll && audit.unit?.name && (
+                        <>{audit.unit.name} • </>
+                      )}
                       Tipe: {audit.auditType} • Auditor:{" "}
                       {audit.leadAuditor?.name} •{" "}
                       {new Date(audit.plannedDate).toLocaleDateString("id-ID")}
@@ -596,7 +640,7 @@ function PengawasanPageContent() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge className={statusColor[audit.status]}>
-                      {audit.status}
+                      {statusLabel[audit.status] ?? audit.status}
                     </Badge>
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                       <Button

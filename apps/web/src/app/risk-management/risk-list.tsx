@@ -1,7 +1,6 @@
 "use client";
 
 import { DataTable } from "@/components/shared/data-table";
-import { useRisks } from "@/hooks/use-risk";
 import { RiskStatusBadge, RiskLevelBadge } from "@/components/risk/risk-badges";
 import { Button } from "@/components/ui/button";
 import { Plus, Eye, AlertTriangle } from "lucide-react";
@@ -10,18 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { type ColumnDef } from "@/components/shared";
 import { Risk } from "@/types/risk";
 
+const unitColumn: ColumnDef<Risk> = {
+  id: "unit",
+  header: "Unit",
+  cell: ({ row }) => row.original.unit?.name ?? "-",
+};
+
 const columns: ColumnDef<Risk>[] = [
   {
     accessorKey: "code",
-    header: "Code",
+    header: "Kode",
   },
   {
     accessorKey: "category",
-    header: "Category",
+    header: "Kategori",
   },
   {
     accessorKey: "description",
-    header: "Description",
+    header: "Uraian",
     cell: ({ row }) => (
       <div
         className="max-w-[300px] truncate"
@@ -38,7 +43,7 @@ const columns: ColumnDef<Risk>[] = [
   },
   {
     accessorKey: "riskScore",
-    header: "Score",
+    header: "Skor",
   },
   {
     id: "audit",
@@ -74,24 +79,34 @@ const columns: ColumnDef<Risk>[] = [
   },
 ];
 
-export function RiskList() {
-  const { data, isLoading } = useRisks();
-
+/** The register the page has already loaded; the unit column is for the yayasan's organs. */
+export function RiskList({
+  risks,
+  isLoading,
+  showUnit,
+}: {
+  risks: Risk[] | undefined;
+  isLoading: boolean;
+  showUnit: boolean;
+}) {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Risk Register</h2>
+        <h2 className="text-xl font-semibold">Daftar Risiko</h2>
         <Link href="/risk-management/create">
           <Button>
-            <Plus className="w-4 h-4 mr-2" /> Add Risk
+            <Plus className="w-4 h-4 mr-2" /> Tambah Risiko
           </Button>
         </Link>
       </div>
 
       {isLoading ? (
-        <div>Loading...</div>
+        <div>Memuat…</div>
       ) : (
-        <DataTable columns={columns} data={data || []} />
+        <DataTable
+          columns={showUnit ? [unitColumn, ...columns] : columns}
+          data={risks || []}
+        />
       )}
     </div>
   );

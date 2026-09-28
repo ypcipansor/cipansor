@@ -2,7 +2,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
-export const useAudits = (params?: { status?: string; auditType?: string }) => {
+/** `unitId` narrows the yayasan's organs to one unit; the API ignores it for anyone else. */
+export const useAudits = (params?: {
+  status?: string;
+  auditType?: string;
+  unitId?: string;
+}) => {
   return useQuery({
     queryKey: ["pengawasan", params],
     queryFn: async () => {

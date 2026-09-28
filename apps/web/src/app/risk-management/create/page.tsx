@@ -3,7 +3,6 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { api } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -25,12 +24,13 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { PageHeader } from "@/components/shared/page-header";
-import { useAuthStore } from "@/stores/auth";
-import { useQuery } from "@tanstack/react-query";
+import {
+  UnitSelect,
+  useOverseesAllUnits,
+} from "@/components/shared/unit-scope";
 import { useCreateRisk } from "@/hooks/use-risk";
 import { InfoIcon } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getEffectiveRole } from "@/lib/rbac";
 import { MainLayout } from "@/components/layout";
 
 const RiskCategory = [
@@ -69,26 +69,16 @@ const formSchema = z.object({
   strategicPlanId: z.string().optional(),
 });
 
-const PRIVILEGED_ROLES = ["SUPER_ADMIN", "YAYASAN_KETUA"];
-
 function CreateRiskPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const strategicPlanId = searchParams?.get("strategicPlanId") || undefined;
-  const { user } = useAuthStore();
   const createRisk = useCreateRisk();
-
-  const role = getEffectiveRole(user);
-  const isPrivileged = !!role && PRIVILEGED_ROLES.includes(role);
-
-  const { data: units } = useQuery({
-    queryKey: ["units"],
-    queryFn: async () => {
-      const res = await api.get("/units");
-      return res.data.data; // Assuming response structure { data: Unit[] }
-    },
-    enabled: !!isPrivileged,
-  });
+  // A risk belongs to a unit; the yayasan's organs, who belong to none, say
+  // which. (This checked for SUPER_ADMIN or YAYASAN_KETUA in the page bucket,
+  // where the Ketua is UNIT_ADMIN — so the Ketua was never asked, and the
+  // API refused the risk.)
+  const asksUnit = useOverseesAllUnits();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -106,10 +96,8 @@ function CreateRiskPageContent() {
   });
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
-    // If privileged and no unit selected, validation on backend will fail if unitId is required.
-    // We can add client side validation here if we want strictness.
-    if (isPrivileged && !values.unitId) {
-      form.setError("unitId", { message: "Unit is required for admin users" });
+    if (asksUnit && !values.unitId) {
+      form.setError("unitId", { message: "Unit wajib dipilih" });
       return;
     }
 
@@ -165,30 +153,18 @@ function CreateRiskPageContent() {
             </Alert>
           )}
 
-          {isPrivileged && (
+          {asksUnit && (
             <FormField
               control={form.control}
               name="unitId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Unit</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select unit" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {units?.map((u: any) => (
-                        <SelectItem key={u.id} value={u.id}>
-                          {u.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel htmlFor="risk-unit">Unit</FormLabel>
+                  <UnitSelect
+                    id="risk-unit"
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
                   <FormMessage />
                 </FormItem>
               )}

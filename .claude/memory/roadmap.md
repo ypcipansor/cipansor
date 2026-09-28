@@ -42,6 +42,8 @@ items before 2026-09-25 is in the history of this file and of
        `main`; then the four open design questions put to the user
        (Ps. 43 flow, the WBS matrix, TPPK, the Pembina meeting); then the
        build, into the existing ratification flow and not a new module.
+       Done 2026-09-28: Pengawasan Internal, Manajemen Risiko and Kepatuhan
+       Syariah open for the organs — every unit, a unit filter, in their menu.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

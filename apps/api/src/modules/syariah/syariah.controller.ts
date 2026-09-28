@@ -8,24 +8,13 @@ import {
   createShariaAuditSchema,
   listComplianceQuerySchema,
 } from './syariah.validation';
-import { UserRole } from '@prisma/client';
+import { assertReachesUnit, listUnitScope, writeUnitScope } from '@/utils/resolve-unit-id';
 
-const PRIVILEGED_ROLES: string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
-
-function isPrivileged(role?: string): boolean {
-  return role ? PRIVILEGED_ROLES.includes(role) : false;
-}
+// Which units a request reaches is one rule, in resolve-unit-id.ts: the
+// yayasan's organs oversee every unit, everyone else their own.
 
 export const listCompliances = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.user?.unitId;
-  const isPrivilegedUser = isPrivileged(req.user?.role as UserRole);
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-  const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
-  // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
-  if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
-    throw Errors.badRequest('Unit ID required');
-  }
+  const targetUnitId = listUnitScope(req);
 
   const query = listComplianceQuerySchema.parse({
     category: req.query.category,
@@ -38,20 +27,13 @@ export const listCompliances = asyncHandler(async (req: Request, res: Response) 
 
 export const getCompliance = asyncHandler(async (req: Request, res: Response) => {
   const compliance = await syariahService.getComplianceById(req.params.id as string);
-  if (!compliance) throw Errors.notFound('Compliance item not found');
-  if (!isPrivileged(req.user?.role as UserRole) && compliance.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, compliance?.unitId, 'Compliance item');
   res.json({ success: true, data: compliance });
 });
 
 export const createCompliance = asyncHandler(async (req: Request, res: Response) => {
   const body = createComplianceSchema.parse(req.body);
-  let targetUnitId = req.user?.unitId;
-  if (!targetUnitId) {
-    if (isPrivileged(req.user?.role as UserRole) && body.unitId) targetUnitId = body.unitId;
-    else throw Errors.badRequest('Unit ID is required');
-  }
+  const targetUnitId = writeUnitScope(req, body.unitId);
 
   const compliance = await syariahService.createCompliance({ ...body, unitId: targetUnitId });
   res.status(201).json({ success: true, data: compliance });
@@ -59,10 +41,7 @@ export const createCompliance = asyncHandler(async (req: Request, res: Response)
 
 export const updateCompliance = asyncHandler(async (req: Request, res: Response) => {
   const existing = await syariahService.getComplianceById(req.params.id as string);
-  if (!existing) throw Errors.notFound('Compliance item not found');
-  if (!isPrivileged(req.user?.role as UserRole) && existing.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existing?.unitId, 'Compliance item');
 
   const body = updateComplianceSchema.parse(req.body);
   const compliance = await syariahService.updateCompliance(
@@ -75,10 +54,7 @@ export const updateCompliance = asyncHandler(async (req: Request, res: Response)
 
 export const deleteCompliance = asyncHandler(async (req: Request, res: Response) => {
   const existing = await syariahService.getComplianceById(req.params.id as string);
-  if (!existing) throw Errors.notFound('Compliance item not found');
-  if (!isPrivileged(req.user?.role as UserRole) && existing.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existing?.unitId, 'Compliance item');
   await syariahService.deleteCompliance(req.params.id as string);
   res.json({ success: true, message: 'Compliance item deleted' });
 });
@@ -88,21 +64,13 @@ export const createAudit = asyncHandler(async (req: Request, res: Response) => {
   if (!userId) throw Errors.unauthorized('User context missing');
 
   const body = createShariaAuditSchema.parse(req.body);
+  const compliance = await syariahService.getComplianceById(body.complianceId);
+  assertReachesUnit(req, compliance?.unitId, 'Compliance item');
   const audit = await syariahService.createShariaAudit({ ...body, auditorId: userId });
   res.status(201).json({ success: true, data: audit });
 });
 
 export const getSummary = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.user?.unitId;
-  const isPrivilegedUser = isPrivileged(req.user?.role as UserRole);
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-  const targetUnitId =
-    isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : (unitId ?? undefined);
-  // A global SUPER_ADMIN (no assigned unit) gets the cross-unit view
-  if (!targetUnitId && req.user?.role !== UserRole.SUPER_ADMIN) {
-    throw Errors.badRequest('Unit ID required');
-  }
-
-  const summary = await syariahService.getComplianceSummary(targetUnitId);
+  const summary = await syariahService.getComplianceSummary(listUnitScope(req));
   res.json({ success: true, data: summary });
 });

@@ -9,33 +9,24 @@ import {
   updateMitigationSchema,
   listRiskQuerySchema,
 } from './risk.validation';
-import { UserRole, RoleCode, Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { assertReachesUnit, listUnitScope, writeUnitScope } from '@/utils/resolve-unit-id';
 
-const PRIVILEGED_ROLES: string[] = [UserRole.SUPER_ADMIN, RoleCode.YAYASAN_KETUA];
-
-function isPrivileged(role?: string): boolean {
-  return role ? PRIVILEGED_ROLES.includes(role) : false;
-}
+// Which units a request reaches is one rule, in resolve-unit-id.ts: the
+// yayasan's organs oversee every unit, everyone else their own.
 
 export const listRisks = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = req.user?.unitId;
-  const isPrivilegedUser = isPrivileged(req.user?.role);
-
-  if (!unitId && !isPrivilegedUser) throw Errors.unauthorized('Unit ID required');
-
-  const targetUnitId = isPrivilegedUser && req.query.unitId ? String(req.query.unitId) : unitId;
-
-  if (!targetUnitId) throw Errors.badRequest('Unit ID required');
+  const unitId = listUnitScope(req);
 
   // Validate query parameters to prevent 500 errors on invalid enums
   const query = listRiskQuerySchema.parse({
     category: req.query.category,
     riskLevel: req.query.riskLevel,
     strategicPlanId: req.query.strategicPlanId,
-    unitId: targetUnitId,
+    unitId,
   });
 
-  const risks = await riskService.getRisks(targetUnitId, query);
+  const risks = await riskService.getRisks(unitId, query);
   res.json({ success: true, data: risks });
 });
 
@@ -43,14 +34,7 @@ export const getRisk = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const risk = await riskService.getRiskById(id);
 
-  if (!risk) {
-    throw Errors.notFound('Risk not found');
-  }
-
-  // Authorization Check
-  if (!isPrivileged(req.user?.role) && risk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, risk?.unitId, 'Risk');
 
   res.json({ success: true, data: risk });
 });
@@ -59,19 +43,8 @@ export const createRisk = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user?.sub;
   if (!userId) throw Errors.unauthorized('User context missing');
 
-  // Handle unitId resolution:
-  // 1. From User context (default)
-  // 2. From Request body (for SUPER_ADMIN/YAYASAN without unitId)
   const body = createRiskSchema.parse(req.body);
-  let targetUnitId = req.user?.unitId;
-
-  if (!targetUnitId) {
-    if (isPrivileged(req.user?.role) && body.unitId) {
-      targetUnitId = body.unitId;
-    } else {
-      throw Errors.badRequest('Unit ID is required');
-    }
-  }
+  const targetUnitId = writeUnitScope(req, body.unitId);
 
   // Destructure to remove unitId and strategicPlanId from spread
   // to explicitly use relation connect syntax for consistency
@@ -91,11 +64,7 @@ export const updateRisk = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
 
   const existingRisk = await riskService.getRiskById(id);
-  if (!existingRisk) throw Errors.notFound('Risk not found');
-
-  if (!isPrivileged(req.user?.role) && existingRisk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existingRisk?.unitId, 'Risk');
 
   const body = updateRiskSchema.parse(req.body);
 
@@ -121,11 +90,7 @@ export const deleteRisk = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
 
   const existingRisk = await riskService.getRiskById(id);
-  if (!existingRisk) throw Errors.notFound('Risk not found');
-
-  if (!isPrivileged(req.user?.role) && existingRisk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existingRisk?.unitId, 'Risk');
 
   await riskService.deleteRisk(id);
   res.json({ success: true, message: 'Risk deleted' });
@@ -141,11 +106,7 @@ export const addMitigation = asyncHandler(async (req: Request, res: Response) =>
 
   // Verify Risk Ownership
   const risk = await riskService.getRiskById(riskId);
-  if (!risk) throw Errors.notFound('Risk not found');
-
-  if (!isPrivileged(req.user?.role) && risk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, risk?.unitId, 'Risk');
 
   const mitigation = await riskService.createMitigation({
     ...rest,
@@ -162,11 +123,7 @@ export const updateMitigation = asyncHandler(async (req: Request, res: Response)
 
   // Verify Mitigation Ownership via Risk
   const existingMitigation = await riskService.getMitigationById(id);
-  if (!existingMitigation) throw Errors.notFound('Mitigation not found');
-
-  if (!isPrivileged(req.user?.role) && existingMitigation.risk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existingMitigation?.risk.unitId, 'Mitigation');
 
   const body = updateMitigationSchema.parse(req.body);
   const { picId, ...rest } = body;
@@ -189,11 +146,7 @@ export const deleteMitigation = asyncHandler(async (req: Request, res: Response)
 
   // Verify Mitigation Ownership via Risk
   const existingMitigation = await riskService.getMitigationById(id);
-  if (!existingMitigation) throw Errors.notFound('Mitigation not found');
-
-  if (!isPrivileged(req.user?.role) && existingMitigation.risk.unitId !== req.user?.unitId) {
-    throw Errors.forbidden('Access denied');
-  }
+  assertReachesUnit(req, existingMitigation?.risk.unitId, 'Mitigation');
 
   await riskService.deleteMitigation(id);
   res.json({ success: true, message: 'Mitigation deleted' });
