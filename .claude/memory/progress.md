@@ -66,7 +66,10 @@ academic year, opened by the decider, the wali and the unit head
 decisions and minutes) — both **closed** after an audit
 (<https://claude.ai/artifact/Cs8yAjGuZcYJzrVi874k9d>): #508 is split and
 redesigned, #509 becomes a Pembina meeting decision in the existing
-ratification flow (`pengawasan-dan-rapat-pembina`).
+ratification flow (`pengawasan-dan-rapat-pembina`); the four design questions of that rebuild —
+the Ps. 43 suspension, the WBS, TPPK/Satgas and the form of the Pembina's
+decision — all answered with the recommended options the same day. Still
+wanted from the user: a copy of the yayasan's Anggaran Dasar (quorum, Plh).
 Also on 2026-09-28, after an audit of the Dependabot majors #601–#604:
 Sentry is **removed** rather than upgraded (#601–#603 closed) — no
 environment ever ran it, and v11 collects cookies, bodies and local
