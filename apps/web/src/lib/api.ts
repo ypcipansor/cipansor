@@ -179,8 +179,15 @@ api.interceptors.response.use(
     };
 
     // Auth endpoints that should NEVER trigger token refresh —
-    // their 401 means "wrong credentials", not "expired token".
-    const authPaths = ["/auth/login", "/auth/register", "/auth/refresh"];
+    // their 401 means "wrong credentials", not "expired token". A wrong code
+    // on the 2FA step is one: there is no session to refresh yet, and the
+    // attempt used to wipe the temporary token before the message showed.
+    const authPaths = [
+      "/auth/login",
+      "/auth/register",
+      "/auth/refresh",
+      "/auth/2fa/login",
+    ];
     const requestUrl = originalRequest?.url ?? "";
     const isAuthEndpoint = authPaths.some((p) => requestUrl.includes(p));
 
@@ -288,8 +295,11 @@ export const authApi = {
     api.post<ApiResponse<TwoFactorGenerateResponse>>("/auth/2fa/generate"),
   enable2FA: (data: { token: string }) =>
     api.post<ApiResponse<TwoFactorEnableResponse>>("/auth/2fa/enable", data),
+  // The sign-in card shows the error inline; a toast would say it twice.
   verify2FA: (data: { token: string }) =>
-    api.post<ApiResponse<LoginResponse>>("/auth/2fa/login", data),
+    api.post<ApiResponse<LoginResponse>>("/auth/2fa/login", data, {
+      skipErrorToast: true,
+    }),
   disable2FA: (data: { token: string; userId?: string }) =>
     api.post<ApiResponse<void>>("/auth/2fa/disable", data),
   get2FAStatus: () =>

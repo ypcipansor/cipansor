@@ -636,7 +636,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.generateTwoFactorSecret('user-1')).rejects.toThrow(
-        '2FA is already enabled'
+        'Verifikasi dua langkah sudah aktif'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -676,7 +676,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.enableTwoFactor('user-1', '123456')).rejects.toThrow(
-        'No pending 2FA setup found'
+        'Belum ada pengaturan yang dimulai'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -690,7 +690,7 @@ describe('AuthService', () => {
       mockVerifyOtp.mockResolvedValue({ valid: false });
 
       await expect(authService.enableTwoFactor('user-1', '000000')).rejects.toThrow(
-        'Invalid OTP code'
+        'Kode tidak cocok'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -703,7 +703,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.enableTwoFactor('user-1', '123456')).rejects.toThrow(
-        '2FA is already enabled'
+        'Verifikasi dua langkah sudah aktif'
       );
     });
   });
@@ -764,7 +764,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.disableTwoFactor('admin-1', '123456')).rejects.toThrow(
-        '2FA cannot be disabled for Admin accounts'
+        'Verifikasi dua langkah wajib untuk akun admin'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -780,7 +780,9 @@ describe('AuthService', () => {
       });
       mockVerifyOtp.mockResolvedValue({ valid: false });
 
-      await expect(authService.disableTwoFactor('user-1', '000000')).rejects.toThrow('Invalid OTP');
+      await expect(authService.disableTwoFactor('user-1', '000000')).rejects.toThrow(
+        'Kode tidak cocok'
+      );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
