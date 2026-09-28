@@ -150,7 +150,7 @@ function EditDailyReportForm({ report }: { report: DailyReport }) {
         },
       });
       toast.success("Laporan harian berhasil diperbarui");
-      router.push("/tk/daily-reports");
+      router.push("/daily-report");
     } catch (error) {
       toast.error(getErrorMessage(error));
     }
@@ -160,8 +160,8 @@ function EditDailyReportForm({ report }: { report: DailyReport }) {
     <MainLayout>
       <div className="space-y-6">
         <PageHeader
-          title="Edit Laporan Harian"
-          description="Perbarui laporan aktivitas harian siswa"
+          title="Ubah Laporan Harian"
+          description="Perbarui laporan aktivitas harian santri"
           actions={
             <Button variant="outline" onClick={() => router.back()}>
               <ArrowLeft className="mr-2 h-4 w-4" />
@@ -179,12 +179,12 @@ function EditDailyReportForm({ report }: { report: DailyReport }) {
               <CardHeader>
                 <CardTitle>Informasi Dasar</CardTitle>
                 <CardDescription>
-                  Siswa dan tanggal laporan tidak dapat diubah
+                  Santri dan tanggal laporan tidak dapat diubah
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-1">
-                  <p className="text-sm font-medium">Siswa</p>
+                  <p className="text-sm font-medium">Santri</p>
                   <p className="text-sm">
                     {report.student?.user?.name ?? "-"}
                     {report.student?.nis ? ` (${report.student.nis})` : ""}
