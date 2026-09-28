@@ -32,11 +32,10 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-const IMPORTS_PUSH = new RegExp(
-  `(from\\s+|require\\(\\s*|import\\(\\s*)['"](${PUSH_PACKAGES.map((p) =>
-    p.replace(/\./g, '\\.')
-  ).join('|')})['"]`
-);
+// Written out rather than built from PUSH_PACKAGES, so no escaping is involved;
+// the last test below keeps the two in step.
+const IMPORTS_PUSH =
+  /(from\s+|require\(\s*|import\(\s*)['"](socket\.io|socket\.io-client|ws|engine\.io|engine\.io-client)['"]/;
 
 describe('no push channel without a decision', () => {
   it.each(['apps/api/package.json', 'apps/web/package.json', 'package.json'])(
@@ -77,6 +76,9 @@ describe('no push channel without a decision', () => {
   });
 
   it('the pattern would catch the import this repository used to have', () => {
+    for (const name of PUSH_PACKAGES) {
+      expect(IMPORTS_PUSH.test(`import x from '${name}';`)).toBe(true);
+    }
     expect(IMPORTS_PUSH.test("import { Server } from 'socket.io';")).toBe(true);
     expect(IMPORTS_PUSH.test('import { io, Socket } from "socket.io-client";')).toBe(true);
     expect(IMPORTS_PUSH.test("import { WebSocketServer } from 'ws';")).toBe(true);
