@@ -44,8 +44,9 @@ items before 2026-09-25 is in the history of this file and of
        a unanimous written resolution, in the existing ratification flow;
        the Ps. 43 suspension (authority held, 7/7/7 deadlines, void by law);
        TPPK/Satgas as timed per-unit assignments; violations reported through
-       Aduan & Aspirasi. The AD's quorum and Plh rules wait on a copy of the
-       deed.
+       Aduan & Aspirasi. The deed arrived the same day
+       (`skills/tata-kelola-yayasan/anggaran-dasar.md`): quorum 2/3 then
+       >1/2, no Plh, the Pengawas acts as its chair plus one member.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
