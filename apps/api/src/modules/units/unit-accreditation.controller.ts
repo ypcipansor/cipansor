@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import type {
   ApiResponse,
   CreateAccreditationInput,
+  PublicAccreditation,
   UnitAccreditation,
   UnitAccreditationList,
   UpdateAccreditationInput,
@@ -83,5 +84,30 @@ export const certificate = asyncHandler(async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.setHeader('Cache-Control', 'private, no-store');
+  res.send(pdf);
+});
+
+/**
+ * Each unit's accreditation in force, for the public site — no session
+ * GET /api/units/public/accreditations
+ */
+export const publicList = asyncHandler(
+  async (_req: Request, res: Response<ApiResponse<PublicAccreditation[]>>) => {
+    // Changes when an admin records or corrects a certificate, and at the end
+    // of its last day; five minutes of staleness is harmless either way.
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.json({ success: true, data: await service.publicAccreditations() });
+  }
+);
+
+/**
+ * The PDF of a certificate in force, opened in the browser — no session
+ * GET /api/units/public/accreditations/:accreditationId/certificate
+ */
+export const publicCertificate = asyncHandler(async (req: Request, res: Response) => {
+  const { pdf, fileName } = await service.publicCertificate(req.params.accreditationId);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+  res.setHeader('Cache-Control', 'public, max-age=300');
   res.send(pdf);
 });

@@ -16,11 +16,23 @@ import {
   updateUnitSchema,
   listUnitsQuerySchema,
   unitIdParamSchema,
+  accreditationIdParamSchema,
 } from './unit.schema';
 
 const router = Router();
 
-// All routes require authentication
+// ==================== PUBLIC ====================
+// What the public site states of each unit's accreditation, and the
+// certificate PDF behind it (decisions/akreditasi-unit.md): the certificate in
+// force only. Mounted before `authenticate`, and before `/:id`.
+router.get('/public/accreditations', accreditation.publicList);
+router.get(
+  '/public/accreditations/:accreditationId/certificate',
+  validateParams(accreditationIdParamSchema),
+  accreditation.publicCertificate
+);
+
+// Every other route requires authentication
 router.use(authenticate);
 
 /**

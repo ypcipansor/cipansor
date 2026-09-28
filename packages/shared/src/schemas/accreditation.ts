@@ -36,6 +36,9 @@ export const ACCREDITATION_READER_ROLE_CODES: readonly string[] = [
 export const ACCREDITATION_REMINDER_MONTHS = 12;
 
 /** The certificate PDF: BAN-PDM's are about half a megabyte. */
+/** Where anyone checks a school's rating by its NPSN (BAN-PDM's public data). */
+export const BAN_PDM_LOOKUP_URL = "https://ban-pdm.id/data-akreditasi-sekolah";
+
 export const ACCREDITATION_PDF_MAX_BYTES = 5 * 1024 * 1024;
 
 const day = z.iso.date({ message: "Tanggal tidak valid" });
@@ -107,4 +110,27 @@ export interface UnitAccreditationList {
   /** Whether the caller may record, correct or delete. */
   canWrite: boolean;
   accreditations: UnitAccreditation[];
+}
+
+/**
+ * GET /units/public/accreditations — what the public site states: each unit's
+ * certificate in force and the unit's NPSN (decisions/akreditasi-unit.md).
+ * Never a certificate that has run out, never who recorded it; a unit with
+ * none in force is absent, not "belum".
+ */
+export interface PublicAccreditation {
+  /** The record's id; the PDF is at `/units/public/accreditations/{id}/certificate`. */
+  id: string;
+  /** The unit's `UnitType`, which the public site's unit config carries too. */
+  unitType: string;
+  unitName: string;
+  npsn: string | null;
+  rating: AccreditationRating;
+  certificateNumber: string;
+  decreeNumber: string;
+  /** yyyy-MM-dd */
+  decreedAt: string;
+  /** yyyy-MM-dd, the last day it holds */
+  validUntil: string;
+  issuer: string;
 }
