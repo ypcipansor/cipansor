@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import crypto from 'crypto';
 import { Twilio } from 'twilio';
 import { config } from '../../../config';
 import { notificationService, templates } from '../email-sms.service';
@@ -47,6 +48,23 @@ vi.mock('../../../lib/prisma', () => ({
 vi.mock('../../../lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
+
+/**
+ * Point the transport at the Gmail API with a throwaway RSA key.
+ *
+ * The service signs its OAuth2 assertion with this key, so the path cannot be
+ * exercised with a fake string. The key is generated here and lives only for
+ * the length of the run — not a credential, and nothing to leak.
+ */
+function configureGmail() {
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  (config.gmail as { serviceAccountEmail: string }).serviceAccountEmail =
+    'mailer@project.iam.gserviceaccount.com';
+  (config.gmail as { serviceAccountKey: string }).serviceAccountKey = privateKey
+    .export({ type: 'pkcs8', format: 'pem' })
+    .toString();
+  (config.gmail as { sender: string }).sender = 'noreply@cipansor.or.id';
+}
 
 describe('NotificationService email dispatch', () => {
   beforeEach(() => {
@@ -144,38 +162,75 @@ describe('NotificationService email dispatch', () => {
     expect(result.transport).toBe('log');
   });
 
-  it('delivers the largest message the request edge accepts, even when every character expands', async () => {
+  it('delivers the largest message the request edge accepts through a configured transport', async () => {
     // The defect this pins: the transport bound is measured on the *generated*
     // HTML, but the request edge used to cap only the raw JSON body (10 MiB).
     // Escaping expands one character to as many as six, so the API accepted a
     // ~2 MiB body of quotes, the generated HTML crossed the transport bound,
     // and the recipient never got the e-mail. The schema now caps raw content
     // (MAX_NOTIFICATION_CONTENT_LENGTH) so its worst-case expansion stays under
-    // the transport bound. This drives the real transport, not a mock, so the
-    // two limits are exercised against each other.
+    // the transport bound.
+    //
+    // A configured transport, not the log one: `log` returns before any text is
+    // converted or a MIME message composed, so it cannot show that the accepted
+    // message is actually built and handed to a real sender. This drives the
+    // Gmail path end to end — escape, compose, base64url — and inspects the
+    // message that would leave the building.
     const { deliverEmail: realDeliverEmail, resetEmailTransport } =
       await vi.importActual<typeof import('../email-transport')>('../email-transport');
     vi.mocked(deliverEmailMock).mockImplementation(realDeliverEmail);
+
+    configureGmail();
+    (config.outboundMessages as { enabled: boolean }).enabled = true;
     resetEmailTransport();
 
-    const message = '"'.repeat(MAX_NOTIFICATION_CONTENT_LENGTH);
-    expect(message.length).toBe(MAX_NOTIFICATION_CONTENT_LENGTH);
-
-    const result = await notificationService.send({
-      userId: 'user-1',
-      channel: 'EMAIL',
-      type: 'GENERAL',
-      recipientEmail: 'wali@cipansor.or.id',
-      title: 'Pengumuman',
-      message,
+    const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
+      if (new URL(url.toString()).hostname === 'oauth2.googleapis.com') {
+        return new Response(JSON.stringify({ access_token: 'tok-max', expires_in: 3600 }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({ id: 'gmail-msg-max' }), { status: 200 });
     });
+    vi.stubGlobal('fetch', fetchMock);
 
-    // The transport is unconfigured here, so `log`/`delivered:false` is the
-    // expected outcome — the point is that it was reached at all. Before the
-    // schema cap this rejected at the transport with `over the … limit`.
-    expect(result.error).toBeUndefined();
-    expect(result.transport).toBe('log');
-    expect(result.delivered).toBe(false);
+    try {
+      const message = '"'.repeat(MAX_NOTIFICATION_CONTENT_LENGTH);
+      expect(message.length).toBe(MAX_NOTIFICATION_CONTENT_LENGTH);
+
+      const result = await notificationService.send({
+        userId: 'user-1',
+        channel: 'EMAIL',
+        type: 'GENERAL',
+        recipientEmail: 'wali@cipansor.or.id',
+        title: 'Pengumuman',
+        message,
+      });
+
+      expect(result).toMatchObject({ success: true, transport: 'gmail_api', delivered: true });
+      expect(result.error).toBeUndefined();
+
+      const sendCall = fetchMock.mock.calls.find(
+        ([url]) => new URL(url.toString()).hostname === 'gmail.googleapis.com'
+      );
+      expect(sendCall).toBeDefined();
+      const sendInit = sendCall![1] as unknown as RequestInit;
+      const mime = Buffer.from(
+        JSON.parse(sendInit.body as string).raw as string,
+        'base64url'
+      ).toString('utf8');
+
+      // The message was really composed and carried both parts...
+      expect(mime).toContain('text/html');
+      expect(mime).toContain('text/plain');
+      // ...with the fully-escaped body, not a refusal.
+      expect(mime).toContain('&quot;');
+    } finally {
+      vi.unstubAllGlobals();
+      resetEmailTransport();
+      (config.gmail as { serviceAccountEmail: string }).serviceAccountEmail = '';
+      (config.gmail as { serviceAccountKey: string }).serviceAccountKey = '';
+    }
   });
 
   it('still sends when the recipient has no user account', async () => {
