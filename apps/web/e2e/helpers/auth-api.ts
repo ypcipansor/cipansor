@@ -200,6 +200,16 @@ export async function apiLogin(user: SeedUser): Promise<AuthSession> {
   }
 }
 
+/**
+ * A session of its own, never cached or shared: for a test that rotates or
+ * revokes its refresh token. Rotating the cached one would leave every other
+ * test holding a refresh token the server has already deleted. Use an account
+ * without 2FA, so it costs no TOTP step and no 2FA rate-limit slot.
+ */
+export async function apiLoginFresh(user: SeedUser): Promise<AuthSession> {
+  return apiLoginUncached(user);
+}
+
 async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
   const login = await postJson("/auth/login", {
     email: user.email,
