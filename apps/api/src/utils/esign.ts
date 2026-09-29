@@ -261,7 +261,8 @@ export function digestOf(payload: string): string {
  */
 export function publicKeyFingerprint(publicKey: string): string {
   const der = Buffer.from(publicKey, 'base64');
-  // codeql[js/insufficient-password-hash] -- hashing public SPKI bytes, not a secret
+  // Hashing public SPKI bytes, not a secret — see the note above.
+  // codeql[js/insufficient-password-hash]
   const digest = crypto.createHash('sha256').update(der).digest('hex');
   return (digest.toUpperCase().match(/.{2}/g) ?? []).join(':');
 }
