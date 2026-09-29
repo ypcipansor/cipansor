@@ -44,18 +44,15 @@ interface AuthState {
 /**
  * Drop what the old client left behind. A browser that signed in before the
  * session moved to HttpOnly cookies still holds the access and refresh tokens
- * in `localStorage` and a readable `accessToken` cookie. Nothing reads them any
- * more, but a script still could, and the refresh token stays valid for weeks.
+ * in `localStorage`. Nothing reads them any more, but a script still could,
+ * and the refresh token stays valid for weeks. (The old readable `accessToken`
+ * cookie carried only the 15-minute access token and expires within a day.)
  * Runs on every rehydration; once they are gone it does nothing.
  */
 export function dropLegacySessionTokens() {
   if (typeof window === "undefined") return;
   localStorage.removeItem("accessToken");
   localStorage.removeItem("refreshToken");
-  if (/(?:^|; )(?:accessToken|auth-storage)=/.test(document.cookie)) {
-    document.cookie = "accessToken=; path=/; max-age=0";
-    document.cookie = "auth-storage=; path=/; max-age=0";
-  }
 }
 
 const userOnlyStorage = {

@@ -96,13 +96,11 @@ describe("dropLegacySessionTokens", () => {
     localStorage.setItem("accessToken", "old-access");
     localStorage.setItem("refreshToken", "old-refresh");
     localStorage.setItem("auth-storage", '{"state":{}}');
-    document.cookie = "accessToken=old-access; path=/";
 
     dropLegacySessionTokens();
 
     expect(localStorage.getItem("accessToken")).toBeNull();
     expect(localStorage.getItem("refreshToken")).toBeNull();
-    expect(document.cookie).not.toMatch(/accessToken=/);
     // The cached user is not a credential and stays.
     expect(localStorage.getItem("auth-storage")).toBe('{"state":{}}');
   });

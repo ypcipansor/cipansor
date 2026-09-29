@@ -206,6 +206,8 @@ describe('auth controller: cookies, not body tokens', () => {
       next
     );
 
+    // asyncHandler does not return its promise; wait for the error to land.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
     expect(next.mock.calls[0][0].statusCode).toBe(401);
     expect(cookies).toEqual([]);
     expect(cleared).toEqual(
@@ -218,6 +220,8 @@ describe('auth controller: cookies, not body tokens', () => {
     const next = vi.fn();
     await refreshToken(mockReq({ cookies: { [PRINCIPAL_COOKIE]: '{}' } }), res, next);
 
+    // asyncHandler does not return its promise; wait for the error to land.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
     expect(next.mock.calls[0][0].statusCode).toBe(401);
     expect(authServiceMock.refreshToken).not.toHaveBeenCalled();
     expect(cleared).toEqual(expect.arrayContaining([PRINCIPAL_COOKIE]));
