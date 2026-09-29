@@ -3,11 +3,16 @@ import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { resolveLetterPdf } from '../signed-pdf';
 import { generateLetterPdfBuffer, type LetterPdfInput } from '@/utils/generate-letter-pdf';
+import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     letterSignedDocument: { findUnique: vi.fn() },
   },
+}));
+
+vi.mock('@/utils/letter-uploaded-file', () => ({
+  readUploadedPdfBytes: vi.fn(),
 }));
 
 const sha256 = (b: Buffer) => crypto.createHash('sha256').update(b).digest('hex');
@@ -197,5 +202,52 @@ describe('surat lama yang ditandatangani sebelum arsip ada', () => {
     const out = await resolveLetterPdf(letter());
     expect(out.source).toBe('regenerated');
     expect(prisma.letterSignedDocument.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('naskah UPLOADED disajikan dari berkas penyusunnya', () => {
+  const uploaded = () =>
+    letter({
+      authoringTrack: 'UPLOADED',
+      fileUrl: 'https://portal.cipansor.or.id/uploads/naskah-1.pdf',
+    });
+
+  it('pratinjau belum ditandatangani adalah byte penyusun apa adanya', async () => {
+    const bytes = Buffer.from('%PDF-1.7\nisi naskah penyusun\n%%EOF');
+    vi.mocked(readUploadedPdfBytes).mockResolvedValue(bytes);
+    vi.mocked(prisma.letterSignedDocument.findUnique).mockResolvedValue(null);
+
+    const out = await resolveLetterPdf(uploaded());
+
+    expect(out.source).toBe('uploaded');
+    expect(out.buffer.equals(bytes)).toBe(true);
+  });
+
+  it('naskah UPLOADED yang ditandatangani tanpa arsip ditolak, bukan dirender ulang', async () => {
+    vi.mocked(prisma.letterSignedDocument.findUnique).mockResolvedValue(null);
+
+    await expect(resolveLetterPdf({ ...uploaded(), signatures: [signature()] })).rejects.toThrow(
+      /tidak dapat dihasilkan ulang/i
+    );
+
+    expect(readUploadedPdfBytes).not.toHaveBeenCalled();
+  });
+
+  it('naskah UPLOADED yang ditandatangani disajikan dari arsipnya', async () => {
+    const stamped = await generateLetterPdfBuffer(letter({ content: 'Naskah penyusun.' }));
+    const pdfHash = sha256(stamped);
+    vi.mocked(prisma.letterSignedDocument.findUnique).mockResolvedValue({
+      bytes: stamped,
+      sha256: pdfHash,
+    } as any);
+
+    const out = await resolveLetterPdf({
+      ...uploaded(),
+      signatures: [signature({ pdfHash })],
+    });
+
+    expect(out.source).toBe('archive');
+    expect(sha256(out.buffer)).toBe(pdfHash);
+    expect(readUploadedPdfBytes).not.toHaveBeenCalled();
   });
 });

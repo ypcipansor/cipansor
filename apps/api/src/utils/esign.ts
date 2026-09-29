@@ -203,6 +203,17 @@ export interface SignablePayload {
   unitId: string;
   signerId: string;
   signedAt: Date | string;
+  /**
+   * Garis kewenangan penandatanganan (a.n./u.b./Plt./Plh.), bila ada.
+   *
+   * Ikut ditandatangani karena ia **tercetak pada naskah**: mengubahnya setelah
+   * penandatanganan sama dengan mengubah naskahnya. Opsional supaya tanda
+   * tangan yang dibuat sebelum kolom ini ada tetap terverifikasi — verifier
+   * yang tidak menemukannya memakai string kosong, bukan melempar.
+   */
+  signingAuthorityForm?: string | null;
+  /** Jabatan yang diwakili, mis. "Kepala SMA Qur'an Cipansor". */
+  representedOffice?: string | null;
 }
 
 function iso(value: Date | string): string {
@@ -238,6 +249,8 @@ export function canonicalPayload(p: SignablePayload): string {
     p.unitId,
     p.signerId,
     iso(p.signedAt),
+    p.signingAuthorityForm ?? '',
+    p.representedOffice ?? '',
   ].join('\n');
 }
 

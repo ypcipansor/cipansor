@@ -7401,6 +7401,20 @@ enum LetterAuthoringTrack {
   UPLOADED
 }
 
+/// Garis kewenangan penandatanganan naskah dinas (a.n./u.b./Plt./Plh.).
+///
+/// Cerminan `SigningAuthorityForm` di `@cipansor/shared`; nilainya harus tetap
+/// sama persis (dijaga `letter-signing-authority.test.ts`). Empat bentuk ini
+/// mengikuti Peraturan BKN 16/2020 Pasal 242; NONE berarti ditandatangani atas
+/// nama jabatan penanda tangan sendiri, yang paling lazim.
+enum SigningAuthorityForm {
+  NONE
+  ATAS_NAMA
+  UNTUK_BELIAU
+  PELAKSANA_TUGAS
+  PELAKSANA_HARIAN
+}
+
 enum LetterStatus {
   DRAFT // Konsep
   PENDING_REVIEW // Menunggu Paraf/Review
@@ -7775,6 +7789,19 @@ model LetterSignature {
   /// orang itu hari ini — sebuah SK yang ditandatangani Ketua tetap naskah
   /// Ketua walaupun penandatangannya kini menjabat yang lain.
   signerRoleCode    String?   @map("signer_role_code")
+
+  /// Garis kewenangan penandatanganan (a.n./u.b./Plt./Plh.) — lihat
+  /// `@cipansor/shared/letter-signing-authority`.
+  ///
+  /// Disimpan pada baris tanda tangan, bukan pada surat, karena ia milik
+  /// perbuatan menandatangani: sebuah naskah hanya ditandatangani sekali, dan
+  /// bentuk yang dipakai saat itu tidak boleh berubah setelahnya. Nilainya
+  /// ikut ditandatangani (`canonicalPayload`), sehingga mengubahnya membuat
+  /// tanda tangannya tidak lagi cocok — sama seperti mengubah isi naskahnya.
+  signingAuthorityForm SigningAuthorityForm? @map("signing_authority_form")
+  /// Jabatan pejabat yang diwakili, mis. "Kepala SMA Qur'an Cipansor".
+  /// Dicetak pada naskah di depan singkatan garis kewenangannya.
+  representedOffice String? @map("represented_office")
 
   /// Pencabutan tidak menghapus baris: surat yang pernah beredar harus tetap
   /// dapat dijelaskan statusnya kepada yang memindai QR-nya.

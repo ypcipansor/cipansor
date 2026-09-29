@@ -21,6 +21,13 @@ export async function verifyLetterByToken(token: string) {
       digest: true,
       id: true,
       /**
+       * Garis kewenangan penandatanganan. Ikut dibaca karena ia bagian dari
+       * payload yang ditandatangani: verifier yang tidak meneruskannya akan
+       * melaporkan setiap naskah a.n./u.b./Plt./Plh. sebagai berubah.
+       */
+      signingAuthorityForm: true,
+      representedOffice: true,
+      /**
        * Nama dan jabatan saja — NIP tidak diambil, apalagi dikirim.
        *
        * Halaman verifikasi ini terbuka untuk umum. Yang perlu dijawabnya adalah
@@ -71,6 +78,8 @@ export async function verifyLetterByToken(token: string) {
     unitId: l.unitId,
     signerId: signature.signerId,
     signedAt: signature.signedAt,
+    signingAuthorityForm: signature.signingAuthorityForm,
+    representedOffice: signature.representedOffice,
   });
 
   const isPublicNature = l.nature === 'PUBLIC';
@@ -140,6 +149,13 @@ export async function verifyLetterByToken(token: string) {
       name: signature.signer.name,
       position: signature.signer.staff?.position || 'Pejabat / Guru Yayasan',
     },
+    /**
+     * Garis kewenangan yang dinyatakan penanda tangan, dibaca dari rekaman
+     * tanda tangannya — bukan dari kolom surat, karena inilah nilai yang ikut
+     * ditandatangani dan yang tercetak pada naskahnya.
+     */
+    signingAuthorityForm: signature.signingAuthorityForm,
+    representedOffice: signature.representedOffice,
     letter: {
       letterNumber: l.letterNumber || l.agendaNumber || '-',
       subject: isPublicNature ? l.subject : null,

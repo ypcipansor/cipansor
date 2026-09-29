@@ -34,6 +34,8 @@ import { id as localeId } from "date-fns/locale";
 import {
   LETTER_AUTHORING_TRACK_LABELS,
   LetterAuthoringTrack,
+  SIGNING_AUTHORITY_LABELS,
+  SigningAuthorityForm,
   type PublicLetterVerificationResult,
 } from "@cipansor/shared";
 
@@ -497,6 +499,43 @@ function PublicVerifyContent() {
                         {result.signer.position}
                       </span>
                     </div>
+                    {/*
+                      Garis kewenangan (a.n./u.b./Plt./Plh.), bila dipakai.
+
+                      Ditampilkan karena ia tercetak pada naskahnya: pembaca
+                      yang memegang surat ber-tanda "a.n. Kepala …" berhak tahu
+                      bentuk apa yang dinyatakan penandatangannya, dan di mana
+                      tanggung jawabnya berada. Nilainya bagian dari payload
+                      yang ditandatangani, jadi yang terbaca di sini adalah
+                      yang benar-benar ditandatangani.
+                    */}
+                    {result.signingAuthorityForm &&
+                      result.signingAuthorityForm in SIGNING_AUTHORITY_LABELS &&
+                      result.signingAuthorityForm !==
+                        SigningAuthorityForm.NONE && (
+                        <div className="sm:col-span-2 border-t pt-3">
+                          <span className="text-xs text-slate-500 block">
+                            Garis Kewenangan
+                          </span>
+                          <span className="font-medium text-slate-900">
+                            {
+                              SIGNING_AUTHORITY_LABELS[
+                                result.signingAuthorityForm
+                              ].label
+                            }
+                            {result.representedOffice
+                              ? ` — mewakili ${result.representedOffice}`
+                              : ""}
+                          </span>
+                          <span className="mt-1 block text-xs leading-relaxed text-slate-600">
+                            {
+                              SIGNING_AUTHORITY_LABELS[
+                                result.signingAuthorityForm
+                              ].authority
+                            }
+                          </span>
+                        </div>
+                      )}
                     {result.signedAt && (
                       <div className="sm:col-span-2">
                         <span className="text-xs text-slate-500 block">

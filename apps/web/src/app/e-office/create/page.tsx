@@ -733,6 +733,29 @@ function CreateLetterForm() {
                         dikirim
                       </FormDescription>
                     )}
+                    {/*
+                      Satu berkas, dua peran — dan perannya berbeda menurut arah
+                      surat.
+
+                      Surat keluar yang membawa berkas ini menjadikan berkas ini
+                      naskahnya (`UPLOADED`): yang ditandatangani, di-hash,
+                      diarsipkan, dan dicocokkan pada verifikasi publik adalah
+                      byte berkas ini, ditambah cap TTE. Surat masuk tidak masuk
+                      jalur tanda tangan elektronik kita; berkasnya adalah
+                      pindaian asli yang diterima.
+
+                      Dikatakan di sini karena penyusunlah yang memutuskan mana
+                      yang berlaku, dan keputusan itu tidak dapat diubah setelah
+                      surat ditandatangani.
+                    */}
+                    <p className="text-xs text-muted-foreground">
+                      Untuk <strong>surat keluar</strong>, berkas PDF ini
+                      menjadi naskah resminya: yang ditandatangani dan
+                      diverifikasi. Susun naskahnya lengkap — kop, nomor, dan
+                      tempat tanda tangan — karena sistem tidak menyusun ulang
+                      tata letaknya. Untuk <strong>surat masuk</strong>, ini
+                      pindaian surat yang diterima.
+                    </p>
                     <FormMessage />
                   </FormItem>
                 )}

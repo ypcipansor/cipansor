@@ -9,6 +9,7 @@ import {
   type SignablePayload,
 } from '@/utils/esign';
 import crypto from 'crypto';
+import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
 
 const { emitMock, compareMock } = vi.hoisted(() => ({
   emitMock: vi.fn(),
@@ -55,6 +56,9 @@ vi.mock('../../lib/prisma', () => ({
 vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
+vi.mock('@/utils/letter-uploaded-file', () => ({
+  readUploadedPdfBytes: vi.fn(),
+}));
 
 const PASS = 'kalimat-sandi-tanda-tangan-2026';
 const DAY = 24 * 60 * 60 * 1000;
@@ -664,6 +668,77 @@ describe('menandatangani surat', () => {
   });
 
   /**
+   * Garis kewenangan (a.n./u.b./Plt./Plh.) adalah pernyataan yang dipublikasikan.
+   *
+   * Ia tercetak pada naskah dan ikut ditandatangani, jadi ia harus tiba utuh di
+   * baris tanda tangan — dan bentuk yang menuntut jabatan yang diwakili harus
+   * ditolak bila jabatan itu kosong, bukan diterima lalu dicetak setengah.
+   */
+  it('menolak bentuk a.n. tanpa jabatan yang diwakili', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await expect(
+      EsignService.signLetter('letter-1', 'ketua', PASS, 'YAYASAN_KETUA', {
+        form: 'ATAS_NAMA' as any,
+      })
+    ).rejects.toThrow(/jabatan yang diwakili wajib diisi/i);
+
+    expect(prisma.letterSignature.create).not.toHaveBeenCalled();
+  });
+
+  it('menyimpan garis kewenangan pada baris tanda tangan', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+    vi.mocked(prisma.letterSignature.update).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+
+    await EsignService.signLetter('letter-1', 'ketua', PASS, 'YAYASAN_KETUA', {
+      form: 'ATAS_NAMA' as any,
+      representedOffice: "Kepala SMA Qur'an Cipansor",
+    });
+
+    expect(prisma.letterSignature.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        signingAuthorityForm: 'ATAS_NAMA',
+        representedOffice: "Kepala SMA Qur'an Cipansor",
+      }),
+    });
+  });
+
+  it('bawaan NONE: tanpa jabatan yang diwakili pun diterima', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(letter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+    vi.mocked(prisma.letterSignature.update).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+
+    await EsignService.signLetter('letter-1', 'ketua', PASS);
+
+    expect(prisma.letterSignature.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        signingAuthorityForm: 'NONE',
+        representedOffice: null,
+      }),
+    });
+  });
+
+  /**
    * Byte-nya diarsipkan, bukan dijanjikan dapat dibuat ulang.
    *
    * Selama unduhan membuat ulang naskahnya, verifikasi publik bertumpu pada
@@ -745,6 +820,81 @@ describe('menandatangani surat', () => {
     await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
       /belum didukung/i
     );
+  });
+
+  /**
+   * Naskah `UPLOADED` ditandatangani atas byte unggahan penyusunnya.
+   *
+   * Sebelum ini jalur itu ada tetapi tidak pernah membaca berkasnya: yang
+   * di-hash adalah naskah hasil render sistem, sementara berkas penyusun
+   * menempel sebagai lampiran. Dua dokumen berbeda dengan bobot yang sama, dan
+   * hanya satu yang dapat diverifikasi publik. Di sini yang diperiksa adalah
+   * yang di-hash, diarsipkan, dan ditandai asalnya memang byte unggahan itu,
+   * ditambah cap visualisasi.
+   */
+  it('menandatangani byte berkas unggahan, bukan naskah hasil render sistem', async () => {
+    const { generateLetterPdfBuffer } = await import('@/utils/generate-letter-pdf');
+    const uploadedBytes = await generateLetterPdfBuffer(
+      letter({ content: 'Naskah yang disusun penyusun.' }) as any
+    );
+    vi.mocked(readUploadedPdfBytes).mockResolvedValue(uploadedBytes);
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      letter({
+        authoringTrack: 'UPLOADED',
+        fileUrl: 'https://portal.cipansor.or.id/uploads/naskah-1.pdf',
+      }) as any
+    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+    vi.mocked(prisma.letterSignature.update).mockResolvedValue({ id: 'sig-1' } as any);
+    vi.mocked(prisma.letterSignedDocument.create).mockResolvedValue({ id: 'doc-1' } as any);
+
+    await EsignService.signLetter('letter-1', 'ketua', PASS);
+
+    expect(readUploadedPdfBytes).toHaveBeenCalledWith(
+      'https://portal.cipansor.or.id/uploads/naskah-1.pdf'
+    );
+
+    const signedHash = vi.mocked(prisma.letterSignature.update).mock.calls[0][0].data
+      .pdfHash as string;
+    const archived = vi.mocked(prisma.letterSignedDocument.create).mock.calls[0][0].data as any;
+
+    // Byte yang diarsipkan bukan berkas unggahan apa adanya: cap TTE-nya sudah
+    // menjadi bagian dari yang ditandatangani.
+    expect(Buffer.from(archived.bytes).equals(uploadedBytes)).toBe(false);
+    expect(crypto.createHash('sha256').update(archived.bytes).digest('hex')).toBe(signedHash);
+    // Asalnya tercatat supaya sebuah naskah dapat dibedakan tanpa dibuka.
+    expect(archived.generator).toContain('unggahan');
+  });
+
+  /**
+   * Naskah unggahan yang berkasnya sudah tidak ada adalah naskah yang tidak
+   * dapat ditandatangani. Menandatanganinya dengan byte lain akan menerbitkan
+   * surat yang tidak pernah dilihat penanda tangannya.
+   */
+  it('tidak menandatangani naskah UPLOADED bila berkasnya tidak dapat dibaca', async () => {
+    vi.mocked(readUploadedPdfBytes).mockRejectedValue(new Error('tidak ada di penyimpanan'));
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      letter({
+        authoringTrack: 'UPLOADED',
+        fileUrl: 'https://portal.cipansor.or.id/uploads/hilang.pdf',
+      }) as any
+    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+    vi.mocked(prisma.letterSignature.create).mockResolvedValue({
+      id: 'sig-1',
+      verificationToken: 'tok',
+      signedAt: new Date(),
+    } as any);
+
+    await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
+      /tidak ada di penyimpanan/i
+    );
+    expect(prisma.letterSignedDocument.create).not.toHaveBeenCalled();
   });
 });
 

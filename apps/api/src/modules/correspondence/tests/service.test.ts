@@ -773,6 +773,81 @@ describe('CorrespondenceService', () => {
       });
     });
 
+    /**
+     * Jalur penyusunan mengikuti berkasnya selama suratnya masih dapat diubah.
+     *
+     * Penyusun boleh mengunggah naskahnya belakangan; kalau jalurnya tidak ikut
+     * berubah, berkas unggahan itu akan berakhir sebagai "berkas unggahan
+     * penyusun" yang tidak pernah ditandatangani — persis keadaan yang
+     * diperbaiki jalur `UPLOADED`.
+     */
+    it('menandai UPLOADED saat berkas naskah ditambahkan pada surat keluar', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter(),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { fileUrl: 'https://portal.cipansor.or.id/uploads/naskah-1.pdf' },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({
+          fileUrl: 'https://portal.cipansor.or.id/uploads/naskah-1.pdf',
+          authoringTrack: 'UPLOADED',
+        }),
+      });
+    });
+
+    it('kembali ke GENERATED saat berkas naskah dihapus dari surat keluar', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ authoringTrack: 'UPLOADED', fileUrl: '/uploads/lama.pdf' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { fileUrl: null as any },
+        'tu-1',
+        adminActor as any
+      );
+
+      expect(prisma.letter.update).toHaveBeenCalledWith({
+        where: { id: 'letter-edit-1' },
+        data: expect.objectContaining({ fileUrl: null, authoringTrack: 'GENERATED' }),
+      });
+    });
+
+    it('surat masuk tidak pernah menjadi UPLOADED', async () => {
+      vi.mocked(prisma.letter.findUnique).mockResolvedValue({
+        ...draftLetter({ direction: 'INCOMING' }),
+        signatures: [],
+        recipients: [],
+        dispositions: [],
+      } as any);
+      vi.mocked(prisma.letter.update).mockResolvedValue({} as any);
+
+      await CorrespondenceService.updateLetter(
+        'letter-edit-1',
+        { fileUrl: 'https://portal.cipansor.or.id/uploads/pindaian.pdf' },
+        'tu-1',
+        adminActor as any
+      );
+
+      const data = vi.mocked(prisma.letter.update).mock.calls.at(-1)![0].data as any;
+      expect(data.authoringTrack).toBeUndefined();
+    });
+
     it('rejects changing type when letterNumber is already issued', async () => {
       vi.mocked(prisma.letter.findUnique).mockResolvedValue({
         ...draftLetter({ letterNumber: '003/SURAT/Y-CPS' }),

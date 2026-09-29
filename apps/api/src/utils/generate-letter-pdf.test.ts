@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
 import zlib from 'zlib';
-import { generateLetterPdfBuffer, stampRevoked, LetterPdfInput } from './generate-letter-pdf';
+import {
+  generateLetterPdfBuffer,
+  stampRevoked,
+  stampSignatureVisualisation,
+  LetterPdfInput,
+} from './generate-letter-pdf';
 
 describe('generateLetterPdfBuffer determinism', () => {
   it('generates 100% byte-identical PDFs when called twice with the same letter data', async () => {
@@ -391,6 +396,65 @@ describe('cap DICABUT', () => {
       stampRevoked(clean, {
         reason: 'Dicabut sesuai keputusan rapat — بسم الله',
         revokedAt: new Date('2026-09-02T07:30:00.000Z'),
+      })
+    ).resolves.toBeInstanceOf(Buffer);
+  });
+});
+
+describe('cap visualisasi TTE pada naskah unggahan', () => {
+  /**
+   * Naskah `UPLOADED` disusun penyusunnya di luar sistem; cap TTE-nya harus
+   * dicap ke atas tata letak itu, bukan diganti dengan tata letak kita.
+   * Yang diuji di sini adalah apa yang benar-benar tercetak: keterangan dan
+   * nama penanda tangan harus terbaca, dan naskah asalnya tidak boleh hilang.
+   */
+  it('mencetak keterangan dan nama penanda tangan', async () => {
+    const original = await generateLetterPdfBuffer(
+      letterWith({ content: 'Menerangkan bahwa Ahmad Fauzan aktif.' })
+    );
+    const stamped = await stampSignatureVisualisation(original, {
+      signedAt: new Date('2026-09-01T03:00:00.000Z'),
+      signerName: 'H. Dadan Hamdani',
+      signerTitle: 'Ketua Yayasan',
+    });
+
+    const text = pdfText(stamped);
+    expect(text).toContain('Ditandatangani secara elektronik');
+    expect(text).toContain('H. Dadan Hamdani');
+    // Naskah penyusunnya tetap ada — capnya menambah, bukan mengganti.
+    expect(text).toContain('Menerangkan bahwa Ahmad Fauzan aktif.');
+  });
+
+  it('deterministik: cap atas byte yang sama menghasilkan hash yang sama', async () => {
+    const original = await generateLetterPdfBuffer(letterWith({}));
+    const input = { signedAt: new Date('2026-09-01T03:00:00.000Z'), signerName: 'X' };
+    const a = await stampSignatureVisualisation(original, input);
+    const b = await stampSignatureVisualisation(original, input);
+    expect(crypto.createHash('sha256').update(a).digest('hex')).toBe(
+      crypto.createHash('sha256').update(b).digest('hex')
+    );
+  });
+
+  it('mengubah byte naskah asal — capnya bagian dari yang ditandatangani', async () => {
+    const original = await generateLetterPdfBuffer(letterWith({}));
+    const stamped = await stampSignatureVisualisation(original, {
+      signedAt: new Date('2026-09-01T03:00:00.000Z'),
+      signerName: 'X',
+    });
+    expect(stamped.equals(original)).toBe(false);
+  });
+
+  /**
+   * Nama di luar WinAnsi tidak boleh menjatuhkan pencapannya. Naskahnya sudah
+   * ditandatangani; cap yang gagal akan meninggalkan surat sah tanpa
+   * visualisasi apa pun.
+   */
+  it('tetap mencetak walau nama penanda tangannya di luar WinAnsi', async () => {
+    const original = await generateLetterPdfBuffer(letterWith({}));
+    await expect(
+      stampSignatureVisualisation(original, {
+        signedAt: new Date('2026-09-01T03:00:00.000Z'),
+        signerName: 'عبد الله',
       })
     ).resolves.toBeInstanceOf(Buffer);
   });

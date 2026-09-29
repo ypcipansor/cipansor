@@ -129,6 +129,62 @@ test.describe("E-Office & Public Letter Verification E2E", () => {
     await expect(page.getByText(/23[.:]40[.:]31 WIB/i)).toBeVisible();
   });
 
+  /**
+   * Garis kewenangan (a.n.) yang tercetak pada naskah ikut terbaca publik.
+   *
+   * Surat yang ditandatangani "a.n. Kepala …" menyatakan dari mana wewenang
+   * penandatangannya berasal, dan pembaca yang memegang naskahnya berhak tahu
+   * hal itu. Nilainya bagian dari payload yang ditandatangani, jadi yang
+   * tampil di sini adalah yang benar-benar ditandatangani.
+   */
+  test("Verification of a letter signed a.n. shows the signing authority", async ({
+    page,
+  }) => {
+    await page.route("**/api/esign/verify-pdf", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: {
+            isValid: true,
+            isRevoked: false,
+            signer: { name: "Ust. Fulan", position: "Sekretaris Yayasan" },
+            signingAuthorityForm: "ATAS_NAMA",
+            representedOffice: "Ketua Yayasan Cipansor",
+            letter: {
+              letterNumber: "002/SK/Y-CPS/VIII/2026",
+              subject: "Surat Tugas",
+              date: "2026-08-01",
+              status: "SIGNED",
+              unitName: "Yayasan Pesantren Cipansor",
+            },
+            signedAt: "2026-08-01T16:40:31Z",
+          },
+        }),
+      });
+    });
+
+    await page.goto("/public/verify-letter");
+
+    const buffer = Buffer.from(
+      "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF",
+    );
+    await page.setInputFiles("input[type='file']", {
+      name: "surat-tugas.pdf",
+      mimeType: "application/pdf",
+      buffer,
+    });
+
+    await page.getByRole("button", { name: /verifikasi dokumen/i }).click();
+
+    await expect(page.getByText(/Garis Kewenangan/i)).toBeVisible();
+    await expect(page.getByText(/Atas nama \(a\.n\.\)/i)).toBeVisible();
+    await expect(
+      page.getByText(/mewakili Ketua Yayasan Cipansor/i),
+    ).toBeVisible();
+  });
+
   test("Revoked PDF verification displays revoked notice", async ({ page }) => {
     await page.route("**/api/esign/verify-pdf", async (route) => {
       await route.fulfill({

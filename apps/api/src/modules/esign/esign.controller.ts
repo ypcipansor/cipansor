@@ -210,7 +210,11 @@ export const EsignController = {
         req.params.letterId,
         req.user!.id,
         req.body.passphrase,
-        req.user!.roleCode
+        req.user!.roleCode,
+        {
+          form: req.body.signingAuthorityForm,
+          representedOffice: req.body.representedOffice,
+        }
       );
       res.status(201).json({ success: true, data });
     } catch (e) {

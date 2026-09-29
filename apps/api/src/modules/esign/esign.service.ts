@@ -45,13 +45,24 @@ import {
 } from '@/utils/esign';
 import {
   generateLetterPdfBuffer,
+  stampSignatureVisualisation,
   LetterPdfError,
   LETTER_PDF_GENERATOR,
   LETTER_PDF_RELATIONS,
 } from '@/utils/generate-letter-pdf';
 import { verifyLetterByToken } from '@/utils/letter-verification';
+import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
 import { assertLetterAccess, type LetterActor } from '@/utils/letter-access';
-import { LetterRevocationRequestStatus, SigningKeyRevocationCode } from '@prisma/client';
+import {
+  LetterRevocationRequestStatus,
+  SigningKeyRevocationCode,
+  SigningAuthorityForm,
+  LetterAuthoringTrack,
+} from '@prisma/client';
+import {
+  requiresRepresentedOffice,
+  type SigningAuthorityForm as SharedSigningAuthorityForm,
+} from '@cipansor/shared';
 import {
   RevocationError,
   actorMayRevoke,
@@ -1267,7 +1278,8 @@ export const EsignService = {
     letterId: string,
     userId: string,
     passphrase: string,
-    signerRoleCode?: string | null
+    signerRoleCode?: string | null,
+    authority?: { form?: SigningAuthorityForm | null; representedOffice?: string | null }
   ) {
     const letter = await prisma.letter.findUnique({
       where: { id: letterId },
@@ -1302,6 +1314,32 @@ export const EsignService = {
     const key = await prisma.userSigningKey.findUnique({ where: { userId } });
     assertCanSign(key);
 
+    /**
+     * Garis kewenangan dinormalkan dan diperiksa di sini, bukan di skema.
+     *
+     * Bentuk selain NONE menuntut jabatan yang diwakili: tanpa jabatan itu,
+     * `signingAuthorityLines` tidak dapat mencetak apa pun dan bloknya jatuh
+     * kembali ke bentuk biasa — naskah yang menyatakan dirinya "a.n." tetapi
+     * tidak menyebut siapa yang diwakili adalah naskah yang salah. Lebih baik
+     * menolaknya di sini dengan kalimat yang jelas daripada mencetak blok yang
+     * menyesatkan.
+     *
+     * Yang **tidak** diperiksa: keberadaan surat kuasa atau SK penunjukan yang
+     * mendasari bentuk itu. Sistem tidak memilikinya; bentuknya adalah
+     * pernyataan penanda tangan yang dipublikasikan, sama seperti
+     * `signerRoleCode`.
+     */
+    const authorityForm: SigningAuthorityForm = authority?.form ?? SigningAuthorityForm.NONE;
+    const representedOffice = authority?.representedOffice?.trim() || null;
+    if (
+      requiresRepresentedOffice(authorityForm as unknown as SharedSigningAuthorityForm) &&
+      !representedOffice
+    ) {
+      throw Errors.badRequest(
+        'Jabatan yang diwakili wajib diisi untuk penandatanganan a.n./u.b./Plt./Plh.'
+      );
+    }
+
     const signedAt = new Date();
     const payload: SignablePayload = {
       letterId: letter.id,
@@ -1314,6 +1352,8 @@ export const EsignService = {
       unitId: letter.unitId,
       signerId: userId,
       signedAt,
+      signingAuthorityForm: authorityForm,
+      representedOffice,
     };
 
     let signed;
@@ -1385,6 +1425,11 @@ export const EsignService = {
               // yang ditandatangani Ketua tetap naskah Ketua walaupun
               // penandatangannya kemudian menjabat yang lain.
               signerRoleCode: signerRoleCode ?? null,
+              // Garis kewenangan saat menandatangani. Milik baris tanda tangan,
+              // bukan surat: bentuk yang dipakai saat itu tidak boleh berubah
+              // setelahnya, dan nilainya ikut ditandatangani.
+              signingAuthorityForm: authorityForm,
+              representedOffice,
             },
           });
 
@@ -1451,7 +1496,59 @@ export const EsignService = {
           });
           if (!fullLetter) throw Errors.notFound('Surat tidak ditemukan');
 
-          const pdfBuffer = await generateLetterPdfBuffer(fullLetter);
+          /**
+           * Naskah yang ditandatangani, dari jalur penyusunannya.
+           *
+           * Dua jalur menghasilkan naskah yang ditandatangani, dan keduanya
+           * harus menghasilkan **byte yang sama** di sini, saat ditandatangani,
+           * dan di `signed-pdf`, saat diunduh — hash byte inilah dasar
+           * verifikasi publik.
+           *
+           * - `GENERATED` (bawaan): sistem menyusun naskahnya dari isian
+           *   formulir.
+           * - `UPLOADED`: penyusun menyusun naskahnya di luar sistem lalu
+           *   mengunggah PDF-nya. Byte unggahan itulah naskahnya, jadi yang
+           *   ditandatangani adalah byte tersebut, ditambah cap visualisasi TTE
+           *   (QR + keterangan) di halaman terakhir. Cap itu bagian dari byte
+           *   yang di-hash, sehingga ia tidak dapat dilepas tanpa membatalkan
+           *   tanda tangannya.
+           *
+           * Sebelum ini, jalur `UPLOADED` ada tetapi tidak pernah membaca
+           * berkas unggahannya: yang di-hash adalah naskah hasil render sistem,
+           * dan berkas penyusun hanya menempel sebagai "Berkas unggahan
+           * penyusun". Dua dokumen berbeda dengan bobot yang sama, dan hanya
+           * satu yang berlaku.
+           */
+          const isUploadedTrack = fullLetter.authoringTrack === LetterAuthoringTrack.UPLOADED;
+
+          /**
+           * Nama penanda tangan untuk cap, diambil dari relasi yang sudah
+           * terbaca — bukan dari `signature`, yang hanya memuat kolomnya
+           * sendiri tanpa relasi `signer`.
+           */
+          const signerName =
+            fullLetter.signatures?.find((s) => s.id === signature.id)?.signer?.name ?? null;
+
+          const pdfBuffer = isUploadedTrack
+            ? await stampSignatureVisualisation(await readUploadedPdfBytes(fullLetter.fileUrl), {
+                signedAt,
+                signerName,
+                signerTitle: fullLetter.senderTitle,
+              })
+            : await generateLetterPdfBuffer(fullLetter);
+
+          /**
+           * Penanda asal byte untuk pembaca arsip.
+           *
+           * `LETTER_PDF_GENERATOR` menyebut versi penghasil naskah; untuk jalur
+           * unggahan, penghasilnya adalah penyusunnya sendiri, dan cap kita
+           * yang menambahkan visualisasi. Menyimpan asalnya membuat sebuah
+           * naskah dapat dibedakan tanpa membuka PDF-nya.
+           */
+          const generator = isUploadedTrack
+            ? `${LETTER_PDF_GENERATOR}+unggahan`
+            : LETTER_PDF_GENERATOR;
+
           const pdfHash = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
           const pdfSignature = signPdfHash(toMaterial(key!), passphrase, pdfHash);
 
@@ -1486,7 +1583,7 @@ export const EsignService = {
               bytes: new Uint8Array(pdfBuffer),
               sha256: pdfHash,
               byteSize: pdfBuffer.length,
-              generator: LETTER_PDF_GENERATOR,
+              generator,
             },
           });
 

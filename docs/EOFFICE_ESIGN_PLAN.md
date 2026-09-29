@@ -737,11 +737,24 @@ penyusun*, with a line saying plainly that the signed naskah is the one behind
 disappears by itself once the track is real — an `UPLOADED` letter's file *is*
 its naskah, so the condition stops matching.
 
-**Still to build:** signing the uploaded bytes rather than ignoring them (the
-TTE visualisation has to be stamped onto the drafter's own layout, which is the
-substantial part), and the pre-filled DOCX template to start from. Until then
-the column is honest about a system with one track, which is better than a
-system with two tracks that is silent about which one it used.
+**Signed bytes (shipped).** The signing path now reads the drafter's file for an
+`UPLOADED` letter and signs **those** bytes, not a system rendering of the same
+metadata. The TTE visualisation is stamped onto the drafter's own layout —
+QR code, "Ditandatangani secara elektronik", the signer's name and jabatan, on
+the last page's right margin — because we do not know where the signature block
+stands on someone else's page, and guessing would print it across a sentence.
+The stamp is part of the hashed bytes, so removing it voids the signature. The
+line-authority block (a.n./u.b./Plt./Plh.) and the tembusan are **not** stamped:
+they belong to the drafter's layout, and their values are still signed and still
+read on the public verification page.
+
+Serving follows the same track: a signed `UPLOADED` letter is served from its
+archive, never re-rendered; a signed `UPLOADED` letter whose archive is missing
+is refused rather than re-rendered (the signed bytes cannot be reproduced); and
+an unsigned `UPLOADED` letter previews the drafter's file as-is. The archive's
+`generator` marker records `+unggahan` so the origin is legible without opening
+the PDF. What is left of this line of work is the **pre-filled DOCX template** to
+start from — the letter is still composed outside the system.
 
 ### (b) Replacing the QR with an e-sign logo — **do not replace it; improve it**
 

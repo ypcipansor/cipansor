@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SigningKeyRevocationCode } from '@prisma/client';
+import { SigningKeyRevocationCode, SigningAuthorityForm } from '@prisma/client';
 import { MIN_PASSPHRASE_LENGTH } from '@/utils/esign';
 import { MAX_VALIDITY_DAYS, MIN_VALIDITY_DAYS } from '@/utils/esign-lifecycle';
 import {
@@ -136,4 +136,16 @@ export const decideRevocationSchema = z.object({
 
 export const signLetterSchema = z.object({
   passphrase: z.string().min(1),
+  /**
+   * Garis kewenangan penandatanganan (a.n./u.b./Plt./Plh.).
+   *
+   * Opsional dan berdefault NONE, sehingga pemanggil lama (dan tanda tangan
+   * yang sudah ada) tidak terpengaruh. Yang memeriksa konsistensinya adalah
+   * layanan, bukan skema ini: aturan seperti "bentuk selain NONE menuntut
+   * jabatan yang diwakili" bergantung pada nilai yang masuk, bukan pada
+   * bentuk permintaannya.
+   */
+  signingAuthorityForm: z.nativeEnum(SigningAuthorityForm).optional(),
+  /** Jabatan pejabat yang diwakili; wajib bila bentuknya bukan NONE. */
+  representedOffice: z.string().trim().min(3).max(200).optional(),
 });

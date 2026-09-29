@@ -1,5 +1,6 @@
 // Letter Enums
 import type { UpdateLetterSchemaInput } from "../schemas/correspondence";
+import type { SigningAuthorityForm } from "./letter-signing-authority";
 
 export enum LetterDirection {
   INCOMING = "INCOMING",
@@ -543,6 +544,17 @@ export interface PublicLetterVerificationResult {
     name: string;
     position: string;
   };
+  /**
+   * Garis kewenangan penandatanganan (a.n./u.b./Plt./Plh.), bila ada.
+   *
+   * Publik karena ia tercetak pada naskahnya: pembaca yang memegang surat
+   * ber-tanda "a.n. Kepala …" berhak tahu bentuk apa yang dinyatakan
+   * penandatangannya. Ia bagian dari payload yang ditandatangani, jadi
+   * nilainya yang terbaca di sini adalah nilai yang benar-benar ditandatangani.
+   */
+  signingAuthorityForm?: SigningAuthorityForm | null;
+  /** Jabatan yang diwakili, mis. "Kepala SMA Qur'an Cipansor". */
+  representedOffice?: string | null;
   letter?: {
     letterNumber: string;
     subject: string | null;

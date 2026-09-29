@@ -391,6 +391,21 @@ export const CorrespondenceService = {
           subject: data.subject,
           content: data.content,
           fileUrl: data.fileUrl,
+          /**
+           * Jalur penyusunan naskah, ditetapkan sekali di sini dan tidak diubah.
+           *
+           * Surat keluar yang membawa berkas naskah unggahan penyusunnya
+           * ditandai `UPLOADED`: berkas itulah naskahnya, dan byte yang
+           * ditandatangani, di-hash, serta dicocokkan pada verifikasi publik
+           * adalah byte tersebut — bukan hasil render sistem. Surat lain
+           * `GENERATED`, disusun sistem dari isian formulir.
+           *
+           * Surat masuk tidak pernah `UPLOADED` walau membawa pindaian: naskah
+           * itu disusun pihak luar dan tidak masuk jalur tanda tangan elektronik
+           * kita, jadi yang menentukan jalurnya adalah naskah yang *kita*
+           * terbitkan.
+           */
+          authoringTrack: data.direction === 'OUTGOING' && data.fileUrl ? 'UPLOADED' : 'GENERATED',
           urgency: data.urgency as any,
           nature: data.nature as any,
           status: initialStatus,
@@ -597,6 +612,7 @@ export const CorrespondenceService = {
           unitId: true,
           type: true,
           nature: true,
+          direction: true,
           recipients: { where: { isCC: false }, select: { userId: true } },
           signatures: { select: { id: true } },
         },
@@ -704,6 +720,18 @@ export const CorrespondenceService = {
       }
       if (data.fileUrl !== undefined) {
         updateData.fileUrl = data.fileUrl;
+        /**
+         * Jalur penyusunan ikut berkasnya, selama suratnya masih dapat diubah.
+         *
+         * Penyusun boleh menyusun draf dulu, lalu mengunggah naskahnya
+         * belakangan — atau menghapus unggahannya dan kembali ke naskah yang
+         * disusun sistem. Karena hanya DRAFT/REVISION_NEEDED yang sampai ke
+         * sini, dan surat bertanda tangan sudah ditolak di atas, jalurnya masih
+         * bebas ditetapkan ulang; sesudah ditandatangani ia tidak lagi berubah.
+         */
+        if (letter.direction === 'OUTGOING') {
+          updateData.authoringTrack = data.fileUrl ? 'UPLOADED' : 'GENERATED';
+        }
         hasChange = true;
       }
       if (data.urgency !== undefined) {
