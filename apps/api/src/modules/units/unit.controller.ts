@@ -53,13 +53,29 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * What the unit's profile counts
+ * GET /api/units/:id/summary
+ */
+export const summary = asyncHandler(async (req: Request, res: Response) => {
+  const data = await unitService.summary(req.params.id, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
+
+  res.json({ success: true, data });
+});
+
+/**
  * Update unit
- * PUT /api/units/:id
+ * PATCH /api/units/:id
  */
 export const update = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const input: UpdateUnitInput = req.body;
-  const unit = await unitService.update(id, input);
+  const unit = await unitService.update(id, input, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
 
   res.json({
     success: true,

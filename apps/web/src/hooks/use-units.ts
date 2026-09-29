@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { UnitSummary } from "@cipansor/shared";
 import api, { ApiResponse } from "@/lib/api";
 
 /**
@@ -37,9 +38,10 @@ export interface Unit {
   name: string;
   type: UnitType;
   address?: string;
-  phone?: string;
-  email?: string;
-  headName?: string;
+  phone?: string | null;
+  email?: string | null;
+  /** Nomor Pokok Sekolah Nasional; the pesantren itself has none. */
+  npsn?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -108,13 +110,36 @@ export function useUnit(id: string) {
   });
 }
 
+/** What the unit's profile counts (GET /units/:id/summary). */
+export function useUnitSummary(id: string) {
+  return useQuery({
+    queryKey: ["units", id, "summary"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<UnitSummary>>(
+        `/units/${id}/summary`,
+      );
+      return response.data.data;
+    },
+    enabled: !!id,
+  });
+}
+
 export interface CreateUnitData {
   name: string;
   type: UnitType;
   address?: string;
   phone?: string;
   email?: string;
-  headName?: string;
+}
+
+/** PATCH /units/:id — `null` clears an optional field. */
+export interface UpdateUnitData {
+  name?: string;
+  type?: UnitType;
+  address?: string;
+  phone?: string | null;
+  email?: string | null;
+  npsn?: string | null;
 }
 
 export function useCreateUnit() {
@@ -135,13 +160,7 @@ export function useUpdateUnit() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: Partial<CreateUnitData>;
-    }) => {
+    mutationFn: async ({ id, data }: { id: string; data: UpdateUnitData }) => {
       const response = await api.patch<ApiResponse<Unit>>(`/units/${id}`, data);
       return response.data.data;
     },
