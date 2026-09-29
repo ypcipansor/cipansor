@@ -103,8 +103,12 @@ items before 2026-09-25 is in the history of this file and of
      figures, the kepala sekolah's path to a class (known-issues). The
      relation itself shipped in #579; attendance in #580; behaviour notes in
      #581;
-   - `PESANTREN_ADMIN` — needs a pesantren unit first (see known-issues,
-     "Takhosus as a fifth unit");
+   - **the Pesantren unit** (decided 2026-09-29,
+     `decisions/struktur-organisasi-dan-identitas.md`): create it, move the
+     Kiai, musyrif, ustadz, muhafidz and TU Pesantren assignments off SMP IT
+     (a data migration replayed on a copy of production first), and drop the
+     seed's "Direktorat/Direktur Pendidikan";
+   - `PESANTREN_ADMIN` — once the pesantren unit exists;
    - a Panitia SPMB assignment that expires — needs writers of `expires_at`,
      which `decommissioned-modules.guard.test.ts` forbids today, so the guard
      changes in the same PR;
@@ -119,14 +123,30 @@ items before 2026-09-25 is in the history of this file and of
    about whether the yayasan board sees across units — `emis` is per-unit on
    purpose (a Dapodik/EMIS export), `paud-report`'s check is an authorization
    gate, not a filter. Decide case by case, never by find-and-replace.
+   **How, decided 2026-09-29** (`decisions/struktur-organisasi-dan-identitas.md`):
+   step by step but complete — one function per PR (Bendahara, Guru, Kepala
+   Sekolah, Admin/Operator, TU, Komite, Orang Tua, Siswa, Guru BK, Alumni);
+   first a guard whose baseline only shrinks (per-unit role literals,
+   `UserRole` buckets, role lists outside `@cipansor/shared`, unit scope read
+   outside one door), and "done" is that baseline at zero. Alongside it: one
+   organisation tree, three levels at most (Yayasan → Unit → Bidang;
+   `Department` and `OrgUnit` merged; a post separate from its holder, with a
+   term), unit usaha as nodes of that tree; `Realm` removed last.
 3. **One adaptive `/dashboard` and a scoped `/analytics`.** The three leadership
    dashboards were deleted in #544 because their figures were wrong; what
    remains must show only numbers a query produced, for the caller's scope.
 4. **Identity and integrations** (decided 2026-09-23): accounts in Cipansor
    first, then Google Workspace, then Microsoft; SSO in stages; an account is
    removed six months after its owner leaves (the unit admin requests, the
-   Super Admin approves). #441 carries the Google/Microsoft work but is not
-   mergeable as it stands — it is to be split, when the user says go.
+   Super Admin approves). Confirmed again 2026-09-29 with research (a
+   Microsoft hub needs Entra ID P1 for everyone provisioned, and santri may
+   not hold nonprofit licences): Google OUs by **policy** (Staf, Santri SMA,
+   Santri SMP restricted, emergency accounts), groups **derived** from
+   Cipansor's assignments and relations, never kept by hand; Microsoft groups,
+   if ever needed, written by Cipansor through Graph. #441 carries the
+   Google/Microsoft work but is not mergeable as it stands — it is to be
+   split, when the user says go; re-audit against these decisions requested
+   2026-09-29.
 
 ## 2. Before a real launch
 

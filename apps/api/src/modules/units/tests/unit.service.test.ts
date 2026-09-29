@@ -66,7 +66,10 @@ describe('UnitService logo claim (BUG 4)', () => {
     mockPrisma.unit.update.mockRejectedValue(new Error('db down'));
 
     await expect(
-      unitService.update('u-1', { logoUrl: 'https://store/new.png' } as any, 'actor-1')
+      unitService.update('u-1', { logoUrl: 'https://store/new.png' } as any, {
+        unitId: 'u-1',
+        sub: 'actor-1',
+      })
     ).rejects.toThrow('db down');
 
     expect(claimBlobForRecord).toHaveBeenCalledWith('https://store/new.png', 'actor-1');
@@ -77,7 +80,10 @@ describe('UnitService logo claim (BUG 4)', () => {
     mockPrisma.unit.findFirst.mockResolvedValue({ id: 'u-1' });
     mockPrisma.unit.update.mockResolvedValue({ id: 'u-1' });
 
-    await unitService.update('u-1', { name: 'x' } as any, 'actor-1');
+    await unitService.update('u-1', { name: 'x' } as any, {
+      unitId: 'u-1',
+      sub: 'actor-1',
+    });
 
     expect(claimBlobForRecord).not.toHaveBeenCalled();
   });

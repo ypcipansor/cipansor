@@ -18,7 +18,7 @@
 # ── Kapan menegur ──────────────────────────────────────────────────────────
 # Ukuran konteks dibaca dari `usage` jawaban asisten terakhir di transkrip
 # (`sync_stamp.context_tokens`). Dua tingkat per babak, masing-masing sekali:
-#   1. mendekati: konteks >= jendela - 120k  → "jalankan sync-records sekarang"
+#   1. mendekati: konteks >= jendela - 75k   → "jalankan sync-records sekarang"
 #   2. jatuh tempo: konteks >= jendela - 60k → pemadatan sedang DITAHAN
 # Diam sama sekali bila `autoCompactWindow` tidak diatur (atau > 800k), bila
 # sesi ini sudah menjalankan `sync-records` sejak babaknya dimulai, atau bila

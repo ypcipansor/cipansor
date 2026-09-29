@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { uploadedFileRefSchema } from '@cipansor/shared';
 
 import { UnitType } from '@prisma/client';
+import { NPSN_MESSAGE, NPSN_PATTERN } from '@cipansor/shared';
 
 /**
  * Derived from the Prisma enum rather than hand-listed.
@@ -32,14 +33,20 @@ export const createUnitSchema = z.object({
   logoUrl: uploadedFileRefSchema.optional(),
 });
 
-// Update unit
+// Update unit — PATCH, so every field is optional; `null` clears an optional one.
 export const updateUnitSchema = z.object({
-  name: z.string().min(3).optional(),
+  name: z.string().trim().min(3, 'Nama unit minimal 3 karakter').optional(),
+  // Only the Super Admin may change it (unit.service): the type decides which
+  // page of the public site the unit belongs to.
   type: unitTypeSchema.optional(),
-  address: z.string().min(5).optional(),
-  phone: z.string().optional().nullable(),
-  email: z.string().email().optional().nullable(),
+  address: z.string().trim().min(5, 'Alamat minimal 5 karakter').optional(),
+  phone: z.string().trim().optional().nullable(),
+  email: z.string().trim().email('Email tidak valid').optional().nullable(),
+  // A local-storage upload persists a host-relative `/uploads/<file>` path, so
+  // the shared ref (path OR absolute URL) is the right shape here — a bare
+  // `z.string().url()` rejects every logo uploaded to local storage.
   logoUrl: uploadedFileRefSchema.optional().nullable(),
+  npsn: z.string().trim().regex(NPSN_PATTERN, NPSN_MESSAGE).optional().nullable(),
 });
 
 // ID param

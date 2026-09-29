@@ -137,8 +137,12 @@ def is_level(project_dir: str) -> bool:
 # Di atas angka ini `autoCompactWindow` dianggap tidak menyisakan ruang, dan
 # pemadatan otomatis tidak pernah ditahan (jendela model terkecil di repo ini 1M).
 HEADROOM_CEILING = 800_000
-# Teguran pertama: sekian token sebelum jendela.
-WARN_MARGIN_TOKENS = 120_000
+# Teguran pertama: sekian token sebelum jendela. 120k (dipakai s.d. 2026-09-29)
+# menegur ±90k sebelum pemadatan yang sesungguhnya (567k–579k untuk jendela 600k)
+# — pengguna: "pas hampir mau mendekati autocompact, jangan terlalu jauh". 75k
+# menegur di 525k: ±40–55k sebelum pemadatan, cukup untuk satu pass
+# `sync-records` (terukur 15–30k), dan penahanan di pita DUE menampung sisanya.
+WARN_MARGIN_TOKENS = 75_000
 # Claude Code memadatkan sedikit DI BAWAH jendela (terukur 567k–579k untuk
 # jendela 600k). Pemadatan hanya ditahan bila konteks sudah di pita ini —
 # pemadatan yang terjadi jauh di bawahnya berasal dari hal lain (model dengan

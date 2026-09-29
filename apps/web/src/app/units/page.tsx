@@ -12,7 +12,6 @@ import {
   MapPin,
   Phone,
   Mail,
-  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -138,12 +137,6 @@ export default function UnitsPage() {
               </CardHeader>
               <CardContent>
                 <CardDescription className="space-y-2 mb-4">
-                  {unit.headName && (
-                    <div className="flex items-center gap-2 text-sm">
-                      <User className="h-4 w-4" />
-                      <span>{unit.headName}</span>
-                    </div>
-                  )}
                   {unit.address && (
                     <div className="flex items-start gap-2 text-sm">
                       <MapPin className="h-4 w-4 mt-0.5" />
