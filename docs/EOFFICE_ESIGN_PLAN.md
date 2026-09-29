@@ -283,6 +283,11 @@ themselves. Adobe shows nothing. They must trust us and visit cipansor.or.id.
   crypto change: **Ed25519 must give way to RSA-3072 or ECDSA P-256** for the
   PDF layer, because EdDSA in CMS (RFC 8419) is effectively unsupported by
   Acrobat. A self-signed certificate is fine at this tier.
+  > **Corrected 2026-09-29:** the premise is half wrong. ETSI TS 119 312
+  > V2.1.1 (2026-06) Table A.1 lists EdDSA as *shall support* for AdES users, so
+  > **Ed25519 is a conformant PAdES algorithm**; it is **AATL** that omits it.
+  > The switch is for Acrobat/AATL interoperability, not a PAdES requirement.
+  > See `decisions/esign-standards-ceiling.md`.
 - **Tier 2 — certification.** Obtain certificates from **BSrE (BSSN)**, the
   standard route for naskah dinas at institutions under Kemenag, or from a
   commercial PSrE via API. Once the signature is *inside* the PDF, swapping a

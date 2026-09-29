@@ -17,6 +17,22 @@ Ed25519 tidak ada dalam daftarnya.** Itu pembenaran mandiri atas §4.3 rencana:
 pilihan algoritma inilah yang menghalangi PAdES, dan dukungan EdDSA-in-CMS
 (RFC 8419) di Acrobat memang tipis. Migrasi, bukan tambalan.
 
+> **Koreksi 2026-09-29 — AATL bukan PAdES.** Kalimat di atas (dan §4.3 rencana)
+> mencampur dua daftar algoritma yang berbeda. **ETSI TS 119 312 V2.1.1
+> (2026-06), Tabel A.1** — spesifikasi yang justru dirujuk oleh ETSI EN 319 142
+> (PAdES) — menempatkan **EdDSA (Ed25519, Ed448) sebagai *shall support* bagi
+> pengguna AdES**, bukan sebagai algoritma yang dihindari; catatannya juga
+> menyebut hash bawaan Ed25519 adalah SHA-512. Jadi **Ed25519 tidak menghalangi
+> PAdES**; yang tidak menerimanya adalah **AATL** (Adobe Approved Trust List),
+> program keanggotaan CA yang, seperti sudah ditulis di bawah, memang bukan
+> sasaran yayasan. Alasan "Acrobat tipis" tetap berlaku untuk *validasi di
+> Acrobat*, tetapi itu masalah dukungan *validator*, bukan larangan standar.
+> Konsekuensinya untuk §4.3: pindah ke RSA-3072/ECDSA P-256 masih masuk akal
+> demi interoperabilitas Acrobat dan AATL, tetapi argumennya harus jujur —
+> **bukan** "Ed25519 tidak ada di PAdES". Ini memengaruhi keputusan masa depan
+> (mis. kalau PAdES B-B dikerjakan, Ed25519 secara standar boleh dipakai;
+> penggantian algoritma adalah pilihan interoperabilitas, bukan keharusan).
+
 Yang paling bernilai berikutnya: **stempel waktu RFC 3161** (EE3) — tanpanya
 tidak ada jawaban atas "apakah kuncinya masih berlaku *saat* ditandatangani",
 yang justru inti semantik pencabutan. Masih PR-5, belum dikerjakan.
