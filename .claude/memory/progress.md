@@ -92,9 +92,16 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   the real PDF preview replacing the placeholder (`components/e-office/` no
   longer carries the stub). Findings and the standards ceiling are in
   [`docs/EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md) and
-  `decisions/esign-standards-ceiling.md`. Still open: PAdES B-B + RFC 3161
-  (blocked on the Ed25519→RSA/ECDSA change), signing uploaded DOCX/PDF bytes,
-  and a.n./u.b./Plt./Plh.
+  `decisions/esign-standards-ceiling.md`. Round 2 closed out on PR **#628**
+  (all checks green 2026-09-29): the Devin findings F1–F12 are fixed, the
+  CodeQL `js/insufficient-password-hash` alert on `publicKeyFingerprint` is
+  cleared by removing the tainted path (the alert's source was a test
+  passphrase literal, not production code), and the audit corrected a wrong
+  premise — **Ed25519 does not block PAdES**; ETSI TS 119 312 V2.1.1 Table A.1
+  lists EdDSA as *shall support*, and it is **AATL** that omits it. Still open:
+  PAdES B-B + RFC 3161 (the Ed25519→RSA/ECDSA switch is now an *interoperability*
+  choice, not a PAdES requirement), signing uploaded DOCX/PDF bytes, and
+  a.n./u.b./Plt./Plh.
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
