@@ -64,6 +64,19 @@ export interface EncryptedKeyMaterial {
   authTag: string; // base64
 }
 
+/**
+ * Bahan kunci yang baru dibangkitkan, plus sidik jarinya.
+ *
+ * Sidik jari dihitung dari `publicDer` yang baru lahir, bukan di pemanggil dari
+ * field objek ini. Bila pemanggil yang menghitungnya, analisis alir data
+ * (CodeQL) melihat "passphrase → objek → field → hash" dan melaporkan hash
+ * sandi yang lemah, padahal yang di-hash adalah byte publik. Dihitung sekali di
+ * titik kunci itu lahir, jalur itu tidak pernah ada.
+ */
+export interface GeneratedKeyMaterial extends EncryptedKeyMaterial {
+  fingerprint: string;
+}
+
 export class EsignError extends Error {
   constructor(message: string) {
     super(message);
@@ -100,7 +113,7 @@ export function assertPassphraseStrength(passphrase: string): void {
 }
 
 /** Buat pasangan kunci baru dan kunci privatnya disegel dengan passphrase. */
-export function createKeyMaterial(passphrase: string): EncryptedKeyMaterial {
+export function createKeyMaterial(passphrase: string): GeneratedKeyMaterial {
   assertPassphraseStrength(passphrase);
 
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
@@ -117,6 +130,7 @@ export function createKeyMaterial(passphrase: string): EncryptedKeyMaterial {
 
   return {
     algorithm: ESIGN_ALGORITHM,
+    fingerprint: publicKeyFingerprint(publicDer.toString('base64')),
     publicKey: publicDer.toString('base64'),
     encryptedPrivateKey: sealed.toString('base64'),
     kdfSalt: salt.toString('base64'),
@@ -252,17 +266,18 @@ export function digestOf(payload: string): string {
  * angka ini dengan alat yang menghasilkan keyIdentifier SHA-1 — hasilnya akan
  * berbeda. Format kanonik yang tersimpan dan dicari adalah bentuk di sini.
  *
- * CodeQL menandai fungsi ini `js/insufficient-password-hash` karena melihat
- * `createHash('sha256')` atas nilai yang berasal dari bahan kunci. Peringatan
- * itu **keliru**: yang di-hash adalah SPKI **publik** — data yang memang
- * dibagikan, bahkan dicetak pada surat — bukan sandi atau kunci privat.
- * Passphrase tidak pernah di-hash; ia melalui scrypt (`SCRYPT_PARAMS`,
- * N=2^15) di `deriveKey`, dan hasilnya yang mengenkripsi kunci privat.
+ * CodeQL pernah menandai pemanggilnya `js/insufficient-password-hash` karena
+ * melihat "passphrase → bahan kunci → field → hash". Peringatan itu **keliru**
+ * — yang di-hash adalah SPKI **publik**, bukan sandi. Karena komentar penekan
+ * `// codeql[…]` tidak lagi dihormati, jalur itu diputus di sumbernya:
+ * `createKeyMaterial` menghitung sidik jari dari `publicDer` yang baru lahir
+ * (`GeneratedKeyMaterial.fingerprint`), sehingga pemanggil tidak lagi
+ * meng-hash field dari objek berisi passphrase. Passphrase sendiri tidak pernah
+ * di-hash; ia melalui scrypt (`SCRYPT_PARAMS`, N=2^15) di `deriveKey`, dan
+ * hasilnya yang mengenkripsi kunci privat.
  */
 export function publicKeyFingerprint(publicKey: string): string {
   const der = Buffer.from(publicKey, 'base64');
-  // Hashing public SPKI bytes, not a secret — see the note above.
-  // codeql[js/insufficient-password-hash]
   const digest = crypto.createHash('sha256').update(der).digest('hex');
   return (digest.toUpperCase().match(/.{2}/g) ?? []).join(':');
 }
