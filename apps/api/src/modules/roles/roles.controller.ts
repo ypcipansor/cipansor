@@ -4,6 +4,7 @@ import { generateTokenPair, getExpirationDate, decodeToken } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
+import { tokenLegacyRole } from '@/middleware/auth';
 import { mayReturnTokens, randomCsrfToken, setSessionCookies } from '@/modules/auth/auth.cookies';
 import type { Realm } from '@prisma/client';
 import type {
@@ -157,7 +158,7 @@ export class RolesController {
         id: result.user.id,
         sub: result.user.id,
         email: result.user.email,
-        role: result.user.role ?? '',
+        role: tokenLegacyRole(result.activeRole.role.code, result.user.role),
         roleCode: result.activeRole.role.code,
         roleId: result.activeRole.roleId,
         // Same rule as login, 2FA and refresh (tokenUnitId): only a foundation

@@ -5,10 +5,10 @@
  * header at all. They *do* send cookies, so the HttpOnly session cookie the
  * API issued authenticates them with no token in the URL.
  *
- * The helper remains as the place to route an upload URL through — the API
- * still accepts a legacy `?token=` for callers that build one — but it no
- * longer reads or appends a token, because there is none in JavaScript's
- * reach. Non-upload URLs pass through untouched.
+ * The helper remains as the one place an upload URL is routed through, but it
+ * no longer reads or appends a token: there is none in JavaScript's reach, and
+ * the API no longer accepts `?token=` (a token in a URL lands in the access
+ * log). Non-upload URLs pass through untouched.
  */
 export function authFileUrl(url: string | null | undefined): string {
   return url ?? "";

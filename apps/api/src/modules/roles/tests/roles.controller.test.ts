@@ -105,6 +105,49 @@ describe('RolesController.switchRole', () => {
     expect(res.jsonPayload.data.accessToken).toBe('token-123');
   });
 
+  it("routes a switched role by its own bucket, not by the user's legacy column", async () => {
+    // ketua@ is STAFF in the legacy column and Ketua Pengurus by assignment.
+    // The token's role claim builds the web's routing cookie; the column here
+    // bounced them from /perencanaan after every switch.
+    vi.mocked(rolesService.switchRole).mockResolvedValue({
+      user: { id: 'u-1', email: 'ketua@cipansor.or.id', role: 'STAFF', unitId: null },
+      activeRole: {
+        id: 'ra-ketua',
+        roleId: 'r-ketua',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: [] },
+        unit: null,
+      },
+    } as any);
+
+    const { req, res, next } = mockReqRes({ body: { roleAssignmentId: 'ra-ketua' } as any });
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ roleCode: 'YAYASAN_KETUA', role: 'UNIT_ADMIN' })
+    );
+  });
+
+  it('routes a komite role, which has no bucket, by the legacy column', async () => {
+    vi.mocked(rolesService.switchRole).mockResolvedValue({
+      user: { id: 'u-1', email: 'komite@cipansor.or.id', role: 'STAFF', unitId: 'unit-smp' },
+      activeRole: {
+        id: 'ra-komite',
+        roleId: 'r-komite',
+        unitId: 'unit-smp',
+        role: { code: 'SMPIT_KOMITE', permissions: [] },
+        unit: { id: 'unit-smp', name: 'SMP IT' },
+      },
+    } as any);
+
+    const { req, res, next } = mockReqRes({ body: { roleAssignmentId: 'ra-komite' } as any });
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ roleCode: 'SMPIT_KOMITE', role: 'STAFF' })
+    );
+  });
+
   it('keeps unitId null when switching to a foundation role', async () => {
     // Role yayasan adalah peran lintas-unit. Sebelum perbaikan, fallback ke
     // user.unitId menjadikannya unit-scoped — pengurus yayasan yang seharusnya

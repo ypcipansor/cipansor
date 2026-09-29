@@ -9,6 +9,7 @@ import {
   PRINCIPAL_COOKIE,
   type AuthSession,
 } from "./helpers/auth-api";
+import { DEMO_ACCOUNTS } from "../../../packages/shared/src/types/demo-accounts";
 
 /**
  * The session is an HttpOnly cookie, and it survives the ways a real browser
@@ -20,7 +21,9 @@ import {
  *   /login, because the middleware only ever saw the access cookie;
  * - two tabs refreshing at once logged the second one out (the server rotates
  *   the refresh token on first use);
- * - the `?token=` upload fallback still carried a session in the URL.
+ * - the `?token=` upload fallback still carried a session in the URL;
+ * - a refused refresh left the routing cookie behind, and the browser looped
+ *   between /login and the dashboard.
  *
  * Expiry is simulated by deleting the access cookie rather than by lowering
  * `JWT_EXPIRES_IN`: that is exactly what the browser does when the cookie's
@@ -96,6 +99,37 @@ test.describe("HttpOnly session cookies", () => {
     await pageB.close();
   });
 
+  test("a session the server refuses ends on the sign-in form, not in a redirect loop", async ({
+    page,
+    context,
+  }) => {
+    await injectSession(page, session);
+    await page.goto("/dashboard");
+    await expect(page).toHaveURL(/dashboard/);
+
+    // The refresh token was revoked elsewhere (signed out everywhere, a
+    // password reset) and the access cookie has expired; the routing cookie is
+    // still in the jar. While it is, the middleware sends /login back to the
+    // dashboard, so the refused refresh has to take it away.
+    const refresh = (await context.cookies()).find(
+      (c) => c.name === REFRESH_COOKIE,
+    )!;
+    await context.clearCookies({ name: ACCESS_COOKIE });
+    await context.addCookies([{ ...refresh, value: "revoked-elsewhere" }]);
+
+    await page.goto("/dashboard");
+    await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
+    await expect(page.locator('input[type="email"]')).toBeVisible();
+
+    const names = (await context.cookies()).map((c) => c.name);
+    expect(names).not.toContain(PRINCIPAL_COOKIE);
+    expect(names).not.toContain(REFRESH_COOKIE);
+
+    // And it stays there: no bounce back to the dashboard.
+    await page.waitForTimeout(2000);
+    await expect(page).toHaveURL(/\/login/);
+  });
+
   test("logout clears every session cookie", async ({ page, context }) => {
     await injectSession(page, session);
     await page.goto("/dashboard");
@@ -167,4 +201,38 @@ test.describe("HttpOnly session cookies", () => {
     expect(anonymous?.status()).toBe(401);
     await anonContext.close();
   });
+});
+
+/**
+ * The routing cookie's bucket comes from the API, from the token it just
+ * minted. Komite and alumni role codes have no bucket of their own on purpose;
+ * the web used to fall back to the user's legacy `role` column, and the API now
+ * does the same. Without it their cookie carried the raw role code, which the
+ * middleware refuses, and they could not open a single page. Signed in through
+ * the form so the cookie is the API's, not the e2e helper's.
+ */
+test.describe("roles with no bucket of their own", () => {
+  for (const [email, landing] of [
+    ["smpit.komite@cipansor.or.id", /\/reports/],
+    ["smpit.alumni@cipansor.or.id", /\/alumni/],
+  ] as const) {
+    test(`${email} signs in through the form and reaches their own page`, async ({
+      page,
+      context,
+    }) => {
+      const account = DEMO_ACCOUNTS.find((a) => a.email === email)!;
+      await page.goto("/login");
+      await page.locator("#email").fill(account.email);
+      await page.locator("#password").fill(account.password);
+      await page.getByRole("button", { name: "Masuk", exact: true }).click();
+
+      await expect(page).toHaveURL(landing, { timeout: 20000 });
+      const principal = (await context.cookies()).find(
+        (c) => c.name === PRINCIPAL_COOKIE,
+      );
+      expect(JSON.parse(decodeURIComponent(principal!.value)).role).toMatch(
+        /^(STAFF|STUDENT)$/,
+      );
+    });
+  }
 });

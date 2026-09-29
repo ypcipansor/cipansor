@@ -108,6 +108,22 @@ export function deriveLegacyRole(roleCode: string): string {
 }
 
 /**
+ * The legacy bucket a newly minted token carries in its `role` claim — and so
+ * the routing cookie the web middleware reads, which is built from it.
+ *
+ * The active role code's bucket when it has one. The komite and alumni codes
+ * intentionally have none; for them the user's legacy `role` column decides,
+ * as it did when the web computed this itself (`getEffectiveRole` in
+ * `apps/web/src/lib/rbac.ts`). Every mint — login, 2FA, refresh, role switch —
+ * goes through here, so a switched role routes by its own bucket, not by the
+ * column. `req.user.role` is unaffected: `buildReqUser` derives it from the
+ * role code alone.
+ */
+export function tokenLegacyRole(roleCode: string, legacyColumn?: string | null): string {
+  return ROLE_CODE_TO_LEGACY_ROLE[roleCode] || legacyColumn || roleCode;
+}
+
+/**
  * Build a safe `req.user` object from a decoded JWT payload. Tokens always
  * carry `roleCode` + `permissions`; `req.user.role` is derived from the
  * roleCode for the modules that still branch on the coarse UserRole buckets.

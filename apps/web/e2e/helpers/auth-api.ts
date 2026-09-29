@@ -34,11 +34,18 @@ export const PRINCIPAL_COOKIE = "cipansor_principal";
 
 /**
  * The slim routing cookie the Next middleware reads (no API round trip).
- * Derived from the authenticated user, the same values the API writes at login.
+ *
+ * The API's own value when the session came from a sign-in: it decides the
+ * bucket from the active role code (falling back to the legacy column only for
+ * komite and alumni), and a copy derived here from `user.role` routed ketua@ —
+ * STAFF in that column, Ketua Pengurus by assignment — as STAFF. The
+ * derivation below is only for a session a test builds by hand.
  */
 function principalValue(session: {
   user: Record<string, unknown> & { role?: string; id?: string };
+  principal?: string;
 }): string {
+  if (session.principal) return session.principal;
   const user = session.user as {
     id?: string;
     role?: string;
@@ -95,6 +102,8 @@ export interface AuthSession {
   accessToken: string;
   refreshToken: string;
   csrfToken: string;
+  /** The routing cookie's value exactly as the API set it at sign-in. */
+  principal?: string;
 }
 
 async function postJson(path: string, body: unknown, bearer?: string) {
@@ -123,6 +132,12 @@ async function postJson(path: string, body: unknown, bearer?: string) {
 function cookieFromSetCookie(header: string, name: string): string | null {
   const match = header.match(new RegExp(`(?:^|,\\s*)${name}=([^;,]*)`));
   return match ? match[1] : null;
+}
+
+/** The routing cookie the API set, decoded to the JSON the middleware parses. */
+function principalFromSetCookie(header: string): string | undefined {
+  const raw = cookieFromSetCookie(header, PRINCIPAL_COOKIE);
+  return raw ? decodeURIComponent(raw) : undefined;
 }
 
 // Cache sessions per email (per worker process) so we don't re-run the login +
@@ -213,6 +228,7 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
       ...(verified.json.data as Omit<AuthSession, "csrfToken">),
       csrfToken:
         cookieFromSetCookie(verified.setCookie, CSRF_COOKIE) ?? E2E_CSRF_TOKEN,
+      principal: principalFromSetCookie(verified.setCookie),
     };
   }
 
@@ -231,6 +247,7 @@ async function apiLoginUncached(user: SeedUser): Promise<AuthSession> {
     ...(data as Omit<AuthSession, "csrfToken">),
     csrfToken:
       cookieFromSetCookie(login.setCookie, CSRF_COOKIE) ?? E2E_CSRF_TOKEN,
+    principal: principalFromSetCookie(login.setCookie),
   };
 }
 

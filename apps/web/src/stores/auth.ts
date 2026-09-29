@@ -41,9 +41,27 @@ interface AuthState {
  * Next middleware no longer reads it at all; it reads the API-set HttpOnly
  * `cipansor_principal` cookie for routing.
  */
+/**
+ * Drop what the old client left behind. A browser that signed in before the
+ * session moved to HttpOnly cookies still holds the access and refresh tokens
+ * in `localStorage` and a readable `accessToken` cookie. Nothing reads them any
+ * more, but a script still could, and the refresh token stays valid for weeks.
+ * Runs on every rehydration; once they are gone it does nothing.
+ */
+export function dropLegacySessionTokens() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("accessToken");
+  localStorage.removeItem("refreshToken");
+  if (/(?:^|; )(?:accessToken|auth-storage)=/.test(document.cookie)) {
+    document.cookie = "accessToken=; path=/; max-age=0";
+    document.cookie = "auth-storage=; path=/; max-age=0";
+  }
+}
+
 const userOnlyStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
+    dropLegacySessionTokens();
     return localStorage.getItem(name);
   },
   setItem: (name: string, value: string) => {

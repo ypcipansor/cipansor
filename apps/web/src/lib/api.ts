@@ -229,18 +229,31 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
+      // Whether this browser holds a session at all, read BEFORE the refresh:
+      // a refused refresh clears the session cookies in its own response. The
+      // readable CSRF cookie is set with every session and cleared with it, so
+      // it is the one trace of the HttpOnly session that script can see.
+      const hadSession = readCookie("cipansor_csrf") !== null;
+
       try {
         await refreshAccessToken();
         // The rotated token is in a new cookie; simply replay the request and
         // let the browser attach it.
         return api(originalRequest);
       } catch (refreshError) {
+        // An anonymous visitor never had a session to lose. Public pages call
+        // protected endpoints (the SPMB page reads /units), and bouncing a
+        // prospective parent to the staff login screen over that 401 is far
+        // worse than letting the caller render its own empty state.
+        if (!hadSession) {
+          return Promise.reject(error);
+        }
+
         // Only a definitive rejection means the session is really gone. A 429
         // from the rate limiter, a 5xx or a dropped connection says nothing
         // about the token's validity, and logging the user out over one would
         // throw away a working session — the same reasoning as `fetchUser` in
-        // stores/auth.ts. There is no client-side session to check first: an
-        // anonymous visitor's failed refresh is just this same path.
+        // stores/auth.ts.
         const status = (refreshError as AxiosError)?.response?.status;
         const isDefinitive = status === 400 || status === 401 || status === 403;
         if (!isDefinitive) {

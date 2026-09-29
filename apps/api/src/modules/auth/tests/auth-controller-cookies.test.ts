@@ -191,6 +191,38 @@ describe('auth controller: cookies, not body tokens', () => {
     expect(res.jsonPayload.data.accessToken).toBeUndefined();
   });
 
+  it('clears every session cookie when the refresh is refused', async () => {
+    // A revoked, expired or unknown refresh token. Leaving the routing cookie
+    // behind loops the browser between /login and the dashboard.
+    authServiceMock.refreshToken.mockRejectedValue(
+      Object.assign(new Error('Invalid refresh token'), { statusCode: 401 })
+    );
+
+    const { res, cookies, cleared } = mockRes();
+    const next = vi.fn();
+    await refreshToken(
+      mockReq({ cookies: { [REFRESH_COOKIE]: 'revoked', [CSRF_COOKIE]: 'csrf-1' } }),
+      res,
+      next
+    );
+
+    expect(next.mock.calls[0][0].statusCode).toBe(401);
+    expect(cookies).toEqual([]);
+    expect(cleared).toEqual(
+      expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
+  });
+
+  it('clears every session cookie when there is no refresh token at all', async () => {
+    const { res, cleared } = mockRes();
+    const next = vi.fn();
+    await refreshToken(mockReq({ cookies: { [PRINCIPAL_COOKIE]: '{}' } }), res, next);
+
+    expect(next.mock.calls[0][0].statusCode).toBe(401);
+    expect(authServiceMock.refreshToken).not.toHaveBeenCalled();
+    expect(cleared).toEqual(expect.arrayContaining([PRINCIPAL_COOKIE]));
+  });
+
   it('revokes the cookie refresh token on logout and clears every cookie', async () => {
     const { res, cleared } = mockRes();
     await logout(

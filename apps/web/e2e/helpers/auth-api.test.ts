@@ -60,4 +60,24 @@ describe("buildStorageState", () => {
     expect(serialized).not.toContain("accessToken");
     expect(serialized).not.toContain("refreshToken");
   });
+
+  it("routes by the API's own routing cookie when the sign-in carried one", () => {
+    // ketua@: STAFF in the legacy column, Ketua Pengurus by assignment. The API
+    // routes the assignment; a value derived from `user.role` would not.
+    const ketua: AuthSession = {
+      ...session,
+      user: { id: "u-2", email: "ketua@example.test", role: "STAFF" },
+      principal: JSON.stringify({
+        id: "u-2",
+        role: "UNIT_ADMIN",
+        roleCode: "YAYASAN_KETUA",
+      }),
+    };
+    const state = api.buildStorageState(ketua);
+    const principal = state.cookies.find(
+      (c) => c.name === api.PRINCIPAL_COOKIE,
+    )!;
+    expect(JSON.parse(principal.value).role).toBe("UNIT_ADMIN");
+    expect(principal.httpOnly).toBe(true);
+  });
 });

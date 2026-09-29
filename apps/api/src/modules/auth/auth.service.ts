@@ -7,6 +7,7 @@ import {
   isAdminRoleCode,
   isGovernanceRoleCode,
   deriveLegacyRole,
+  tokenLegacyRole,
   requiresSecondFactor,
   invitesSecondFactor,
 } from '@/middleware/auth';
@@ -207,7 +208,7 @@ export class AuthService {
       roleCode,
       unitId: tokenUnitId(assignmentUnitId, roleCode, user.unitId),
       permissions,
-      role: deriveLegacyRole(roleCode),
+      role: tokenLegacyRole(roleCode, user.role),
     };
 
     // There is no demo exemption from 2FA any more (DEMO_MODE was removed
@@ -525,7 +526,7 @@ export class AuthService {
       roleCode: refreshRoleCode,
       unitId: tokenUnitId(refreshUnitId, refreshRoleCode, storedToken.user.unitId),
       permissions,
-      role: deriveLegacyRole(refreshRoleCode),
+      role: tokenLegacyRole(refreshRoleCode, storedToken.user.role),
     });
 
     // Store new refresh token
@@ -915,7 +916,7 @@ export class AuthService {
       roleCode: twoFaRoleCode,
       unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
       permissions,
-      role: deriveLegacyRole(twoFaRoleCode),
+      role: tokenLegacyRole(twoFaRoleCode, user.role),
     });
 
     const [, , activeAcademicYearId] = await Promise.all([

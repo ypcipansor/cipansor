@@ -105,10 +105,22 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   const fromBody = (req.body as RefreshTokenInput | undefined)?.refreshToken;
   const token = refreshTokenFromCookie(req) || fromBody;
   if (!token) {
+    clearAuthCookies(res);
     throw Errors.unauthorized('Token penyegaran sesi wajib diisi.');
   }
 
-  const tokens = await authService.refreshToken(token);
+  // A refresh the server refuses ends the browser's session here, cookies and
+  // all. The routing cookie would otherwise outlive it: the Next middleware
+  // keeps sending `/login` back to the dashboard while it exists, the
+  // dashboard's first call fails to refresh again, and the browser loops
+  // between the two with no way to sign in until the cookie expires.
+  let tokens: Awaited<ReturnType<typeof authService.refreshToken>>;
+  try {
+    tokens = await authService.refreshToken(token);
+  } catch (error) {
+    clearAuthCookies(res);
+    throw error;
+  }
   // The CSRF token is NOT rotated here: a request holding the previous value
   // must keep working across a background refresh (see csrfTokenForRefresh).
   setSessionCookies(

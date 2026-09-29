@@ -141,6 +141,11 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // access token from `cipansor_at` when no Authorization header is present, so
 // every browser request is authenticated without any JavaScript-visible token.
 app.use(cookieParser());
+// Once the session lives in an HttpOnly cookie the browser sends it on every
+// request, including ones another site forces. Reject an unsafe request that
+// carries a session cookie but no matching double-submit header. Read-only
+// routes and bearer-only clients are untouched (see middleware/csrf.ts). Once,
+// here, ahead of every router.
 app.use(csrfProtection);
 
 // Express 5 leaves `req.body` **undefined** when a request carries no body (or
@@ -269,12 +274,6 @@ const apiRouter = express.Router();
 // and hand them to Prisma unvalidated. Normalise once here so no module can
 // forget. See middleware/normalize-pagination.ts.
 apiRouter.use(normalizePagination);
-
-// Once the session lives in an HttpOnly cookie the browser sends it on every
-// request, including ones another site forces. Reject an unsafe request that
-// carries a session cookie but no matching double-submit header. Read-only
-// routes and bearer-only clients are untouched (see middleware/csrf.ts).
-apiRouter.use(csrfProtection);
 
 // Apply the strict brute-force limiter to credential-bearing endpoints ONLY.
 //
