@@ -363,6 +363,16 @@ decision.
   `related_applications`/`prefer_related_applications`, no
   `apple-touch-startup-image` splash (iOS shows a blank launch frame until the
   first paint), no `iarc_rating_id`. Add when the product wants the behaviour.
+- **Declarative Web Push is not used** (audit 2026-09-29). Safari 18.4+ accepts a
+  service-worker-free push JSON with an `app_badge` field; the existing `push`
+  handler is the backwards-compatible path every other browser needs, so
+  nothing changes until the sender exists and wants the extra field.
+- **The push sender does not exist yet.** Only the subscription half is wired
+  (register/unregister/status + the SW `push` handler); there is no server-side
+  `web-push` send, because it needs VAPID keys that are not in the repo. The
+  endpoint validation in `@cipansor/shared` is written for the sender to rely
+  on, and a DNS-resolving check belongs at send time (the edge schema only
+  refuses literal private IPs and localhost names).
 
 ## Deliberate — do not "fix"
 
