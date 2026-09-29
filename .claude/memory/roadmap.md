@@ -59,9 +59,11 @@ items before 2026-09-25 is in the history of this file and of
        - 2FA mandatory for the unit heads too (the four kepala sekolah and
          the Pimpinan Pesantren): one list, `SECOND_FACTOR_ROLE_CODES` in
          `@cipansor/shared`, and the profile says "wajib" instead of offering
-         to turn it off (this change);
+         to turn it off (done, #616);
        - the post-login invitation for staff and wali ("Nanti saja", no
-         limit; santri not invited);
+         limit; santri not invited): the list is
+         `SECOND_FACTOR_INVITE_ROLE_CODES`, and the API answers `isInvited`
+         (this change);
        - passwords: a must-change flag (first login, set by someone else,
          marked compromised, and every account once at that release), length
          8 with 2FA / 15 without, a local list of common and leaked

@@ -5,6 +5,7 @@ import { Sidebar } from "./sidebar";
 import { Header } from "./header";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ProtectedRoute } from "@/components/auth/protected-route";
+import { TwoFactorInvite } from "@/components/auth/two-factor-invite";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -69,6 +70,7 @@ export function MainLayout({
           </main>
         </div>
       </div>
+      <TwoFactorInvite />
     </ProtectedRoute>
   );
 }

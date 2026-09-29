@@ -795,7 +795,7 @@ describe('AuthService', () => {
 
       const result = await authService.getTwoFactorStatus('user-1');
 
-      expect(result).toEqual({ isEnabled: true, isRequired: false });
+      expect(result).toEqual({ isEnabled: true, isRequired: false, isInvited: false });
     });
 
     it('throws for a non-existent user', async () => {
