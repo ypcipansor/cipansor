@@ -259,9 +259,9 @@ export function digestOf(payload: string): string {
  * Passphrase tidak pernah di-hash; ia melalui scrypt (`SCRYPT_PARAMS`,
  * N=2^15) di `deriveKey`, dan hasilnya yang mengenkripsi kunci privat.
  */
-// codeql[js/insufficient-password-hash]
 export function publicKeyFingerprint(publicKey: string): string {
   const der = Buffer.from(publicKey, 'base64');
+  // codeql[js/insufficient-password-hash] -- hashing public SPKI bytes, not a secret
   const digest = crypto.createHash('sha256').update(der).digest('hex');
   return (digest.toUpperCase().match(/.{2}/g) ?? []).join(':');
 }
