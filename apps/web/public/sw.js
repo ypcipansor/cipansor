@@ -32,6 +32,10 @@ const PRECACHE_URLS = [
   "/icons/icon-512.png",
   "/icons/maskable-192.png",
   "/icons/maskable-512.png",
+  // The notification badge must be on hand when a push arrives, which is
+  // exactly when the network may be gone — so it is precached, not left to the
+  // runtime cache to fill on first sight.
+  "/icons/badge-96.png",
 ];
 
 // Caps so a long-lived install cannot grow unbounded as deploys churn hashed

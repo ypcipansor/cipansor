@@ -349,6 +349,23 @@ decision.
   Manifest → *Installability* on a real device. Suspects, in order: Chrome's
   engagement threshold (a fresh Incognito window has none), then the manifest's
   `"id": "/"`.
+- **The maskable icons and `screenshots` are not served under `pnpm dev`**
+  (audit 2026-09-29). `public/icons/*` is written by
+  `scripts/gen-pwa-assets.py`, which is not run on a fresh checkout and is not
+  part of the dev pipeline, so `/icons/maskable-*.png` and
+  `/screenshots/*.png` 404 there while the `any` icons (committed) resolve. The
+  app's own unit and e2e suites read the manifest's declared fields, not the
+  files, so both stay green — but Chrome drops a *missing* maskable or
+  screenshot, and if the deploy image ever fails to ship those files the same
+  way, installability degrades silently. Next step: confirm they resolve on
+  staging, and make the generator part of the build (or commit the outputs).
+- **Advanced manifest fields are absent** (audit 2026-09-29), each a judgement
+  call rather than a defect: no `launch_handler` (`"navigate-existing"` keeps
+  the installed window instead of stacking a new one), no `handle_links`
+  (`"preferred"` sends in-scope links to the installed app), no
+  `related_applications`/`prefer_related_applications`, no
+  `apple-touch-startup-image` splash (iOS shows a blank launch frame until the
+  first paint), no `iarc_rating_id`. Add when the product wants the behaviour.
 
 ## Deliberate — do not "fix"
 
