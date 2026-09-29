@@ -74,6 +74,17 @@ sekali.
    rujukan.
 7. **Pemisahan peran** — buklet Guru berdiri sendiri; buklet peran lain
    direncanakan dengan pola sama.
+8. **Perbaikan pada skrip skill** (ditemukan saat menjalankan ulang di
+   lingkungan ini, commit `aefc719`):
+   - `build_docs.py` memanggil mermaid-cli dengan bendera `-w`; versi terpasang
+     (12.x) tidak mengenal `-w` dan **seluruh diagram gagal dirender**
+     ("unknown option '-w'"). Diganti `--size`, dan diuji ulang: diagram dirender.
+   - Keterangan diagram dari `%% caption:` tidak pernah muncul di `.docx` karena
+     pandoc dengan pembaca `commonmark_x` membuang keterangan gambar. Kini
+     keterangan ditulis eksplisit setelah gambar.
+   - Angka diukur ulang dengan `collect_facts.py` pada commit `aefc719`
+     (worktree bersih) dan **cocok persis** dengan yang tertulis di dokumen
+     (93 modul, 289 model, 53 kode peran, 435 halaman).
 
 # 5. Yang belum dikerjakan (usulan lanjutan)
 

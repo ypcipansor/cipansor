@@ -1,0 +1,2186 @@
+{
+  "generated_at": "2026-09-29 13:09",
+  "repo_path": "/tmp/cip-aefc",
+  "git": {
+    "commit": "aefc719",
+    "commit_date": "2026-09-29",
+    "commit_subject": "feat(auth): password rules by NIST SP 800-63B-4 — 15 characters, or 8 with 2FA; no composition rules; common and self-named passwords refused (#625)",
+    "branch": "HEAD"
+  },
+  "stack": {
+    "package_manager": "pnpm@9.15.9",
+    "engines": {},
+    "by_workspace": {
+      "apps/api": {
+        "express": "^5.0.0",
+        "prisma": "7.10.0",
+        "@prisma/client": "7.10.0",
+        "zod": "^4.6.5",
+        "ioredis": "^6.0.0",
+        "jsonwebtoken": "^9.0.3",
+        "typescript": "^6.0.3",
+        "vitest": "5.0.1",
+        "axios": "1.20.0",
+        "node-cron": "^4.6.0",
+        "swagger-jsdoc": "^6.3.0",
+        "swagger-ui-express": "^5.0.1",
+        "helmet": "^8.3.0",
+        "multer": "^2.4.0",
+        "otplib": "13.5.0",
+        "winston": "^3.11.0",
+        "pdf-lib": "^1.17.1"
+      },
+      "apps/web": {
+        "next": "^16.3.6",
+        "react": "19.3.0",
+        "react-dom": "19.3.0",
+        "zod": "^4.6.5",
+        "typescript": "^6.0.3",
+        "vitest": "5.0.1",
+        "@playwright/test": "^1.63.0",
+        "tailwindcss": "^4",
+        "@tanstack/react-query": "5.103.2",
+        "zustand": "5.0.15",
+        "axios": "1.20.0",
+        "otplib": "13.5.0"
+      },
+      "packages/shared": {
+        "zod": "^4.6.5",
+        "typescript": "^6.0.3"
+      }
+    }
+  },
+  "prisma": {
+    "schema_path": "apps/api/prisma/schema.prisma",
+    "lines": 10382,
+    "model_count": 289,
+    "enum_count": 157,
+    "models": [
+      "Foundation",
+      "User",
+      "RefreshToken",
+      "Unit",
+      "UnitAccreditation",
+      "Teacher",
+      "Staff",
+      "AcademicYear",
+      "Class",
+      "Student",
+      "StudentParent",
+      "StudentUnitIdentifier",
+      "LegacyIdentifierAudit",
+      "StudentUnitEnrollment",
+      "ClassEnrollment",
+      "Attendance",
+      "AttendanceFollowUp",
+      "AttendancePatternFlag",
+      "TahfidzRecord",
+      "TahfidzTarget",
+      "HafidzStudent",
+      "Dormitory",
+      "Room",
+      "RoomAssignment",
+      "Permit",
+      "PermitAttachment",
+      "Violation",
+      "Reward",
+      "PaymentType",
+      "Invoice",
+      "Payment",
+      "BoardMember",
+      "FoundationDocument",
+      "AdmissionPeriod",
+      "Registrant",
+      "RegistrantDocument",
+      "StaffAttendance",
+      "Leave",
+      "LeaveBalance",
+      "Department",
+      "EmploymentContract",
+      "EmployeeDocument",
+      "EmploymentHistory",
+      "Role",
+      "UserRoleAssignment",
+      "AuditLog",
+      "BookCategory",
+      "Book",
+      "Borrowing",
+      "MedicalRecord",
+      "Medication",
+      "MedicationUsageLog",
+      "Announcement",
+      "Notification",
+      "Message",
+      "AssetCategory",
+      "Asset",
+      "AssetAssignment",
+      "AssetAudit",
+      "AssetAuditItem",
+      "AssetMaintenance",
+      "AssetDisposal",
+      "Subject",
+      "TeacherSubject",
+      "LessonPlan",
+      "Schedule",
+      "Exam",
+      "Grade",
+      "ReportCard",
+      "ReportCardDetail",
+      "Alumni",
+      "AlumniCareer",
+      "AlumniEducation",
+      "AlumniDonation",
+      "AlumniEvent",
+      "AlumniEventAttendee",
+      "Halaqoh",
+      "TakhosusEnrollment",
+      "SanadRecord",
+      "DailyMuhasabah",
+      "DonationCampaign",
+      "Donation",
+      "AdmissionWave",
+      "Extracurricular",
+      "ExtracurricularEnrollment",
+      "ExtracurricularAttendance",
+      "ExtracurricularAchievement",
+      "CounselingSession",
+      "CounselingNote",
+      "CounselingReferral",
+      "DutyType",
+      "DutyRoster",
+      "MealMenu",
+      "MealAttendance",
+      "SpecialDiet",
+      "CalendarEvent",
+      "KitabKuning",
+      "KitabProgress",
+      "Muhadhoroh",
+      "Muhadatsah",
+      "StudentDocument",
+      "DigitalCertificate",
+      "StudentNote",
+      "BehaviorRecord",
+      "Kitab",
+      "KitabAssignment",
+      "KitabStudentProgress",
+      "KitabProgressRecord",
+      "Province",
+      "Regency",
+      "District",
+      "Village",
+      "LearningPhase",
+      "LearningOutcome",
+      "LearningObjective",
+      "TeachingModule",
+      "P5Theme",
+      "P5Project",
+      "P5Assessment",
+      "MerdekaAssessment",
+      "MerdekaAssessmentResult",
+      "PaymentComponent",
+      "Scholarship",
+      "ScholarshipDiscount",
+      "ScholarshipRecipient",
+      "AccountCode",
+      "Budget",
+      "FinancialPeriod",
+      "ReportNote",
+      "ReportTemplate",
+      "JournalEntry",
+      "Land",
+      "Building",
+      "RoomType",
+      "FacilityRoom",
+      "DailyScheduleTemplate",
+      "DailyActivity",
+      "Musyrif",
+      "MusyrifAssignment",
+      "SantriWallet",
+      "WalletTransaction",
+      "BusinessUnit",
+      "CanteenCategory",
+      "CanteenItem",
+      "CanteenTransaction",
+      "CanteenTransactionItem",
+      "CanteenStockMovement",
+      "LaundryPricing",
+      "LaundryTransaction",
+      "LaundryItem",
+      "LaundryStatusLog",
+      "SalaryComponent",
+      "EmployeeSalary",
+      "EmployeeSalaryItem",
+      "PayrollPeriod",
+      "Payroll",
+      "PayrollItem",
+      "Portfolio",
+      "PortfolioFile",
+      "PortfolioComment",
+      "IslamicEvent",
+      "DailyIbadahTarget",
+      "DailyIbadahRecord",
+      "IbadahLeaderboard",
+      "Setting",
+      "ChatbotPersona",
+      "ChatbotUsageDaily",
+      "ChatbotConversation",
+      "ChatbotEscalation",
+      "ChatbotMessage",
+      "RaporPesantren",
+      "PAUDDevelopmentIndicator",
+      "PAUDDevelopmentAssessment",
+      "PAUDAssessmentEvidence",
+      "PAUDNarrativeReport",
+      "PAUDReportPhoto",
+      "DailyStudentReport",
+      "DailyReportPhoto",
+      "DailyHomework",
+      "MurojaahRecord",
+      "MurojaahMistake",
+      "SimaanExam",
+      "SimaanExaminer",
+      "DashboardMetricSnapshot",
+      "UnitComparisonReport",
+      "GrowthRecord",
+      "ImmunizationRecord",
+      "DashboardHistory",
+      "Supplier",
+      "PurchaseRequest",
+      "PurchaseRequestItem",
+      "GuestBook",
+      "StudentVisit",
+      "StudentPackage",
+      "MarketingCampaign",
+      "MarketingInteraction",
+      "LetterFlowEvent",
+      "UserSigningKey",
+      "UserIdentity",
+      "SigningKeyRequest",
+      "LetterSignature",
+      "LetterSignedDocument",
+      "LetterRevocationRequest",
+      "FilingClassification",
+      "AgendaNumber",
+      "Letter",
+      "LetterReviewer",
+      "LetterRecipient",
+      "LetterAttachment",
+      "LetterDispatch",
+      "Disposition",
+      "QualityStandard",
+      "QualityIndicator",
+      "QualityEvidence",
+      "QualityAudit",
+      "QualityAuditItem",
+      "QuestionBank",
+      "Question",
+      "ExamAttempt",
+      "ExamSecurityLog",
+      "ExamAnswer",
+      "Assignment",
+      "AssignmentSubmission",
+      "Risk",
+      "RiskMitigation",
+      "Complaint",
+      "ComplaintComment",
+      "Project",
+      "ProjectMember",
+      "ProjectColumn",
+      "ProjectTask",
+      "TaskComment",
+      "StrategicPlan",
+      "PlanCollaborator",
+      "PlanReviewEvent",
+      "PlanObjective",
+      "PlanIndicator",
+      "PlanIndicatorTarget",
+      "PlanActivity",
+      "PlanActivityBudgetItem",
+      "PlanFundingSource",
+      "InternalAudit",
+      "AuditFinding",
+      "AuditFollowUp",
+      "ShariaCompliance",
+      "ShariaAudit",
+      "EnvironmentProgram",
+      "WasteManagement",
+      "GreenCampusIndicator",
+      "TalentProfile",
+      "TalentAssessment",
+      "SuccessionPlan",
+      "TrainingProgram",
+      "TrainingEnrollment",
+      "OrgUnit",
+      "OrgPosition",
+      "StandardOperatingProcedure",
+      "SOPRevision",
+      "PracticumLessonPlan",
+      "PracticumSchedule",
+      "PracticumEvaluation",
+      "StudentOrg",
+      "StudentOrgPosition",
+      "StudentOrgMember",
+      "StudentOrgLogbook",
+      "ResearchTheme",
+      "ResearchSubmission",
+      "ResearchReference",
+      "Course",
+      "CourseEnrollment",
+      "CourseCertificate",
+      "Mustahik",
+      "ZisDistribution",
+      "SocialServiceOrder",
+      "SocialServiceTeam",
+      "SocialServiceMaterial",
+      "Patient",
+      "ClinicAppointment",
+      "Prescription",
+      "PrescriptionItem",
+      "ScholarshipCriterion",
+      "ScholarshipAssessment",
+      "PerformanceAgreement",
+      "PKIndicator",
+      "PKEvaluation",
+      "PKIndicatorEvaluation",
+      "BehavioralValue",
+      "PKBehaviorEvaluation",
+      "StudentCardState"
+    ],
+    "role_code_count": 53,
+    "role_codes": [
+      "SUPER_ADMIN",
+      "YAYASAN_PEMBINA",
+      "YAYASAN_KETUA",
+      "YAYASAN_SEKRETARIS",
+      "YAYASAN_BENDAHARA",
+      "YAYASAN_ANGGOTA",
+      "YAYASAN_PENGAWAS",
+      "TKQ_ADMIN",
+      "TKQ_KEPALA_SEKOLAH",
+      "TKQ_GURU",
+      "TKQ_TATA_USAHA",
+      "TKQ_BENDAHARA",
+      "TKQ_KOMITE",
+      "TKQ_ORANG_TUA",
+      "SDIT_ADMIN",
+      "SDIT_KEPALA_SEKOLAH",
+      "SDIT_GURU",
+      "SDIT_TATA_USAHA",
+      "SDIT_BENDAHARA",
+      "SDIT_KOMITE",
+      "SDIT_ORANG_TUA",
+      "SDIT_SISWA",
+      "SMPIT_ADMIN",
+      "SMPIT_KEPALA_SEKOLAH",
+      "SMPIT_GURU",
+      "SMPIT_GURU_BK",
+      "SMPIT_TATA_USAHA",
+      "SMPIT_BENDAHARA",
+      "SMPIT_KOMITE",
+      "SMPIT_ORANG_TUA",
+      "SMPIT_SISWA",
+      "SMPIT_ALUMNI",
+      "SMAQ_ADMIN",
+      "SMAQ_KEPALA_SEKOLAH",
+      "SMAQ_GURU",
+      "SMAQ_GURU_BK",
+      "SMAQ_TATA_USAHA",
+      "SMAQ_BENDAHARA",
+      "SMAQ_KOMITE",
+      "SMAQ_ORANG_TUA",
+      "SMAQ_SISWA",
+      "SMAQ_ALUMNI",
+      "PESANTREN_PENGASUH",
+      "PESANTREN_TATA_USAHA",
+      "USTADZ",
+      "MUSYRIF",
+      "MUHAFIDZ",
+      "PUSTAKAWAN",
+      "PERAWAT",
+      "KEAMANAN",
+      "LABORAN",
+      "BUSINESS_MANAGER",
+      "BUSINESS_STAFF"
+    ],
+    "migrations_dir_exists": true
+  },
+  "api": {
+    "module_count": 93,
+    "handler_count_approx": 1395,
+    "swagger_annotated_modules": 28,
+    "full_layout_modules": 66,
+    "prisma_in_route_or_controller_modules": 12,
+    "unmounted_modules_with_routes": [],
+    "service_only_modules": [
+      "scholarship"
+    ],
+    "modules": [
+      {
+        "name": "academic-years",
+        "mount": [
+          "/api/academic-years"
+        ],
+        "handlers": 6,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "admissions",
+        "mount": [
+          "/api/admissions"
+        ],
+        "handlers": 38,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "alumni",
+        "mount": [
+          "/api/alumni"
+        ],
+        "handlers": 30,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "analytics",
+        "mount": [
+          "/api/analytics"
+        ],
+        "handlers": 26,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "announcements",
+        "mount": [
+          "/api/announcements"
+        ],
+        "handlers": 7,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "assessment",
+        "mount": [
+          "/api/assessment"
+        ],
+        "handlers": 49,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "assignments",
+        "mount": [
+          "/api/assignments"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "attendance",
+        "mount": [
+          "/api/attendance"
+        ],
+        "handlers": 12,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "auth",
+        "mount": [
+          "/api/auth"
+        ],
+        "handlers": 13,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "business-unit",
+        "mount": [
+          "/api/business-units"
+        ],
+        "handlers": 7,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "calendar",
+        "mount": [
+          "/api/calendar"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "canteen",
+        "mount": [
+          "/api/canteen"
+        ],
+        "handlers": 19,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "cbt",
+        "mount": [
+          "/api/cbt"
+        ],
+        "handlers": 20,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "chatbot",
+        "mount": [
+          "/api/chatbot"
+        ],
+        "handlers": 9,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "classes",
+        "mount": [
+          "/api/classes"
+        ],
+        "handlers": 9,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "complaints",
+        "mount": [
+          "/api/complaints"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "correspondence",
+        "mount": [
+          "/api/correspondence"
+        ],
+        "handlers": 15,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "counseling",
+        "mount": [
+          "/api/counseling"
+        ],
+        "handlers": 14,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "curriculum",
+        "mount": [
+          "/api/curriculum"
+        ],
+        "handlers": 21,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "daily-report",
+        "mount": [
+          "/api/daily-report"
+        ],
+        "handlers": 9,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "dapodik",
+        "mount": [
+          "/api/dapodik"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "dashboard",
+        "mount": [
+          "/api/dashboard"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "dashboard-enhancement",
+        "mount": [
+          "/api/dashboard-enhancement"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "donation",
+        "mount": [
+          "/api/donation"
+        ],
+        "handlers": 20,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "dormitories",
+        "mount": [
+          "/api/dormitories"
+        ],
+        "handlers": 23,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "duty-roster",
+        "mount": [
+          "/api/duty-roster"
+        ],
+        "handlers": 18,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "emis",
+        "mount": [
+          "/api/emis"
+        ],
+        "handlers": 5,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "esign",
+        "mount": [
+          "/api/esign"
+        ],
+        "handlers": 18,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "extracurricular",
+        "mount": [
+          "/api/extracurricular"
+        ],
+        "handlers": 17,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "facilities",
+        "mount": [
+          "/api/facilities"
+        ],
+        "handlers": 21,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "finance",
+        "mount": [
+          "/api/finance"
+        ],
+        "handlers": 47,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "finance-enhancement",
+        "mount": [
+          "/api/finance-enhancement"
+        ],
+        "handlers": 34,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "foundation",
+        "mount": [
+          "/api/foundation"
+        ],
+        "handlers": 26,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "health",
+        "mount": [
+          "/api/health"
+        ],
+        "handlers": 25,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "homeroom",
+        "mount": [
+          "/api/homeroom"
+        ],
+        "handlers": 14,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "hr",
+        "mount": [
+          "/api/hr"
+        ],
+        "handlers": 37,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "ibadah",
+        "mount": [
+          "/api/ibadah"
+        ],
+        "handlers": 25,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "inventory",
+        "mount": [
+          "/api/inventory"
+        ],
+        "handlers": 34,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "kitab-progress",
+        "mount": [
+          "/api/kitab-progress"
+        ],
+        "handlers": 16,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "kurikulum-merdeka",
+        "mount": [
+          "/api/kurikulum-merdeka"
+        ],
+        "handlers": 45,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "laundry",
+        "mount": [
+          "/api/laundry"
+        ],
+        "handlers": 13,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "library",
+        "mount": [
+          "/api/library"
+        ],
+        "handlers": 16,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "lingkungan",
+        "mount": [
+          "/api/lingkungan"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "marketing",
+        "mount": [
+          "/api/marketing"
+        ],
+        "handlers": 14,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "meals",
+        "mount": [
+          "/api/meals"
+        ],
+        "handlers": 18,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "messages",
+        "mount": [
+          "/api/messages"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "muhadatsah",
+        "mount": [
+          "/api/muhadatsah"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "muhadhoroh",
+        "mount": [
+          "/api/muhadhoroh"
+        ],
+        "handlers": 11,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "muhasabah",
+        "mount": [
+          "/api/muhasabah"
+        ],
+        "handlers": 13,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "murojaah",
+        "mount": [
+          "/api/murojaah"
+        ],
+        "handlers": 15,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "non-formal",
+        "mount": [
+          "/api/non-formal"
+        ],
+        "handlers": 5,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "notifications",
+        "mount": [
+          "/api/notifications"
+        ],
+        "handlers": 29,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "organisasi",
+        "mount": [
+          "/api/organisasi"
+        ],
+        "handlers": 11,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "parent",
+        "mount": [
+          "/api/parent"
+        ],
+        "handlers": 17,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "paud-assessment",
+        "mount": [
+          "/api/paud-assessment"
+        ],
+        "handlers": 22,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "paud-report",
+        "mount": [
+          "/api/paud-report"
+        ],
+        "handlers": 13,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "payroll",
+        "mount": [
+          "/api/payroll"
+        ],
+        "handlers": 24,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "pengawasan",
+        "mount": [
+          "/api/pengawasan"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "perencanaan",
+        "mount": [
+          "/api/perencanaan"
+        ],
+        "handlers": 22,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "performance-management",
+        "mount": [
+          "/api/performance-agreements"
+        ],
+        "handlers": 24,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "permits",
+        "mount": [
+          "/api/permits"
+        ],
+        "handlers": 14,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "portfolio",
+        "mount": [
+          "/api/portfolio"
+        ],
+        "handlers": 15,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "practicum",
+        "mount": [
+          "/api/practicum"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "procurement",
+        "mount": [
+          "/api/procurement"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "project",
+        "mount": [
+          "/api/projects"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "quality",
+        "mount": [
+          "/api/quality"
+        ],
+        "handlers": 9,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "rapor-pesantren",
+        "mount": [
+          "/api/rapor-pesantren"
+        ],
+        "handlers": 9,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "reception",
+        "mount": [
+          "/api/reception"
+        ],
+        "handlers": 10,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "reporting",
+        "mount": [
+          "/api/reports"
+        ],
+        "handlers": 7,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "research",
+        "mount": [
+          "/api/research"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "rewards",
+        "mount": [
+          "/api/rewards"
+        ],
+        "handlers": 9,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "risk",
+        "mount": [
+          "/api/risk"
+        ],
+        "handlers": 8,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "roles",
+        "mount": [
+          "/api/roles"
+        ],
+        "handlers": 10,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "sanad-certificate",
+        "mount": [
+          "/api/sanad"
+        ],
+        "handlers": 11,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "scholarship",
+        "mount": [],
+        "handlers": 0,
+        "has_swagger": false,
+        "has_routes": false,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "simaan",
+        "mount": [
+          "/api/simaan"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "social-service",
+        "mount": [
+          "/api/social-service"
+        ],
+        "handlers": 5,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "student-compliance",
+        "mount": [
+          "/api/student-compliance"
+        ],
+        "handlers": 5,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "student-org",
+        "mount": [
+          "/api/student-org"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": false,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": true
+      },
+      {
+        "name": "students",
+        "mount": [
+          "/api/students"
+        ],
+        "handlers": 13,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "suppliers",
+        "mount": [
+          "/api/suppliers"
+        ],
+        "handlers": 5,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "syariah",
+        "mount": [
+          "/api/syariah"
+        ],
+        "handlers": 7,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "tahfidz",
+        "mount": [
+          "/api/tahfidz"
+        ],
+        "handlers": 9,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "takhosus",
+        "mount": [
+          "/api/takhosus"
+        ],
+        "handlers": 29,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "talenta",
+        "mount": [
+          "/api/talenta"
+        ],
+        "handlers": 19,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "tatalaksana",
+        "mount": [
+          "/api/tata-laksana"
+        ],
+        "handlers": 9,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "teacher-compliance",
+        "mount": [
+          "/api/teacher-compliance"
+        ],
+        "handlers": 6,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "units",
+        "mount": [
+          "/api/units"
+        ],
+        "handlers": 13,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "upload",
+        "mount": [
+          "/api/upload"
+        ],
+        "handlers": 1,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": false,
+        "has_schema": false,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "users",
+        "mount": [
+          "/api/users"
+        ],
+        "handlers": 5,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "violations",
+        "mount": [
+          "/api/violations"
+        ],
+        "handlers": 7,
+        "has_swagger": true,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": false,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "wallet",
+        "mount": [
+          "/api/wallet"
+        ],
+        "handlers": 10,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": true,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      },
+      {
+        "name": "wilayah",
+        "mount": [
+          "/api/wilayah"
+        ],
+        "handlers": 12,
+        "has_swagger": false,
+        "has_routes": true,
+        "has_controller": true,
+        "has_service": true,
+        "has_schema": false,
+        "has_tests_dir": true,
+        "prisma_in_route_or_controller": false
+      }
+    ]
+  },
+  "jobs": {
+    "job_files": [
+      "accreditation-reminder.job.ts",
+      "asset-depreciation.job.ts",
+      "attendance-follow-up.job.ts",
+      "attendance-pattern.job.ts",
+      "attendance-register-reminder.job.ts",
+      "chatbot-escalation-retry.job.ts",
+      "chatbot-spend.job.ts",
+      "chatbot-transcript-purge.job.ts",
+      "dashboard-metrics.job.ts",
+      "dashboard-snapshot.job.ts",
+      "finance-billing.job.ts",
+      "identity-purge.job.ts",
+      "permit-note-erasure.job.ts",
+      "spp-reminder.job.ts"
+    ],
+    "count": 14,
+    "cron_expressions_in_scheduler": [
+      "* * * * *",
+      "0 1 * * *",
+      "0 2 * * 0",
+      "0 3 * * *",
+      "0 4 1 * *",
+      "0 6 1 * *",
+      "30 2 * * *",
+      "0 7 * * *",
+      "15 3 * * *",
+      "*/30 * * * *",
+      "0 15 * * *",
+      "*/5 5-16 * * *",
+      "0 16 * * *",
+      "0 7 * * *",
+      "15 1 * * *"
+    ]
+  },
+  "env": {
+    "total_keys": 78,
+    "groups": [
+      {
+        "group": "CHATBOT",
+        "keys": [
+          "CHATBOT_PROVIDER",
+          "CHATBOT_API_BASE_URL",
+          "CHATBOT_API_KEY",
+          "CHATBOT_MODEL",
+          "CHATBOT_PERSONA",
+          "CHATBOT_RATE_LIMIT_WINDOW_MS",
+          "CHATBOT_RATE_LIMIT_MAX_REQUESTS",
+          "CHATBOT_RETRY_MAX_ATTEMPTS",
+          "CHATBOT_RETRY_BASE_MS",
+          "CHATBOT_RETRY_MAX_DELAY_MS",
+          "CHATBOT_RETRY_BUDGET_MS",
+          "CHATBOT_MAX_CONCURRENT",
+          "CHATBOT_QUEUE_MAX",
+          "CHATBOT_QUEUE_WAIT_MS",
+          "CHATBOT_ESCALATION_TO",
+          "CHATBOT_ESCALATION_WINDOW_MS",
+          "CHATBOT_ESCALATION_MAX",
+          "CHATBOT_PRICE_INPUT_PER_MTOK",
+          "CHATBOT_PRICE_OUTPUT_PER_MTOK",
+          "CHATBOT_PRICE_CACHED_INPUT_PER_MTOK",
+          "CHATBOT_PRICE_CURRENCY",
+          "CHATBOT_MONTHLY_BUDGET",
+          "CHATBOT_SPEND_ALERT_TO"
+        ]
+      },
+      {
+        "group": "SMTP",
+        "keys": [
+          "SMTP_HOST",
+          "SMTP_PORT",
+          "SMTP_SECURE",
+          "SMTP_USER",
+          "SMTP_PASS",
+          "SMTP_OAUTH_CLIENT_ID",
+          "SMTP_OAUTH_CLIENT_SECRET",
+          "SMTP_OAUTH_REFRESH_TOKEN"
+        ]
+      },
+      {
+        "group": "WA",
+        "keys": [
+          "WA_API_URL",
+          "WA_API_KEY",
+          "WA_PROVIDER",
+          "WA_ACCESS_TOKEN",
+          "WA_PHONE_NUMBER_ID"
+        ]
+      },
+      {
+        "group": "RATE",
+        "keys": [
+          "RATE_LIMIT_WINDOW_MS",
+          "RATE_LIMIT_MAX_REQUESTS",
+          "RATE_LIMIT_AUTH_WINDOW_MS",
+          "RATE_LIMIT_AUTH_MAX_REQUESTS"
+        ]
+      },
+      {
+        "group": "DB",
+        "keys": [
+          "DB_USER",
+          "DB_PASSWORD",
+          "DB_PORT"
+        ]
+      },
+      {
+        "group": "JWT",
+        "keys": [
+          "JWT_SECRET",
+          "JWT_EXPIRES_IN",
+          "JWT_REFRESH_EXPIRES_IN"
+        ]
+      },
+      {
+        "group": "TURNSTILE",
+        "keys": [
+          "TURNSTILE_SECRET_KEY",
+          "TURNSTILE_TIMEOUT_MS",
+          "TURNSTILE_ALLOWED_HOSTNAMES"
+        ]
+      },
+      {
+        "group": "GOOGLE",
+        "keys": [
+          "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+          "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
+          "GOOGLE_ANALYTICS_ID"
+        ]
+      },
+      {
+        "group": "NEXT",
+        "keys": [
+          "NEXT_PUBLIC_API_URL",
+          "NEXT_PUBLIC_TURNSTILE_SITE_KEY"
+        ]
+      },
+      {
+        "group": "REDIS",
+        "keys": [
+          "REDIS_URL",
+          "REDIS_PORT"
+        ]
+      },
+      {
+        "group": "COOKIE",
+        "keys": [
+          "COOKIE_SECURE",
+          "COOKIE_DOMAIN"
+        ]
+      },
+      {
+        "group": "MAIL",
+        "keys": [
+          "MAIL_FROM",
+          "MAIL_REPLY_TO"
+        ]
+      },
+      {
+        "group": "LAINNYA",
+        "keys": [
+          "DATABASE_URL",
+          "STUDENT_CARD_HMAC_SECRET",
+          "PORT",
+          "NODE_ENV",
+          "API_INTERNAL_URL",
+          "WEB_PORT",
+          "SCHEDULER_ENABLED",
+          "OUTBOUND_MESSAGES_ENABLED",
+          "MIGRATE_ON_START",
+          "PUBLIC_SITE_URL",
+          "PORTAL_URL",
+          "CORS_ORIGIN",
+          "LOG_LEVEL",
+          "MAX_FILE_SIZE",
+          "UPLOAD_DIR",
+          "GMAIL_SENDER",
+          "PASSWORD_RESET_RATE_LIMIT_MAX",
+          "IDENTITY_DOCUMENT_RETENTION_YEARS"
+        ]
+      }
+    ]
+  },
+  "web": {
+    "top_level_route_dirs": [
+      "academic-years",
+      "admin",
+      "admissions",
+      "alumni",
+      "analytics",
+      "announcements",
+      "api",
+      "assessment",
+      "assignments",
+      "attendance",
+      "berita",
+      "calendar",
+      "canteen",
+      "cbt",
+      "certificates",
+      "classes",
+      "counseling",
+      "curriculum",
+      "daily-report",
+      "dashboard",
+      "donation",
+      "dormitories",
+      "duty-roster",
+      "e-office",
+      "emis",
+      "extracurricular",
+      "facilities",
+      "finance",
+      "foundation",
+      "galeri",
+      "grc-dashboard",
+      "health",
+      "homeroom",
+      "hr",
+      "ibadah",
+      "inventory",
+      "kinerja",
+      "kitab-progress",
+      "kontak",
+      "laundry",
+      "library",
+      "lingkungan",
+      "login",
+      "marketing",
+      "meals",
+      "muhadatsah",
+      "muhadhoroh",
+      "muhasabah",
+      "musyrif",
+      "notifications",
+      "organisasi",
+      "parent",
+      "payroll",
+      "pengawasan",
+      "perencanaan",
+      "permits",
+      "portfolio",
+      "practicum",
+      "procurement",
+      "profil",
+      "profile",
+      "program-unggulan",
+      "project",
+      "public",
+      "quality",
+      "rapor-pesantren",
+      "reception",
+      "reports",
+      "research",
+      "reset-password",
+      "rewards",
+      "risk-management",
+      "schedule",
+      "settings",
+      "spmb",
+      "staff",
+      "student",
+      "student-org",
+      "students",
+      "syariah",
+      "tahfidz",
+      "takhosus",
+      "talenta",
+      "tata-laksana",
+      "teacher",
+      "tk",
+      "unauthorized",
+      "unit",
+      "unit-usaha",
+      "units",
+      "users",
+      "violations",
+      "wakaf-infaq",
+      "wallet",
+      "wilayah"
+    ],
+    "page_count": 435,
+    "hook_files": 125,
+    "has_role_menus_script": true,
+    "has_screenshot_script": true,
+    "navigation_file": "apps/web/src/config/navigation.ts"
+  },
+  "tests": {
+    "api_unit_test_files": 345,
+    "web_unit_test_files": 43,
+    "web_e2e_spec_files": 108
+  },
+  "infra": {
+    "workflows": [
+      "ci.yml",
+      "deploy-production.yml",
+      "deploy-staging.yml",
+      "e2e-tests.yml"
+    ],
+    "compose_services": [
+      "db",
+      "api",
+      "web",
+      "redis"
+    ],
+    "dockerfiles": [
+      "apps/api/Dockerfile",
+      "apps/web/Dockerfile",
+      "deploy/azure/nginx/Dockerfile"
+    ],
+    "deploy_dirs": [
+      "azure"
+    ]
+  },
+  "docs": {
+    "docs_md": [
+      "ARCHITECTURE.md",
+      "DEPLOYMENT.md",
+      "EMAIL_SETUP.md",
+      "EOFFICE_ESIGN_PLAN.md",
+      "MOBILE_API.md",
+      "deploy-azure.md"
+    ],
+    "repo_skills": [
+      "gate",
+      "naskah-dinas",
+      "panduan-peran",
+      "screenshot-roles",
+      "stack",
+      "sync-records",
+      "tata-kelola-yayasan"
+    ],
+    "decisions": [
+      "absensi-harian",
+      "akreditasi-unit",
+      "autentikasi-2fa-dan-sandi",
+      "chatbot-retrieval-settled",
+      "eoffice-revocation-authority",
+      "eoffice-revocation-mechanics",
+      "eoffice-verify-by-upload-not-qr",
+      "esign-standards-ceiling",
+      "istilah-dan-penamaan",
+      "menu-ia-tiga-tingkat",
+      "pemutus-izin-santri",
+      "pengawasan-dan-rapat-pembina",
+      "pengesahan-dokumen-yayasan",
+      "penyimpanan-berkas",
+      "peran-dan-tugas-tambahan",
+      "pimpinan-pesantren-kiai",
+      "pk-organ-yayasan-tanpa-kontrak",
+      "public-site-photography",
+      "realtime-polling",
+      "rka-dua-tingkat",
+      "route-naming",
+      "struktur-organisasi-dan-identitas",
+      "unit-vs-asrama-vs-takhosus"
+    ],
+    "decision_summaries": [
+      {
+        "file": "absensi-harian.md",
+        "summary": "Keputusan pengguna 2026-09-27 — register harian diisi di kelas oleh wali kelas atau guru yang mengajar di kelas itu (operator unit cadangan); satu halaman; tindak lanjut otomatis dengan pemilik yang sudah ada (wali kelas untuk murid harian, musyrif untuk santri mukim); tanpa guru piket. 2026-09-28: parameter tanda pola"
+      },
+      {
+        "file": "akreditasi-unit.md",
+        "summary": "Keputusan pengguna 2026-09-28 — akreditasi tiap unit dicantumkan di situs publik (fakta, tautan cek BAN-PDM, PDF sertifikat) dari satu catatan resmi di portal yang diisi admin unit atau Super Admin; unit tampil begitu sertifikatnya ada; pengingat 12 bulan sebelum berakhir"
+      },
+      {
+        "file": "autentikasi-2fa-dan-sandi.md",
+        "summary": "KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa"
+      },
+      {
+        "file": "chatbot-retrieval-settled.md",
+        "summary": "Korpus chatbot 628 token — ambang RAG ~100 ribu, jadi seluruh korpus dikirim dan BM25 tidak lagi menjadi gerbang; angka biayanya, dan pemicu untuk meninjau ulang"
+      },
+      {
+        "file": "eoffice-revocation-authority.md",
+        "summary": "Kewenangan mencabut naskah dinas — tabelnya, tiga sumber yang menyepakatinya, dan mengapa Super Admin tidak termasuk"
+      },
+      {
+        "file": "eoffice-revocation-mechanics.md",
+        "summary": "Pencabutan itu pernyataan bertanda tangan (bukan kolom status) — passphrase, cap DICABUT, dan alur permohonan"
+      },
+      {
+        "file": "eoffice-verify-by-upload-not-qr.md",
+        "summary": "E-Office letter verification is deliberately upload-the-PDF + Turnstile, never scan-QR-and-trust — the feature as it stands is the `naskah-dinas` skill; its audit and plan are docs/EOFFICE_ESIGN_PLAN.md"
+      },
+      {
+        "file": "esign-standards-ceiling.md",
+        "summary": "Batas atas TTE Cipansor menurut AATL/eIDAS/PP 71 — dan satu temuan: Ed25519 tidak ada di daftar algoritma AATL"
+      },
+      {
+        "file": "istilah-dan-penamaan.md",
+        "summary": "Glossary and naming decisions of 2026-09-25, taken by the user on the"
+      },
+      {
+        "file": "menu-ia-tiga-tingkat.md",
+        "summary": "Riset IA menu (maks 3 tingkat, submenu maks 2 tingkat) + keputusan 2026-09-07 mengelompokkan menu utama per disiplin; jangan riset ulang dan jangan usulkan tingkat keempat"
+      },
+      {
+        "file": "pemutus-izin-santri.md",
+        "summary": "Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali. 2026-09-28: surat dokter disimpan sampai akhir TA, dibuka pemutus + wali + kepala unit (#606); koordinator asrama dibangun — \"menginap\" = di luar pondok melewati tengah malam WIB"
+      },
+      {
+        "file": "pengawasan-dan-rapat-pembina.md",
+        "summary": "KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan"
+      },
+      {
+        "file": "pengesahan-dokumen-yayasan.md",
+        "summary": "KEPUTUSAN 2026-09-11 — RPJP, Renstra, dan RKA Yayasan disahkan lewat Pengurus → Pengawas (reviu) → Pengurus (tanggapan) → Pembina (tetapkan/kembalikan); RKA Unit disusun kepala sekolah dan disahkan Ketua Pengurus; dokumen yang sudah disahkan beku; dasar hukumnya sudah diriset"
+      },
+      {
+        "file": "penyimpanan-berkas.md",
+        "summary": "KEPUTUSAN 2026-09-29: berkas unggahan (foto, dokumen, surat) dicatat di satu"
+      },
+      {
+        "file": "peran-dan-tugas-tambahan.md",
+        "summary": "Keputusan pengguna 2026-09-26 — kode peran = fungsi seseorang; tugas tambahan (wakasek, wali kelas, guru wali, kepala perpustakaan/lab, pembina, panitia) = relasi atau penugasan, bukan kode peran. `*_WAKASEK` dan `*_WALI_KELAS` digabung ke `*_GURU`. Sesi konseling rahasia dibaca konselornya dan guru BK unit; kepala sekolah hanya rujukannya."
+      },
+      {
+        "file": "pimpinan-pesantren-kiai.md",
+        "summary": "KEPUTUSAN 2026-09-24: tidak ada Direktur Pesantren di Cipansor — PESANTREN_DIREKTUR dihapus; Kiai = Pimpinan/Pengasuh = kepala unit pesantren DAN Pembina yayasan (dua peran); dasar UU 18/2019 Ps. 1(9), 9(2); UU 16/2001 Ps. 5, 29, 35(3) — jangan riset ulang"
+      },
+      {
+        "file": "pk-organ-yayasan-tanpa-kontrak.md",
+        "summary": "Keputusan 2026-09-06 — Pembina, Pengurus, dan Pengawas TIDAK membuat Perjanjian Kinerja; kontrak Pengurus sudah berupa RKA Yayasan, dan PK unit menginduk pada dokumen RKA"
+      },
+      {
+        "file": "public-site-photography.md",
+        "summary": "Where the pesantren's real photographs come from (pesantrencipansor.com), what was migrated for the Google for Nonprofits re-review, and the two articles deliberately left behind"
+      },
+      {
+        "file": "realtime-polling.md",
+        "summary": "KEPUTUSAN 2026-09-28: portal tidak punya kanal dorong (Socket.IO, WebSocket,"
+      },
+      {
+        "file": "rka-dua-tingkat.md",
+        "summary": "Keputusan pengguna 2026-09-06 — tingkat tahunan bertingkat DUA (RKA Yayasan konsolidasi → RKA Unit); jangan usulkan lagi rantai tiga tingkat"
+      },
+      {
+        "file": "route-naming.md",
+        "summary": "Route/naming refactor decided 2026-07-21 — PPDB/PSB → SPMB, every retired path keeps a permanent redirect, and pesantren domain terms are never translated"
+      },
+      {
+        "file": "struktur-organisasi-dan-identitas.md",
+        "summary": "Keputusan pengguna 2026-09-29, sesudah audit realm/group/sub group/unit organisasi — unit Pesantren dibuat (rumah Kiai, musyrif, ustadz, muhafidz, TU Pesantren, santri takhosus-only); satu pohon organisasi maks 3 tingkat (Yayasan → Unit → Bidang) dengan jabatan terpisah dari pemegangnya; Model A bertahap tetapi menyeluruh, dijaga uji \"baseline hanya boleh menyusut\"; Google Workspace: OU per kebijakan, grup diturunkan otomatis dari Cipansor; jalur identitas Cipansor → Google → Microsoft ditegaskan ulang dengan riset."
+      },
+      {
+        "file": "unit-vs-asrama-vs-takhosus.md",
+        "summary": "RISET + REKOMENDASI 2026-09-13: asrama/boarding BUKAN unit (mukim/non-mukim itu atribut EMIS); pesantren = Foundation; Takhasus butuh unit TAPI TakhosusEnrollment yang sudah ada adalah sumbu lain; DIPUTUSKAN: unit pesantren = `UnitType.PESANTREN` yang sudah ada, syahadah saja"
+      }
+    ],
+    "known_issues_sections": [
+      "Broken flows and wrong figures",
+      "Access that is too narrow, or needs review",
+      "Waiting on a decision",
+      "Design gaps",
+      "Performance",
+      "Tests",
+      "Unverified",
+      "Deliberate — do not \"fix\""
+    ],
+    "known_issues_file": ".claude/memory/known-issues.md",
+    "screenshot_count_in_docs_images": 78,
+    "license_first_line": "HAK CIPTA DAN KETENTUAN PENGGUNAAN — PERANGKAT LUNAK PROPRIETARY"
+  }
+}
