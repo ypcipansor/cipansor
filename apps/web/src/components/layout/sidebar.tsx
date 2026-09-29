@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { realmColor, realmLabel } from "@/lib/realm";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -41,16 +42,6 @@ interface UserRole {
     name: string;
   } | null;
 }
-
-// Realm colors for badges
-const realmColors: Record<string, string> = {
-  GLOBAL: "bg-purple-500",
-  YAYASAN: "bg-amber-500",
-  TK: "bg-pink-500",
-  SD_IT: "bg-green-500",
-  SMP_IT: "bg-blue-500",
-  SMA_ALQURAN: "bg-emerald-500",
-};
 
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   const pathname = usePathname();
@@ -177,10 +168,10 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
                   <Badge
                     className={cn(
                       "text-[10px] px-1 py-0 text-white",
-                      realmColors[activeRole.role.realm],
+                      realmColor(activeRole.role.realm),
                     )}
                   >
-                    {activeRole.role.realm.replace("_", " ")}
+                    {realmLabel(activeRole.role.realm)}
                   </Badge>
                   <span className="truncate text-xs text-muted-foreground">
                     {activeRole.role.name}
