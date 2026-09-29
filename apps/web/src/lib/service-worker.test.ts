@@ -97,6 +97,7 @@ function loadWorker() {
   const skipWaiting = vi.fn();
   const clientsClaim = vi.fn();
   const fetchMock = vi.fn();
+  const enableNavigationPreload = vi.fn().mockResolvedValue(undefined);
 
   const self = {
     location: { origin: ORIGIN },
@@ -108,7 +109,10 @@ function loadWorker() {
       claim: () => Promise.resolve(clientsClaim()),
       matchAll: async () => [],
     },
-    registration: { showNotification: vi.fn() },
+    registration: {
+      showNotification: vi.fn(),
+      navigationPreload: { enable: enableNavigationPreload },
+    },
   };
 
   const sandbox = {
@@ -127,17 +131,25 @@ function loadWorker() {
   vm.createContext(sandbox);
   vm.runInContext(SW_SOURCE, sandbox);
 
-  return { listeners, cacheStorage, skipWaiting, fetchMock };
+  return {
+    listeners,
+    cacheStorage,
+    skipWaiting,
+    fetchMock,
+    enableNavigationPreload,
+  };
 }
 
 /** Fire a fetch event and return whatever respondWith() was given. */
 async function dispatchFetch(
   listeners: Map<string, (event: unknown) => void>,
   request: { url: string; method: string; mode: string },
+  preloadResponse?: Promise<Response>,
 ) {
   let responded: Promise<Response> | undefined;
   listeners.get("fetch")?.({
     request,
+    preloadResponse,
     respondWith: (p: Promise<Response>) => {
       responded = p;
     },
@@ -202,6 +214,17 @@ describe("sw.js fetch routing", () => {
       c.name.startsWith("cipansor-pages"),
     );
     expect(pages?.entries.length).toBe(1);
+  });
+
+  it("uses the navigation preload response without a second fetch", async () => {
+    const res = await dispatchFetch(
+      worker.listeners,
+      nav("/dashboard"),
+      Promise.resolve(html("preloaded page")),
+    );
+    expect(await res!.text()).toBe("preloaded page");
+    // The preload already fetched it; the worker must not fetch again.
+    expect(worker.fetchMock).not.toHaveBeenCalled();
   });
 
   it("falls back to the cached page when the network fails", async () => {
@@ -292,6 +315,8 @@ describe("sw.js lifecycle", () => {
     const names = await worker.cacheStorage.keys();
     expect(names).not.toContain("cipansor-precache-v2");
     expect(names).toContain("cipansor-runtime-v3");
+    // Navigation preload is enabled alongside the cache sweep.
+    expect(worker.enableNavigationPreload).toHaveBeenCalled();
   });
 
   it("applies a waiting update only when told to (SKIP_WAITING)", () => {

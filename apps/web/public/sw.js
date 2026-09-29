@@ -59,17 +59,27 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            // Drop this version's stale names AND any older version's caches.
-            .filter((k) => k.startsWith(CACHE_PREFIX) && !k.endsWith(VERSION))
-            .map((k) => caches.delete(k)),
+    Promise.all([
+      caches
+        .keys()
+        .then((keys) =>
+          Promise.all(
+            keys
+              // Drop this version's stale names AND any older version's caches.
+              .filter((k) => k.startsWith(CACHE_PREFIX) && !k.endsWith(VERSION))
+              .map((k) => caches.delete(k)),
+          ),
         ),
-      )
-      .then(() => self.clients.claim()),
+      // Navigation preload: the browser starts the navigation request in
+      // parallel with this worker's boot, so a network-first navigation does
+      // not wait on worker startup. The fetch handler consumes
+      // `event.preloadResponse`; with it unavailable (older browsers) it falls
+      // back to its own fetch. Enable is idempotent.
+      self.registration.navigationPreload &&
+      self.registration.navigationPreload.enable
+        ? self.registration.navigationPreload.enable().catch(() => undefined)
+        : Promise.resolve(),
+    ]).then(() => self.clients.claim()),
   );
 });
 
@@ -154,7 +164,14 @@ function staleWhileRevalidate(request, event) {
  * page is the final fallback.
  */
 function navigationHandler(request, event) {
-  return fetch(request)
+  // Navigation preload (see activate) already started the request; only fall
+  // back to a fresh fetch when the browser did not supply one.
+  const network = event.preloadResponse
+    ? event.preloadResponse
+    : fetch(request);
+  // `preloadResponse` rejects rather than resolving undefined on a failed
+  // preload, so the same catch below covers both paths.
+  return network
     .then((resp) => {
       if (isCacheable(resp)) {
         const copy = resp.clone();

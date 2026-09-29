@@ -90,12 +90,12 @@ Yang sudah ada di repo:
 - `apps/web/public/icons/icon-*.png` + `icons/maskable-*.png` — set ikon
   aplikasi dan rendisi maskable-nya. Dibuat ulang oleh
   `apps/web/scripts/gen-pwa-assets.py` saat logo berubah.
-- `apps/web/public/sw.js` — service worker: navigasi network-first + fallback
-  `offline.html`, `/api/**` selalu ke jaringan (tidak pernah di-cache agar data
-  auth/sesi selalu segar). `_next/static/**` cache-first (nama ber-hash),
-  aset statis lain stale-while-revalidate, dua cache dibatasi jumlah entri.
-  Versi baru **tidak** langsung `skipWaiting()`; menunggu sampai pengguna
-  menyetujui muat ulang.
+- `apps/web/public/sw.js` — service worker: navigasi network-first dengan
+  *navigation preload* + fallback `offline.html`, `/api/**` selalu ke jaringan
+  (tidak pernah di-cache agar data auth/sesi selalu segar). `_next/static/**`
+  cache-first (nama ber-hash), aset statis lain stale-while-revalidate, dua
+  cache dibatasi jumlah entri. Versi baru **tidak** langsung `skipWaiting()`;
+  menunggu sampai pengguna menyetujui muat ulang.
 - `ServiceWorkerRegister` + `InstallPrompt` + `UpdatePrompt`
   (`components/pwa/*`) di root layout — registrasi SW (produksi saja), tombol
   "Pasang aplikasi" (dengan panduan Share-sheet di iOS, yang tidak pernah
