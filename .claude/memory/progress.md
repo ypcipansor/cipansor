@@ -88,9 +88,9 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   invented routes and a wrong job count; the audit is
   `docs/dokumen-aplikasi/evaluasi-dokumen.md`, and the skill now carries machine
   checks (`check_docs.py`, `check_env.py`, a self-verifying `build_docs.py`).
-  The fix commit (`0b6c189`) was made locally but the push was refused with
-  403 (no GitHub access to the repository from that session) — it is not on
-  the remote until someone reconnects the Claude GitHub App and pushes.
+  The fix commits (`0b6c189`, `0f993b3`) are on the branch (the first push
+  attempts were refused with 403 until the Claude GitHub App access was
+  restored).
   Open: T1 verification with screenshots, the other role booklets, and whether
   the `.docx`/`.pdf` stay in git or become a CI artifact (user's call).
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
