@@ -143,10 +143,29 @@ items before 2026-09-25 is in the history of this file and of
    not hold nonprofit licences): Google OUs by **policy** (Staf, Santri SMA,
    Santri SMP restricted, emergency accounts), groups **derived** from
    Cipansor's assignments and relations, never kept by hand; Microsoft groups,
-   if ever needed, written by Cipansor through Graph. #441 carries the
-   Google/Microsoft work but is not mergeable as it stands — it is to be
-   split, when the user says go; re-audit against these decisions requested
-   2026-09-29.
+   if ever needed, written by Cipansor through Graph. **#441 closed
+   2026-09-29** after a third audit, and rebuilt from clean branches as
+   six small PRs, in this order:
+   - **A. Sign in with Google.** `@cipansor.or.id` accounts only (`hd`). A
+     role that requires 2FA still enters its Cipansor code afterwards.
+     Linking notifies the owner, and linked accounts can be unlinked. No
+     Microsoft path. See `decisions/autentikasi-2fa-dan-sandi.md`.
+   - **B. A files table and private Blob storage.** Managed identity,
+     user-delegation SAS, no account key, no public container. Unattached
+     files are deleted after 24 hours. Modules move one at a time. See
+     `decisions/penyimpanan-berkas.md`.
+   - **C. The HR directory and employee documents**, salvaged from #441 on
+     top of B.
+   - **D. Case-insensitive unique email.** The migration is renamed and
+     replayed on a copy of production first.
+   - **E. The upload rate limit and the boot-time secrets check.** Small and
+     independent, so it can go first.
+   - **F. Tokens out of `localStorage`** (issue #523). PR #620 (OpenHands)
+     moves them into server-set HttpOnly cookies, which is the right
+     direction. It was reviewed 2026-09-29 and has three blocking problems,
+     listed in the PR: a page script still reads the tokens through refresh;
+     a page load 15 minutes after the last refresh signs the user out; and
+     every user's page requests share one rate-limit bucket.
 
 ## 2. Before a real launch
 
