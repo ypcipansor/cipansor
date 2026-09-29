@@ -6,10 +6,19 @@ export enum LetterDirection {
   OUTGOING = "OUTGOING",
 }
 
+/**
+ * Derajat kecepatan penyampaian — bukan derajat kerahasiaan.
+ *
+ * ANRI mengenal empat tingkat. Urutannya dari yang paling mendesak:
+ * KILAT (batas 24 jam) → URGENT/Sangat Segera (2 × 24 jam) →
+ * IMMEDIATE/Segera → NORMAL/Biasa. Sebelumnya hanya tiga yang ada, sehingga
+ * "Kilat" tergeser menjadi "Segera".
+ */
 export enum LetterUrgency {
-  NORMAL = "NORMAL",
-  IMMEDIATE = "IMMEDIATE",
+  KILAT = "KILAT",
   URGENT = "URGENT",
+  IMMEDIATE = "IMMEDIATE",
+  NORMAL = "NORMAL",
 }
 
 /**
@@ -521,6 +530,15 @@ export interface PublicLetterVerificationResult {
   signedAt?: string | Date;
   algorithm?: string;
   digest?: string;
+  /**
+   * Sidik jari kunci publik penandatangan, dalam bentuk pasangan heksadesimal
+   * (`AB:CD:…`), seperti sidik jari sertifikat (RFC 5280 §4.2.1.2).
+   *
+   * Pembaca dapat mencatatnya sekali dan membandingkannya pada setiap naskah
+   * berikutnya dari orang yang sama — jawaban atas "apakah ini orang yang saya
+   * kira", bukan sekadar "apakah ini sistem Cipansor".
+   */
+  signerKeyFingerprint?: string | null;
   signer?: {
     name: string;
     position: string;
@@ -538,6 +556,36 @@ export interface PublicLetterVerificationResult {
     authoringTrack?: LetterAuthoringTrack | null;
   };
   reason?: string;
+}
+
+/**
+ * Jawaban layanan status kunci publik (AATL ICA7).
+ *
+ * Berbeda dari `PublicLetterVerificationResult`: yang ini menjawab tentang
+ * sebuah **kunci**, bukan sebuah dokumen. Penerima yang memegang arsip lama
+ * dapat menanyakan sidik jari yang tercetak pada halaman verifikasi tanpa
+ * mengunggah ulang PDF-nya — pertanyaannya "apakah kunci penandatangan masih
+ * berlaku?", bukan "apakah dokumen ini yang ditandatangani".
+ *
+ * `UNKNOWN` adalah jawaban yang sah, bukan galat: sidik jari yang tidak
+ * terdaftar memang mungkin (dokumen dari sistem lain, atau salah ketik).
+ */
+export type PublicKeyStatus = "ACTIVE" | "EXPIRED" | "REVOKED" | "UNKNOWN";
+
+export interface PublicKeyStatusResult {
+  found: boolean;
+  status: PublicKeyStatus;
+  /** Algoritma kunci, bila ditemukan. */
+  algorithm?: string;
+  /**
+   * Sebab pencabutan menurut RFC 5280 §5.3.1. Hanya `KEY_COMPROMISE` yang
+   * membuat surat-surat lama menjadi meragukan; sebab lain berarti surat lama
+   * tetap sah. Karena itu kode ini ikut, bukan sekadar status "DICABUT".
+   */
+  revocationCode?: string | null;
+  revokedReason?: string | null;
+  revokedAt?: string | Date | null;
+  expiresAt?: string | Date | null;
 }
 
 export interface ListParticipantsQuery {

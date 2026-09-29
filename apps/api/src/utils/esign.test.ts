@@ -10,6 +10,7 @@ import {
   digestOf,
   lockoutUntil,
   newVerificationToken,
+  publicKeyFingerprint,
   rewrapKeyMaterial,
   signPayload,
   verifySignature,
@@ -187,5 +188,22 @@ describe('perlindungan tebak passphrase', () => {
     const until = lockoutUntil(MAX_PASSPHRASE_ATTEMPTS, new Date('2026-07-13T00:00:00Z'));
     expect(until).toBeInstanceOf(Date);
     expect(until!.toISOString()).toBe('2026-07-13T00:15:00.000Z');
+  });
+});
+
+describe('sidik jari kunci publik', () => {
+  it('menghasilkan pasangan heksadesimal yang dapat dibandingkan manusia', () => {
+    const { publicKey } = createKeyMaterial(PASS);
+    const fp = publicKeyFingerprint(publicKey);
+    // SHA-256 → 64 heksadesimal → 32 pasangan dipisah titik dua.
+    expect(fp).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+    expect(fp.split(':')).toHaveLength(32);
+  });
+
+  it('stabil untuk kunci yang sama dan berbeda untuk kunci lain', () => {
+    const a = createKeyMaterial(PASS);
+    const b = createKeyMaterial(OTHER);
+    expect(publicKeyFingerprint(a.publicKey)).toBe(publicKeyFingerprint(a.publicKey));
+    expect(publicKeyFingerprint(a.publicKey)).not.toBe(publicKeyFingerprint(b.publicKey));
   });
 });

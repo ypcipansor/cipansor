@@ -98,6 +98,26 @@ describe('esign.routes rate limiting', () => {
   it('POST /verify-pdf is rate limited', () => {
     expect(hasLimiter('post', '/verify-pdf')).toBe(true);
   });
+
+  /**
+   * The public key-status service answers about a key, never about a letter —
+   * so it earns a public route of its own. It must be reachable without a
+   * session (a recipient checking an old archive has none) and must carry the
+   * public rate limiter, since its input is unauthenticated.
+   */
+  it('GET /public/key-status is public and rate limited', () => {
+    expect(hasRoute('get', '/public/key-status')).toBe(true);
+    expect(isPublicRoute('get', '/public/key-status')).toBe(true);
+    expect(hasLimiter('get', '/public/key-status')).toBe(true);
+  });
+
+  /**
+   * The key-status route must not grow into a document-verification route by
+   * another name: it takes a fingerprint, and it must never take a token.
+   */
+  it('key-status does not accept a token parameter', () => {
+    expect(hasRoute('get', '/public/key-status/:token')).toBe(false);
+  });
 });
 
 /**

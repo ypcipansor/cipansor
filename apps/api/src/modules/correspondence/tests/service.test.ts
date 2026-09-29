@@ -2144,4 +2144,77 @@ describe('CorrespondenceService', () => {
       );
     });
   });
+
+  describe('exportAgendaCsv', () => {
+    const actor = { id: 'tu-1', roleCode: 'SMPIT_TATA_USAHA', unitId: 'unit-1' };
+
+    function row(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'l-1',
+        agendaNumber: '001',
+        letterNumber: '001/YYS/2026',
+        direction: 'INCOMING',
+        date: new Date('2026-01-15T00:00:00.000Z'),
+        subject: 'Undangan rapat',
+        senderName: 'Kemenag',
+        recipientName: null,
+        nature: 'PUBLIC',
+        status: 'PENDING_REVIEW',
+        classification: { code: '005', name: 'Undangan' },
+        unit: { name: 'SMP IT Cipansor' },
+        ...overrides,
+      };
+    }
+
+    it('emits a BOM-prefixed CSV with Indonesian labels', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([row()] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      // Excel on Windows needs the BOM or every accented name is mojibake.
+      expect(csv.startsWith('\uFEFF')).toBe(true);
+      expect(csv).toContain('Nomor Agenda');
+      expect(csv).toContain('Undangan rapat');
+      expect(csv).toContain('Masuk');
+      // Human labels, never the raw enum.
+      expect(csv).toContain('Menunggu review');
+      expect(csv).not.toContain('PENDING_REVIEW');
+    });
+
+    it('quotes a field containing a comma or a quote (RFC 4180)', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([
+        row({ subject: 'Rapat "khusus", pagi' }),
+      ] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      expect(csv).toContain('"Rapat ""khusus"", pagi"');
+    });
+
+    it('scopes the export with the same rule as the letter list', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([] as any);
+
+      await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      const where = vi.mocked(prisma.letter.findMany).mock.calls[0][0]?.where as any;
+      // A unit office is scoped to its own unit — and, inside it, is denied the
+      // classified letters that `letterScopeWhere` excludes.
+      expect(JSON.stringify(where)).toContain('unit-1');
+      expect(JSON.stringify(where)).toContain('CONFIDENTIAL');
+    });
+
+    it('passes the date range through', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([] as any);
+
+      await CorrespondenceService.exportAgendaCsv(actor as any, {
+        from: '2026-01-01',
+        to: '2026-12-31',
+      });
+
+      const where = vi.mocked(prisma.letter.findMany).mock.calls[0][0]?.where as any;
+      const json = JSON.stringify(where);
+      expect(json).toContain('2026-01-01');
+      expect(json).toContain('2026-12-31');
+    });
+  });
 });

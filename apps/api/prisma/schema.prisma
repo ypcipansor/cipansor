@@ -7325,10 +7325,21 @@ enum LetterDirection {
   OUTGOING // Surat Keluar
 }
 
+/// Derajat kecepatan penyampaian naskah — bukan derajat kerahasiaan.
+///
+/// ANRI mengenal empat (Peraturan ANRI 5/2021 dan pedoman tata naskah dinas
+/// instansi): **Kilat** (hari yang sama / 24 jam), **Segera** (2 × 24 jam),
+/// **Biasa** (urut jadwal kurir), dan sejumlah instansi menyisipkan satu tingkat
+/// lagi sehingga menjadi Kilat, Sangat Segera, Segera, Biasa. Skema ini dulu
+/// hanya menyimpan tiga, sehingga naskah "Kilat" — yang tenggatnya paling ketat
+/// — terpaksa dicatat sebagai "Segera" dan tenggatnya bergeser satu tingkat.
+/// `KILAT` ditambahkan agar tiap derajat punya wadahnya sendiri; nilai lama
+/// tidak diubah namanya supaya baris yang sudah ada tetap sah.
 enum LetterUrgency {
-  NORMAL // Biasa
+  KILAT // Kilat — batas waktu 24 jam
+  URGENT // Sangat Segera — batas waktu 2 x 24 jam
   IMMEDIATE // Segera
-  URGENT // Amat Segera
+  NORMAL // Biasa
 }
 
 /// Jenis naskah dinas. Menentukan penomoran dan sifat yang boleh dipilih.
@@ -7469,6 +7480,17 @@ model UserSigningKey {
   userId              String    @unique @map("user_id")
   algorithm           String    @default("Ed25519")
   publicKey           String    @map("public_key") @db.Text
+  /// Sidik jari kunci publik — SHA-256 atas SPKI DER, ditulis sebagai pasangan
+  /// heksadesimal (`AB:CD:…`).
+  ///
+  /// Disimpan, bukan dihitung saat dibaca, karena satu hal saja yang
+  /// membutuhkannya dan hanya bisa dilakukan dengan cara itu: **layanan status
+  /// kunci publik** (AATL ICA7) menerima *sidik jari* dari orang yang memegang
+  /// surat, lalu menjawab apakah kunci itu masih berlaku. Mencari berdasarkan
+  /// sidik jari menuntut kolom ini berindeks; menghitungnya di SQL tidak
+  /// mungkin tanpa ekstensi kripto, dan menyisir seluruh baris pada endpoint
+  /// publik adalah jalan yang lebih buruk.
+  fingerprint         String?   @unique @map("fingerprint")
   encryptedPrivateKey String    @map("encrypted_private_key") @db.Text
   kdfSalt             String    @map("kdf_salt")
   /// Parameter scrypt saat kunci dibuat, agar dapat dinaikkan kelak tanpa

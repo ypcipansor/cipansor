@@ -38,6 +38,7 @@ import {
   LetterType,
   LETTER_TYPE_LABELS,
   LETTER_NATURE_LABELS,
+  LETTER_URGENCY_LABELS,
   naturesForType,
   renderTemplateDraft,
   remainingPlaceholders,
@@ -416,15 +417,16 @@ function CreateLetterForm() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value={LetterUrgency.NORMAL}>
-                            Biasa
-                          </SelectItem>
-                          <SelectItem value={LetterUrgency.IMMEDIATE}>
-                            Segera
-                          </SelectItem>
-                          <SelectItem value={LetterUrgency.URGENT}>
-                            Amat Segera
-                          </SelectItem>
+                          {[
+                            LetterUrgency.KILAT,
+                            LetterUrgency.URGENT,
+                            LetterUrgency.IMMEDIATE,
+                            LetterUrgency.NORMAL,
+                          ].map((u) => (
+                            <SelectItem key={u} value={u}>
+                              {LETTER_URGENCY_LABELS[u]}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                       <FormMessage />

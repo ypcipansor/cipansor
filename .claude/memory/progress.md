@@ -80,6 +80,22 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
+- **E-Office / naskah dinas audit, round 2.** The persuratan and TTE surfaces
+  reviewed against ANRI and PAdES practice. Built: a daily/weekly **retention
+  review job** that lists letters past their JRA-derived retention and never
+  destroys them (`db:retention-review`, weekly Monday 05:00 WIB — destruction
+  needs a berita acara, not a script); the **public key-status surface**
+  (AATL ICA7) at `/public/verify-key`, answering a key's state from the
+  fingerprint printed on every verification page; **`LetterUrgency.KILAT`**
+  in its ANRI order; the agenda CSV export moved onto the shared Axios
+  instance (it was a raw relative `fetch` that only worked behind nginx); and
+  the real PDF preview replacing the placeholder (`components/e-office/` no
+  longer carries the stub). Findings and the standards ceiling are in
+  [`docs/EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md) and
+  `decisions/esign-standards-ceiling.md`. Still open: PAdES B-B + RFC 3161
+  (blocked on the Ed25519→RSA/ECDSA change), signing uploaded DOCX/PDF bytes,
+  and a.n./u.b./Plt./Plh.
+
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),

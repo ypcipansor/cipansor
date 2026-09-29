@@ -13,6 +13,7 @@ import {
   dispatchLetterSchema,
   updateLetterCcSchema,
   updateLetterSchema,
+  exportAgendaQuerySchema,
 } from './correspondence.schema';
 
 const router = Router();
@@ -35,6 +36,13 @@ router.get(
 router.post('/letters', validate(createLetterSchema), CorrespondenceController.create);
 router.patch('/letters/:id', validate(updateLetterSchema), CorrespondenceController.update);
 router.get('/letters', CorrespondenceController.findAll);
+// Static before parameterised: `agenda/export` must be matched before
+// `letters/:id` can swallow it (route-shadowing guard).
+router.get(
+  '/agenda/export',
+  validateQuery(exportAgendaQuerySchema),
+  CorrespondenceController.exportAgenda
+);
 router.get('/stats', CorrespondenceController.getStats);
 router.get('/letters/:id', CorrespondenceController.findOne);
 router.get('/letters/:id/pdf', CorrespondenceController.getPdf);

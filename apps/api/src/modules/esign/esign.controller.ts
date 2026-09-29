@@ -231,4 +231,18 @@ export const EsignController = {
     const result = await EsignService.verifyByPdfBuffer(req.file.buffer);
     res.json(ApiResponse.success(result));
   }),
+
+  /**
+   * Layanan status kunci publik (AATL ICA7) — dibaca dari query string.
+   *
+   * Sidik jari sengaja di query, bukan di path: nilainya berisi titik dua, dan
+   * sebuah segmen path yang mengembalikan 400 bagi bentuk tanpa pemisah adalah
+   * permukaan yang mudah salah. Divalidasi `validateQuery` sehingga bentuknya
+   * diperiksa sebelum menyentuh basis data.
+   */
+  keyStatus: asyncHandler(async (_req: Request, res: Response) => {
+    const { fingerprint } = res.locals.validatedQuery as { fingerprint: string };
+    const result = await EsignService.publicKeyStatus(fingerprint);
+    res.json(ApiResponse.success(result));
+  }),
 };

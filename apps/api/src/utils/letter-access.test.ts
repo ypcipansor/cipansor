@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { RoleCode } from '@prisma/client';
+import { RoleCode, LetterNature } from '@prisma/client';
 import { mayEditLetter, LETTER_UNIT_SCOPE_ROLES } from '@cipansor/shared';
 
 vi.mock('@/lib/prisma', () => ({
@@ -28,6 +28,7 @@ function bareLetter(overrides: Record<string, unknown> = {}) {
     id: 'letter-1',
     unitId: SMP,
     createdById: 'tu-smp',
+    nature: LetterNature.PUBLIC,
     reviewers: [],
     recipients: [],
     dispositions: [],
@@ -156,10 +157,22 @@ describe('letterScopeWhere', () => {
     ).toEqual({});
   });
 
-  it('filters tata usaha to their own unit', () => {
-    expect(
-      letterScopeWhere({ id: 'tu', roleCode: RoleCode.SMPIT_TATA_USAHA, unitId: SMP })
-    ).toEqual({ unitId: SMP });
+  it('filters tata usaha to their own unit, but not its classified letters', () => {
+    const where = letterScopeWhere({
+      id: 'tu',
+      roleCode: RoleCode.SMPIT_TATA_USAHA,
+      unitId: SMP,
+    });
+
+    // The unit clause is still there…
+    const and = where.AND as Array<Record<string, unknown>>;
+    expect(and[0]).toEqual({ unitId: SMP });
+    // …but a Rahasia / Sangat Rahasia naskah in that unit only appears when the
+    // office is genuinely inside its chain, so the classification is a real
+    // access boundary and not just a printed marking.
+    const or = (and[1] as { OR: unknown[] }).OR;
+    expect(JSON.stringify(or)).toContain('CONFIDENTIAL');
+    expect(JSON.stringify(or)).toContain('STRICTLY_CONFIDENTIAL');
   });
 
   // The list-shaped version of the same hole: scoping a parent by unitId would
@@ -172,7 +185,95 @@ describe('letterScopeWhere', () => {
     });
 
     expect(where.unitId).toBeUndefined();
-    expect(where.OR).toHaveLength(4);
+    // The chain, plus the CC-carve-out that is denied for classified letters.
+    expect(where.OR).toHaveLength(2);
+    const chain = (where.OR?.[0] as { OR: unknown[] }).OR;
+    expect(chain).toHaveLength(4);
+  });
+
+  it('keeps a classified letter out of a unit office’s scope', () => {
+    const where = letterScopeWhere({
+      id: 'tu',
+      roleCode: RoleCode.SMPIT_TATA_USAHA,
+      unitId: SMP,
+    });
+
+    // The restricted exclusion is a NOT-IN of both classified levels, so the
+    // unit office's ordinary letter book is exactly what remains.
+    expect(JSON.stringify(where)).toContain('"notIn"');
+  });
+});
+
+describe('classified letters restrict access (ANRI SKKAAD)', () => {
+  it('refuses the unit office a Rahasia letter it is not part of', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({ nature: LetterNature.CONFIDENTIAL }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'tu-2', roleCode: RoleCode.SMPIT_TATA_USAHA, unitId: SMP },
+        'letter-1'
+      )
+    ).rejects.toThrow(/tidak memiliki akses/i);
+  });
+
+  it('still admits the author of a Sangat Rahasia letter', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({
+        nature: LetterNature.STRICTLY_CONFIDENTIAL,
+        createdById: 'tu-smp',
+      }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'tu-smp', roleCode: RoleCode.SMPIT_TATA_USAHA, unitId: SMP },
+        'letter-1'
+      )
+    ).resolves.toBeTruthy();
+  });
+
+  it('refuses a tembusan recipient of a Rahasia letter', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({
+        nature: LetterNature.CONFIDENTIAL,
+        recipients: [{ userId: 'cc-1', isCC: true }],
+      }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'cc-1', roleCode: RoleCode.SDIT_GURU, unitId: 'unit-sd' },
+        'letter-1'
+      )
+    ).rejects.toThrow(/tidak memiliki akses/i);
+  });
+
+  it('admits the yayasan pengawas to a classified letter (oversight)', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({ nature: LetterNature.CONFIDENTIAL }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'pengawas', roleCode: RoleCode.YAYASAN_PENGAWAS, unitId: null },
+        'letter-1'
+      )
+    ).resolves.toBeTruthy();
+  });
+
+  it('still allows an ordinary letter to the unit office', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({ nature: LetterNature.LIMITED }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'tu-2', roleCode: RoleCode.SMPIT_TATA_USAHA, unitId: SMP },
+        'letter-1'
+      )
+    ).resolves.toBeTruthy();
   });
 });
 

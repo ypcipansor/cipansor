@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 vi.mock('../correspondence.service', () => ({
   CorrespondenceService: {
     updateLetter: vi.fn(),
+    exportAgendaCsv: vi.fn(),
   },
 }));
 
@@ -86,5 +87,51 @@ describe('CorrespondenceController.update', () => {
     await vi.waitFor(() => {
       expect(next).toHaveBeenCalledWith(serviceError);
     });
+  });
+});
+
+describe('CorrespondenceController.exportAgenda', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const mockRes = () => {
+    const res: any = {};
+    res.locals = {};
+    res.setHeader = vi.fn(() => res);
+    res.send = vi.fn(() => res);
+    return res as Response;
+  };
+
+  it('sends a CSV attachment built from the validated query, not the raw one', async () => {
+    vi.mocked(CorrespondenceService.exportAgendaCsv).mockResolvedValue('BOM,data');
+    // The route runs `validateQuery`, so the controller must read the parsed
+    // value. The raw `req.query` deliberately carries junk to prove it is
+    // ignored — reading it would let an invalid filter reach the service.
+    const req = {
+      user: { id: 'user-1', role: 'UNIT_ADMIN', roleCode: 'UNIT_ADMIN', unitId: 'unit-1' },
+      query: { direction: 'NOT_A_DIRECTION', status: 'NOT_A_STATUS' },
+    } as unknown as Request;
+    const res = mockRes();
+    (res.locals as any).validatedQuery = { direction: 'INCOMING', status: 'SIGNED' };
+    const next = vi.fn() as unknown as NextFunction;
+
+    CorrespondenceController.exportAgenda(req, res, next);
+
+    await vi.waitFor(() => {
+      expect(CorrespondenceService.exportAgendaCsv).toHaveBeenCalledWith(
+        { id: 'user-1', role: 'UNIT_ADMIN', roleCode: 'UNIT_ADMIN', unitId: 'unit-1' },
+        { direction: 'INCOMING', status: 'SIGNED', from: undefined, to: undefined }
+      );
+    });
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Disposition',
+      expect.stringContaining('Buku-Agenda-')
+    );
+    expect(res.send).toHaveBeenCalledWith('BOM,data');
   });
 });

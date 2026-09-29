@@ -418,7 +418,7 @@ deployment looks like:
 | **EE4(c)** private key in FIPS 140-2 L2 hardware | scrypt + AES-GCM in the application database | Out of reach; state it plainly rather than imply otherwise |
 | **ICA5(a)** identity proofing before issuance | Super Admin approves a request in the app | **Cheap and worth doing**: record *how* identity was verified at approval. It is the difference between "an admin clicked approve" and "the Ketua checked the KTP in person on this date" — and that difference is what PP 71/2019 weighs when distinguishing *tersertifikasi* from *tidak tersertifikasi*. |
 | **ICA6(a)** immediate revocation on suspected compromise | key revocation, now with reason codes | Met |
-| **ICA7** published status for enquiring about validity | a database column | A public **key**-status endpoint would meet it — deliberately about the *key*, never the document, so it cannot become the token oracle §1 exists to retire |
+| **ICA7** published status for enquiring about validity | ~~a database column~~ **met** — `GET /esign/public/key-status?fingerprint=…` answers the state of a *key* (active / expired / revoked with its reason code) from the fingerprint printed on every verification page. Deliberately about the *key*, never the document, so it cannot become the token oracle §1 exists to retire |
 
 **Standing conclusion:** the signature here is *tanda tangan elektronik tidak
 tersertifikasi* under PP 71/2019, and every improvement above still leaves it

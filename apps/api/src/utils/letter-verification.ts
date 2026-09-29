@@ -1,10 +1,25 @@
 import { prisma } from '@/lib/prisma';
-import { verifyRevocation, verifySignature } from '@/utils/esign';
+import { publicKeyFingerprint, verifyRevocation, verifySignature } from '@/utils/esign';
 
 export async function verifyLetterByToken(token: string) {
   const signature = await prisma.letterSignature.findUnique({
     where: { verificationToken: token },
-    include: {
+    select: {
+      // Kunci publik dibaca agar sidik jarinya dapat ditampilkan — bukan untuk
+      // mengirim kuncinya sendiri.
+      publicKey: true,
+      signerId: true,
+      signedAt: true,
+      revokedAt: true,
+      revokedReason: true,
+      revokedById: true,
+      revokedByRoleCode: true,
+      revocationSignature: true,
+      revocationPublicKey: true,
+      signature: true,
+      algorithm: true,
+      digest: true,
+      id: true,
       /**
        * Nama dan jabatan saja — NIP tidak diambil, apalagi dikirim.
        *
@@ -148,6 +163,14 @@ export async function verifyLetterByToken(token: string) {
     signedAt: signature.signedAt,
     algorithm: signature.algorithm,
     digest: signature.digest,
+    /**
+     * Sidik jari kunci yang menandatangani naskah ini — bukan kunci hari ini,
+     * melainkan kunci yang tersalin pada rekaman tanda tangannya. Sama seperti
+     * sidik jari sertifikat (RFC 5280 §4.2.1.2): pembaca dapat mencatatnya
+     * sekali dan membandingkannya pada setiap naskah berikutnya dari orang
+     * yang sama.
+     */
+    signerKeyFingerprint: publicKeyFingerprint(signature.publicKey),
     reason,
   };
 }

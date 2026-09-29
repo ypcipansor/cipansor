@@ -231,6 +231,52 @@ export function digestOf(payload: string): string {
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
 }
 
+/**
+ * Sidik jari kunci publik — yang membuat kunci "dapat disebut namanya".
+ *
+ * RFC 5280 §4.2.1.2 mendefinisikan `keyIdentifier` sebagai hash SHA-1 atas
+ * `subjectPublicKey`, dan setiap sertifikat X.509 memperlihatkan sidik jarinya
+ * supaya orang dapat membandingkan kunci secara lisan atau tercetak tanpa
+ * menyalin blok base64 sepanjang beberapa baris. SBOM, kunci SSH, dan kunci
+ * GPG semua melakukan hal yang sama.
+ *
+ * Dipakai di halaman verifikasi publik: pembaca yang memegang surat mencatat
+ * sidik jarinya sekali, lalu setiap dokumen berikutnya yang mengaku
+ * ditandatangani orang itu harus memperlihatkan angka yang sama. Tanpa itu,
+ * halaman verifikasi hanya mengatakan "ini tanda tangan Cipansor" — dan
+ * pertanyaan yang sebenarnya diajukan pembaca adalah "apakah ini *orang* yang
+ * saya kira".
+ *
+ * Formatnya pasangan heksadesimal berhuruf besar dipisah titik dua, seperti
+ * sidik jari sertifikat. Hash-nya SHA-256 (bukan SHA-1 yang kini dianggap
+ * lemah), tetapi bentuk tampilannya tetap yang dikenali orang.
+ */
+export function publicKeyFingerprint(publicKey: string): string {
+  const der = Buffer.from(publicKey, 'base64');
+  const digest = crypto.createHash('sha256').update(der).digest('hex');
+  return (digest.toUpperCase().match(/.{2}/g) ?? []).join(':');
+}
+
+/**
+ * Terima sidik jari dari pengguna dalam bentuk apa pun yang wajar, keluarkan
+ * bentuk kanonik yang tersimpan.
+ *
+ * Orang mengetik ulang sidik jari dari kertas, dari layar, atau menempelkannya
+ * dari halaman verifikasi — dengan atau tanpa titik dua, huruf besar atau
+ * kecil, kadang dengan spasi. Semua itu sidik jari yang sama, dan menolaknya
+ * karena bentuk bukan hanya memindahkan pekerjaan format ke pembaca. Bentuk
+ * kanoniknya tetap pasangan heksadesimal berhuruf besar dengan pemisah titik
+ * dua, agar sama dengan `publicKeyFingerprint`.
+ *
+ * Masukan yang bukan heksadesimal (setelah pemisah dibuang) ditolak sebagai
+ * "tidak dikenal" oleh pemanggil, bukan dilempar: layanan ini publik, dan
+ * masukan asal-asalan adalah hal yang wajar datang ke sana.
+ */
+export function normaliseFingerprint(input: string): string {
+  const hex = input.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  return (hex.match(/.{2}/g) ?? []).join(':');
+}
+
 export interface SignResult {
   signature: string; // base64
   digest: string; // hex

@@ -213,3 +213,30 @@ export const updateLetterSchema = z.object({
 });
 
 export type UpdateLetterSchemaInput = z.infer<typeof updateLetterSchema>;
+
+/**
+ * Penyaring ekspor buku agenda.
+ *
+ * Buku agenda adalah daftar, jadi masukannya pun daftar: arah, rentang tanggal,
+ * status. Batas atas rentangnya ditegakkan di sini agar sebuah permintaan tidak
+ * dapat meminta seluruh riwayat sekaligus — buku agenda dibaca per tahun buku,
+ * bukan per sedekade.
+ */
+export const exportAgendaQuerySchema = z.object({
+  direction: z.nativeEnum(LetterDirection).optional(),
+  status: z.nativeEnum(LetterStatus).optional(),
+  from: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal awal tidak sah",
+    }),
+  to: z
+    .string()
+    .optional()
+    .refine((v) => !v || !Number.isNaN(Date.parse(v)), {
+      message: "Tanggal akhir tidak sah",
+    }),
+});
+
+export type ExportAgendaQueryInput = z.infer<typeof exportAgendaQuerySchema>;

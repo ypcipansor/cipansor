@@ -29,6 +29,8 @@ import {
   createKeyMaterial,
   lockoutUntil,
   newVerificationToken,
+  normaliseFingerprint,
+  publicKeyFingerprint,
   rewrapKeyMaterial,
   signPayload,
   signPdfHash,
@@ -777,6 +779,7 @@ export const EsignService = {
         userId,
         algorithm: material.algorithm,
         publicKey: material.publicKey,
+        fingerprint: publicKeyFingerprint(material.publicKey),
         encryptedPrivateKey: material.encryptedPrivateKey,
         kdfSalt: material.kdfSalt,
         kdfParams: material.kdfParams as unknown as Prisma.InputJsonValue,
@@ -1762,6 +1765,88 @@ export const EsignService = {
     // 4. Ikatan dokumen sudah terbukti; baru sekarang aturan kerahasiaan dan
     //    status surat dijalankan lewat inti yang sama.
     return EsignService.verifyByToken(signature.verificationToken);
+  },
+
+  /**
+   * Layanan status kunci publik (AATL ICA7).
+   *
+   * Menjawab pertanyaan yang tidak dapat dijawab oleh halaman verifikasi
+   * dokumen: **"apakah kunci yang menandatangani surat ini masih berlaku?"**
+   * Penerima yang memegang PDF menganggur — misalnya arsip lama — dapat
+   * menanyakan sidik jari kunci yang tercetak di halaman verifikasi, tanpa
+   * mengunggah ulang dokumennya.
+   *
+   * **Yang dijawab adalah kunci, bukan surat.** Masukannya sidik jari
+   * (pengenal publik yang sudah tampil di halaman verifikasi), dan keluarannya
+   * hanya keadaan kunci itu: aktif, kedaluwarsa, dicabut beserta sebabnya,
+   * atau tidak dikenal. Tidak ada nomor surat, tidak ada perihal, tidak ada
+   * nama penandatangan. Itulah yang membedakannya dari endpoint berbasis token
+   * yang pernah dihapus: sebuah token dapat disisir untuk menemukan surat,
+   * sedangkan sidik jari adalah turunan dari kunci publik yang memang sudah
+   * dibagikan.
+   *
+   * Karena masukannya 32 byte acak, oracle "kunci ini terdaftar atau tidak"
+   * tidak dapat disisir; yang membocorkan sesuatu hanyalah sidik jari yang
+   * sudah diketahui pemanggil.
+   */
+  async publicKeyStatus(fingerprintInput: string, now = new Date()) {
+    const fingerprint = normaliseFingerprint(fingerprintInput);
+
+    const key = await prisma.userSigningKey.findUnique({
+      where: { fingerprint },
+      select: {
+        algorithm: true,
+        approvedAt: true,
+        expiresAt: true,
+        revokedAt: true,
+        revokedReason: true,
+        revocationCode: true,
+      },
+    });
+
+    if (!key) {
+      return { found: false as const, status: 'UNKNOWN' as const };
+    }
+
+    const state = effectiveState(
+      {
+        revokedAt: key.revokedAt,
+        approvedAt: key.approvedAt,
+        expiresAt: key.expiresAt,
+      },
+      now
+    );
+
+    /**
+     * Terjemahkan keadaan internal ke kode status publik.
+     *
+     * `PENDING_APPROVAL` sengaja menjadi `ACTIVE`: kunci yang belum disetujui
+     * belum dapat menandatangani apa pun, sehingga tidak akan pernah muncul di
+     * surat — membeberkan bahwa ada pengajuan yang tertunda hanya membocorkan
+     * urusan internal.
+     */
+    const status =
+      state === SigningKeyState.REVOKED
+        ? ('REVOKED' as const)
+        : state === SigningKeyState.EXPIRED
+          ? ('EXPIRED' as const)
+          : ('ACTIVE' as const);
+
+    return {
+      found: true as const,
+      status,
+      algorithm: key.algorithm,
+      /**
+       * Sebab pencabutan publik (RFC 5280 §5.3.1). Hanya `KEY_COMPROMISE`
+       * yang membuat surat-surat lama menjadi meragukan; sebab lain berarti
+       * surat lama tetap sah. Karena itu kode ini wajib ikut — tanpa itu,
+       * "DICABUT" menyamakan pemegang yang berhenti dengan kunci yang bocor.
+       */
+      revocationCode: key.revokedAt ? key.revocationCode : null,
+      revokedReason: key.revokedAt ? key.revokedReason : null,
+      revokedAt: key.revokedAt,
+      expiresAt: key.expiresAt,
+    };
   },
 };
 

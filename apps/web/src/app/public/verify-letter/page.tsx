@@ -517,6 +517,28 @@ function PublicVerifyContent() {
                         </span>
                       </div>
                     )}
+                    {result.signerKeyFingerprint && (
+                      <div className="sm:col-span-2">
+                        <span className="text-xs text-slate-500 block">
+                          Sidik Jari Kunci Penandatangan
+                        </span>
+                        <span className="font-mono text-xs text-slate-600 break-all block">
+                          {result.signerKeyFingerprint}
+                        </span>
+                        <span className="text-xs text-slate-500 mt-1 block">
+                          Catat sekali, lalu bandingkan pada setiap naskah
+                          berikutnya dari penandatangan yang sama — seperti
+                          memeriksa sidik jari sebuah sertifikat.{" "}
+                          <a
+                            href="/public/verify-key"
+                            className="font-semibold text-blue-700 underline"
+                          >
+                            Periksa status kuncinya
+                          </a>
+                          .
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

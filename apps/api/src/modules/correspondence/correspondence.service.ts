@@ -13,6 +13,8 @@ import {
   DispatchLetterSchemaInput,
   LetterCcInput,
   LETTER_DISPATCH_CHANNEL_LABELS,
+  LETTER_NATURE_LABELS,
+  LETTER_STATUS_LABELS,
   LetterDirection,
   LetterStatus,
   UpdateLetterInput,
@@ -927,6 +929,79 @@ export const CorrespondenceService = {
         totalPages: Math.ceil(total / limit),
       },
     };
+  },
+
+  /**
+   * Buku agenda sebagai CSV — bentuk yang dapat dicetak dan diserahkan.
+   *
+   * Sebelum ini tidak ada satu pun jalan keluar dari daftar surat: sebuah buku
+   * agenda yang hanya ada di layar tidak dapat ditandatangani, diarsipkan, atau
+   * diserahkan kepada pemeriksa. Ia memakai penyaring akses yang sama persis
+   * dengan daftar — `letterScopeWhere` — sehingga ekspor tidak menjadi pintu
+   * belakang untuk membaca apa yang daftarnya sembunyikan.
+   *
+   * Naskah berklasifikasi tetap ikut bila aktornya memang berhak, dan kolom
+   * sifatnya tercetak apa adanya supaya pembaca berkas tahu tingkatannya.
+   */
+  async exportAgendaCsv(
+    actor: LetterActor,
+    filters: {
+      direction?: LetterDirection;
+      status?: LetterStatus;
+      from?: string;
+      to?: string;
+    }
+  ): Promise<string> {
+    const and: Prisma.LetterWhereInput[] = [letterScopeWhere(actor)];
+
+    const date: Prisma.DateTimeFilter = {};
+    if (filters.from) date.gte = new Date(filters.from);
+    if (filters.to) date.lte = new Date(filters.to);
+    if (filters.from || filters.to) and.push({ date });
+
+    const letters = await prisma.letter.findMany({
+      where: {
+        direction: filters.direction as any,
+        status: filters.status as any,
+        AND: and,
+      },
+      orderBy: { date: 'asc' },
+      include: {
+        classification: { select: { code: true, name: true } },
+        unit: { select: { name: true } },
+      },
+    });
+
+    const rows = letters.map((letter) => [
+      letter.agendaNumber ?? '',
+      letter.letterNumber ?? '',
+      letter.direction === LetterDirection.INCOMING ? 'Masuk' : 'Keluar',
+      letter.date instanceof Date ? letter.date.toISOString().slice(0, 10) : String(letter.date),
+      letter.subject,
+      letter.senderName ?? letter.recipientName ?? '',
+      letter.classification?.code ?? '',
+      letter.classification?.name ?? '',
+      LETTER_NATURE_LABELS[letter.nature as keyof typeof LETTER_NATURE_LABELS] ?? letter.nature,
+      LETTER_STATUS_LABELS[letter.status as keyof typeof LETTER_STATUS_LABELS] ?? letter.status,
+      letter.unit?.name ?? '',
+    ]);
+
+    return toCsv(
+      [
+        'Nomor Agenda',
+        'Nomor Surat',
+        'Arah',
+        'Tanggal',
+        'Perihal',
+        'Pengirim/Penerima',
+        'Kode Klasifikasi',
+        'Klasifikasi',
+        'Sifat',
+        'Status',
+        'Unit',
+      ],
+      rows
+    );
   },
 
   /**
@@ -2178,7 +2253,8 @@ export const CorrespondenceService = {
         prisma.letter.count({
           where: {
             unitId,
-            urgency: { in: ['IMMEDIATE', 'URGENT'] },
+            // Kilat is a tighter deadline than Segera, so it belongs here too.
+            urgency: { in: ['KILAT', 'IMMEDIATE', 'URGENT'] },
             status: { notIn: ['ARCHIVED', 'DISPOSED'] },
           },
         }),
@@ -2248,3 +2324,28 @@ export const CorrespondenceService = {
    * Public verification for signed letters via token and optional uploaded PDF buffer
    */
 };
+
+/**
+ * Satu nilai CSV, dikutip bila perlu.
+ *
+ * Kutip ganda di dalam nilai digandakan, sesuai RFC 4180 — tanpa itu sebuah
+ * perihal yang mengandung tanda kutip menghasilkan kolom yang bergeser dan
+ * berkasnya rusak di pembaca mana pun.
+ */
+function csvCell(value: string): string {
+  const needsQuotes = /[",\r\n]/.test(value);
+  const escaped = value.replace(/"/g, '""');
+  return needsQuotes ? `"${escaped}"` : escaped;
+}
+
+/**
+ * CSV dengan BOM UTF-8.
+ *
+ * BOM bukan hiasan: tanpa itu Excel di Windows membaca berkas sebagai
+ * Latin-1, dan setiap huruf beraksen pada nama orang tampil sebagai mojibake.
+ * Buku agenda yang rusak saat dibuka bukan buku agenda.
+ */
+function toCsv(headers: string[], rows: string[][]): string {
+  const lines = [headers, ...rows].map((row) => row.map(csvCell).join(','));
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
+}

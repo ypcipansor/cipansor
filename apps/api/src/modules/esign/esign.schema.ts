@@ -9,6 +9,18 @@ import {
 
 const passphrase = z.string().min(MIN_PASSPHRASE_LENGTH);
 
+/**
+ * Sidik jari kunci untuk layanan status publik.
+ *
+ * Diterima dalam bentuk apa pun yang wajar (huruf besar/kecil, dengan atau
+ * tanpa titik dua) dan dinormalkan di layanan. Panjangnya dibatasi agar
+ * masukan asal-asalan tidak masuk ke pencarian basis data; batas atas yang
+ * longgar cukup, karena bentuk kanonik satu kunci selalu 95 karakter.
+ */
+export const keyStatusQuerySchema = z.object({
+  fingerprint: z.string().min(1).max(200),
+});
+
 export const requestKeySchema = z.object({
   reason: z.string().max(1000).optional(),
 });
