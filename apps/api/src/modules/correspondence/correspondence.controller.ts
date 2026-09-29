@@ -245,4 +245,34 @@ export const CorrespondenceController = {
     );
     res.json(ApiResponse.success(result));
   }),
+
+  /**
+   * Daftar naskah yang masa retensinya sudah lewat.
+   *
+   * Hanya jabatan yang mengurus surat yang boleh membukanya. Daftar ini memuat
+   * perihal dan klasifikasi, dan bagi naskah Rahasia itu berarti ia hanya boleh
+   * sampai ke orang yang ada di dalam rantai suratnya — bukan ke setiap akun
+   * yang kebetulan punya `unitId`.
+   */
+  reviewRetention: asyncHandler(async (req: Request, res: Response) => {
+    const actor = actorOf(req);
+    if (!choosesUnit(actor) && !handlesUnitCorrespondence(actor)) {
+      throw Errors.forbidden('Anda tidak memiliki akses ke peninjauan retensi arsip');
+    }
+    const result = await CorrespondenceService.reviewRetention(actor);
+    res.json(ApiResponse.success(result));
+  }),
+
+  exportRetention: asyncHandler(async (req: Request, res: Response) => {
+    const actor = actorOf(req);
+    if (!choosesUnit(actor) && !handlesUnitCorrespondence(actor)) {
+      throw Errors.forbidden('Anda tidak memiliki akses ke peninjauan retensi arsip');
+    }
+    const csv = await CorrespondenceService.exportRetentionCsv(actor);
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="Peninjauan-Retensi-${stamp}.csv"`);
+    res.send(csv);
+  }),
 };

@@ -10,6 +10,18 @@ import {
 } from '@/utils/esign';
 import crypto from 'crypto';
 import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
+import { stampRevoked } from '@/utils/generate-letter-pdf';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
+
+/** PDF kecil yang sah, cukup untuk dapat dicap ulang. */
+async function tinyPdf(): Promise<Buffer> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.TimesRoman);
+  doc.addPage().drawText('Naskah dinas', { x: 40, y: 700, size: 12, font });
+  doc.setCreationDate(new Date(0));
+  doc.setModificationDate(new Date(0));
+  return Buffer.from(await doc.save());
+}
 
 const { emitMock, compareMock } = vi.hoisted(() => ({
   emitMock: vi.fn(),
@@ -995,6 +1007,68 @@ describe('verifikasi publik', () => {
 
     expect(r.found).toBe(true);
     expect(r.valid).toBe(true);
+  });
+
+  /**
+   * Salinan bercap DICABUT harus dijawab "dicabut", bukan "tidak terdaftar".
+   *
+   * Cap pencabutan mengubah byte, jadi hash berkas yang diunggah tidak sama
+   * dengan `pdfHash` yang ditandatangani. Sebelum ada pengenalan salinan bercap,
+   * berkas resmi keluaran sistem sendiri dijawab sebagai dokumen palsu — persis
+   * jawaban yang paling tidak boleh muncul bagi naskah yang justru perlu
+   * dijelaskan statusnya.
+   */
+  it('mengenali salinan bercap DICABUT dan menjawabnya sebagai dicabut', async () => {
+    const archived = await tinyPdf();
+    const revokedAt = new Date('2026-09-02T07:30:00.000Z');
+    const reason = 'Nomor surat ganda dengan 433/Sket/Y-CPS/IX/2026.';
+    const stamped = await stampRevoked(archived, {
+      reason,
+      revokedAt,
+      revokedByName: 'H. Endang Suryana',
+    });
+
+    const { fixture } = signedFixture('PUBLIC');
+    const revokedFixture = {
+      ...fixture,
+      verificationToken: 'tok-revoked',
+      revokedAt,
+      revokedReason: reason,
+      revokedById: 'pengawas',
+      revokedByRoleCode: 'PENGAWAS',
+      revocationSignature: null,
+      revocationPublicKey: null,
+      revokedBy: { name: 'H. Endang Suryana' },
+    };
+
+    vi.mocked(prisma.letterSignature.findUnique).mockImplementation(((args: any) => {
+      // Tidak ada yang cocok lewat pdfHash: cap sudah mengubah byte-nya.
+      if (args?.where?.pdfHash) return Promise.resolve(null as any);
+      if (args?.where?.verificationToken === 'tok-revoked') {
+        return Promise.resolve(revokedFixture as any);
+      }
+      return Promise.resolve(null as any);
+    }) as unknown as typeof prisma.letterSignature.findUnique);
+
+    vi.mocked(prisma.letterSignature.findMany).mockResolvedValue([
+      {
+        verificationToken: 'tok-revoked',
+        revokedAt,
+        revokedReason: reason,
+        revokedBy: { name: 'H. Endang Suryana' },
+        document: {
+          bytes: new Uint8Array(archived),
+          sha256: crypto.createHash('sha256').update(archived).digest('hex'),
+        },
+      },
+    ] as never);
+
+    const r: any = await EsignService.verifyByPdfBuffer(stamped);
+
+    expect(r.found).toBe(true);
+    expect(r.isRevoked).toBe(true);
+    expect(r.valid).toBe(false);
+    expect(r.reason).toMatch(/dicabut/i);
   });
 
   it.each(['PUBLIC', 'LIMITED', 'CONFIDENTIAL', 'STRICTLY_CONFIDENTIAL'])(

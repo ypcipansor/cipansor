@@ -1,5 +1,20 @@
 import { describe, it, expect, vi } from 'vitest';
-import { reviewLetterRetention, LETTER_RETENTION_AUDIT_ACTION } from './letter-retention.job';
+import {
+  reviewLetterRetention,
+  reviewLetterRetentionForActor,
+  LETTER_RETENTION_AUDIT_ACTION,
+} from './letter-retention.job';
+
+/**
+ * Cakupan akses diambil dari modul aslinya, tetapi ditiru di sini supaya uji
+ * ini dapat membuktikan bahwa ia benar-benar **diterapkan** — bukan sekadar
+ * dipanggil. Sentinelnya membedakan "dipakai" dari "kebetulan cocok".
+ */
+vi.mock('@/utils/letter-access', () => ({
+  letterScopeWhere: vi.fn(() => ({ __scope: 'ACTOR_SCOPE' })),
+}));
+
+import { letterScopeWhere } from '@/utils/letter-access';
 
 /**
  * Prisma tiruan yang cukup untuk pekerjaan ini.
@@ -160,5 +175,53 @@ describe('reviewLetterRetention', () => {
     expect(where.status.in).toEqual(
       expect.arrayContaining(['SIGNED', 'SENT', 'ARCHIVED', 'DISPOSED'])
     );
+  });
+});
+
+describe('reviewLetterRetentionForActor', () => {
+  const actor = {
+    id: 'user-tu',
+    role: 'UNIT_ADMIN',
+    roleCode: 'SDIT_TATA_USAHA',
+    unitId: 'unit-sdit',
+  };
+
+  it('applies the caller scope to the query, so one unit cannot read another', async () => {
+    const { prisma } = fakePrisma([letter()]);
+
+    await reviewLetterRetentionForActor(prisma, actor, { now: new Date('2026-01-01') });
+
+    // The scope must be part of the same AND the retention filter is in, not
+    // merely called and discarded — otherwise the list would be global.
+    const where = (prisma.letter.findMany as any).mock.calls[0][0].where;
+    expect(letterScopeWhere).toHaveBeenCalledWith(actor);
+    expect(where.AND).toEqual(expect.arrayContaining([{ __scope: 'ACTOR_SCOPE' }]));
+  });
+
+  it('returns the same due list as the scheduler, but never records an audit row', async () => {
+    const { prisma, auditCreate } = fakePrisma([letter()]);
+
+    const summary = await reviewLetterRetentionForActor(prisma, actor, {
+      now: new Date('2026-01-01'),
+    });
+
+    expect(summary.due).toHaveLength(1);
+    expect(summary.dryRun).toBe(true);
+    // The web surface is a *read*; only the scheduler's run is an event worth
+    // auditing, and a page refresh is not.
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('counts a classified letter with no retention value as a JRA gap', async () => {
+    const { prisma } = fakePrisma([
+      letter({ classification: { code: '005', name: 'Undangan', retention: null } }),
+    ]);
+
+    const summary = await reviewLetterRetentionForActor(prisma, actor, {
+      now: new Date('2026-01-01'),
+    });
+
+    expect(summary.due).toHaveLength(0);
+    expect(summary.missingRetention).toBe(1);
   });
 });

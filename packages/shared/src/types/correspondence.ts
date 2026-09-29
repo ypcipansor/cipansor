@@ -619,3 +619,42 @@ export interface CorrespondenceParticipant {
 
 export type CreateDispositionResponse =
   LetterDispositionDetail | LetterDispositionDetail[];
+
+/**
+ * Satu naskah yang masa retensinya sudah lewat, menurut klasifikasinya.
+ *
+ * Yang dikembalikan adalah **usul**, bukan keputusan: JRA adalah instrumen yang
+ * disahkan, dan memusnahkan arsip menuntut penilaian serta berita acara
+ * (Peraturan ANRI 5/2021 Pasal 6). Karena itu tidak ada endpoint yang menghapus
+ * naskah; yang ada hanya daftar ini dan ekspornya.
+ */
+export interface RetentionDueLetter {
+  id: string;
+  letterNumber: string | null;
+  agendaNumber: string | null;
+  subject: string;
+  unitId: string;
+  nature: string;
+  classificationCode: string | null;
+  classificationName: string | null;
+  /** Tahun retensi dari klasifikasinya. */
+  retentionYears: number;
+  /** Tanggal surat, dasar perhitungan. */
+  letterDate: string | Date;
+  /** Kapan retensinya berakhir: tanggal surat + tahun retensi. */
+  dueAt: string | Date;
+}
+
+/**
+ * Hasil peninjauan retensi.
+ *
+ * `missingRetention` sengaja ikut: surat terarsip yang klasifikasinya belum
+ * punya nilai retensi adalah **kekosongan JRA**, bukan surat yang boleh
+ * dimusnahkan — dan kekosongan itu hanya kelihatan bila dihitung.
+ */
+export interface LetterRetentionSummary {
+  dryRun: boolean;
+  due: RetentionDueLetter[];
+  consideredCount: number;
+  missingRetention: number;
+}

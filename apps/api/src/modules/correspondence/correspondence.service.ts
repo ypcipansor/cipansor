@@ -30,6 +30,10 @@ import {
 } from '@/utils/letter-access';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 import {
+  reviewLetterRetentionForActor,
+  type LetterRetentionSummary,
+} from '@/jobs/letter-retention.job';
+import {
   assertMayArchive,
   assertMayDispatch,
   assertMayResubmit,
@@ -1057,6 +1061,62 @@ export const CorrespondenceService = {
         'Klasifikasi',
         'Sifat',
         'Status',
+        'Unit',
+      ],
+      rows
+    );
+  },
+
+  /**
+   * Peninjauan retensi untuk petugas kearsipan — daftar usul, bukan tindakan.
+   *
+   * Sampai sekarang hasil peninjauan hanya sampai ke `logger` penjadwal dan
+   * perintah CLI; seorang petugas arsip tidak punya layar untuk melihatnya, dan
+   * laporan yang tak terbaca tidak mengubah kepatuhan apa pun. Rute ini
+   * memberikan permukaannya, tanpa menambah kemampuan menghapus: memusnahkan
+   * arsip menuntut penilaian dan berita acara (Peraturan ANRI 5/2021 Pasal 6),
+   * jadi yang disediakan hanyalah daftar dan ekspornya.
+   *
+   * Cakupannya dijaga `reviewLetterRetentionForActor`; rutenya menjaga bahwa
+   * hanya jabatan yang memang mengurus surat — Tata Usaha, kepala sekolah, dan
+   * pengurus yayasan — yang dapat membukanya.
+   */
+  async reviewRetention(actor: LetterActor): Promise<LetterRetentionSummary> {
+    return reviewLetterRetentionForActor(prisma, actor);
+  },
+
+  /**
+   * Ekspor CSV daftar retensi — kolom yang sama dengan buku agenda, ditambah
+   * klasifikasi dan masa retensi, supaya petugas dapat menyerahkan usulnya
+   * dalam bentuk yang dapat dibuka di Excel.
+   */
+  async exportRetentionCsv(actor: LetterActor): Promise<string> {
+    const summary = await reviewLetterRetentionForActor(prisma, actor);
+
+    const rows = summary.due.map((letter) => [
+      letter.agendaNumber ?? '',
+      letter.letterNumber ?? '',
+      toDateOnly(letter.letterDate),
+      letter.subject,
+      letter.classificationCode ?? '',
+      letter.classificationName ?? '',
+      `${letter.retentionYears} tahun`,
+      toDateOnly(letter.dueAt),
+      letter.nature,
+      letter.unitId,
+    ]);
+
+    return toCsv(
+      [
+        'Nomor Agenda',
+        'Nomor Surat',
+        'Tanggal Surat',
+        'Perihal',
+        'Kode Klasifikasi',
+        'Klasifikasi',
+        'Masa Retensi',
+        'Retensi Berakhir',
+        'Sifat',
         'Unit',
       ],
       rows
@@ -2424,6 +2484,12 @@ function startOfNextDay(date: Date): Date {
   const d = startOfDay(date);
   d.setUTCDate(d.getUTCDate() + 1);
   return d;
+}
+
+/** Tanggal saja (`YYYY-MM-DD`) untuk sel CSV — jam tidak bermakna di arsip. */
+function toDateOnly(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toISOString().slice(0, 10);
 }
 
 /**

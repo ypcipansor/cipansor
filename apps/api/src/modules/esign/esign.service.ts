@@ -51,6 +51,7 @@ import {
   LETTER_PDF_RELATIONS,
 } from '@/utils/generate-letter-pdf';
 import { verifyLetterByToken } from '@/utils/letter-verification';
+import { matchRevokedCopy } from '@/utils/letter-revoked-copy';
 import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
 import { assertLetterAccess, type LetterActor } from '@/utils/letter-access';
 import {
@@ -1877,6 +1878,23 @@ export const EsignService = {
     });
 
     if (!signature || !signature.pdfHash || !signature.pdfSignature) {
+      /**
+       * Berkas bercap DICABUT tidak dicari lewat `pdfHash`.
+       *
+       * Salinan yang diunduh setelah pencabutan membawa cap "DICABUT"
+       * (`stampRevoked`), dan cap itu **mengubah byte-nya** — jadi hashnya tidak
+       * akan pernah sama dengan `pdfHash` yang ditandatangani. Tanpa cabang ini,
+       * berkas bercap resmi dari sistem sendiri dijawab "tidak terdaftar atau
+       * telah diubah": naskah yang justru paling perlu dijelaskan statusnya
+       * dituduh palsu. Persis kelas jawaban keliru yang dihindari di tempat lain.
+       *
+       * Pengenalan dilakukan dengan **membuat ulang capnya** dari byte arsip dan
+       * membandingkan hash — bukan dengan mempercayai teks "DICABUT" di dalam
+       * berkas, sebab teks itu dapat ditempel siapa saja ke PDF karangan.
+       */
+      const revoked = await matchRevokedCopy(pdfBuffer, uploadedHash);
+      if (revoked) return EsignService.verifyByToken(revoked.verificationToken);
+
       return {
         found: false as const,
         isValid: false,

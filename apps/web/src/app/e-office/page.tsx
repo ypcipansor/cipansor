@@ -34,6 +34,7 @@ import {
   Inbox,
   SendHorizontal,
   FolderOpen,
+  ArchiveX,
   PenTool,
   Users,
   Calendar,
@@ -387,6 +388,21 @@ export default function EOfficeMainPage() {
             <span className="font-medium">Arsip Surat</span>
             <span className="text-xs text-muted-foreground text-center">
               Akses arsip surat lama
+            </span>
+          </CardContent>
+        </Card>
+
+        <Card
+          className="cursor-pointer hover:bg-primary/5 transition-colors border-2 border-dashed"
+          onClick={() => router.push("/e-office/retention")}
+        >
+          <CardContent className="flex flex-col items-center justify-center p-6 gap-2">
+            <div className="p-3 bg-amber-100 rounded-full">
+              <ArchiveX className="h-6 w-6 text-amber-600" />
+            </div>
+            <span className="font-medium">Retensi Arsip</span>
+            <span className="text-xs text-muted-foreground text-center">
+              Naskah yang masa retensinya sudah lewat
             </span>
           </CardContent>
         </Card>

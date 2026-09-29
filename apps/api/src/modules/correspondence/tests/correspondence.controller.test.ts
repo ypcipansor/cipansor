@@ -5,6 +5,8 @@ vi.mock('../correspondence.service', () => ({
   CorrespondenceService: {
     updateLetter: vi.fn(),
     exportAgendaCsv: vi.fn(),
+    reviewRetention: vi.fn(),
+    exportRetentionCsv: vi.fn(),
   },
 }));
 
@@ -133,5 +135,123 @@ describe('CorrespondenceController.exportAgenda', () => {
       expect.stringContaining('Buku-Agenda-')
     );
     expect(res.send).toHaveBeenCalledWith('BOM,data');
+  });
+});
+
+describe('CorrespondenceController.reviewRetention', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('answers with the retention summary for a unit correspondent', async () => {
+    const summary = { dryRun: true, due: [], consideredCount: 3, missingRetention: 0 };
+    (CorrespondenceService.reviewRetention as any).mockResolvedValue(summary);
+    vi.spyOn(ApiResponse, 'success').mockImplementation((data) => ({
+      success: true,
+      message: 'OK',
+      data,
+    }));
+
+    // A real Tata Usaha role code: the legacy 'UNIT_ADMIN' string is not in
+    // LETTER_UNIT_SCOPE_ROLES, so it would be refused.
+    const req = mockRequest({
+      user: {
+        id: 'user-tu',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SDIT_TATA_USAHA',
+        unitId: 'unit-sdit',
+      } as any,
+    });
+    const res = mockResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    CorrespondenceController.reviewRetention(req, res, next);
+    await vi.waitFor(() => expect(res.json).toHaveBeenCalled());
+
+    expect(CorrespondenceService.reviewRetention).toHaveBeenCalledWith({
+      id: 'user-tu',
+      role: 'UNIT_ADMIN',
+      roleCode: 'SDIT_TATA_USAHA',
+      unitId: 'unit-sdit',
+    });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: summary })
+    );
+  });
+
+  it('forbids an account that neither handles correspondence nor chooses a unit', async () => {
+    // A santri account: it carries a unitId but no letter duty.
+    const req = mockRequest({
+      user: {
+        id: 'user-santri',
+        role: 'STUDENT',
+        roleCode: 'SMPIT_SISWA',
+        unitId: 'unit-smp-1',
+      } as any,
+    });
+    const res = mockResponse();
+    const next = vi.fn() as unknown as NextFunction;
+
+    CorrespondenceController.reviewRetention(req, res, next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    expect(CorrespondenceService.reviewRetention).not.toHaveBeenCalled();
+    expect((next.mock.calls[0][0] as any).statusCode).toBe(403);
+  });
+});
+
+describe('CorrespondenceController.exportRetention', () => {
+  beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.restoreAllMocks());
+
+  const mockStreamRes = () => {
+    const res: any = {};
+    res.locals = {};
+    res.setHeader = vi.fn(() => res);
+    res.send = vi.fn(() => res);
+    return res as Response;
+  };
+
+  it('streams a CSV with the retention filename', async () => {
+    (CorrespondenceService.exportRetentionCsv as any).mockResolvedValue('BOM,retensi');
+
+    const req = mockRequest({
+      user: {
+        id: 'user-tu',
+        role: 'UNIT_ADMIN',
+        roleCode: 'SDIT_TATA_USAHA',
+        unitId: 'unit-sdit',
+      } as any,
+    });
+    const res = mockStreamRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    CorrespondenceController.exportRetention(req, res, next);
+    await vi.waitFor(() => expect(res.send).toHaveBeenCalled());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv; charset=utf-8');
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Disposition',
+      expect.stringContaining('Peninjauan-Retensi-')
+    );
+    expect(res.send).toHaveBeenCalledWith('BOM,retensi');
+  });
+
+  it('refuses a caller without letter duty before touching the service', async () => {
+    const req = mockRequest({
+      user: {
+        id: 'user-santri',
+        role: 'STUDENT',
+        roleCode: 'SMPIT_SISWA',
+        unitId: 'unit-smp-1',
+      } as any,
+    });
+    const res = mockStreamRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    CorrespondenceController.exportRetention(req, res, next);
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+
+    expect(CorrespondenceService.exportRetentionCsv).not.toHaveBeenCalled();
+    expect((next.mock.calls[0][0] as any).statusCode).toBe(403);
   });
 });

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { AppPrismaClient } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
+import { letterScopeWhere, type LetterActor } from '@/utils/letter-access';
 
 /**
  * Menghitung naskah dinas yang masa retensinya habis.
@@ -37,7 +38,15 @@ import { logger } from '@/lib/logger';
  */
 const RETENTION_STATUSES = ['SIGNED', 'SENT', 'ARCHIVED', 'DISPOSED'] as const;
 
-/** Satu naskah yang masa retensinya sudah lewat. */
+/**
+ * Satu naskah yang masa retensinya sudah lewat.
+ *
+ * Di sini tanggalnya masih `Date`; `@cipansor/shared` memakai `string | Date`
+ * untuk bentuk di kabel, dan `Date` dapat diberikan kepadanya tanpa pemetaan.
+ * Tipe lokal dipertahankan supaya pemakainya di sisi server — skrip CLI dan
+ * penjadwal — tetap mendapat `Date` yang utuh, bukan gabungan yang harus
+ * dipersempit sebelum `toISOString()` dipanggil.
+ */
 export interface RetentionDueLetter {
   id: string;
   letterNumber: string | null;
@@ -148,6 +157,74 @@ export async function reviewLetterRetention(
 
   if (!dryRun) await recordRun(prisma, summary);
   return summary;
+}
+
+/**
+ * Peninjauan retensi untuk seorang aktor — daftar yang **dibatasi cakupan
+ * aksesnya**, sama seperti daftar surat dan buku agenda.
+ *
+ * Mengapa tidak memanggil `reviewLetterRetention` apa adanya: pekerjaan itu
+ * menyapu seluruh basis data untuk keperluan penjadwal, dan memberikannya utuh
+ * kepada halaman web berarti seorang Tata Usaha satu sekolah membaca nomor,
+ * perihal, dan klasifikasi surat Rahasia unit lain. Cakupannya karena itu
+ * diterapkan lebih dulu (`letterScopeWhere`), lalu penyaringan retensi berjalan
+ * di atas himpunan yang sudah boleh dilihat itu.
+ *
+ * Sebab perihal naskah Rahasia hanya boleh sampai ke orang yang memang ada di
+ * dalam rantai suratnya; itulah yang dimaksud SKKAAD dengan akses yang makin
+ * ketat seiring naiknya klasifikasi (Perka ANRI 7/2016 Pasal 5).
+ */
+export async function reviewLetterRetentionForActor(
+  prisma: AppPrismaClient | PrismaClient,
+  actor: LetterActor,
+  { now = new Date() }: { now?: Date } = {}
+): Promise<LetterRetentionSummary> {
+  const scope = letterScopeWhere(actor);
+
+  const letters = await prisma.letter.findMany({
+    where: {
+      AND: [scope, { classificationId: { not: null }, status: { in: [...RETENTION_STATUSES] } }],
+    },
+    select: {
+      id: true,
+      letterNumber: true,
+      agendaNumber: true,
+      subject: true,
+      unitId: true,
+      nature: true,
+      date: true,
+      classification: { select: { code: true, name: true, retention: true } },
+    },
+    orderBy: { date: 'asc' },
+  });
+
+  const due: RetentionDueLetter[] = [];
+  let missingRetention = 0;
+
+  for (const letter of letters) {
+    const years = letter.classification?.retention ?? null;
+    if (years === null || years === undefined) {
+      missingRetention += 1;
+      continue;
+    }
+    const dueAt = addYears(letter.date, years);
+    if (dueAt.getTime() > now.getTime()) continue;
+    due.push({
+      id: letter.id,
+      letterNumber: letter.letterNumber,
+      agendaNumber: letter.agendaNumber,
+      subject: letter.subject,
+      unitId: letter.unitId,
+      nature: letter.nature,
+      classificationCode: letter.classification?.code ?? null,
+      classificationName: letter.classification?.name ?? null,
+      retentionYears: years,
+      letterDate: letter.date,
+      dueAt,
+    });
+  }
+
+  return { dryRun: true, due, consideredCount: letters.length, missingRetention };
 }
 
 /**

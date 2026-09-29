@@ -61,8 +61,18 @@ the subject for non-`PUBLIC` letters, nothing on screen contradicted the forged
 text.
 
 So: `/verifikasi/[token]` was removed on purpose, `/public/verify-letter` takes
-an uploaded PDF plus a captcha, and the QR now carries the **raw token string**
-rather than a URL — scanning it opens nothing, by design.
+an uploaded PDF plus a captcha, and the QR carries the **verification page
+address with no token in the link** — a tokenised link could only answer *"some
+letter with this token was signed"*, the oracle this section removes. Scanning
+it opens the upload form, which is the one place the document in your hand can
+be checked.
+
+> **Corrected 2026-09-29.** This paragraph said the QR "now carries the **raw
+> token string** … scanning it opens nothing, by design". That was the state
+> before #446, not after: the generator builds the QR from
+> `letterVerificationUrl()` (`generate-letter-pdf.ts`), and #446's own note
+> below records the change. The stale sentence contradicted the shipped code and
+> the entry three sections down.
 
 The upload path is implemented well: a dedicated public rate limiter
 (`PUBLIC_VERIFY_RATE_LIMIT_MAX`, default 30 per 15 min), multer in memory only
@@ -336,6 +346,22 @@ and the public verification page reports the revocation and its reason.
 | Reason ≥ 10 characters, trimmed before storing | It is **public text** — shown as written to anyone who uploads the PDF. Zod's `min()` passes ten spaces, so the length is re-checked after trimming in `utils/esign-revocation.ts`, and both dialogs warn the writer before they type. |
 | A revoked letter can no longer be printed | The generator drops the signature block once revoked, so a fresh download is a *different* file with a hash the database has never seen — and the public page would answer it with the sentence a forgery gets. Copies already in circulation still verify and still report the revocation, because they carry the bytes that were hashed. |
 | Neither key nor signature can be revoked twice | The second revocation would overwrite the first date and reason — and the first is the one that answers "since when". |
+
+**Correction, 2026-09-29 — the row above was half wrong.** "Copies already in
+circulation still verify" held; *downloads made after revocation* did not. The
+download path stamps the archived copy with `stampRevoked`, so its bytes differ
+from the signed `pdfHash`, and `verifyByPdfBuffer` — which looks the upload up
+by that hash — answered the system's own stamped copy with the forgery
+sentence. The sentence the row describes is exactly what it got. Closed by
+`utils/letter-revoked-copy.ts`: when the hash matches no signature, the stamped
+copy is **recomputed** from the archived bytes (`stampRevoked` is deterministic
+— the archive, reason, date and revoker name are all fixed once recorded) and
+matched against the upload; a hit routes through `verifyByToken`, so the page
+reports *"dicabut"*, not *"tidak terdaftar"*. Nothing in the uploaded file is
+trusted: a hand-stamped "DICABUT" recomputes to a different hash and still gets
+the forgery sentence. A no-archive revoked letter (archived before
+`db:archive-letters`) is still not recognised here — the archived path is what
+makes the match exact.
 
 Schema, additive only: `UserSigningKey.revokedById` (accountability parity with
 `LetterSignature`, which already had it) and `LetterFlowAction.SIGNATURE_REVOKED`.

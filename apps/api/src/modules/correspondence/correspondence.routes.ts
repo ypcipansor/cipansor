@@ -43,6 +43,10 @@ router.get(
   validateQuery(exportAgendaQuerySchema),
   CorrespondenceController.exportAgenda
 );
+// Peninjauan retensi: daftar usul dan ekspornya. Static juga, dengan alasan
+// yang sama seperti `agenda/export`.
+router.get('/retention', CorrespondenceController.reviewRetention);
+router.get('/retention/export', CorrespondenceController.exportRetention);
 router.get('/stats', CorrespondenceController.getStats);
 router.get('/letters/:id', CorrespondenceController.findOne);
 router.get('/letters/:id/pdf', CorrespondenceController.getPdf);

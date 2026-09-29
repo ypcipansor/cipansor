@@ -13,6 +13,7 @@ import {
   PublicKeyStatusResult,
   CorrespondenceParticipant,
   ListParticipantsQueryInput,
+  LetterRetentionSummary,
 } from "@cipansor/shared";
 
 export function useCorrespondenceParticipants(
@@ -48,6 +49,33 @@ export async function fetchAgendaCsv(params: {
 }): Promise<Blob> {
   const response = await api.get<Blob>("/correspondence/agenda/export", {
     params,
+    responseType: "blob",
+  });
+  return response.data;
+}
+
+/**
+ * Daftar naskah yang masa retensinya sudah lewat.
+ *
+ * Membaca rute yang sama dengan yang dipakai petugas arsip; daftarnya sudah
+ * dibatasi cakupan akses peladen, jadi halaman tidak perlu menyaring lagi.
+ */
+export function useLetterRetention() {
+  return useQuery({
+    queryKey: ["letterRetention"],
+    queryFn: async () => {
+      const response = await api.get<{
+        success: boolean;
+        data: LetterRetentionSummary;
+      }>("/correspondence/retention");
+      return response.data.data;
+    },
+  });
+}
+
+/** Ekspor CSV daftar retensi — permintaan unduhan, seperti buku agenda. */
+export async function fetchRetentionCsv(): Promise<Blob> {
+  const response = await api.get<Blob>("/correspondence/retention/export", {
     responseType: "blob",
   });
   return response.data;
