@@ -1,0 +1,14 @@
+%% caption: Penempatan — dari kode sampai produksi
+flowchart LR
+  Dev["Pengembang<br/>git push"] --> GH["GitHub<br/>CI: uji, keamanan, e2e"]
+  GH -->|"deploy otomatis"| Stg["Staging<br/>data contoh"]
+  GH -->|"deploy dengan persetujuan"| Prod["Produksi"]
+  subgraph Prod["Produksi (Azure App Service)"]
+    W["Web<br/>Next.js standalone"]
+    A["API<br/>Express + cron"]
+    N["nginx<br/>main container"]
+    D[("PostgreSQL<br/>terkelola, jaringan privat")]
+  end
+  N --> W
+  N --> A
+  A --> D

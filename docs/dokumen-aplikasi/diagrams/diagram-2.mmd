@@ -1,0 +1,20 @@
+%% caption: Kontainer — bagian-bagian yang berjalan sendiri
+flowchart TB
+  Browser["Peramban pengguna"]
+  subgraph Yayasan["Cipansor"]
+    Web["Web<br/>Next.js 16 + React 19"]
+    API["API<br/>Express 5"]
+    Jobs["Penjadwal<br/>node-cron, dalam proses API"]
+    Shared["packages/shared<br/>tipe dan validasi bersama"]
+    DB[("PostgreSQL<br/>via Prisma 7")]
+    Redis[("Redis<br/>cache, opsional")]
+    Files["Berkas unggahan<br/>di penyimpanan aplikasi"]
+  end
+  Browser --> Web
+  Web -->|"/api"| API
+  API --> DB
+  API -.-> Redis
+  API --> Files
+  API --- Jobs
+  Web -.-> Shared
+  API -.-> Shared

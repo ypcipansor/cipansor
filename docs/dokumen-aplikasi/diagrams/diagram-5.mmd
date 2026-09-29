@@ -1,0 +1,14 @@
+%% caption: Urutan satu permintaan terautentikasi melewati middleware
+sequenceDiagram
+  participant W as Web (hook React Query)
+  participant A as Express
+  participant S as service
+  participant DB as Prisma
+  W->>A: permintaan dengan cookie sesi dan header x-csrf-token
+  A->>A: helmet, cors, csrf, rate limit, normalisasi paginasi
+  A->>A: authenticate, authorize, validate (Zod)
+  A->>S: panggil service
+  S->>DB: kueri dengan include atau select eksplisit
+  DB-->>S: baris
+  S-->>A: data
+  A-->>W: amplop { success, data, meta }

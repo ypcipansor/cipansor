@@ -1,0 +1,14 @@
+%% caption: Urutan pengesahan dokumen tingkat yayasan
+sequenceDiagram
+  participant P as Ketua Pengurus
+  participant A as API
+  participant PW as Pengawas
+  participant PB as Pembina
+  P->>A: POST /perencanaan/:id/review/submit
+  A-->>P: tahap berpindah ke reviu Pengawas
+  PW->>A: POST /perencanaan/:id/review/result
+  A-->>P: hasil reviu kembali ke Pengurus
+  P->>A: POST /perencanaan/:id/review/propose
+  A-->>PB: dokumen menunggu penetapan
+  PB->>A: POST /perencanaan/:id/review/decide
+  A-->>P: dokumen disahkan dan dibekukan
