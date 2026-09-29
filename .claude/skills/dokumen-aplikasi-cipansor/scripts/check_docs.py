@@ -551,6 +551,103 @@ def check_pengguna(text: str, lines: list[str], repo: Path, facts: dict, r: Repo
                     r.add("WARN", a, "satu-tindakan", f"lebih dari satu tindakan dalam satu langkah: '{s.strip()[:70]}…'")
 
 
+
+# --------------------------------------------------------------------------- gambar dan alur proses
+
+IMG_RE = re.compile(r"^!\[([^\]]*)\]\(([^)\s]+)\)(\{[^}]*\})?\s*$")
+
+
+def png_dims(path: Path) -> tuple[int, int] | None:
+    try:
+        head = path.read_bytes()[:24]
+        if head[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+    except OSError:
+        return None
+
+
+def check_images(text: str, lines: list[str], md_dir: Path, kind: str, r: Report) -> None:
+    """Gambar: ada, beralt, berketerangan, ringan, berasal dari tangkapan yang lolos. Kartu T1 bergambar.
+    Bagian `<!-- alur: … -->` (storyboard): tiap tahap punya gambar, siapa, yang terjadi, giliran berikutnya."""
+    manifest: dict[str, dict] = {}
+    mp = md_dir / "screens" / "manifest.json"
+    if mp.is_file():
+        manifest = {e["path"]: e for e in json.loads(mp.read_text(encoding="utf-8"))}
+    fence = False
+    imgs_by_line: dict[int, str] = {}
+    for n, l in enumerate(lines, 1):
+        if l.lstrip().startswith("```"):
+            fence = not fence
+        if fence:
+            continue
+        m = IMG_RE.match(l.strip())
+        if not m:
+            continue
+        alt, rel = m.group(1), m.group(2)
+        imgs_by_line[n] = rel
+        f = md_dir / rel
+        if not f.is_file():
+            r.add("ERROR", n, "gambar-tak-ada", f"{rel} tidak ada (jalur relatif terhadap naskah). Tangkap dulu, lalu "
+                  "`screens_manifest.py select`")
+            continue
+        if len(alt.strip()) < 12:
+            r.add("ERROR", n, "gambar-tanpa-alt", "teks alternatif kosong/terlalu pendek — tulis 'Gambar N. apa yang tampak'")
+        nxt = next((x for x in lines[n:n + 3] if x.strip()), "")
+        if not re.match(r"^\*Gambar \d+", nxt.strip()):
+            r.add("ERROR", n, "gambar-tanpa-keterangan",
+                  "baris berikutnya harus keterangan miring '*Gambar N. …*' (alt tidak dicetak di .docx)")
+        kb = f.stat().st_size // 1024
+        if kb > 1024:
+            r.add("ERROR", n, "gambar-terlalu-besar", f"{rel}: {kb} KB — jalankan screens_manifest.py select (mengecilkan)")
+        elif kb > 400:
+            r.add("WARN", n, "gambar-berat", f"{rel}: {kb} KB")
+        d = png_dims(f)
+        if d and d[0] > 1600:
+            r.add("WARN", n, "gambar-lebar", f"{rel}: lebar {d[0]} px (maksimum wajar 1280)")
+        if rel.startswith("screens/") and manifest and rel not in manifest:
+            r.add("ERROR", n, "gambar-bukan-hasil-capture",
+                  f"{rel} tidak ada di screens/manifest.json — gambar harus berasal dari tangkapan yang lolos (select)")
+        if rel.startswith("screens/") and not manifest:
+            r.add("ERROR", n, "manifes-tak-ada", "screens/manifest.json tidak ada — jalankan screens_manifest.py select")
+
+    if kind != "pengguna":
+        return
+    secs = section_ranges(lines)
+    # Kartu tugas T1 (tanpa ⚠) wajib bergambar; kartu ⚠ yang sudah bergambar hasil tangkapan patut dinaikkan ke T1
+    for title, a, b in secs:
+        body_lines = range(a, b + 1)
+        body = "\n".join(lines[a - 1:b])
+        if "**Langkah.**" in body:
+            has_warn = "⚠" in body
+            n_imgs = sum(1 for i in body_lines if i in imgs_by_line)
+            if not has_warn and n_imgs == 0:
+                r.add("ERROR", a, "kartu-t1-tanpa-gambar",
+                      f"kartu '{title}' tanpa ⚠ (T1) harus memuat tangkapan layar hasil aplikasi berjalan")
+            if has_warn and n_imgs:
+                r.add("WARN", a, "kartu-bergambar-masih-t2",
+                      f"kartu '{title}' bergambar hasil tangkapan tetapi masih ⚠ — cabut ⚠ bila langkahnya sudah dijalankan (T1)")
+            if n_imgs > 4:
+                r.add("WARN", a, "kartu-terlalu-banyak-gambar",
+                      f"kartu '{title}': {n_imgs} gambar — satu per layar penentu; pecah kartunya")
+    # Storyboard proses bisnis
+    for i, l in enumerate(lines, 1):
+        m = re.match(r"^<!--\s*alur:\s*([\w-]+)\s*-->", l)
+        if not m:
+            continue
+        end = next((j for j in range(i, len(lines)) if re.match(r"^#{1,2}\s", lines[j])), len(lines))
+        block = "\n".join(lines[i:end])
+        stages = re.split(r"(?m)^###\s+", block)[1:]
+        if len(stages) < 2:
+            r.add("ERROR", i, "alur-tahap-kurang", f"alur '{m.group(1)}' hanya {len(stages)} tahap (### Tahap N — …); minimal 2")
+        for k, st in enumerate(stages, 1):
+            head = st.split("\n", 1)[0]
+            for lab in ("Siapa", "Yang terjadi", "Giliran berikutnya"):
+                if f"**{lab}" not in st:
+                    r.add("ERROR", i, "alur-tahap-tak-lengkap", f"alur '{m.group(1)}', tahap {k} ('{head[:40]}'): tidak ada **{lab}.**")
+            if not re.search(r"(?m)^!\[", st):
+                r.add("ERROR", i, "alur-tahap-tanpa-gambar", f"alur '{m.group(1)}', tahap {k} ('{head[:40]}'): tanpa tangkapan layar")
+
 # --------------------------------------------------------------------------- utama
 
 def main() -> int:
@@ -594,6 +691,7 @@ def main() -> int:
                 elif hashlib.sha256(f.read_bytes()).hexdigest() != h:
                     r.add("ERROR", 0, "biner-berubah", f"{fn} berbeda dari yang dicatat build.json (disunting tangan?)")
     check_common(text, lines, r, a.final)
+    check_images(text, lines, src.parent, a.kind, r)
     if a.kind == "teknis":
         check_teknis(text, lines, repo, facts, r)
     else:

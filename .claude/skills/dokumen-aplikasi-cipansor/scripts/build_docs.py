@@ -660,7 +660,8 @@ def main() -> int:
             if r.stderr.strip():
                 print("    pandoc:", r.stderr.strip()[:600])
         postprocess(target, a)
-        problems = verify_docx(target, md, ok)
+        n_shots = len(re.findall(r"(?m)^!\[[^\]]*\]\([^)\s]+\)", re.sub(r"```.*?```", "", md, flags=re.S)))
+        problems = verify_docx(target, md, ok + n_shots)
         if problems:
             print("GAGAL: .docx tidak sesuai sumber SEBELUM daftar isi diisi:\n  - " + "\n  - ".join(problems),
                   file=sys.stderr)
@@ -679,7 +680,7 @@ def main() -> int:
                     done = True
                     break
             if done:
-                after = verify_docx(target, md, ok)
+                after = verify_docx(target, md, ok + n_shots)
                 if after:
                     shutil.copyfile(backup, target)
                     set_update_fields(target)
