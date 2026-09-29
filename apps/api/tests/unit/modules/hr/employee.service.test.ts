@@ -166,4 +166,24 @@ describe('HR Employee Service', () => {
     // Act & Assert
     await expect(createEmployee(input)).rejects.toThrow('Email already exists');
   });
+
+  it('gives an employee created without a password a random one, never a fixed default', async () => {
+    const bcrypt = (await import('bcryptjs')).default as unknown as {
+      hash: ReturnType<typeof vi.fn>;
+    };
+    db.user.findUnique.mockResolvedValue(null);
+    db.user.create.mockResolvedValue({ id: 'user-2' });
+    db.teacher.create.mockResolvedValue({ id: 'teacher-2', userId: 'user-2' });
+
+    await createEmployee({
+      name: 'Siti Aminah',
+      email: 'siti@example.com',
+      unitId: 'unit-1',
+      role: 'TEACHER' as const,
+    } as never);
+
+    const hashed = bcrypt.hash.mock.calls[0][0] as string;
+    expect(hashed).not.toBe('password123');
+    expect(hashed.length).toBeGreaterThanOrEqual(24);
+  });
 });

@@ -29,7 +29,13 @@ export const createStudentSchema = z.object({
     .email("Format email tidak valid")
     .optional()
     .or(z.literal("")),
-  password: z.string().min(8, "Password minimal 8 karakter").optional(), // Optional because it might be auto-generated or set later
+  // Optional: without one a random password is issued. Bounds only — the API
+  // applies the password policy (15 characters for a new account, the blocklist).
+  password: z
+    .string()
+    .min(8, "Kata sandi minimal 8 karakter")
+    .max(256, "Kata sandi terlalu panjang")
+    .optional(),
   unitId: z.string().uuid("Unit wajib dipilih"),
   nis: z.string().min(4, "NIS minimal 4 karakter"),
   /** 10 digit angka atau kosong (lihat student-compliance.ts). */

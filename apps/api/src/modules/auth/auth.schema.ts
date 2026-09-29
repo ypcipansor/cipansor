@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PASSWORD_MIN_LENGTH_WITH_2FA } from '@cipansor/shared';
 import { RoleCode } from '@prisma/client';
 
 // Login schema
@@ -6,6 +7,17 @@ export const loginSchema = z.object({
   email: z.string().email('Invalid email format'),
   password: z.string().min(1, 'Password is required'),
 });
+
+/**
+ * A password being set. The edge checks only its bounds; the rules that need
+ * the account (8 or 15 characters by its 2FA, the blocklist, its own name and
+ * email) run in the service — `assertPasswordAllowed`, lib/password-policy.ts.
+ * No composition rules: NIST SP 800-63B-4 forbids them (decided 2026-09-28).
+ */
+export const newPasswordInput = z
+  .string()
+  .min(PASSWORD_MIN_LENGTH_WITH_2FA, `Kata sandi minimal ${PASSWORD_MIN_LENGTH_WITH_2FA} karakter`)
+  .max(256, 'Kata sandi terlalu panjang');
 
 // Register schema (admin creates user)
 // Accepts `roleCode` (new) OR `role` (legacy) for backward compatibility with
@@ -22,12 +34,7 @@ export const registerSchema = z
   .object({
     name: z.string().min(2, 'Name must be at least 2 characters'),
     email: z.string().email('Invalid email format'),
-    password: z
-      .string()
-      .min(8, 'Password must be at least 8 characters')
-      .regex(/[A-Z]/, 'Password must contain uppercase letter')
-      .regex(/[a-z]/, 'Password must contain lowercase letter')
-      .regex(/[0-9]/, 'Password must contain number'),
+    password: newPasswordInput,
     roleCode: z.nativeEnum(RoleCode, { message: 'Invalid role code' }).optional(),
     // DEPRECATED: Legacy `role` field. Use `roleCode` instead.
     // Accepted for backward compatibility with pre-migration API clients.
@@ -66,12 +73,7 @@ export const disableTwoFactorSchema = twoFactorCodeSchema.extend({
 // Change password schema
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
-  newPassword: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain uppercase letter')
-    .regex(/[a-z]/, 'Password must contain lowercase letter')
-    .regex(/[0-9]/, 'Password must contain number'),
+  newPassword: newPasswordInput,
 });
 
 // Send a reset link — an ADMIN action, not a self-service one.
@@ -87,18 +89,12 @@ export const sendPasswordResetSchema = z.object({
 
 // Reset password — redeem the token from the e-mail.
 //
-// The password rules match `registerSchema`: an account reached through a
-// reset link must not end up weaker than one created through the admin form.
+// The password rules are the same everywhere (`newPasswordInput` above).
 export const resetPasswordSchema = z.object({
   token: z.string().min(32, 'Reset token is required'),
   // Named `newPassword` to match `changePasswordSchema` and the web client,
   // which has been posting this shape to a route that did not exist yet.
-  newPassword: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain uppercase letter')
-    .regex(/[a-z]/, 'Password must contain lowercase letter')
-    .regex(/[0-9]/, 'Password must contain number'),
+  newPassword: newPasswordInput,
 });
 
 // Types

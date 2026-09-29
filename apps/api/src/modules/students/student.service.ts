@@ -4,6 +4,7 @@ import { studentsHoldLogins } from '@/utils/student-login-policy';
 import { linkGuardian, type GuardianClient } from '@/utils/link-guardian';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
+import { assertPasswordAllowed } from '@/lib/password-policy';
 import { Errors } from '@/middleware/error';
 import { assertStudentIdentifiersAvailable } from './student-identifiers';
 import { assignStudentNis, findStudentIdByNisInUnit } from '@/utils/student-nis';
@@ -433,8 +434,16 @@ export class StudentService {
     const withLogin = studentsHoldLogins(unit.type);
 
     // Students are issued a password to reset later rather than choosing one.
+    // One given here follows the policy (a new account: 15 characters).
+    if (withLogin && input.password) {
+      assertPasswordAllowed(input.password, {
+        twoFactorEnabled: false,
+        email,
+        name: input.name,
+      });
+    }
     const passwordHash = withLogin
-      ? await hashPassword(input.password ?? `Aa1${randomUUID().replace(/-/g, '').slice(0, 12)}`)
+      ? await hashPassword(input.password ?? randomUUID().replace(/-/g, ''))
       : null;
 
     // Create user and student in transaction

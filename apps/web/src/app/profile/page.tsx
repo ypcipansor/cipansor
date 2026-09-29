@@ -50,6 +50,13 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
 import { useUpdateUser } from "@/hooks/use-users";
 import { useChangePassword } from "@/hooks/use-dashboard";
+import { useTwoFactorStatus } from "@/hooks/use-two-factor-status";
+import { getErrorMessage } from "@/lib/api-error";
+import {
+  PASSWORD_HINT,
+  PASSWORD_MIN_LENGTH_WITH_2FA,
+  passwordLengthProblem,
+} from "@cipansor/shared";
 import { TwoFactorSettings } from "@/components/profile/TwoFactorSettings";
 
 // Validation schemas
@@ -61,7 +68,12 @@ const profileSchema = z.object({
 const passwordSchema = z
   .object({
     currentPassword: z.string().min(1, "Password lama harus diisi"),
-    newPassword: z.string().min(8, "Password baru minimal 8 karakter"),
+    // The floor only; the length that applies (8 with 2FA, 15 without) is
+    // checked on submit against this account's 2FA, and the API decides the
+    // rest (the blocklist, the account's own name).
+    newPassword: z
+      .string()
+      .min(PASSWORD_MIN_LENGTH_WITH_2FA, "Password baru minimal 8 karakter"),
     confirmPassword: z.string().min(1, "Konfirmasi password harus diisi"),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -106,6 +118,7 @@ function ProfilePageContent() {
 
   const updateUser = useUpdateUser();
   const changePassword = useChangePassword();
+  const { data: twoFactor } = useTwoFactorStatus(user?.id);
 
   // Profile form
   const profileForm = useForm<ProfileFormData>({
@@ -148,6 +161,13 @@ function ProfilePageContent() {
 
   // Handle password change
   const handlePasswordChange = async (data: PasswordFormData) => {
+    const tooShort = passwordLengthProblem(data.newPassword, {
+      twoFactorEnabled: !!twoFactor?.isEnabled,
+    });
+    if (tooShort) {
+      passwordForm.setError("newPassword", { message: tooShort });
+      return;
+    }
     try {
       await changePassword.mutateAsync({
         currentPassword: data.currentPassword,
@@ -156,8 +176,13 @@ function ProfilePageContent() {
       toast.success("Password berhasil diubah");
       passwordForm.reset();
     } catch (error) {
-      toast.error("Gagal mengubah password. Pastikan password lama benar.");
-      console.error(error);
+      // The API says why — a wrong current password, or a new one that is too
+      // common or made of the holder's name. Show it on the field it is about.
+      const message = getErrorMessage(error);
+      passwordForm.setError(
+        /saat ini salah/i.test(message) ? "currentPassword" : "newPassword",
+        { message },
+      );
     }
   };
 
@@ -384,7 +409,7 @@ function ProfilePageContent() {
                             placeholder="Masukkan password baru"
                           />
                         </FormControl>
-                        <FormDescription>Minimal 8 karakter</FormDescription>
+                        <FormDescription>{PASSWORD_HINT}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

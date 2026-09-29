@@ -17,7 +17,9 @@ import {
   CreateEmployeeInput,
   UpdateEmployeeInput,
 } from './hr.schema';
-import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
+import { hashPassword } from '../../lib/password';
+import { assertPasswordAllowed } from '../../lib/password-policy';
 import { Errors } from '../../middleware/error';
 
 // =====================================
@@ -238,9 +240,17 @@ export async function createEmployee(data: CreateEmployeeInput) {
     throw Errors.badRequest('Email already exists');
   }
 
-  // Hash password (default to 'password123' if not provided)
-  const password = data.password || 'password123';
-  const passwordHash = await bcrypt.hash(password, 10);
+  // No default password: a known one (it used to be 'password123') opens every
+  // account created without one. A password given here follows the policy; with
+  // none, a random one is set and the person gets a reset link from an admin.
+  if (data.password) {
+    assertPasswordAllowed(data.password, {
+      twoFactorEnabled: false,
+      email: data.email,
+      name: data.name,
+    });
+  }
+  const passwordHash = await hashPassword(data.password || randomBytes(24).toString('base64url'));
 
   return prisma.$transaction(async (tx) => {
     // 1. Create User

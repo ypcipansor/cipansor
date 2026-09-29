@@ -10,6 +10,10 @@ import { AxiosError } from "axios";
  * Global error handler for API errors
  */
 function handleQueryError(error: unknown) {
+  // A request that opted out of the error toast (it shows the reason itself,
+  // e.g. on a form field) opts out here too; the axios interceptor honours the
+  // same flag. Without this the flag silenced one toast and left the other.
+  if (error instanceof AxiosError && error.config?.skipErrorToast) return;
   if (error instanceof AxiosError) {
     const status = error.response?.status;
     const message = error.response?.data?.message || error.message;

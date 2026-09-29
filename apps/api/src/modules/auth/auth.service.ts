@@ -12,6 +12,7 @@ import {
   invitesSecondFactor,
 } from '@/middleware/auth';
 import { config } from '@/config';
+import { assertPasswordAllowed } from '@/lib/password-policy';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import type { TwoFactorStatus } from '@cipansor/shared';
 import { RoleCode, UnitType } from '@prisma/client';
@@ -374,7 +375,12 @@ export class AuthService {
       throw Errors.badRequest('Unit is required for this role');
     }
 
-    // Hash password
+    // A new account has no 2FA yet, so the single-factor length applies.
+    assertPasswordAllowed(input.password, {
+      twoFactorEnabled: false,
+      email: input.email,
+      name: input.name,
+    });
     const passwordHash = await hashPassword(input.password);
 
     // Create user + role assignment in a transaction.
@@ -639,9 +645,14 @@ export class AuthService {
     const isValid = await comparePassword(input.currentPassword, user.passwordHash);
 
     if (!isValid) {
-      throw Errors.badRequest('Current password is incorrect');
+      throw Errors.badRequest('Kata sandi saat ini salah');
     }
 
+    assertPasswordAllowed(input.newPassword, {
+      twoFactorEnabled: user.isTwoFactorEnabled,
+      email: user.email,
+      name: user.name,
+    });
     const newHash = await hashPassword(input.newPassword);
 
     await prisma.user.update({
@@ -736,13 +747,18 @@ export class AuthService {
         deletedAt: null,
         isActive: true,
       },
-      select: { id: true },
+      select: { id: true, email: true, name: true, isTwoFactorEnabled: true },
     });
 
     if (!user) {
       throw Errors.badRequest('Link reset tidak valid atau sudah kedaluwarsa');
     }
 
+    assertPasswordAllowed(newPassword, {
+      twoFactorEnabled: user.isTwoFactorEnabled,
+      email: user.email,
+      name: user.name,
+    });
     const passwordHash = await hashPassword(newPassword);
 
     await prisma.user.update({
