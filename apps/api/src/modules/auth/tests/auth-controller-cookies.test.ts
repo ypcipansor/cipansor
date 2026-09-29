@@ -215,16 +215,19 @@ describe('auth controller: cookies, not body tokens', () => {
     );
   });
 
-  it('clears every session cookie when there is no refresh token at all', async () => {
-    const { res, cleared } = mockRes();
+  it('leaves the cookies alone when there is no refresh token at all', async () => {
+    // Nothing to end. Clearing here raced a sign-in in the same browser: the
+    // answer to a stray refresh from the login page landed after the sign-in
+    // had set the cookies, and wiped them.
+    const { res, cookies, cleared } = mockRes();
     const next = vi.fn();
     await refreshToken(mockReq({ cookies: { [PRINCIPAL_COOKIE]: '{}' } }), res, next);
 
-    // asyncHandler does not return its promise; wait for the error to land.
     await vi.waitFor(() => expect(next).toHaveBeenCalled());
     expect(next.mock.calls[0][0].statusCode).toBe(401);
     expect(authServiceMock.refreshToken).not.toHaveBeenCalled();
-    expect(cleared).toEqual(expect.arrayContaining([PRINCIPAL_COOKIE]));
+    expect(cookies).toEqual([]);
+    expect(cleared).toEqual([]);
   });
 
   it('revokes the cookie refresh token on logout and clears every cookie', async () => {

@@ -105,7 +105,8 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   const fromBody = (req.body as RefreshTokenInput | undefined)?.refreshToken;
   const token = refreshTokenFromCookie(req) || fromBody;
   if (!token) {
-    clearAuthCookies(res);
+    // Nothing to end, and nothing cleared: a sign-in in the same browser may
+    // be setting the cookies while this answer is on its way.
     throw Errors.unauthorized('Token penyegaran sesi wajib diisi.');
   }
 

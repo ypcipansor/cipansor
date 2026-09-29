@@ -61,14 +61,16 @@ function refreshFails(status: number) {
   });
 }
 
-describe("a 401 whose refresh fails", () => {
-  it("leaves an anonymous visitor where they are", async () => {
+describe("a 401", () => {
+  it("leaves an anonymous visitor where they are, without a refresh", async () => {
     location.pathname = "/public/spmb";
     location.href = "http://localhost/public/spmb";
     const refresh = refreshFails(401);
 
     await expect(api.get("/units")).rejects.toBeInstanceOf(AxiosError);
-    expect(refresh).toHaveBeenCalledOnce();
+    // No session, so no refresh either: it would spend the per-IP auth rate
+    // limit on every anonymous page.
+    expect(refresh).not.toHaveBeenCalled();
     expect(location.href).toBe("http://localhost/public/spmb");
   });
 

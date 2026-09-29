@@ -229,11 +229,20 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      // Whether this browser holds a session at all, read BEFORE the refresh:
-      // a refused refresh clears the session cookies in its own response. The
-      // readable CSRF cookie is set with every session and cleared with it, so
-      // it is the one trace of the HttpOnly session that script can see.
-      const hadSession = readCookie("cipansor_csrf") !== null;
+      // An anonymous visitor never had a session to lose, so there is nothing
+      // to refresh and nowhere to send them. Public pages call protected
+      // endpoints (the SPMB page reads /units), and bouncing a prospective
+      // parent to the staff login screen over that 401 is far worse than
+      // letting the caller render its own empty state. Nor is a refresh sent:
+      // it would spend the per-IP auth rate limit on every anonymous page, and
+      // its refusal could land after a sign-in has set the cookies.
+      //
+      // The readable CSRF cookie is set with every session and cleared with
+      // it — the one trace of the HttpOnly session that script can see. Read
+      // it before the refresh: a refused refresh clears it in its own response.
+      if (readCookie("cipansor_csrf") === null) {
+        return Promise.reject(error);
+      }
 
       try {
         await refreshAccessToken();
@@ -241,14 +250,6 @@ api.interceptors.response.use(
         // let the browser attach it.
         return api(originalRequest);
       } catch (refreshError) {
-        // An anonymous visitor never had a session to lose. Public pages call
-        // protected endpoints (the SPMB page reads /units), and bouncing a
-        // prospective parent to the staff login screen over that 401 is far
-        // worse than letting the caller render its own empty state.
-        if (!hadSession) {
-          return Promise.reject(error);
-        }
-
         // Only a definitive rejection means the session is really gone. A 429
         // from the rate limiter, a 5xx or a dropped connection says nothing
         // about the token's validity, and logging the user out over one would
