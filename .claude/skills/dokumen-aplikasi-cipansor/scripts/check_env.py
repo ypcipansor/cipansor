@@ -67,6 +67,8 @@ def main() -> int:
         add("LibreOffice (soffice)", bool(soffice), "", "apt-get install -y libreoffice-writer")
         if soffice:
             # soffice ada belum berarti bisa memuat dokumen: tanpa komponen Writer semua konversi gagal.
+            # LD_LIBRARY_PATH dibuang — sebuah direktori multiarch yang diekspor pemanggil membuat
+            # soffice.bin gagal memuat libreglo.so (lihat soffice_env di build_docs.py).
             prof = tempfile.mkdtemp(prefix="lo-probe-")
             probe = Path(prof) / "x.txt"
             probe.write_text("probe", encoding="utf-8")
@@ -75,7 +77,8 @@ def main() -> int:
                     [soffice, "--headless", "--norestore", f"-env:UserInstallation=file://{prof}/p",
                      "--convert-to", "pdf", "--outdir", prof, str(probe)],
                     capture_output=True, text=True, timeout=180,
-                    env={**os.environ, "SAL_USE_VCLPLUGIN": "svp", "HOME": prof})
+                    env={k: v for k, v in os.environ.items() if k != "LD_LIBRARY_PATH"}
+                    | {"SAL_USE_VCLPLUGIN": "svp", "HOME": prof})
                 ok = (Path(prof) / "x.pdf").exists()
                 add("LibreOffice Writer dapat memuat dokumen", ok,
                     "" if ok else (r.stderr or r.stdout).strip().splitlines()[-1][:120],
@@ -85,8 +88,17 @@ def main() -> int:
             finally:
                 shutil.rmtree(prof, ignore_errors=True)
             uno_ok = False
+            # pyuno.so sits beside soffice.bin and is not on the default loader
+            # path; update_toc.py re-execs with that directory added, so probe
+            # the same way rather than a bare `import uno` that always fails.
+            prog = Path(soffice).resolve().parent if soffice else None
             for py in dict.fromkeys([sys.executable, "/usr/bin/python3"]):
-                if Path(py).exists() and subprocess.run([py, "-c", "import uno"], capture_output=True).returncode == 0:
+                if not Path(py).exists():
+                    continue
+                env = {k: v for k, v in os.environ.items() if k != "LD_LIBRARY_PATH"}
+                if prog:
+                    env["LD_LIBRARY_PATH"] = str(prog)
+                if subprocess.run([py, "-c", "import uno"], capture_output=True, env=env).returncode == 0:
                     uno_ok = True
                     break
             add("modul uno (mengisi daftar isi)", uno_ok,

@@ -21,11 +21,43 @@ from pathlib import Path
 PORT = 2002
 
 
+def _ensure_pyuno() -> bool:
+    """Make `import uno` work, re-execing with LibreOffice's library dir on the path.
+
+    `pyuno.so` lives beside `soffice.bin` in the LibreOffice program directory and
+    is not on the default loader path, so a plain `python3 update_toc.py` finds the
+    module but fails to load it ("failed to load pyuno: libreglo.so …"). Put that
+    one directory on `LD_LIBRARY_PATH` and re-exec once. (The soffice *subprocess*
+    below deliberately gets no `LD_LIBRARY_PATH` — see `soffice_env` in
+    build_docs.py: a caller's multiarch entry breaks soffice.bin.)
+    """
+    try:
+        import uno  # noqa: F401  # type: ignore
+        return True
+    except Exception:  # noqa: BLE001
+        pass
+    prog = Path(shutil.which("soffice") or "/usr/lib/libreoffice/program/soffice").resolve().parent
+    if not (prog / "pyuno.so").exists():
+        return False
+    if os.environ.get("_CIPANSOR_PYUNO") == str(prog):
+        return False
+    env = dict(os.environ)
+    env["_CIPANSOR_PYUNO"] = str(prog)
+    env["LD_LIBRARY_PATH"] = str(prog) + (
+        os.pathsep + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else ""
+    )
+    os.execve(sys.executable, [sys.executable, *sys.argv], env)
+    return False  # unreachable
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print(__doc__)
         return 2
     src = Path(sys.argv[1]).resolve()
+    if not _ensure_pyuno():
+        print("pyuno tidak tersedia", file=sys.stderr)
+        return 3
     try:
         import uno  # type: ignore
         from com.sun.star.beans import PropertyValue  # type: ignore
@@ -38,7 +70,9 @@ def main() -> int:
         print("soffice tidak ditemukan", file=sys.stderr)
         return 3
 
-    env = os.environ.copy()
+    # LD_LIBRARY_PATH dibuang: direktori multiarch yang diekspor pemanggil membuat
+    # soffice.bin gagal memuat libreglo.so (lihat soffice_env di build_docs.py).
+    env = {k: v for k, v in os.environ.items() if k != "LD_LIBRARY_PATH"}
     env["SAL_USE_VCLPLUGIN"] = "svp"
     profile = tempfile.mkdtemp(prefix="lo-profile-")
     saved = False

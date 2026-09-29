@@ -4,6 +4,26 @@ Catatan perubahan skill, terbaru di atas. Audit lengkap atas hasil pemakaiannya 
 `docs/dokumen-aplikasi/evaluasi-dokumen.md`; katalog kesalahan dan kode pemeriksanya di
 `references/kesalahan-yang-sudah-terjadi.md`.
 
+## 29 September 2026 (riset standar) — periksa ulang pilihan standar terhadap praktik terbaik
+
+Pengguna meminta evaluasi ulang: "sesuai standar best practice seperti apa?" Riset web
+diperbarui 2026-09-29 dan **pilihan kerangka lama tetap benar** (arc42 + C4 + Diátaxis +
+ISO 26514 + ADR + docs-as-code). Yang berubah, dan yang ditambahkan ke
+`references/standar-dan-alasan.md`:
+
+| Temuan | Perbaikan |
+|---|---|
+| **ISO/IEC/IEEE 26514 sudah edisi ketiga (2022)**, bukan edisi 2010 yang lazim dikutip; edisi 2022 menambah subpasal **API dan chatbot** | Sebutan disunting ke **26514:2022** di `standar-dan-alasan.md` dan `panduan-pengguna.md`; ditambah catatan keluarga 2651x (26511–26516, 26531) dan relevansi subpasal API/chatbot (`docs/MOBILE_API.md`, modul `chatbot`) |
+| **Minimalisme (Carroll) dan penulisan berbasis topik** — praktik inti manual yang belum disebut eksplisit | Bagian baru di `standar-dan-alasan.md` dan disiplin singkat di `panduan-pengguna.md` → "Gaya bahasa": mulai dari prosedur, satu topik satu tujuan, kesalahan bagian dari topik |
+| **Dokumentasi ramping (agile/lean)** — "cukup, tidak berlebih; perbarui hanya bila perlu" | Prinsip ke-5 di `standar-dan-alasan.md`; menegaskan aturan repo "rangkum, jangan salin" |
+| **ADR: satu keputusan per catatan; yang tergantikan tidak disunting** (arc42 tip 9-5/9-6; MADR 4.0) | Dicatat di baris ADR `standar-dan-alasan.md` |
+| **arc42↔C4 saling melengkapi** dengan pemetaan bab eksplisit | Dicatat di baris C4 |
+| Tidak ada tabel "sumber yang dikutip" | Bagian **Sumber yang dikutip** ditambahkan (arc42, c4model, MADR, 42010, diataxis, 26514, Carroll, agilemodeling) |
+
+Tidak diubah: kerangka bab, kontrak bab, pemeriksa. Perubahan ini hanya memperkuat
+*alasan* dan *cara menulis*, bukan struktur. Ketiga dokumen di `docs/dokumen-aplikasi/`
+masih lolos `check_docs.py` 0 ERROR tanpa perubahan isi.
+
 ## 29 September 2026 (audit) — dari "aturan prosa" ke "aturan yang diperiksa mesin"
 
 Percobaan pertama (OpenHands/DeepSeek atas skill rancangan Sonnet) menghasilkan dokumen yang kerangkanya benar tetapi

@@ -1,24 +1,37 @@
 # Standar yang dipakai, dan alasannya
 
-Riset dilakukan 2026-09-28 atas pertanyaan: dokumentasi aplikasi seperti apa yang
-dianggap praktik terbaik untuk (a) dokumen teknis dan (b) panduan pengguna, pada
-sistem seukuran Cipansor — monorepo dengan puluhan modul, dikembangkan tim kecil,
-dipakai belasan keluarga peran, repo publik sampai rilis.
+Riset dilakukan 2026-09-28, diperiksa dan diperbarui 2026-09-29, atas pertanyaan:
+dokumentasi aplikasi seperti apa yang dianggap praktik terbaik untuk (a) dokumen
+teknis dan (b) panduan pengguna, pada sistem seukuran Cipansor — monorepo dengan
+puluhan modul, dikembangkan tim kecil, dipakai belasan keluarga peran, repo publik
+sampai rilis.
 
 Baca berkas ini bila pengguna bertanya "kenapa formatnya begini", atau bila harus
 memilih antara dua cara menyusun. Untuk *cara mengerjakan*, buka
 `dokumen-teknis.md` dan `panduan-pengguna.md`.
 
+> **Catatan edisi standar.** Sebutan standar di sini memakai edisi yang berlaku
+> pada 2026: **ISO/IEC/IEEE 26514:2022** (edisi ketiga; edisi 2010 yang sering
+> dikutip sudah digantikan — `26514:2008` → `26514:2022`). Edisi 2022 menambah
+> subpasal tentang **API dan chatbot** sebagai sasaran informasi bagi pengguna,
+> hal yang relevan di sini karena repo punya modul chatbot dan
+> `docs/MOBILE_API.md`. Keluarga 2651x lengkapnya: 26511 (manajer), 26512
+> (pengadaan), 26513 (penguji/peninjau), 26514 (perancang/pengembang), 26515
+> (lingkungan tangkas), 26516 (video instruksional), 26531 (manajemen konten).
+> Yang dipakai skill ini hanya 26514, sebagai daftar periksa mutu.
+
 ## Ringkasan pilihan
 
 | Kebutuhan | Dipakai | Bukan format, melainkan | Kenapa cocok untuk Cipansor |
 |---|---|---|---|
-| Kerangka dokumen teknis | **arc42** (12 bab) | kerangka bab | Gratis, ringan, dipakai luas, tiap bab menjawab satu pertanyaan pembaca. Tim kecil bisa mengisi bab yang perlu dan menulis "tidak berlaku" pada yang tidak. Sudah ada tempat untuk *keputusan* (bab 9) dan *risiko & utang teknis* (bab 11), dua hal yang paling sering hilang. |
-| Menggambar arsitektur | **Model C4** (Context → Container → Component) | cara menggambar | Tiga tingkat zoom yang bisa dibaca pengurus (tingkat 1) sampai pengembang baru (tingkat 3). Tingkat 4 (kode) tidak digambar: kodenya sendiri sumbernya. |
-| Menyimpan alasan keputusan | **ADR** (catatan keputusan arsitektur) | isi bab 9 | Repo sudah melakukannya di `.claude/memory/decisions/`. Dokumen *merangkum dan menautkan*, tidak menulis ulang alasannya. |
+| Kerangka dokumen teknis | **arc42** (12 bab) | kerangka bab | Gratis, ringan, dipakai luas, tiap bab menjawab satu pertanyaan pembaca. Tim kecil bisa mengisi bab yang perlu dan menulis "tidak berlaku" pada yang tidak. Sudah ada tempat untuk *keputusan* (bab 9) dan *risiko & utang teknis* (bab 11), dua hal yang paling sering hilang. arc42 sendiri menyarankan bab 1 memuat **tujuan mutu**, bukan daftar kebutuhan. |
+| Menggambar arsitektur | **Model C4** (Context → Container → Component) | cara menggambar | Tiga tingkat zoom yang bisa dibaca pengurus (tingkat 1) sampai pengembang baru (tingkat 3). Tingkat 4 (kode) tidak digambar: kodenya sendiri sumbernya. C4 dan arc42 saling melengkapi — diagram C4 masuk ke bab 3 (konteks), 5 (kontainer/komponen), 6 (dinamis), 7 (penempatan). |
+| Menyimpan alasan keputusan | **ADR** (catatan keputusan arsitektur) | isi bab 9 | Repo sudah melakukannya di `.claude/memory/decisions/`. Dokumen *merangkum dan menautkan*, tidak menulis ulang alasannya. Satu ADR = satu keputusan; yang tergantikan tidak disunting, melainkan diberi catatan pengganti (arc42 tip 9-5/9-6). |
 | Pemeriksa kelengkapan dokumen teknis | **IEEE 1016 / ISO/IEC/IEEE 42010** (deskripsi rancangan, sudut pandang) | daftar periksa | Bab 5–8 arc42 sudah mencakup sudut pandang yang diminta: struktur, perilaku saat berjalan, penempatan, konsep lintas-bidang. Dipakai untuk memastikan tak ada sudut pandang yang terlewat, bukan sebagai format. |
-| Menata panduan pengguna | **Diátaxis** (tutorial · panduan tugas · rujukan · penjelasan) | pemisah jenis isi | Orang membuka panduan dengan empat niat berbeda: belajar dari nol, menyelesaikan satu tugas, mencari fakta, memahami alasan. Mencampurnya membuat panduan tebal dan sulit dipakai. |
-| Isi & mutu panduan pengguna | **ISO/IEC/IEEE 26514** (rancangan & pengembangan informasi untuk pengguna) | daftar periksa | Meminta dokumentasi berangkat dari analisis pengguna dan tugasnya (bukan dari daftar menu), memuat unsur lazim (pendahuluan, prosedur, penanganan masalah, glosarium), memakai istilah yang konsisten, dan diuji pada pembaca sungguhan. |
+| Menata panduan pengguna | **Diátaxis** (tutorial · panduan tugas · rujukan · penjelasan) | pemisah jenis isi | Orang membuka panduan dengan empat niat berbeda: belajar dari nol, menyelesaikan satu tugas, mencari fakta, memahami alasan. Mencampurnya membuat panduan tebal dan sulit dipakai. Diátaxis adalah *peta dan kompas*, bukan format wajib: yang penting satu halaman satu jenis. |
+| Cara menulis tiap topik | **Penulisan berbasis topik + minimalisme (Carroll)** | disiplin menulis | Topik kecil yang berorientasi tugas mengalahkan narasi panjang yang "menjelaskan semuanya". Pembaca sibuk tidak membaca pendahuluan; mulai dari prosedur, potong basa-basi, dan jadikan kesalahan sebagai hal yang bisa dipulihkan (kartu tugas punya bagian "Bila tidak berhasil"). Ini yang membuat satu kartu tugas utuh dan pendek. |
+| Isi & mutu panduan pengguna | **ISO/IEC/IEEE 26514:2022** (rancangan & pengembangan informasi untuk pengguna) | daftar periksa | Meminta dokumentasi berangkat dari analisis pengguna dan tugasnya (bukan dari daftar menu), memuat unsur lazim (pendahuluan, prosedur, penanganan masalah, glosarium), memakai istilah yang konsisten, dan **diuji pada pembaca sungguhan** (26513 mengatur pengujiannya). |
+| Menjaga dokumen tetap ramping | **Dokumentasi ramping (agile/lean)** | sikap kerja | "Cukup, tidak berlebih": dokumentasikan konsep yang stabil, bukan gagasan spekulatif; jangan salin apa yang sudah punya satu sumber; perbarui hanya bila perlu. Selaras dengan aturan repo "angka dari kode" dan "rangkum, jangan salin". |
 | Cara mengelola berkas | **Docs-as-code** | praktik kerja | Dokumen dekat dengan kode, ditulis dalam Markdown, angka dihitung dari kode. Sesuai dengan cara repo ini bekerja dan menekan dokumen basi. |
 
 ## Cara tiap standar diterapkan
@@ -54,15 +67,41 @@ ada di `dokumen-teknis.md`. Sumber resmi: arc42.org.
 Aturannya: **satu halaman, satu jenis.** Kartu tugas tidak berisi ceramah konsep;
 konsep ditautkan. Sumber resmi: diataxis.fr.
 
-### ISO/IEC/IEEE 26514 → mutu panduan
+### ISO/IEC/IEEE 26514:2022 → mutu panduan
 Dipakai sebagai daftar periksa mutu, bukan format:
 - disusun dari **tugas pengguna**, bukan dari menu (cf. `panduan-peran` di repo);
 - ada pendahuluan (siapa pembaca, cara memakai panduan), prosedur, penanganan
   masalah, glosarium;
 - **istilah konsisten** dengan layar (nama tombol persis; *santri*, bukan *murid*,
   di panduan portal);
-- prosedur **dicoba** pada aplikasi/pembaca sungguhan sebelum dinyatakan selesai;
+- prosedur **dicoba** pada aplikasi/pembaca sungguhan sebelum dinyatakan selesai
+  (pengujiannya diatur standar saudaranya, 26513);
 - ada riwayat revisi dan basis versi aplikasi.
+
+Edisi 2022 secara eksplisit memasukkan **API dan chatbot** sebagai informasi yang
+ditujukan kepada pengguna. Terapannya di sini: kontrak API yang dibaca klien
+(dokumentasi mobile di `docs/MOBILE_API.md`) dan jawaban chatbot dianggap
+"informasi untuk pengguna" yang tunduk aturan kejelasan dan konsistensi istilah
+yang sama — bukan sekadar artefak teknis.
+
+### Minimalisme (Carroll) + penulisan berbasis topik → cara menulis
+Bukan kerangka bab, melainkan cara menulis **di dalam** tiap bab dan kartu:
+- **Mulai dari prosedur.** Pembaca yang sibuk tidak membaca pendahuluan; bagian
+  "Mulai" boleh panjang, tetapi kartu tugas langsung ke langkah.
+- **Satu topik, satu tujuan.** Satu kartu = satu tugas dalam istilah kerja
+  pembaca; jangan mencampur penjelasan konsep ke dalam kartu (konsep ditautkan).
+- **Kesalahan adalah bagian dari topik.** Bagian "Bila tidak berhasil" bukan
+  tambahan; ia yang membuat pengguna pulih tanpa bertanya.
+- **Jangan menjelaskan yang bisa ditemukan sendiri.** Potong pengantar basa-basi
+  dan pengulangan; pembaca belajar dengan mencoba.
+
+### Dokumentasi ramping (agile/lean) → menjaga dokumen tetap hidup
+- Dokumentasikan **konsep yang stabil**, bukan gagasan spekulatif; yang bergerak
+  cepat cukup ditautkan ke sumbernya (kode, Swagger, `decisions/`).
+- **Jangan salin** apa yang sudah punya satu rumah; salinan adalah dokumen yang
+  berikutnya basi.
+- **Perbarui hanya bila perlu** — tetapi bila angka bergeser, ukur ulang dan
+  bangun ulang; jangan menyunting angka di dalam `.docx`.
 
 ## Yang sengaja tidak dipakai
 
@@ -93,3 +132,23 @@ Dipakai sebagai daftar periksa mutu, bukan format:
    penyerang. Repo publik sampai rilis; dokumen sering dikirim ke donor,
    auditor, vendor.
 4. **Satu sumber, banyak keluaran:** tulis Markdown, turunkan `.docx`/`.md`.
+5. **Cukup, tidak berlebih (lean).** Yang berubah cepat ditautkan, bukan
+   disalin; yang stabil dan mahal dicari (alasan keputusan, konsep lintas-bidang)
+   ditulis sekali. Dokumen yang mencatat segalanya tidak dibaca dan segera basi.
+6. **Kepatuhan diperiksa mesin, bukan dinilai sendiri.** Setiap aturan yang bisa
+   diperiksa terhadap kode diberi skrip (`check_docs.py`); yang tersisa hanya
+   penilaian mutu tulisan — dan itu diperiksa manusia (uji pada pembaca, 26513).
+
+## Sumber yang dikutip
+
+| Hal | Sumber |
+|---|---|
+| arc42 (12 bab, tip bab 9) | arc42.org, docs.arc42.org/section-9 |
+| Model C4 | c4model.com; pemetaan C4→arc42: workingsoftware.dev |
+| ADR / MADR | Nygard, "Documenting Architecture Decisions" (2011); adr.github.io/madr (MADR 4.0) |
+| ISO/IEC/IEEE 42010 (deskripsi arsitektur) | ISO/IEC/IEEE 42010:2022 |
+| Diátaxis | diataxis.fr |
+| ISO/IEC/IEEE 26514:2022 (+ keluarga 2651x) | standards.ieee.org, iso.org |
+| Minimalisme | Carroll, *The Nurnberg Funnel* (1990); ringkasan teknis-komunikasi |
+| Dokumentasi ramping | agilemodeling.com/essays/agiledocumentation.htm |
+

@@ -104,6 +104,12 @@ interface Setup {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string; // API path without /api, e.g. "/attendance/me/classes"
   body?: unknown;
+  /** A file to upload as multipart `file` (repo-relative path); the step's
+   *  `body` string is then used as the file name. */
+  file?: string;
+  /** A step that may already be done on a re-run (e.g. enrolling a signing key).
+   *  A 4xx answer is then not fatal — the flow continues. */
+  optional?: boolean;
   save?: Record<string, string>;
 }
 interface Flow {
@@ -142,6 +148,27 @@ function locate(page: any, l: Locator): any {
 async function settle(page: any) {
   await page.waitForLoadState("networkidle", { timeout: 6000 }).catch(() => {});
   await page.waitForTimeout(350);
+}
+
+/**
+ * Whether any occurrence of `text` is on screen, waiting up to `timeout` ms.
+ *
+ * A plain `getByText(t).first().waitFor()` is not enough: Radix Select keeps a
+ * visually hidden native `<select>` whose `<option>` carries the same label, so
+ * `.first()` can land on an invisible node and declare a visible screen absent.
+ * The loop polls every match until one is visible.
+ */
+async function anyVisible(page: any, text: string, timeout = 0): Promise<boolean> {
+  const deadline = Date.now() + timeout;
+  do {
+    const all = page.getByText(text);
+    const n = await all.count().catch(() => 0);
+    for (let i = 0; i < n; i++) {
+      if (await all.nth(i).isVisible().catch(() => false)) return true;
+    }
+    if (Date.now() >= deadline) return false;
+    await page.waitForTimeout(150);
+  } while (true);
 }
 
 async function outline(el: any, on: boolean) {
@@ -225,6 +252,48 @@ function dig(obj: any, dotted: string): unknown {
   return dotted.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
 }
 
+/**
+ * A multipart upload for `setup` steps that carry a file (the KTP photo).
+ *
+ * `auth.apiRequest` speaks JSON only, so the form is built here against the
+ * real API with the session's bearer token. The file path is relative to the
+ * repo root; the step's `body` string names the upload.
+ */
+async function uploadFile(
+  session: { accessToken: string },
+  apiPath: string,
+  relFile: string,
+  fileName: string,
+) {
+  const API_URL = process.env.API_URL || "http://localhost:3001/api";
+  const abs = path.isAbsolute(relFile) ? relFile : path.join(REPO, relFile);
+  if (!fs.existsSync(abs)) throw new Error(`upload file not found: ${abs}`);
+  const ext = path.extname(abs).slice(1) || "png";
+  const type =
+    ext === "jpg" || ext === "jpeg"
+      ? "image/jpeg"
+      : ext === "pdf"
+        ? "application/pdf"
+        : ext === "webp"
+          ? "image/webp"
+          : "image/png";
+  const form = new FormData();
+  form.append(
+    "file",
+    new Blob([fs.readFileSync(abs)], { type }),
+    fileName || `upload.${ext}`,
+  );
+  const res = await fetch(`${API_URL}${apiPath}`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session.accessToken}` },
+    body: form,
+  });
+  const text = await res.text();
+  if (!res.ok)
+    throw new Error(`POST ${apiPath} → ${res.status}: ${text.slice(0, 200)}`);
+  return JSON.parse(text);
+}
+
 async function runFlow(browser: any, file: string, outRoot: string) {
   const raw: Flow = JSON.parse(fs.readFileSync(file, "utf8"));
   const dir = path.join(outRoot, raw.name);
@@ -237,17 +306,65 @@ async function runFlow(browser: any, file: string, outRoot: string) {
     today: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" }),
   };
   for (const st of raw.setup ?? []) {
+    // A variable an earlier `optional` step failed to save (the e-sign key
+    // already exists, so no request id came back) cannot be resolved. That is
+    // the expected re-run path, not an error, and the flow's own steps do not
+    // depend on it — so skip rather than throw.
+    const missing = [...st.path.matchAll(/\{\{(\w+)\}\}/g)]
+      .map((m) => m[1])
+      .filter((k) => !(k in vars));
+    if (missing.length && st.optional) {
+      console.warn(`  ~ setup ${st.method} ${st.path}: skipped ({{${missing[0]}}} not set)`);
+      continue;
+    }
     const acc = accountFor(st.as);
     const sess = await auth.apiLogin({ email: acc.email, password: acc.password });
+    const sub = (s: string) =>
+      s.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? `{{${k}}}`);
     const body = st.body === undefined ? undefined : JSON.parse(JSON.stringify(st.body).replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? `{{${k}}}`));
-    const ans = await auth.apiRequest(sess, st.method, st.path, body);
+    // A step with `file` is a multipart upload (e.g. the KTP photo); the API
+    // helpers only speak JSON, so the form is built here from the session token.
+    // An `optional` step is one a re-run may find already done — a 4xx is not
+    // fatal then, so the same flow runs twice against a persistent demo DB.
+    let ans: any;
+    try {
+      ans = st.file
+        ? await uploadFile(sess, sub(st.path), st.file, sub(String(body ?? "")))
+        : await auth.apiRequest(sess, st.method, sub(st.path), body);
+    } catch (e: any) {
+      if (!st.optional) throw e;
+      console.warn(`  ~ setup ${st.method} ${st.path}: skipped (${String(e?.message).slice(0, 90)})`);
+      ans = {};
+    }
     for (const [name, where] of Object.entries(st.save ?? {})) {
       const v = dig(ans, where);
-      if (v === undefined || v === null)
+      if (v === undefined || v === null) {
+        // On an `optional` step (one a re-run finds already done) the answer is
+        // empty, so a variable it would have saved is simply left unset.
+        if (st.optional) {
+          console.warn(`  ~ setup ${st.method} ${st.path}: no "${where}" to save`);
+          continue;
+        }
         throw new Error(`setup ${st.method} ${st.path}: "${where}" not found in the answer`);
+      }
       vars[name] = String(v);
     }
   }
+  // Setup steps the API declined (an `optional` step a re-run finds already
+  // done) never ran, so drop them instead of letting an unresolved variable
+  // they would have produced abort the whole flow. The flow's own steps do not
+  // reference these — only later setup steps do.
+  const usedVars = new Set(
+    [...JSON.stringify(raw.steps ?? []).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]),
+  );
+  const keptSetup = (raw.setup ?? []).filter((st) => {
+    const missing = [...st.path.matchAll(/\{\{(\w+)\}\}/g)]
+      .map((m) => m[1])
+      .filter((k) => !(k in vars));
+    return !(missing.length && st.optional && !usedVars.has(missing[0]));
+  });
+  raw.setup = keptSetup;
+
   const flow: Flow = JSON.parse(
     JSON.stringify(raw).replace(/\{\{(\w+)\}\}/g, (_m: string, k: string) => {
       if (!(k in vars)) throw new Error(`unknown variable {{${k}}} in ${file}`);
@@ -314,14 +431,14 @@ async function runFlow(browser: any, file: string, outRoot: string) {
       if (!step.see?.length) await settle(page);
 
       for (const t of step.see ?? []) {
-        await page
-          .getByText(t)
-          .first()
-          .waitFor({ state: "visible", timeout: 8000 })
-          .catch(() => problems.push(`not visible: "${t}"`));
+        // Any *visible* match counts. Radix Select also renders a hidden native
+        // <select> holding an <option> with the same text, so `.first()` alone
+        // would match an invisible node and report a visible screen as missing.
+        if (!(await anyVisible(page, t, 8000)))
+          problems.push(`not visible: "${t}"`);
       }
       for (const t of step.not_see ?? []) {
-        if (await page.getByText(t).first().isVisible().catch(() => false))
+        if (await anyVisible(page, t, 0))
           problems.push(`should not be visible: "${t}"`);
       }
 

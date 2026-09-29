@@ -1,7 +1,7 @@
 # Panduan Pengguna — cara menyusun
 
 Kerangka: Diátaxis (tutorial · panduan tugas · rujukan · penjelasan) dengan
-daftar periksa mutu ISO/IEC/IEEE 26514. Alasannya di `standar-dan-alasan.md`.
+daftar periksa mutu ISO/IEC/IEEE 26514:2022 (edisi ketiga, berlaku 2026). Alasannya di `standar-dan-alasan.md`.
 Templatnya: `assets/template-panduan.md` (bagian umum + buklet peran) dan
 `assets/template-kartu-tugas.md`.
 
@@ -183,6 +183,9 @@ mengajar di kelas itu). Tulis aturannya, bukan sekadar "guru bisa".
 - Di `.docx`: lebar maksimal 15 cm; format PNG.
 
 ## Gaya bahasa
+
+Minimalisme (Carroll): pembaca sibuk, jadi potong basa-basi dan mulai dari
+tindakan. Satu topik, satu tujuan; yang bisa ditemukan sendiri tidak dijelaskan.
 
 - Perintah pendek: "Klik **Simpan**." Bukan "Anda dapat mengklik tombol Simpan
   untuk menyimpan."

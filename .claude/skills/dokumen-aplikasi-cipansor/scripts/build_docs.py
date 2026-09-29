@@ -551,6 +551,22 @@ def verify_pdf(pdf_path: Path, md: str) -> list[str]:
     return problems
 
 
+def soffice_env(home: str) -> dict:
+    """Environment for a headless soffice run.
+
+    `LD_LIBRARY_PATH` is dropped: soffice.bin resolves its own libraries through
+    the wrapper's `$ORIGIN` RUNPATH, and a caller that exports a system multiarch
+    directory (e.g. `/usr/lib/x86_64-linux-gnu`, as this runtime does) makes the
+    loader pick a library that `libreglo.so` then cannot resolve — soffice exits
+    with "libreglo.so: cannot open shared object file" and every PDF silently
+    falls back to "PDF tidak dibuat". The bundled libraries are self-sufficient.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "LD_LIBRARY_PATH"}
+    env["SAL_USE_VCLPLUGIN"] = "svp"
+    env["HOME"] = home
+    return env
+
+
 def make_pdf(docx_path: Path) -> Path | None:
     """PDF lewat LibreOffice dengan profil sementara. Kembalikan jalur PDF atau None."""
     soffice = shutil.which("soffice") or shutil.which("libreoffice")
@@ -558,7 +574,7 @@ def make_pdf(docx_path: Path) -> Path | None:
         print("PERINGATAN: soffice tidak ada — PDF tidak dibuat", file=sys.stderr)
         return None
     prof = tempfile.mkdtemp(prefix="lo-pdf-")
-    env = {**os.environ, "SAL_USE_VCLPLUGIN": "svp", "HOME": prof}
+    env = soffice_env(prof)
     try:
         r = subprocess.run([soffice, "--headless", "--norestore", f"-env:UserInstallation=file://{prof}",
                             "--convert-to", "pdf", "--outdir", str(docx_path.parent), str(docx_path)],
