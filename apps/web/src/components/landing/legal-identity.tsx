@@ -72,7 +72,9 @@ function VerifierMarks({ copy = DEFAULT_COPY }: { copy?: LegalCopy }) {
  * different questions. On the profile page the reader wants to know how the
  * institution is governed; on the donation page they want to know what happens
  * to their money. Showing the donation pledge under "Legalitas" on /profil read
- * as a non sequitur.
+ * as a non sequitur. *Profil → Legalitas* gives governance a section of its
+ * own, so there the block closes without a paragraph — it printed the same
+ * governance text twice, a screen apart.
  */
 /**
  * Condensed legal identity for the homepage, sitting between the call to
@@ -155,11 +157,17 @@ export function LegalIdentity({
   variant = "profile",
   copy = DEFAULT_COPY,
 }: {
-  variant?: "profile" | "donation";
+  variant?: "profile" | "donation" | "legalitas";
   copy?: LegalCopy;
 }) {
   const { decree, verification } = legalIdentity;
   const compact = variant === "donation";
+  const closing =
+    variant === "donation"
+      ? copy.transparency
+      : variant === "profile"
+        ? copy.governance
+        : null;
 
   return (
     <section aria-labelledby="legalitas" className={compact ? "" : "mt-14"}>
@@ -241,9 +249,11 @@ export function LegalIdentity({
         </Card>
       </div>
 
-      <p className="mt-6 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-        {compact ? copy.transparency : copy.governance}
-      </p>
+      {closing && (
+        <p className="mt-6 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+          {closing}
+        </p>
+      )}
     </section>
   );
 }
