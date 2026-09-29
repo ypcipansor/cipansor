@@ -269,17 +269,19 @@ function LoginPageContent() {
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Mandatory 2FA Setup</CardTitle>
+            <CardTitle>Aktifkan Verifikasi Dua Langkah</CardTitle>
             <CardDescription>
-              Your account requires Two-Factor Authentication. Please set it up
-              to continue.
+              Peran Anda mewajibkan verifikasi dua langkah. Aktifkan sekarang
+              untuk melanjutkan.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <TwoFactorSetup
               onComplete={() => {
                 resetAuth();
-                toast.success("Setup complete. Please sign in again.");
+                toast.success(
+                  "Verifikasi dua langkah aktif. Silakan masuk kembali.",
+                );
               }}
             />
           </CardContent>
@@ -293,10 +295,8 @@ function LoginPageContent() {
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
-            <CardTitle>Two-Factor Authentication</CardTitle>
-            <CardDescription>
-              Please enter the verification code from your authenticator app.
-            </CardDescription>
+            <CardTitle>Verifikasi Dua Langkah</CardTitle>
+            <CardDescription>Satu langkah lagi untuk masuk.</CardDescription>
           </CardHeader>
           <CardContent>
             <TwoFactorVerify
@@ -308,9 +308,10 @@ function LoginPageContent() {
               }}
               isLoading={isLoading}
               error={error}
+              allowRecoveryCode
             />
             <Button variant="link" className="mt-4 w-full" onClick={resetAuth}>
-              Back to Login
+              Kembali ke halaman masuk
             </Button>
           </CardContent>
         </Card>

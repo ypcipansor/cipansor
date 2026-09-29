@@ -21,7 +21,7 @@ the mechanical cases.
 - [pimpinan-pesantren-kiai](decisions/pimpinan-pesantren-kiai.md) — no Direktur; the Kiai is Pimpinan Pesantren (unit head) and also Pembina, with the legal basis
 - [pk-organ-yayasan-tanpa-kontrak](decisions/pk-organ-yayasan-tanpa-kontrak.md) — Pembina, Pengurus and Pengawas make no PK; a unit head's PK hangs on the unit's ratified RKA
 - [pengesahan-dokumen-yayasan](decisions/pengesahan-dokumen-yayasan.md) — who drafts, reviews and ratifies RPJP/Renstra/RKA; ratified documents freeze
-- [pengawasan-dan-rapat-pembina](decisions/pengawasan-dan-rapat-pembina.md) — #508/#509 closed (2026-09-28); Ps. 43 suspension lapses by law, WBS recusal + TPPK route, Pembina decisions as meetings in the existing ratification flow; never Super Admin
+- [pengawasan-dan-rapat-pembina](decisions/pengawasan-dan-rapat-pembina.md) — #508/#509 closed (2026-09-28); decided: Ps. 43 lean (authority held, 7/7/7, void by law), WBS in Aduan & Aspirasi with recusal, TPPK/Satgas per unit, Pembina decides by recorded meeting or unanimous written resolution; never Super Admin; AD copy awaited
 - [rka-dua-tingkat](decisions/rka-dua-tingkat.md) — four planning levels (RPJP → Renstra → RKA Yayasan → RKA Unit); never propose three
 - [unit-vs-asrama-vs-takhosus](decisions/unit-vs-asrama-vs-takhosus.md) — a unit issues its own graduation; asrama is not a unit; takhosus is `UnitType.PESANTREN`; who manages asrama (Pimpinan + TU Pesantren + SA; koordinator places)
 - [menu-ia-tiga-tingkat](decisions/menu-ia-tiga-tingkat.md) — at most three menu levels, nine groups by discipline; no sub-sub-menus
@@ -36,6 +36,8 @@ the mechanical cases.
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
 - [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
+- [realtime-polling](decisions/realtime-polling.md) — no push channel; the web polls; Socket.IO removed (no client); Web Push first for phones, WebSocket only for a seconds-level need and after Model A, with its conditions
+- [autentikasi-2fa-dan-sandi](decisions/autentikasi-2fa-dan-sandi.md) — 2FA wajib: admin, organ, kepala unit; diajak sesudah login: staf + wali, "Nanti saja" tanpa batas; sandi diganti karena kejadian, bukan kalender; panjang + daftar terlarang lokal (NIST 800-63B-4)
 - [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
 
 ## Lessons — traps that already cost time

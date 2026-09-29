@@ -135,5 +135,7 @@ menu. Tabel ini ikut basi setiap kali menu berubah.
 - `unit-vs-asrama-vs-takhosus.md` — apa itu unit;
 - `pengawasan-dan-rapat-pembina.md` — pemberhentian sementara Pengurus (Ps. 43), WBS, keputusan rapat Pembina.
 
+Pasal-pasal Anggaran Dasar yayasan yang dibaca sistem — kuorum rapat tiap organ, siapa bertindak untuk organ (Ketua Umum **bersama** satu Pengurus lain), pemberhentian sementara, laporan tahunan — ada di [`anggaran-dasar.md`](anggaran-dasar.md) (akta pendirian 2012; akta perubahan belum diketahui).
+
 Keputusan baru di domain ini disimpan sebagai berkas di `decisions/` dan
 didaftarkan di sini.

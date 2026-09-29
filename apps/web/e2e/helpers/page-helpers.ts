@@ -205,26 +205,6 @@ export async function checkNoConsoleErrors(page: Page) {
 }
 
 /**
- * Wait for WebSocket connection
- */
-export async function waitForWebSocket(
-  page: Page,
-  timeout = 10000,
-): Promise<void> {
-  await page
-    .waitForFunction(
-      () => {
-        // @ts-ignore
-        return window.__wsConnected === true;
-      },
-      { timeout },
-    )
-    .catch(() => {
-      console.warn("WebSocket connection not detected, continuing anyway...");
-    });
-}
-
-/**
  * Get table data as array
  */
 export async function getTableData(

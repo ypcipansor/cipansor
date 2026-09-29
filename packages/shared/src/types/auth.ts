@@ -158,3 +158,10 @@ export interface SSOTwoFactorSetupResponse {
 
 export type SSOLoginResult =
   LoginResponse | SSOTwoFactorResponse | SSOTwoFactorSetupResponse;
+
+/** GET /auth/2fa/status */
+export interface TwoFactorStatus {
+  isEnabled: boolean;
+  /** One of the account's active roles makes 2FA mandatory: it cannot be turned off. */
+  isRequired: boolean;
+}

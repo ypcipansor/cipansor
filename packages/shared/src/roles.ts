@@ -90,6 +90,20 @@ export const PESANTREN_LEADER_ROLE_CODES: readonly string[] = [
 ];
 
 /**
+ * Roles that make a second factor mandatory (decided 2026-09-28, decision
+ * `autentikasi-2fa-dan-sandi`): system administrators, the yayasan's organs,
+ * and the head of every unit — the four kepala sekolah and the Pimpinan
+ * Pesantren. Holding any of them in any active assignment is enough. Everyone
+ * else may turn 2FA on from their profile.
+ */
+export const SECOND_FACTOR_ROLE_CODES: readonly string[] = [
+  ...ADMIN_ROLE_CODES,
+  ...GOVERNANCE_ROLE_CODES,
+  ...PRINCIPAL_ROLE_CODES,
+  ...PESANTREN_LEADER_ROLE_CODES,
+];
+
+/**
  * Pesantren educators and dormitory mentors. One role per duty, not per
  * gender: putra/putri follows the asrama or halaqah served, and wali kamar and
  * murabbi are musyrif duties (merged 2026-09-25).

@@ -58,6 +58,18 @@ export const refreshTokenSchema = z.object({
   refreshToken: z.string().min(1, 'Refresh token is required'),
 });
 
+// Two-factor code: six authenticator digits, or on the sign-in step a recovery
+// code. Only its shape is bounded here; the service normalises spaces and case
+// and decides whether it matches.
+export const twoFactorCodeSchema = z.object({
+  token: z.string().trim().min(1, 'Kode wajib diisi').max(64, 'Kode terlalu panjang'),
+});
+
+// Disabling 2FA: the caller's own code, and optionally whose 2FA (admins).
+export const disableTwoFactorSchema = twoFactorCodeSchema.extend({
+  userId: z.string().uuid().optional(),
+});
+
 // Change password schema
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
@@ -106,6 +118,8 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type TwoFactorCodeInput = z.infer<typeof twoFactorCodeSchema>;
+export type DisableTwoFactorInput = z.infer<typeof disableTwoFactorSchema>;
 
 // SSO Login Schema (Google & Microsoft 365) — single source of truth lives in
 // @cipansor/shared so the web client and this API edge can never drift apart.

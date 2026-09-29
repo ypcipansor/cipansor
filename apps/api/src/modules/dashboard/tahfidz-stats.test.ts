@@ -6,7 +6,7 @@ vi.mock('@/lib/prisma', () => ({
     student: { findMany: vi.fn() },
   },
 }));
-vi.mock('@/lib/realtime', () => ({
+vi.mock('@/lib/dashboard-metrics', () => ({
   getCurrentDashboardMetrics: vi.fn(),
 }));
 

@@ -11,6 +11,7 @@ import {
 } from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput, SSOLoginInput } from './auth.schema';
+import type { TwoFactorStatus } from '@cipansor/shared';
 import { RoleCode, UnitType, SSOProvider } from '@prisma/client';
 import { generateSecret, generateURI, verify as verifyOtp } from 'otplib';
 import * as qrcode from 'qrcode';
@@ -160,6 +161,33 @@ function getGoogleJwksClient(): JwksClient {
     jwksRequestsPerMinute: 10,
   });
   return googleJwksClient;
+}
+
+/**
+ * Does `token` match the current TOTP of `secret`? Accepts the six digits the
+ * way people type or paste them — spaces anywhere are dropped — and answers
+ * false for anything else. otplib throws on a token that is not exactly six
+ * digits; left alone, that turned a 10-character recovery code, a mistyped
+ * five-digit code or a pasted leading space into a 500.
+ */
+async function totpMatches(token: string, secret: string): Promise<boolean> {
+  const code = token.replace(/\s+/g, '');
+  if (!/^\d{6}$/.test(code)) return false;
+  try {
+    return (await verifyOtp({ token: code, secret })).valid;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A recovery code as stored (10 upper-case hex characters, see
+ * `generateRecoveryCodes`), from what the user typed: case, spaces and dashes
+ * do not matter. Null when it cannot be one.
+ */
+function asRecoveryCode(token: string): string | null {
+  const code = token.replace(/[\s-]+/g, '').toUpperCase();
+  return /^[0-9A-F]{10}$/.test(code) ? code : null;
 }
 
 /**
@@ -407,7 +435,7 @@ export class AuthService {
         entityId: user.id,
         context,
       });
-      throw Errors.forbidden('No active role assignment found for this user');
+      throw Errors.forbidden('Akun ini tidak memiliki peran aktif. Hubungi admin unit Anda.');
     }
 
     const roleCode = primaryAssignment.role.code;
@@ -1305,28 +1333,32 @@ export class AuthService {
       where: { id: storedToken.id },
     });
 
-    // Get primary role — with legacy fallback for unmigrated users
+    // The session follows the account's live assignments, read afresh on every
+    // refresh. There is no fallback to the legacy `users.role` column: it kept
+    // minting sessions for an account whose every role had been removed or had
+    // expired, which login itself refuses. The old token is already deleted,
+    // so a refusal here ends the session.
     const primaryAssignment =
       storedToken.user.userRoles.find((r) => r.isPrimary) || storedToken.user.userRoles[0];
-
-    let refreshRoleCode: string;
-    let permissions: string[];
-    let refreshRoleId: string | undefined;
-    let refreshUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      refreshRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      refreshRoleId = primaryAssignment.roleId;
-      refreshUnitId = primaryAssignment.unitId;
-    } else if (storedToken.user.role) {
-      refreshRoleCode = storedToken.user.role;
-      permissions = [];
-      refreshRoleId = undefined;
-      refreshUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
+    if (!primaryAssignment) {
+      throw Errors.forbidden('Akun ini tidak lagi memiliki peran aktif. Hubungi admin unit Anda.');
     }
+
+    // A role that demands 2FA may have been granted after this session signed
+    // in; login and switching roles check it, and so must renewing the session.
+    if (
+      requiresSecondFactor(storedToken.user.userRoles.map((r) => r.role.code)) &&
+      !storedToken.user.isTwoFactorEnabled
+    ) {
+      throw Errors.unauthorized(
+        'Peran Anda kini mewajibkan verifikasi dua langkah. Masuk kembali untuk mengaktifkannya.'
+      );
+    }
+
+    const refreshRoleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const refreshRoleId = primaryAssignment.roleId;
+    const refreshUnitId = primaryAssignment.unitId;
 
     // Generate new tokens
     const tokens = generateTokenPair({
@@ -1587,7 +1619,7 @@ export class AuthService {
     if (!user) throw Errors.notFound('User');
 
     if (user.isTwoFactorEnabled) {
-      throw Errors.badRequest('2FA is already enabled');
+      throw Errors.badRequest('Verifikasi dua langkah sudah aktif');
     }
 
     const secret = generateSecret();
@@ -1618,18 +1650,18 @@ export class AuthService {
     if (!user) throw Errors.notFound('User');
 
     if (user.isTwoFactorEnabled) {
-      throw Errors.badRequest('2FA is already enabled');
+      throw Errors.badRequest('Verifikasi dua langkah sudah aktif');
     }
 
     // BUG FIX: Verify against pending secret
     if (!user.twoFactorSecretPending) {
-      throw Errors.badRequest('No pending 2FA setup found. Please generate a new code.');
+      throw Errors.badRequest('Belum ada pengaturan yang dimulai. Buka lagi pengaturannya.');
     }
 
-    const isValid = (await verifyOtp({ token, secret: user.twoFactorSecretPending })).valid;
-
-    if (!isValid) {
-      throw Errors.badRequest('Invalid OTP code');
+    if (!(await totpMatches(token, user.twoFactorSecretPending))) {
+      throw Errors.badRequest(
+        'Kode tidak cocok. Masukkan 6 digit terbaru dari aplikasi autentikator.'
+      );
     }
 
     const recoveryCodes = this.generateRecoveryCodes();
@@ -1653,7 +1685,7 @@ export class AuthService {
   async verifyTwoFactorLogin(userId: string, token: string, isTemp?: boolean) {
     // Enforce 2FA flow: Must use a temporary token
     if (!isTemp) {
-      throw Errors.unauthorized('Invalid authentication flow');
+      throw Errors.unauthorized('Alur masuk tidak valid. Masuk ulang dengan email dan kata sandi.');
     }
 
     const user = await prisma.user.findFirst({
@@ -1678,18 +1710,29 @@ export class AuthService {
     }
 
     if (!user.isTwoFactorEnabled || !user.twoFactorSecret) {
-      throw Errors.unauthorized('2FA is not enabled for this user');
+      throw Errors.unauthorized('Verifikasi dua langkah tidak aktif untuk akun ini');
     }
 
-    let isValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
+    // The role this session will carry, decided before any code is checked: an
+    // account left without an active role is refused without spending one of
+    // its recovery codes. No fallback to the legacy `users.role` column, as in
+    // login and refresh.
+    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    if (!primaryAssignment) {
+      throw Errors.forbidden('Akun ini tidak lagi memiliki peran aktif. Hubungi admin unit Anda.');
+    }
 
-    // Check recovery codes if OTP failed (with atomic update to prevent race conditions)
-    if (!isValid) {
+    let isValid = await totpMatches(token, user.twoFactorSecret);
+
+    // Otherwise a recovery code, spent in the same statement that finds it so
+    // two requests cannot both redeem it.
+    const recoveryCode = isValid ? null : asRecoveryCode(token);
+    if (recoveryCode) {
       const result = await prisma.$executeRaw`
         UPDATE "users"
-        SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${token})
+        SET "two_factor_recovery_codes" = array_remove("two_factor_recovery_codes", ${recoveryCode})
         WHERE "id" = ${userId}
-        AND ${token} = ANY("two_factor_recovery_codes")
+        AND ${recoveryCode} = ANY("two_factor_recovery_codes")
       `;
 
       if (Number(result) > 0) {
@@ -1698,30 +1741,15 @@ export class AuthService {
     }
 
     if (!isValid) {
-      throw Errors.unauthorized('Invalid OTP code');
+      throw Errors.unauthorized(
+        'Kode tidak cocok. Masukkan 6 digit dari aplikasi autentikator, atau kode pemulihan yang belum pernah dipakai.'
+      );
     }
 
-    // Generate tokens — with legacy fallback for unmigrated users
-    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
-
-    let twoFaRoleCode: string;
-    let permissions: string[];
-    let twoFaRoleId: string | undefined;
-    let twoFaUnitId: string | null | undefined;
-
-    if (primaryAssignment) {
-      twoFaRoleCode = primaryAssignment.role.code;
-      permissions = (primaryAssignment.role.permissions as string[]) || [];
-      twoFaRoleId = primaryAssignment.roleId;
-      twoFaUnitId = primaryAssignment.unitId;
-    } else if (user.role) {
-      twoFaRoleCode = user.role;
-      permissions = [];
-      twoFaRoleId = undefined;
-      twoFaUnitId = undefined;
-    } else {
-      throw Errors.forbidden('No active role assignment found');
-    }
+    const twoFaRoleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    const twoFaRoleId = primaryAssignment.roleId;
+    const twoFaUnitId = primaryAssignment.unitId;
 
     const tokens = generateTokenPair({
       id: user.id,
@@ -1806,7 +1834,7 @@ export class AuthService {
         },
       });
       if (!admin || !admin.isTwoFactorEnabled || !admin.twoFactorSecret) {
-        throw Errors.unauthorized('Admin must have 2FA enabled to perform this action');
+        throw Errors.forbidden('Aktifkan dulu verifikasi dua langkah di akun Anda sendiri');
       }
 
       const adminPrimaryRole = admin.userRoles.find((r) => r.isPrimary) || admin.userRoles[0];
@@ -1815,45 +1843,60 @@ export class AuthService {
 
       // Check Admin privileges
       if (!isAdminRoleCode(adminRoleCode)) {
-        throw Errors.forbidden('Only Admins can disable 2FA for other users');
+        throw Errors.forbidden(
+          'Hanya admin yang dapat mematikan verifikasi dua langkah pengguna lain'
+        );
       }
 
       // Prevent non-SUPER_ADMIN from disabling 2FA for SUPER_ADMIN
       if (adminRoleCode !== RoleCode.SUPER_ADMIN && targetRoleCode === RoleCode.SUPER_ADMIN) {
-        throw Errors.forbidden('Only SUPER_ADMIN can disable 2FA for SUPER_ADMIN');
+        throw Errors.forbidden(
+          'Hanya Super Admin yang dapat mematikan verifikasi dua langkah Super Admin'
+        );
       }
 
       // Non-SUPER_ADMIN admins can only manage users in same unit
       if (adminRoleCode !== RoleCode.SUPER_ADMIN) {
         if (admin.unitId !== user.unitId) {
-          throw Errors.forbidden('Admin can only disable 2FA for users in their own unit');
+          throw Errors.forbidden('Admin hanya dapat mengelola pengguna di unitnya sendiri');
         }
         // Peer protection: non-SUPER_ADMIN admin cannot disable other admins
         if (isTargetAdmin) {
-          throw Errors.forbidden('Admin cannot disable 2FA for other admin accounts');
+          throw Errors.forbidden(
+            'Hanya Super Admin yang dapat mematikan verifikasi dua langkah akun yang wajib memakainya'
+          );
         }
       }
 
       // Check if target user actually has 2FA enabled
       if (!user.isTwoFactorEnabled) {
-        throw Errors.badRequest('2FA is not enabled for this user');
+        throw Errors.badRequest('Verifikasi dua langkah pengguna ini tidak aktif');
       }
 
-      // Verify ADMIN's OTP
-      const isValid = (await verifyOtp({ token, secret: admin.twoFactorSecret })).valid;
-      if (!isValid) throw Errors.unauthorized('Invalid Admin OTP');
+      // Verify ADMIN's OTP. A wrong code is a 400, not a 401: the session is
+      // fine, and a 401 sends the web client off to refresh it.
+      if (!(await totpMatches(token, admin.twoFactorSecret))) {
+        throw Errors.badRequest(
+          'Kode Anda tidak cocok. Masukkan 6 digit terbaru dari aplikasi autentikator Anda.'
+        );
+      }
     } else {
       // User disabling their own
       if (isTargetAdmin) {
-        throw Errors.forbidden('2FA cannot be disabled for Admin accounts');
+        throw Errors.forbidden(
+          'Verifikasi dua langkah wajib untuk peran Anda dan tidak dapat dimatikan'
+        );
       }
 
       if (!user.isTwoFactorEnabled || !user.twoFactorSecret) {
-        throw Errors.badRequest('2FA is not enabled');
+        throw Errors.badRequest('Verifikasi dua langkah tidak aktif');
       }
-      // Verify USER's OTP
-      const isValid = (await verifyOtp({ token, secret: user.twoFactorSecret })).valid;
-      if (!isValid) throw Errors.unauthorized('Invalid OTP');
+      // Verify USER's OTP (400 on a wrong code — see above).
+      if (!(await totpMatches(token, user.twoFactorSecret))) {
+        throw Errors.badRequest(
+          'Kode tidak cocok. Masukkan 6 digit terbaru dari aplikasi autentikator.'
+        );
+      }
     }
 
     await prisma.user.update({
@@ -1872,15 +1915,22 @@ export class AuthService {
   /**
    * Get 2FA Status
    */
-  async getTwoFactorStatus(userId: string) {
+  async getTwoFactorStatus(userId: string): Promise<TwoFactorStatus> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { isTwoFactorEnabled: true },
+      select: {
+        isTwoFactorEnabled: true,
+        userRoles: { where: activeRoleWhere(), select: { role: { select: { code: true } } } },
+      },
     });
 
     if (!user) throw Errors.notFound('User');
 
-    return { isEnabled: user.isTwoFactorEnabled };
+    return {
+      isEnabled: user.isTwoFactorEnabled,
+      // The profile shows "wajib" instead of a button the API would refuse.
+      isRequired: requiresSecondFactor(user.userRoles.map((r) => r.role.code)),
+    };
   }
 
   private generateRecoveryCodes(): string[] {

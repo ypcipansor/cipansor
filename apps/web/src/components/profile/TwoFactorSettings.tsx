@@ -25,6 +25,8 @@ import { ShieldCheck, ShieldAlert, Loader2 } from "lucide-react";
 
 export function TwoFactorSettings() {
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
+  // One of the account's roles makes 2FA mandatory: there is nothing to turn off.
+  const [isRequired, setIsRequired] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSetupOpen, setIsSetupOpen] = useState(false);
   const [isDisableOpen, setIsDisableOpen] = useState(false);
@@ -33,8 +35,9 @@ export function TwoFactorSettings() {
     try {
       const res = await authApi.get2FAStatus();
       setIsEnabled(res.data.data.isEnabled);
+      setIsRequired(res.data.data.isRequired);
     } catch {
-      toast.error("Failed to fetch 2FA status");
+      toast.error("Gagal memuat status verifikasi dua langkah");
     } finally {
       setIsLoading(false);
     }
@@ -47,7 +50,7 @@ export function TwoFactorSettings() {
   const handleDisable = async (token: string) => {
     try {
       await authApi.disable2FA({ token });
-      toast.success("2FA Disabled Successfully");
+      toast.success("Verifikasi dua langkah dimatikan");
       setIsDisableOpen(false);
       fetchStatus();
     } catch {
@@ -70,10 +73,12 @@ export function TwoFactorSettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ShieldCheck className="h-5 w-5" />
-          Two-Factor Authentication
+          Verifikasi Dua Langkah
         </CardTitle>
         <CardDescription>
-          Add an extra layer of security to your account.
+          Selain kata sandi, masuk juga memerlukan kode dari aplikasi
+          autentikator di ponsel Anda. Kata sandi yang bocor saja tidak cukup
+          untuk membuka akun.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -82,27 +87,32 @@ export function TwoFactorSettings() {
             {isEnabled ? (
               <div className="flex items-center gap-2 text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-900/20 px-3 py-1 rounded-full text-sm font-medium">
                 <ShieldCheck className="h-4 w-4" />
-                Enabled
+                Aktif
               </div>
             ) : (
               <div className="flex items-center gap-2 text-amber-600 dark:text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-3 py-1 rounded-full text-sm font-medium">
                 <ShieldAlert className="h-4 w-4" />
-                Disabled
+                Tidak aktif
               </div>
             )}
           </div>
 
-          {!isEnabled ? (
+          {isEnabled && isRequired ? (
+            <p className="max-w-xs text-right text-sm text-muted-foreground">
+              Wajib untuk peran Anda. Kehilangan ponsel? Pakai kode pemulihan,
+              atau minta Super Admin mematikannya agar Anda bisa memasangnya
+              lagi.
+            </p>
+          ) : !isEnabled ? (
             <Dialog open={isSetupOpen} onOpenChange={setIsSetupOpen}>
               <DialogTrigger asChild>
-                <Button>Activate 2FA</Button>
+                <Button>Aktifkan</Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Setup Two-Factor Authentication</DialogTitle>
+                  <DialogTitle>Aktifkan Verifikasi Dua Langkah</DialogTitle>
                   <DialogDescription>
-                    Scan the QR code with your authenticator app (Google
-                    Authenticator, Authy, etc).
+                    Siapkan ponsel Anda. Langkahnya kurang dari dua menit.
                   </DialogDescription>
                 </DialogHeader>
                 <TwoFactorSetup
@@ -116,16 +126,20 @@ export function TwoFactorSettings() {
           ) : (
             <Dialog open={isDisableOpen} onOpenChange={setIsDisableOpen}>
               <DialogTrigger asChild>
-                <Button variant="destructive">Deactivate 2FA</Button>
+                <Button variant="destructive">Matikan</Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                  <DialogTitle>Disable Two-Factor Authentication</DialogTitle>
+                  <DialogTitle>Matikan Verifikasi Dua Langkah</DialogTitle>
                   <DialogDescription>
-                    Please enter your OTP to confirm deactivation.
+                    Masukkan kode dari aplikasi autentikator untuk
+                    mengonfirmasi. Sesudahnya, masuk cukup dengan kata sandi.
                   </DialogDescription>
                 </DialogHeader>
-                <TwoFactorVerify onVerify={handleDisable} />
+                <TwoFactorVerify
+                  onVerify={handleDisable}
+                  submitLabel="Matikan"
+                />
               </DialogContent>
             </Dialog>
           )}

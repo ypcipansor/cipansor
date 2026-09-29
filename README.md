@@ -297,7 +297,7 @@ Dibangun dengan teknologi modern untuk performa dan skalabilitas tinggi:
 - **Bahasa**: TypeScript
 - **Database**: PostgreSQL
 - **ORM**: Prisma
-- **Real-time**: Socket.IO + Redis
+- **Cache**: Redis
 - **Testing**: Vitest
 
 ### Frontend (`apps/web`)
@@ -439,7 +439,7 @@ pnpm test:e2e:mobile
 **Test Coverage:**
 
 - ✅ Authentication (11 tests)
-- ✅ Dashboard Real-time (9 tests)
+- ✅ Dashboard data refresh (5 tests)
 - ✅ Tahfidz Dashboard (8 tests)
 - ✅ PAUD Module (15 tests)
 - ✅ Finance Reports (5 tests)

@@ -60,7 +60,7 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
-vi.mock('@/lib/realtime', () => ({
+vi.mock('@/lib/dashboard-metrics', () => ({
   getCurrentDashboardMetrics: vi.fn().mockResolvedValue({
     students: { total: 100, active: 90, change: 5 },
     teachers: { total: 20 },

@@ -40,7 +40,10 @@ Mount new modules in `src/app.ts`.
   with `validate(schema)` / `validateQuery(schema)`.
 - Auth/RBAC: `src/middleware/auth.ts` — `authorize(RoleCode.X, ...)`,
   `hasPermission('perm')`, `isAdmin`, `isSuperAdmin`, `isTeacherOrAbove`.
-- Infra: `src/lib/{prisma,redis,jwt,logger,event-bus,realtime}.ts`.
+- Infra: `src/lib/{prisma,redis,jwt,logger,event-bus,dashboard-metrics}.ts`.
+- **No push channel** (Socket.IO, WebSocket, SSE): the web polls. Adding one is
+  a decision — `.claude/memory/decisions/realtime-polling.md`, enforced by
+  `src/utils/push-channel.guard.test.ts`.
 - **Outbound URLs: `config.publicSiteUrl` / `config.portalUrl`**, and for
   certificates `utils/verification-url.ts`. Never build one from
   `process.env.SOMETHING || 'https://…'` inline. There used to be an `APP_URL`

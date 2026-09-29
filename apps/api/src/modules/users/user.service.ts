@@ -54,6 +54,9 @@ export class UserService {
           role: true,
           unitId: true,
           isActive: true,
+          // The users page offers "turn off 2FA" only where it is on; without
+          // the flag the action never appeared.
+          isTwoFactorEnabled: true,
           lastLoginAt: true,
           createdAt: true,
           updatedAt: true,

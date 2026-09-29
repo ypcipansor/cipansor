@@ -32,6 +32,18 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
   Types entries below are part of this. Phase 1 of the audit plan fixes it area
   by area; the guard (#563) stops new ones.
+- **A unit's NPSN cannot be entered anywhere.** `units.npsn` is read by the
+  public accreditation section (which tells visitors to check the rating by
+  NPSN), the EMIS and Dapodik exports and the SKHUN, but no API field, form or
+  seed writes it; the EMIS check answers "Unit belum memiliki NPSN" for every
+  unit. The Edit Unit form (`/units/[id]`) is the place; next PR.
+- **Profil Unit → Statistik Unit is a placeholder.** Total Siswa, Total Guru
+  and Total Kelas are a hard-coded "-" (`apps/web/src/app/units/[id]/page.tsx`)
+  while `GET /units/:id` already returns counts; next PR, with the NPSN.
+- **The profile names a kepala sekolah "Guru/Ustadz".** The badge under the
+  name on *avatar → Profile* labels the legacy bucket (`getEffectiveRole`),
+  so every kepala and the Pimpinan Pesantren read as teachers, and organs as
+  "Admin Unit"; the role picker in the header already shows the role's name.
 - **Homeroom pages that still do not work** (after #579–#581).
   *Wali Kelas → Pesan Orang Tua* calls `/homeroom/classes/{id}/messages` and
   `POST /homeroom/messages`, which do not exist; the `messages` module
@@ -213,6 +225,16 @@ decision.
   `/assessment/skhun` prints a document not issued since the national exam was
   abolished (2021). 50 English menu labels in an Indonesian UI; 27 paths with
   more than one label. Full table: the audit report linked in `progress.md`.
+- **Manajemen Risiko is still half English.** The list page was translated
+  when the yayasan's organs were given it (2026-09-28); the heatmap
+  ("Risk Heatmap", "Almost Certain" … "Catastrophic"), the create page
+  ("Create New Risk", every label and message), the detail page and the raw
+  enum values in the table (`FINANCIAL`, `HIGH`, `OPEN`) are not.
+- **`lingkungan` still decides unit scope on the legacy `role`.** Internal
+  audit, risk and sharia compliance moved to the helpers in
+  `apps/api/src/utils/resolve-unit-id.ts` (`listUnitScope`,
+  `assertReachesUnit`, `writeUnitScope`) on 2026-09-28; `lingkungan` has the
+  same hand-written `isPrivileged` and should move too.
 - **One concept, several modules** (audit 2026-09-25): tahfidz across five
   modules (`takhosus` re-exposes murojaah, simaan, sanad and halaqoh on the same
   tables), report cards in five places, lesson plans in three models, P5 in two
@@ -276,9 +298,22 @@ decision.
   built from the same Dockerfile. The fix is a runtime-image change (musl
   `sharp` in the runner, or a glibc base). Until then ship images at display
   size — `galleryThumb()` in `packages/shared/src/public-site.ts` does.
+- **The dashboard trend has no page.** `jobs/dashboard-metrics.job.ts` runs
+  every minute and writes 6 `dashboard_history` rows (8,640 a day, pruned to
+  24 hours) for `GET /dashboard/metrics`. Its only web consumer,
+  `useDashboardMetrics` in `hooks/use-dashboard.ts`, is used by no page
+  (found 2026-09-28, while removing Socket.IO). Either show the trend on a
+  dashboard, or drop the job, the endpoint and the hook together. That is a
+  product decision.
 
 ## Tests
 
+- **`spmb-workflow.spec.ts` leaves an active admission period behind on every
+  run** ("SPMB E2E Auto …"). On a fresh CI database that is one extra period;
+  on a local stack reused across runs they pile up, push the seeded
+  "Gelombang 1" out of the Admissions overview, and `admissions-funnel.spec.ts`
+  fails (seen after three full runs, 2026-09-28). The spec should delete what it
+  creates, or the funnel test should look the seeded period up by name.
 - **About a hundred e2e heading assertions are unscoped** (103 by a plain grep,
   2026-09-25). `getByRole("heading", …)` in `apps/web/e2e` without a `<main>`
   scope can match a sidebar group title
