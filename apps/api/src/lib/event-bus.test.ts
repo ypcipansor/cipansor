@@ -14,6 +14,7 @@ vi.mock('@/lib/prisma', () => ({
     tahfidzRecord: { groupBy: vi.fn().mockResolvedValue([]) },
     notification: { create: vi.fn().mockResolvedValue({ id: 'notif-1' }) },
     setting: { findFirst: vi.fn() },
+    pushSubscription: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   },
 }));
 
@@ -383,5 +384,38 @@ describe('Event bus — tahfidz milestones', () => {
     await settle();
 
     expect(milestoneNotifications()).toHaveLength(0);
+  });
+});
+
+describe('Event bus — logout clears push subscriptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventBus.removeAllListeners();
+    initializeEventBus();
+  });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('drops every push row for the signed-out user (CWE-200)', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 2,
+    });
+
+    eventBus.emit('auth:logged_out', { userId: 'user-1' });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+  });
+
+  it('swallows a cleanup failure so logout still succeeds', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('db down')
+    );
+
+    // Must not reject out of the emit path.
+    eventBus.emit('auth:logged_out', { userId: 'user-1' });
+    await settle();
   });
 });

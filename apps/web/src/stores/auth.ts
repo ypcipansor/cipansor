@@ -6,6 +6,7 @@ import {
   clearTwoFactorInvite,
   markTwoFactorInvite,
 } from "@/lib/two-factor-invite";
+import { clearPrivateServiceWorkerCaches } from "@/lib/push-cache";
 
 interface AuthState {
   user: User | null;
@@ -181,6 +182,11 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           // Ignore logout errors — the local wipe below is the important part.
         } finally {
+          // Cached per-user content (pages, private images) outlives the
+          // session; drop it so the next person on this device cannot read a
+          // former user's data from Cache Storage (CWE-524). Best-effort —
+          // never block the logout.
+          void clearPrivateServiceWorkerCaches();
           clearTwoFactorInvite();
           set({
             user: null,

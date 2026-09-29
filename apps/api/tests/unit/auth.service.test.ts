@@ -131,6 +131,13 @@ vi.mock('@/config', () => ({
   },
 }));
 
+// auth.service emits `auth:logged_out` on logout/password reset; the real bus
+// pulls in the notifications stack (and its config) at import time, so stub it.
+const mockEmit = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/event-bus', () => ({
+  eventBus: { emit: mockEmit },
+}));
+
 // otplib (functional API) and qrcode are used by the 2FA flow.
 vi.mock('otplib', () => ({
   generateSecret: mockGenerateSecret,
@@ -522,6 +529,10 @@ describe('AuthService', () => {
           userId: 'user-1',
           token: 'specific-token',
         },
+      });
+      // Push endpoints outlive the session; logout asks the bus to drop them.
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
       });
     });
 

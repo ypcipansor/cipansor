@@ -55,6 +55,16 @@ self.addEventListener("message", (event) => {
   if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
+  // On logout, drop the caches that can hold per-user content: navigations
+  // (cached HTML/pages) and the runtime cache. Cached bytes outlive the session
+  // that fetched them, so without this a signed-out device could still read a
+  // former user's pages from Cache Storage (CWE-524). The precache — public
+  // static assets — is kept.
+  if (event.data && event.data.type === "CLEAR_PRIVATE_CACHES") {
+    event.waitUntil(
+      Promise.all([caches.delete(PAGES), caches.delete(RUNTIME)]),
+    );
+  }
 });
 
 self.addEventListener("activate", (event) => {
@@ -99,7 +109,12 @@ async function trimCache(cacheName, max) {
 
 /** Only cache responses that are worth serving later. */
 function isCacheable(resp) {
-  return resp && resp.ok && (resp.type === "basic" || resp.type === "default");
+  if (!resp || !resp.ok) return false;
+  if (resp.type !== "basic" && resp.type !== "default") return false;
+  // Honour the server's own cache contract: a `private`/`no-store` response is
+  // not ours to keep, whatever the URL looks like.
+  const cc = resp.headers.get("cache-control") || "";
+  return !/\b(no-store|private)\b/i.test(cc);
 }
 
 function isImmutable(url) {
@@ -109,6 +124,11 @@ function isImmutable(url) {
 }
 
 function isStaticAsset(url) {
+  // `/uploads/**` holds student photos and documents behind `uploadsAuth`. They
+  // are private per-user data: caching them would leave another account's
+  // pictures readable from Cache Storage after logout (CWE-524), so they are
+  // never stored here regardless of extension.
+  if (url.pathname.startsWith("/uploads/")) return false;
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
@@ -143,14 +163,23 @@ function staleWhileRevalidate(request, event) {
   return caches.open(RUNTIME).then(async (cache) => {
     const cached = await cache.match(request);
     const network = fetch(request)
-      .then((resp) => {
+      .then(async (resp) => {
         if (isCacheable(resp)) {
-          cache.put(request, resp.clone()).then(() => trimCache(RUNTIME, MAX_RUNTIME_ENTRIES));
+          // Await the put *inside* the promise handed to waitUntil. If the write
+          // is launched fire-and-forget, the browser may end the event as soon
+          // as the fetch settles and abort the unfinished put — the stale copy
+          // then never refreshes.
+          try {
+            await cache.put(request, resp.clone());
+            await trimCache(RUNTIME, MAX_RUNTIME_ENTRIES);
+          } catch {
+            // A storage failure must not cost the caller a usable response.
+          }
         }
         return resp;
       })
       .catch(() => cached);
-    // Keep the refresh alive past the response so it is not aborted.
+    // Keep the refresh (fetch *and* its cache write) alive past the response.
     event.waitUntil(network.then(() => undefined).catch(() => undefined));
     return cached || network;
   });
@@ -164,13 +193,14 @@ function staleWhileRevalidate(request, event) {
  * page is the final fallback.
  */
 function navigationHandler(request, event) {
-  // Navigation preload (see activate) already started the request; only fall
-  // back to a fresh fetch when the browser did not supply one.
-  const network = event.preloadResponse
-    ? event.preloadResponse
-    : fetch(request);
-  // `preloadResponse` rejects rather than resolving undefined on a failed
-  // preload, so the same catch below covers both paths.
+  // Navigation preload (see activate) already started the request, so we can
+  // consume its result instead of fetching again. `preloadResponse` is a promise
+  // that can resolve to `undefined` when the browser did not preload (preload
+  // disabled, or it failed) — so await it and fall back to a real fetch rather
+  // than passing `undefined` to respondWith, which fails the navigation outright.
+  const network = Promise.resolve(event.preloadResponse)
+    .then((preloaded) => (preloaded ? preloaded : fetch(request)))
+    .catch(() => fetch(request));
   return network
     .then((resp) => {
       if (isCacheable(resp)) {
@@ -244,5 +274,28 @@ self.addEventListener("notificationclick", (event) => {
       }
       return self.clients.openWindow(target);
     }),
+  );
+});
+
+// A push endpoint is not permanent: the push service rotates or revokes it
+// outside the page's control, and this event is the browser's one chance to
+// grab a replacement before the subscription is lost for good and the server's
+// stored endpoint starts answering 410 Gone. Re-subscribe with the same key
+// options so the new endpoint keeps working.
+//
+// The server row is deliberately NOT updated from here: the API requires a
+// double-submit CSRF header on cookie-authenticated writes, and a service
+// worker cannot read the `cipansor_csrf` cookie to produce it. The app's
+// on-mount reconcile (useWebPush) re-registers whatever this handler leaves in
+// `pushManager` on the next visit, so the pair converges then. Never throw:
+// there is nothing the user can act on, and the next visit repairs it.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  // Some browsers hand over the replacement directly; only fall back to a
+  // fresh subscribe() when they did not.
+  if (event.newSubscription) return;
+  event.waitUntil(
+    self.registration.pushManager
+      .subscribe(event.oldSubscription && event.oldSubscription.options)
+      .catch(() => undefined),
   );
 });

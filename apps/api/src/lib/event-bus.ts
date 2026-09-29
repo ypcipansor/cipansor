@@ -15,6 +15,7 @@ import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
 import {
   getChannelPolicy,
+  deleteAllPushSubscriptions,
   type ChannelPolicy,
 } from '@/modules/notifications/notifications.service';
 import {
@@ -145,6 +146,9 @@ export interface AppEvents {
   // Notification Events
   'notification:send': NotificationSendEvent;
   'email:send_reset_token': EmailSendResetTokenEvent;
+
+  // Auth Events
+  'auth:logged_out': AuthLoggedOutEvent;
 
   // Dashboard Events
   'dashboard:refresh': DashboardRefreshEvent;
@@ -350,6 +354,10 @@ export interface EmailSendResetTokenEvent {
 export interface DashboardRefreshEvent {
   unitId?: string;
   reason: string;
+}
+
+export interface AuthLoggedOutEvent {
+  userId: string;
 }
 
 /**
@@ -593,6 +601,32 @@ export function initializeEventBus(): void {
       }
     } catch (err) {
       logger.error('Failed to send password reset email', { err });
+    }
+  });
+
+  // ===== AUTH EVENT HANDLERS =====
+
+  /**
+   * Logout revokes a device's push subscription.
+   *
+   * A browser push endpoint identifies a device, not a person. Left behind, it
+   * would keep delivering the signed-out user's private notifications to anyone
+   * who later uses that device (CWE-200). Clearing every row for the user is the
+   * safe choice: the device re-subscribes on its next login, and a logout cannot
+   * tell which of the user's rows belongs to *this* browser.
+   */
+  eventBus.on('auth:logged_out', async (event) => {
+    try {
+      const removed = await deleteAllPushSubscriptions(event.userId);
+      if (removed > 0) {
+        logger.info('Cleared push subscriptions on logout', {
+          userId: event.userId,
+          count: removed,
+        });
+      }
+    } catch (err) {
+      // Never let this turn a successful logout into a 500.
+      logger.error('Failed to clear push subscriptions on logout', { err });
     }
   });
 

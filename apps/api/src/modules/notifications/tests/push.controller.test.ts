@@ -1,29 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const prismaMock = vi.hoisted(() => ({
-  pushSubscription: {
-    upsert: vi.fn(),
-    deleteMany: vi.fn(),
-  },
+const serviceMock = vi.hoisted(() => ({
+  subscribePush: vi.fn(),
+  unsubscribePush: vi.fn(),
+  hasPushSubscription: vi.fn(),
 }));
 
-vi.mock('../../../lib/prisma', () => ({ prisma: prismaMock }));
+vi.mock('../notifications.service', () => serviceMock);
 // The controller imports these at module load; mocking keeps the test to the
-// two handlers under test without booting WhatsApp/scheduler/email transports.
+// three handlers under test without booting WhatsApp/scheduler/email transports.
 vi.mock('../whatsapp.service', () => ({ whatsAppService: {} }));
 vi.mock('../scheduler.service', () => ({ notificationScheduler: {} }));
 vi.mock('../email-transport', () => ({ describeEmailTransport: vi.fn() }));
 
-import { subscribePush, unsubscribePush } from '../notifications.controller';
+import { subscribePush, unsubscribePush, getPushStatus } from '../notifications.controller';
 
 type Res = {
   status: ReturnType<typeof vi.fn>;
   json: ReturnType<typeof vi.fn>;
 };
 
-function makeReq(body: unknown, user = { sub: 'user-1' }) {
+function makeReq(body: unknown, user = { sub: 'user-1' }, query: unknown = {}) {
   return {
     body,
+    query,
     user,
     get: vi.fn(() => 'vitest-agent'),
   } as unknown as Parameters<typeof subscribePush>[0];
@@ -47,8 +47,8 @@ const VALID = {
 describe('subscribePush', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('upserts on the endpoint, scoping the row to the caller', async () => {
-    prismaMock.pushSubscription.upsert.mockResolvedValue({ id: 'sub-1' });
+  it('delegates to the service with the caller and their user-agent', async () => {
+    serviceMock.subscribePush.mockResolvedValue('created');
     const req = makeReq(VALID);
     const res = makeRes();
     const next = vi.fn();
@@ -56,33 +56,41 @@ describe('subscribePush', () => {
     await subscribePush(req, res as never, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(prismaMock.pushSubscription.upsert).toHaveBeenCalledTimes(1);
-    const arg = prismaMock.pushSubscription.upsert.mock.calls[0][0];
-    expect(arg.where).toEqual({ endpoint: VALID.subscription.endpoint });
-    expect(arg.create.userId).toBe('user-1');
-    expect(arg.create.p256dh).toBe('p256dh-key');
-    expect(arg.create.auth).toBe('auth-key');
-    expect(arg.create.userAgent).toBe('vitest-agent');
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    expect(serviceMock.subscribePush).toHaveBeenCalledWith(
+      'user-1',
+      VALID.subscription,
+      'vitest-agent'
+    );
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: { created: true } })
+    );
   });
 
-  it('rejects a malformed subscription and never writes', async () => {
-    const req = makeReq({ subscription: { endpoint: 'not-a-url', keys: {} } });
+  it('reports created=false when the row already existed', async () => {
+    serviceMock.subscribePush.mockResolvedValue('updated');
     const res = makeRes();
+
+    await subscribePush(makeReq(VALID), res as never, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ data: { created: false } }));
+  });
+
+  it('rejects a malformed subscription and never calls the service', async () => {
+    const req = makeReq({ subscription: { endpoint: 'not-a-url', keys: {} } });
     const next = vi.fn();
 
-    await subscribePush(req, res as never, next);
+    await subscribePush(req, makeRes() as never, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(prismaMock.pushSubscription.upsert).not.toHaveBeenCalled();
+    expect(serviceMock.subscribePush).not.toHaveBeenCalled();
   });
 });
 
 describe('unsubscribePush', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('deletes only the caller’s row for that endpoint', async () => {
-    prismaMock.pushSubscription.deleteMany.mockResolvedValue({ count: 1 });
+  it('removes the caller’s row for that endpoint', async () => {
+    serviceMock.unsubscribePush.mockResolvedValue(1);
     const req = makeReq({ endpoint: 'https://push.example.com/abc123' });
     const res = makeRes();
     const next = vi.fn();
@@ -90,23 +98,42 @@ describe('unsubscribePush', () => {
     await unsubscribePush(req, res as never, next);
 
     expect(next).not.toHaveBeenCalled();
-    expect(prismaMock.pushSubscription.deleteMany).toHaveBeenCalledWith({
-      where: {
-        endpoint: 'https://push.example.com/abc123',
-        userId: 'user-1',
-      },
-    });
+    expect(serviceMock.unsubscribePush).toHaveBeenCalledWith(
+      'user-1',
+      'https://push.example.com/abc123'
+    );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });
 
   it('rejects a non-url endpoint', async () => {
-    const req = makeReq({ endpoint: 'nope' });
-    const res = makeRes();
     const next = vi.fn();
-
-    await unsubscribePush(req, res as never, next);
-
+    await unsubscribePush(makeReq({ endpoint: 'nope' }), makeRes() as never, next);
     expect(next).toHaveBeenCalledTimes(1);
-    expect(prismaMock.pushSubscription.deleteMany).not.toHaveBeenCalled();
+    expect(serviceMock.unsubscribePush).not.toHaveBeenCalled();
+  });
+});
+
+describe('getPushStatus', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('answers whether the caller owns the endpoint', async () => {
+    serviceMock.hasPushSubscription.mockResolvedValue(true);
+    const req = makeReq({}, { sub: 'user-1' }, { endpoint: VALID.subscription.endpoint });
+    const res = makeRes();
+
+    await getPushStatus(req, res as never, vi.fn());
+
+    expect(serviceMock.hasPushSubscription).toHaveBeenCalledWith(
+      'user-1',
+      VALID.subscription.endpoint
+    );
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { registered: true } });
+  });
+
+  it('rejects a missing endpoint query', async () => {
+    const next = vi.fn();
+    await getPushStatus(makeReq({}, { sub: 'user-1' }, {}), makeRes() as never, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(serviceMock.hasPushSubscription).not.toHaveBeenCalled();
   });
 });

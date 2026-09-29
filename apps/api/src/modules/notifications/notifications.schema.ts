@@ -176,5 +176,10 @@ export const pushUnsubscribeSchema = z.object({
   endpoint: z.string().url().max(2048),
 });
 
+/** Query for the ownership check (GET /notifications/push/status). */
+export const pushStatusQuerySchema = z.object({
+  endpoint: z.string().url().max(2048),
+});
+
 export type PushSubscribeInput = z.infer<typeof pushSubscribeSchema>;
 export type PushUnsubscribeInput = z.infer<typeof pushUnsubscribeSchema>;

@@ -229,9 +229,11 @@ router.delete(
 router.put('/fcm-token', controller.updateFcmToken);
 
 // Browser Web Push (the PWA). Any authenticated user; each device registers its
-// own subscription. `/push/unsubscribe` stays static above the `/:id` routes.
+// own subscription. `/push/subscribe`, `/push/unsubscribe` and `/push/status`
+// stay static above the `/:id` routes.
 router.post('/push/subscribe', controller.subscribePush);
 router.post('/push/unsubscribe', controller.unsubscribePush);
+router.get('/push/status', controller.getPushStatus);
 
 // ==================== WHATSAPP ====================
 

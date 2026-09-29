@@ -3,8 +3,9 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 
 const subscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unsubscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const pushStatus = vi.hoisted(() => vi.fn().mockResolvedValue(true));
 vi.mock("@/services/notifications.service", () => ({
-  notificationsService: { subscribePush, unsubscribePush },
+  notificationsService: { subscribePush, unsubscribePush, pushStatus },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -110,7 +111,7 @@ describe("useWebPush", () => {
     expect(result.current.state).toBe("denied");
   });
 
-  it("disables: unsubscribes locally and deletes the endpoint server-side", async () => {
+  it("disables: deletes the endpoint server-side, then unsubscribes locally", async () => {
     installPushEnv({ existing: subscription });
     const { result } = renderHook(() => useWebPush());
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
@@ -119,10 +120,46 @@ describe("useWebPush", () => {
       await result.current.disable();
     });
 
-    expect(subscription.unsubscribe).toHaveBeenCalled();
     expect(unsubscribePush).toHaveBeenCalledWith(
       "https://push.example.com/abc",
     );
+    expect(subscription.unsubscribe).toHaveBeenCalled();
+    // The server row must be gone before the browser drops the endpoint, or a
+    // failed API call could never be retried (the endpoint is lost).
+    const apiCallOrder = unsubscribePush.mock.invocationCallOrder[0];
+    const browserCallOrder =
+      subscription.unsubscribe.mock.invocationCallOrder[0];
+    expect(apiCallOrder).toBeLessThan(browserCallOrder);
     expect(result.current.state).toBe("unsubscribed");
+  });
+
+  it("keeps the browser subscription usable when the server delete fails", async () => {
+    installPushEnv({ existing: subscription });
+    unsubscribePush.mockRejectedValueOnce(new Error("network"));
+    const { result } = renderHook(() => useWebPush());
+    await waitFor(() => expect(result.current.state).toBe("subscribed"));
+
+    await act(async () => {
+      await result.current.disable();
+    });
+
+    // The endpoint is still in the browser, so the next attempt can retry.
+    expect(subscription.unsubscribe).not.toHaveBeenCalled();
+    expect(result.current.state).toBe("subscribed");
+  });
+
+  it("repairs a missing server row on mount instead of lying 'subscribed'", async () => {
+    // Browser holds a subscription, but the API has no row for it (a failed
+    // registration, or a logout-time purge). The device is not actually
+    // reachable, so the hook must re-register rather than show "Aktif".
+    installPushEnv({ existing: subscription });
+    pushStatus.mockResolvedValueOnce(false);
+    const { result } = renderHook(() => useWebPush());
+
+    await waitFor(() => expect(result.current.state).toBe("subscribed"));
+    expect(pushStatus).toHaveBeenCalledWith("https://push.example.com/abc");
+    expect(subscribePush).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: "https://push.example.com/abc" }),
+    );
   });
 });

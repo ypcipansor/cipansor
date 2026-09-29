@@ -12,6 +12,7 @@ import {
   invitesSecondFactor,
 } from '@/middleware/auth';
 import { config } from '@/config';
+import { eventBus } from '@/lib/event-bus';
 import { assertPasswordAllowed } from '@/lib/password-policy';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import type { TwoFactorStatus } from '@cipansor/shared';
@@ -565,6 +566,12 @@ export class AuthService {
         where: { userId },
       });
     }
+
+    // A browser push endpoint outlives the session that created it. Left in
+    // place it would keep pushing this user's private notifications to a device
+    // they have signed out of (CWE-200); clearing it is handled by the event
+    // bus so auth does not reach into the notifications module.
+    eventBus.emit('auth:logged_out', { userId });
   }
 
   /**
@@ -776,6 +783,10 @@ export class AuthService {
     // Whoever asked for this reset may be locking someone else out on purpose.
     // Ending every existing session is the point.
     await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+    // Same reason as logout: push endpoints survive the session, so a reset
+    // must not leave a device able to receive the account's notifications.
+    eventBus.emit('auth:logged_out', { userId: user.id });
 
     return { message: 'Password berhasil diperbarui. Silakan masuk dengan password baru Anda.' };
   }

@@ -228,4 +228,24 @@ export const notificationsService = {
   async unsubscribePush(endpoint: string): Promise<void> {
     await api.post("/notifications/push/unsubscribe", { endpoint });
   },
+
+  /**
+   * Whether the API has a stored row for this browser endpoint.
+   *
+   * Distinct from "the browser holds a subscription": the two can disagree
+   * after a failed registration or a logout-time purge, and the settings card
+   * must reflect the server, not the browser.
+   */
+  async pushStatus(endpoint: string): Promise<boolean> {
+    const response = await api.get<ApiResponse<{ registered: boolean }>>(
+      "/notifications/push/status",
+      {
+        params: { endpoint },
+        // A failed probe should read as "not registered"; the card explains
+        // itself, so don't toast a permission/route error at the user.
+        skipErrorToast: true,
+      },
+    );
+    return response.data.data.registered;
+  },
 };

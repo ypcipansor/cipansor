@@ -1,5 +1,6 @@
 import { Prisma, NotificationStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { Errors } from '../../middleware/error';
 import {
   notificationService as channelService,
   type NotificationChannel,
@@ -647,4 +648,93 @@ export async function updateAnnouncement(id: string, data: UpdateAnnouncementInp
 
 export async function deleteAnnouncement(id: string) {
   return prisma.announcement.delete({ where: { id } });
+}
+
+// ==================== WEB PUSH (browser) ====================
+
+/**
+ * Store the caller's browser push subscription.
+ *
+ * A browser endpoint identifies a *device*, not a person, and it is stable
+ * across sign-ins: the same endpoint returns on every re-subscribe. Reassigning
+ * it to whoever last registered would let anyone who learns the endpoint
+ * silently hijack a device's notification routing (CWE-639), so an endpoint
+ * already owned by another user is refused rather than moved.
+ *
+ * Re-subscribing with the *same* user is the normal case (keys rotate, the
+ * device changes UA) and refreshes the row in place.
+ */
+export async function subscribePush(
+  userId: string,
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  },
+  userAgent: string | null
+): Promise<'created' | 'updated'> {
+  const existing = await prisma.pushSubscription.findUnique({
+    where: { endpoint: subscription.endpoint },
+    select: { id: true, userId: true },
+  });
+
+  if (existing && existing.userId !== userId) {
+    // Do not name the device or the current owner; the caller must not be able
+    // to probe whose endpoint it is.
+    throw Errors.conflict('This push endpoint is already registered to another account');
+  }
+
+  if (existing) {
+    await prisma.pushSubscription.update({
+      where: { id: existing.id },
+      data: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent,
+      },
+    });
+    return 'updated';
+  }
+
+  await prisma.pushSubscription.create({
+    data: {
+      userId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      userAgent,
+    },
+  });
+  return 'created';
+}
+
+/** Remove the caller's subscription for one endpoint (on unsubscribe/logout). */
+export async function unsubscribePush(userId: string, endpoint: string): Promise<number> {
+  // Scoped to the caller: another user's endpoint is not theirs to delete, and
+  // matching on userId makes a stale/foreign endpoint a no-op.
+  const { count } = await prisma.pushSubscription.deleteMany({
+    where: { endpoint, userId },
+  });
+  return count;
+}
+
+/** Whether this user has a stored row for the given endpoint. */
+export async function hasPushSubscription(userId: string, endpoint: string): Promise<boolean> {
+  const row = await prisma.pushSubscription.findFirst({
+    where: { userId, endpoint },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * Drop every push subscription a user has.
+ *
+ * Called on logout and on password reset: an endpoint left behind would keep
+ * delivering that person's private notifications to a device they no longer
+ * control (CWE-200). A device re-subscribes on its next login, so clearing is
+ * safe.
+ */
+export async function deleteAllPushSubscriptions(userId: string): Promise<number> {
+  const { count } = await prisma.pushSubscription.deleteMany({ where: { userId } });
+  return count;
 }

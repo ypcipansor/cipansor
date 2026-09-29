@@ -98,6 +98,7 @@ function loadWorker() {
   const clientsClaim = vi.fn();
   const fetchMock = vi.fn();
   const enableNavigationPreload = vi.fn().mockResolvedValue(undefined);
+  const pushSubscribe = vi.fn().mockResolvedValue({ endpoint: "https://new" });
 
   const self = {
     location: { origin: ORIGIN },
@@ -112,6 +113,7 @@ function loadWorker() {
     registration: {
       showNotification: vi.fn(),
       navigationPreload: { enable: enableNavigationPreload },
+      pushManager: { subscribe: pushSubscribe },
     },
   };
 
@@ -137,6 +139,7 @@ function loadWorker() {
     skipWaiting,
     fetchMock,
     enableNavigationPreload,
+    pushSubscribe,
   };
 }
 
@@ -295,6 +298,84 @@ describe("sw.js fetch routing", () => {
     );
     expect(runtime?.entries.length ?? 0).toBe(0);
   });
+
+  it("honours the server's own no-store/private cache-control", async () => {
+    worker.fetchMock.mockResolvedValue(
+      new Response("secret", {
+        status: 200,
+        headers: { "cache-control": "private, no-store" },
+      }),
+    );
+    await dispatchFetch(worker.listeners, get("/_next/static/chunks/c.js"));
+    await new Promise((r) => setTimeout(r, 0));
+    const runtime = [...worker.cacheStorage.caches.values()].find((c) =>
+      c.name.startsWith("cipansor-runtime"),
+    );
+    expect(runtime?.entries.length ?? 0).toBe(0);
+  });
+
+  it("never intercepts or caches /uploads/** (private per-user files)", () => {
+    let responded: Promise<Response> | undefined;
+    worker.listeners.get("fetch")?.({
+      request: get("/uploads/students/photo.jpg"),
+      respondWith: (p: Promise<Response>) => {
+        responded = p;
+      },
+      waitUntil: () => undefined,
+    });
+    // Even though it looks like an image, the worker leaves it to the network.
+    expect(responded).toBeUndefined();
+  });
+
+  it("fetches when navigation preload resolves undefined", async () => {
+    // Older browsers / a disabled preload can resolve the promise to undefined;
+    // passing that to respondWith would fail the navigation outright.
+    worker.fetchMock.mockResolvedValue(html("fallback fetch"));
+    const res = await dispatchFetch(
+      worker.listeners,
+      nav("/dashboard"),
+      Promise.resolve(undefined as unknown as Response),
+    );
+    expect(await res!.text()).toBe("fallback fetch");
+    expect(worker.fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe("sw.js logout cache purge", () => {
+  it("drops the page + runtime caches on CLEAR_PRIVATE_CACHES, keeps precache", async () => {
+    const worker = loadWorker();
+    await worker.cacheStorage.open("cipansor-pages-v3");
+    await worker.cacheStorage.open("cipansor-runtime-v3");
+    await worker.cacheStorage.open("cipansor-precache-v3");
+
+    let work!: Promise<unknown>;
+    worker.listeners.get("message")?.({
+      data: { type: "CLEAR_PRIVATE_CACHES" },
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    await work;
+
+    const names = await worker.cacheStorage.keys();
+    expect(names).not.toContain("cipansor-pages-v3");
+    expect(names).not.toContain("cipansor-runtime-v3");
+    // Public precached assets are not private data; they stay for offline use.
+    expect(names).toContain("cipansor-precache-v3");
+  });
+
+  it("does not skipWaiting on a CLEAR_PRIVATE_CACHES message", async () => {
+    const worker = loadWorker();
+    let work!: Promise<unknown>;
+    worker.listeners.get("message")?.({
+      data: { type: "CLEAR_PRIVATE_CACHES" },
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    await work;
+    expect(worker.skipWaiting).not.toHaveBeenCalled();
+  });
 });
 
 describe("sw.js lifecycle", () => {
@@ -327,5 +408,53 @@ describe("sw.js lifecycle", () => {
     // An unrelated message must not force an update.
     worker.listeners.get("message")?.({ data: { type: "PING" } });
     expect(worker.skipWaiting).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sw.js push subscription rotation", () => {
+  /** Fire pushsubscriptionchange and return the work it handed to waitUntil. */
+  function dispatchSubscriptionChange(
+    listeners: Map<string, (event: unknown) => void>,
+    event: { oldSubscription?: unknown; newSubscription?: unknown },
+  ) {
+    let work!: Promise<unknown>;
+    listeners.get("pushsubscriptionchange")?.({
+      ...event,
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    return work;
+  }
+
+  it("re-subscribes with the old options when the endpoint is rotated", async () => {
+    const worker = loadWorker();
+    const oldSubscription = { options: { userVisibleOnly: true } };
+
+    await dispatchSubscriptionChange(worker.listeners, { oldSubscription });
+
+    expect(worker.pushSubscribe).toHaveBeenCalledWith(oldSubscription.options);
+  });
+
+  it("keeps the browser-supplied replacement instead of re-subscribing", async () => {
+    const worker = loadWorker();
+
+    await dispatchSubscriptionChange(worker.listeners, {
+      oldSubscription: { options: {} },
+      newSubscription: { endpoint: "https://new" },
+    });
+
+    expect(worker.pushSubscribe).not.toHaveBeenCalled();
+  });
+
+  it("never rejects when re-subscribe fails", async () => {
+    const worker = loadWorker();
+    worker.pushSubscribe.mockRejectedValueOnce(new Error("denied"));
+
+    await expect(
+      dispatchSubscriptionChange(worker.listeners, {
+        oldSubscription: { options: {} },
+      }),
+    ).resolves.toBeUndefined();
   });
 });

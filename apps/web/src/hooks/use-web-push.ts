@@ -46,11 +46,39 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 }
 
 /**
+ * The worker that will answer `pushManager`, or null if none is coming.
+ *
+ * `navigator.serviceWorker.ready` never settles when no worker will ever
+ * register — `ServiceWorkerRegister` deliberately skips registration under
+ * `pnpm dev` and browser automation — so awaiting it directly left the
+ * "Aktifkan" button spinning forever. Poll `getRegistration()` for a bounded
+ * time instead: return the moment a worker exists, or null once the budget is
+ * spent. The worker registers on `load`, so a short poll also covers the race
+ * where the button is clicked before registration has finished.
+ */
+const READY_TIMEOUT_MS = 10_000;
+const READY_POLL_MS = 200;
+
+async function activeRegistration(): Promise<ServiceWorkerRegistration | null> {
+  if (!("serviceWorker" in navigator)) return null;
+  const existing = await navigator.serviceWorker.getRegistration();
+  if (existing) return existing;
+
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (registration) return registration;
+  }
+  return null;
+}
+
+/**
  * Read and control this browser's push subscription.
  *
- * `state` is derived on mount from the live subscription, so the toggle shows
- * the truth for *this* device even though `pushEnabled` in preferences is
- * per-user.
+ * `state` is derived on mount from the live subscription *and* the server row,
+ * so the toggle shows the truth for *this* device even though `pushEnabled` in
+ * preferences is per-user.
  */
 export function useWebPush() {
   const [state, setState] = useState<WebPushState>("unsubscribed");
@@ -78,8 +106,32 @@ export function useWebPush() {
     }
     let cancelled = false;
     currentSubscription()
-      .then((sub) => {
-        if (!cancelled) setState(sub ? "subscribed" : "unsubscribed");
+      .then(async (sub) => {
+        if (cancelled) return;
+        if (!sub) {
+          setState("unsubscribed");
+          return;
+        }
+        // A browser subscription can exist while the API has no row for it — a
+        // registration that failed after `subscribe()` succeeded, or a row the
+        // server dropped on logout. Claiming "Aktif" then leaves the device
+        // silently unable to receive anything, so confirm the server really has
+        // this endpoint and repair it if not.
+        const registered = await notificationsService.pushStatus(sub.endpoint);
+        if (cancelled) return;
+        if (!registered) {
+          try {
+            await notificationsService.subscribePush(
+              sub.toJSON() as WebPushSubscriptionPayload,
+            );
+          } catch {
+            if (!cancelled) setState("unsubscribed");
+            return;
+          }
+          if (!cancelled) setState("subscribed");
+          return;
+        }
+        if (!cancelled) setState("subscribed");
       })
       .catch(() => {
         if (!cancelled) setState("unsubscribed");
@@ -104,8 +156,13 @@ export function useWebPush() {
         );
         return;
       }
-      // Wait for the worker so pushManager exists; the PWA registers it on load.
-      const registration = await navigator.serviceWorker.ready;
+      // Bounded wait: if no worker registers (dev/automation), say so rather
+      // than spin forever on `serviceWorker.ready`.
+      const registration = await activeRegistration();
+      if (!registration) {
+        toast.error("Notifikasi push belum siap di perangkat ini.");
+        return;
+      }
       const subscription =
         (await registration.pushManager.getSubscription()) ??
         (await registration.pushManager.subscribe({
@@ -118,6 +175,8 @@ export function useWebPush() {
       setState("subscribed");
       toast.success("Notifikasi push aktif di perangkat ini.");
     } catch {
+      // Deliberately leaves the browser subscription in place: the reconcile on
+      // the next mount retries the registration instead of stranding it.
       toast.error("Gagal mengaktifkan notifikasi push.");
     } finally {
       setBusy(false);
@@ -130,8 +189,17 @@ export function useWebPush() {
       const subscription = await currentSubscription();
       if (subscription) {
         const { endpoint } = subscription;
-        await subscription.unsubscribe();
+        // Delete the server row *first*, while we still hold the endpoint. Doing
+        // it the other way round loses the endpoint the moment `unsubscribe()`
+        // succeeds, so a failed API call could never be retried and the row
+        // would linger, still pushing to this device (CWE-200).
         await notificationsService.unsubscribePush(endpoint);
+        const unsubscribed = await subscription.unsubscribe();
+        // `unsubscribe()` resolves false if the browser still holds the
+        // subscription; don't report success we did not achieve.
+        if (!unsubscribed) {
+          throw new Error("Browser refused to unsubscribe");
+        }
       }
       setState("unsubscribed");
       toast.success("Notifikasi push dimatikan.");
