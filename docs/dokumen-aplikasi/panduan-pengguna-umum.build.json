@@ -1,10 +1,10 @@
 {
   "source": "panduan-pengguna-umum.md",
-  "source_sha256": "aa3edef1491c11acc802b65db56ac68cdc9df9f68419e81fa29784ab9b500e18",
-  "commit": "aefc719",
+  "source_sha256": "43776bb68c9948cf833858784808a2e191ebd2858548c0a5b6af9af99571e80b",
+  "commit": "1a0e6b1e",
   "built": "2026-09-29",
   "outputs": {
-    "panduan-pengguna-umum.docx": "b25e2766dd10c6cb34f4ff202141ea975f65fcb59981d4e4c639e8088c4a7dd0",
-    "panduan-pengguna-umum.pdf": "ee52a53b96eb8bb409aabba8a3364a8df8ffd0f9627044d5076ad7507ed8ef3a"
+    "panduan-pengguna-umum.docx": "3a502dbf586cb6959532b5a144888bdf9fa1eaf95231538bcdb99e54c14f243a",
+    "panduan-pengguna-umum.pdf": "825aa1b25b2a924635a58d3f66ab30d19dcac1b37fbca41c7867bb7f845bfe1e"
   }
 }

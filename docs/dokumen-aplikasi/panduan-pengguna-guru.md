@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
 | 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Langkah dan nama tombol diperiksa ulang satu per satu ke kode layar; pesan yang dikutip disalin dari kode; istilah pengembang dan nomor PR dikeluarkan; kartu izin dipersempit ke wali kelas |
+| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | **T2** | Nama butir menu **Mengajar** ditulis persis seperti layar ("Siswa") supaya tidak terbaca sebagai prosa. Isi kartu tidak berubah |
 
 > **Tingkat verifikasi T2.** Semua kartu tugas di bawah disusun dengan membaca
 > kode layar pada commit yang tertera; belum dijalankan pada aplikasi berjalan.
@@ -25,8 +26,8 @@ menulis nama tombol dan judul persis seperti di layar.
 ## 1.1 Siapa Anda di aplikasi
 
 Sebagai guru, dasbor awal Anda adalah halaman **Dashboard** di bawah kelompok
-**Ringkasan**. Menu Anda memuat kelompok **Mengajar** (Tahfidz, Kelas Saya,
-Siswa, Absensi, Mutabaah Yaumiyah, Portfolio Siswa) dan, bila Anda ditunjuk
+**Ringkasan**. Menu Anda memuat kelompok **Mengajar** ("Tahfidz", "Kelas Saya",
+"Siswa", "Absensi", "Mutabaah Yaumiyah", "Portfolio Siswa") dan, bila Anda ditunjuk
 wali kelas sebuah kelas pada tahun ajaran berjalan, kelompok tambahan **Wali
 Kelas**. Wali kelas bukan peran terpisah: ia melekat pada kelas, sehingga
 kelompok itu bisa muncul dan hilang sesuai penugasan Anda.

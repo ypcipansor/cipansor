@@ -1,6 +1,6 @@
 # Fakta terukur — Cipansor
 
-Diukur pada commit `ab82539` (2026-09-29), cabang `docs/dokumen-aplikasi-cipansor`; skrip dijalankan 2026-09-29 14:05.
+Diukur pada commit `1a0e6b1e` (2026-09-29), cabang `docs/dokumen-aplikasi-cipansor`; skrip dijalankan 2026-09-29 15:10.
 
 Angka di bawah adalah hasil hitung, bukan ingatan. Kutip dengan menyebut commit/tanggal ini.
 
@@ -173,7 +173,7 @@ Dijadwalkan oleh `scheduler.ts`: `accreditation-reminder.job.ts`, `attendance-fo
 
 - `docs/`: ARCHITECTURE.md, DEPLOYMENT.md, EMAIL_SETUP.md, EOFFICE_ESIGN_PLAN.md, MOBILE_API.md, deploy-azure.md
 - Skill repo (`.claude/skills`): dokumen-aplikasi-cipansor, gate, naskah-dinas, panduan-peran, screenshot-roles, stack, sync-records, tata-kelola-yayasan
-- Keputusan tercatat: 23 berkas di `.claude/memory/decisions/` (ringkasan di bawah)
+- Keputusan tercatat: 24 berkas di `.claude/memory/decisions/` (ringkasan di bawah)
 - Bagian `known-issues.md`: Broken flows and wrong figures; Access that is too narrow, or needs review; Waiting on a decision; Design gaps; Performance; Tests; Unverified; Deliberate — do not "fix"
 - Lisensi: HAK CIPTA DAN KETENTUAN PENGGUNAAN — PERANGKAT LUNAK PROPRIETARY
 
@@ -185,6 +185,7 @@ Bahan bab *Keputusan Arsitektur*. Kutip dan tautkan; jangan mengarang ulang alas
 - `akreditasi-unit.md` — Keputusan pengguna 2026-09-28 — akreditasi tiap unit dicantumkan di situs publik (fakta, tautan cek BAN-PDM, PDF sertifikat) dari satu catatan resmi di portal yang diisi admin unit atau Super Admin; unit tampil begitu sertifikatnya ada; pengingat 12 bulan sebelum berakhir
 - `autentikasi-2fa-dan-sandi.md` — KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa yang diajak sesudah login (staf dan wali, "Nanti saja" tanpa batas), dan kebijakan sandi (ganti karena kejadian, bukan kalender; panjang dan daftar terlarang, bukan aturan campuran). KEPUTUSAN 2026-09-29: "Masuk dengan Google" untuk akun @cipansor.or.id saja, dan peran wajib 2FA tetap memasukkan kode Cipansor sesudah Google. Riset dan sumbernya ada di bawah; jangan diulang.
 - `chatbot-retrieval-settled.md` — Korpus chatbot 628 token — ambang RAG ~100 ribu, jadi seluruh korpus dikirim dan BM25 tidak lagi menjadi gerbang; angka biayanya, dan pemicu untuk meninjau ulang
+- `dokumentasi-bergambar.md` — Keputusan pengguna 2026-09-29 — skill dokumen dan skill tangkapan layar tetap dua skill dengan satu jalur kerja (dokumen memanggil rig `screenshot-roles`, tidak menyalinnya); cakupan penuh (semua peran, semua proses bisnis) dirancang di skill; hanya gambar yang tersemat di dokumen masuk git.
 - `eoffice-revocation-authority.md` — Kewenangan mencabut naskah dinas — tabelnya, tiga sumber yang menyepakatinya, dan mengapa Super Admin tidak termasuk
 - `eoffice-revocation-mechanics.md` — Pencabutan itu pernyataan bertanda tangan (bukan kolom status) — passphrase, cap DICABUT, dan alur permohonan
 - `eoffice-verify-by-upload-not-qr.md` — E-Office letter verification is deliberately upload-the-PDF + Turnstile, never scan-QR-and-trust — the feature as it stands is the `naskah-dinas` skill; its audit and plan are docs/EOFFICE_ESIGN_PLAN.md

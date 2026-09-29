@@ -1,10 +1,10 @@
 {
   "source": "panduan-pengguna-guru.md",
-  "source_sha256": "c6811e861f99cd23a57c3bfe02983d49a87ef750dcd7637ffb9ded7088d8b6bd",
-  "commit": "aefc719",
+  "source_sha256": "6857736e9f75c157cc806b54f765fd98d32543feb83cd913868a4613faa72fea",
+  "commit": "1a0e6b1e",
   "built": "2026-09-29",
   "outputs": {
-    "panduan-pengguna-guru.docx": "0c3d44eda400906c78ed7ebb7b3900e5d83ea2ad9706b1916d5362c76bc99bae",
-    "panduan-pengguna-guru.pdf": "ea1ae013f9c7d7b5337014598035e55e939d4b3d6861b9a8c8fbea67f29c4d25"
+    "panduan-pengguna-guru.docx": "868bb29dcbcffa1d1f98bbfd0e96bc703f94c8ead12d482ae040977d3882129e",
+    "panduan-pengguna-guru.pdf": "40fcd789c7cf5914a9ea9dc95a8d3a2c4aaa29273f4520fa37fd0e91d345d33c"
   }
 }

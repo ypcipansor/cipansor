@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
 | 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Jalur ubah kata sandi dikoreksi (Profile → Keamanan, bukan Settings); nama menu dan tombol dicocokkan ke layar (Logout); nama enum basis data diganti label layar; istilah pengembang dikeluarkan |
+| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | **T2** | Diperiksa ulang dengan pemeriksa skill terbaru; tidak ada isi yang berubah |
 
 > **Tingkat verifikasi T2.** Seluruh kartu tugas pada panduan ini disusun dengan
 > membaca kode (`navigation.ts`, halaman, hook, dan rute API) pada commit yang

@@ -53,7 +53,11 @@ basisnya di sampul dan riwayat revisi. Klasifikasi: *Internal — Yayasan Pesant
 
 ## Status
 
-Draf 0.2, basis kode `aefc719` (kode `apps/` dan `packages/` identik dengan `ab82539`).
+Draf 0.3, basis kode `1a0e6b1e` (kode `apps/` dan `packages/` identik dengan `aefc719`).
 Panduan pengguna berperingkat **T2** (disusun dari kode, belum diuji pada aplikasi
 berjalan); setiap kartu tugasnya bertanda ⚠ sampai seorang pengguna peran itu
 mencobanya. Yang belum dikerjakan ada di `evaluasi-dokumen.md`, bagian 8.
+
+Seluruh keluaran lolos pemeriksa mesin pada 29 September 2026: `check_docs.py`
+0 ERROR (termasuk `--final` dan `--built`), `scan_sensitive.py` bersih,
+`.docx`/`.pdf` diverifikasi ulang oleh `build_docs.py` (11/11 diagram dirender).

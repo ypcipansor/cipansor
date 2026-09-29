@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | 0.1 | 29 September 2026 | commit `aefc719` | Penyusunan awal | Agen OpenHands |
 | 0.2 | 29 September 2026 | commit `aefc719` (kode identik dengan `ab82539`) | Koreksi hasil audit: alamat rute SPMB dan alur persuratan dibaca ulang dari kode; hitungan pekerjaan terjadwal; ukuran tata letak modul disebut dua-duanya; ERD memakai nama model Prisma yang nyata; diagram C4 berlabel tingkat 1–3; bab 9–11 disusun ulang; rincian kontrol akses dan data pribadi dikeluarkan dari bab 11 | Agen OpenHands; audit oleh Claude |
+| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode `apps/` dan `packages/` identik dengan `aefc719`) | Diperiksa ulang dengan pemeriksa skill terbaru: baris keputusan `dokumentasi-bergambar.md` ditambahkan ke bab 9; sebutan pekerjaan terjadwal dirapikan. Angka diukur ulang, tidak berubah | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -441,8 +442,8 @@ dalam proses API. Satu berkas bisa dijadwalkan lebih dari sekali
 | `chatbot-transcript-purge.job` | harian 03:15 | Memangkas transkrip chatbot |
 | `chatbot-escalation-retry.job` | tiap 30 menit | Mengulang eskalasi chatbot yang gagal |
 
-Berkas keempat belas, `asset-depreciation.job` (penyusutan aset bulanan),
-**tidak dijadwalkan**; modul `inventory` memanggilnya.
+Berkas keempat belas — penyusutan aset bulanan — **tidak dijadwalkan**; modul
+`inventory` memanggilnya.
 
 > **Batasan.** Pekerjaan berjalan tanpa kunci, sehingga desainnya mengandaikan
 > **satu instans API**; menambah instans akan menjalankan tiap pekerjaan dua
@@ -547,6 +548,7 @@ satu kalimat; buka berkasnya untuk alasannya.
 | Chatbot | Seluruh korpus dikirim ke tiap prompt; BM25 tidak lagi menjadi gerbang. | `chatbot-retrieval-settled.md` |
 | Pengawasan & rapat Pembina | Keputusan Pembina sebagai rapat tercatat atau resolusi tertulis bulat; WBS di Aduan & Aspirasi; TPPK/Satgas per unit. | `pengawasan-dan-rapat-pembina.md` |
 | Fotografi situs publik | Foto asli berasal dari pesantrencipansor.com; klaim hanya yang tampak pada foto. | `public-site-photography.md` |
+| Dokumentasi bergambar | Dokumen dan tangkapan layar tetap dua skill dengan satu jalur kerja; hanya gambar yang tersemat di naskah masuk git. | `dokumentasi-bergambar.md` |
 
 # 10. Persyaratan Kualitas
 

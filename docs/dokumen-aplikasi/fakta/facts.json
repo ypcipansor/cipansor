@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-09-29 14:05",
-  "repo_path": "/home/user/cipansor",
+  "generated_at": "2026-09-29 15:10",
+  "repo_path": "/workspace/project/cipansor",
   "git": {
-    "commit": "ab82539",
+    "commit": "1a0e6b1e",
     "commit_date": "2026-09-29",
-    "commit_subject": "chore: hapus duplikat pola __pycache__ di .gitignore",
+    "commit_subject": "docs(skill): hubungkan skill dokumen dengan tangkapan layar; katalog proses; keputusan dokumentasi bergambar",
     "branch": "docs/dokumen-aplikasi-cipansor"
   },
   "stack": {
@@ -2170,6 +2170,7 @@
       "akreditasi-unit",
       "autentikasi-2fa-dan-sandi",
       "chatbot-retrieval-settled",
+      "dokumentasi-bergambar",
       "eoffice-revocation-authority",
       "eoffice-revocation-mechanics",
       "eoffice-verify-by-upload-not-qr",
@@ -2206,6 +2207,10 @@
       {
         "file": "chatbot-retrieval-settled.md",
         "summary": "Korpus chatbot 628 token — ambang RAG ~100 ribu, jadi seluruh korpus dikirim dan BM25 tidak lagi menjadi gerbang; angka biayanya, dan pemicu untuk meninjau ulang"
+      },
+      {
+        "file": "dokumentasi-bergambar.md",
+        "summary": "Keputusan pengguna 2026-09-29 — skill dokumen dan skill tangkapan layar tetap dua skill dengan satu jalur kerja (dokumen memanggil rig `screenshot-roles`, tidak menyalinnya); cakupan penuh (semua peran, semua proses bisnis) dirancang di skill; hanya gambar yang tersemat di dokumen masuk git."
       },
       {
         "file": "eoffice-revocation-authority.md",
