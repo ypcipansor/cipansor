@@ -109,6 +109,7 @@ test.describe("Browser push control", () => {
     // push, so the toggle is either offered or explains why it is not.
     const states = [
       "Browser ini tidak mendukung notifikasi push.",
+      /pasang dulu portal ini ke Layar Utama/,
       "Notifikasi push belum diaktifkan oleh pengelola sistem.",
       /Izin notifikasi diblokir/,
       /Aktif di perangkat ini/,
@@ -125,17 +126,90 @@ test.describe("Browser push control", () => {
     expect(visible.filter(Boolean)).toHaveLength(1);
   });
 
-  test("does not offer a button it cannot honour without VAPID keys", async ({
+  test("enables then disables push through the real API", async ({
     page,
+    context,
   }) => {
-    // In CI there is no NEXT_PUBLIC_VAPID_PUBLIC_KEY, so the card must be in the
-    // "unconfigured" state — a button here would only ever produce an error.
+    // The card is only offered when a VAPID public key is configured. The
+    // webServer env sets one (see playwright.config.ts); a real key is not
+    // required because the client only checks non-emptiness and the API stores
+    // whatever endpoint/keys the browser hands it.
+    await context.grantPermissions(["notifications"], {
+      origin: "http://localhost:3000",
+    });
+
+    // `ServiceWorkerRegister` skips registration under automation, so the real
+    // PushManager never appears. Provide a faithful stand-in with the two
+    // methods the hook uses (`getRegistration`, then `pushManager`), so the
+    // flow exercises the hook + real API rather than a mocked service.
+    await context.addInitScript(() => {
+      const w = window as unknown as { __pushSub: unknown };
+      const endpoint = `https://push.example.com/e2e-${Date.now()}`;
+      const subscription = {
+        endpoint,
+        expirationTime: null,
+        toJSON: () => ({
+          endpoint,
+          expirationTime: null,
+          keys: { p256dh: "B".repeat(87), auth: "A".repeat(22) },
+        }),
+        unsubscribe: async () => {
+          w.__pushSub = null;
+          return true;
+        },
+      };
+      const registration = {
+        pushManager: {
+          getSubscription: async () => w.__pushSub ?? null,
+          subscribe: async () => {
+            w.__pushSub = subscription;
+            return subscription;
+          },
+        },
+      };
+      Object.defineProperty(navigator, "serviceWorker", {
+        value: {
+          controller: null,
+          getRegistration: async () => registration,
+          addEventListener() {},
+          removeEventListener() {},
+        },
+        configurable: true,
+      });
+    });
+
+    await loginAs(page, "superAdmin");
+    await page.goto("/notifications/settings");
+
     const enable = page.getByRole("button", {
       name: "Aktifkan di perangkat ini",
     });
-    await expect(enable).toBeDisabled();
+    await expect(enable).toBeEnabled();
+
+    const [subscribeRes] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/notifications/push/subscribe") &&
+          r.request().method() === "POST",
+      ),
+      enable.click(),
+    ]);
+    expect(subscribeRes.ok()).toBe(true);
     await expect(
-      page.getByText("Notifikasi push belum diaktifkan oleh pengelola sistem."),
+      page.getByText(
+        "Aktif di perangkat ini. Notifikasi akan muncul walau portal tidak dibuka.",
+      ),
     ).toBeVisible();
+
+    const [unsubscribeRes] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/notifications/push/unsubscribe") &&
+          r.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Matikan" }).click(),
+    ]);
+    expect(unsubscribeRes.ok()).toBe(true);
+    await expect(page.getByText("Belum aktif di perangkat ini.")).toBeVisible();
   });
 });

@@ -478,6 +478,8 @@ export default function NotificationSettingsPage() {
             <p className="text-sm text-muted-foreground">
               {webPush.state === "unsupported" &&
                 "Browser ini tidak mendukung notifikasi push."}
+              {webPush.state === "needs-install" &&
+                "Di iPhone/iPad, pasang dulu portal ini ke Layar Utama (Bagikan → Tambah ke Layar Utama) untuk mengaktifkan notifikasi push."}
               {webPush.state === "unconfigured" &&
                 "Notifikasi push belum diaktifkan oleh pengelola sistem."}
               {webPush.state === "denied" &&
@@ -501,6 +503,7 @@ export default function NotificationSettingsPage() {
                 disabled={
                   webPush.busy ||
                   webPush.state === "unsupported" ||
+                  webPush.state === "needs-install" ||
                   webPush.state === "unconfigured" ||
                   webPush.state === "denied"
                 }

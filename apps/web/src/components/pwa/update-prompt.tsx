@@ -20,8 +20,14 @@ export function UpdatePrompt() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    // Update prompts only make sense once a worker is already in control.
-    if (!navigator.serviceWorker?.controller) return;
+    // Only `serviceWorker` support is required to subscribe to the events. The
+    // previous `controller` early-return meant a tab opened *before* the first
+    // worker claimed it attached no listener; when the worker later took
+    // control the effect (empty deps) never re-ran, so an update installed while
+    // that long-lived tab stayed open was never announced. First-install quiet
+    // is handled at the source: ServiceWorkerRegister only emits
+    // `sw-update-ready` once a controller exists.
+    if (!navigator.serviceWorker) return;
 
     const show = () => setVisible(true);
     if (window.__swWaiting) show();

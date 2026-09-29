@@ -4,6 +4,7 @@ const prismaMock = vi.hoisted(() => ({
   pushSubscription: {
     findUnique: vi.fn(),
     findFirst: vi.fn(),
+    count: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     deleteMany: vi.fn(),
@@ -17,6 +18,7 @@ import {
   unsubscribePush,
   hasPushSubscription,
   deleteAllPushSubscriptions,
+  MAX_PUSH_SUBSCRIPTIONS_PER_USER,
 } from '../notifications.service';
 
 const ENDPOINT = 'https://push.example.com/device-1';
@@ -57,6 +59,8 @@ describe('notifications service — web push', () => {
         data: { p256dh: 'p256dh-key', auth: 'auth-key', userAgent: null },
       });
       expect(prismaMock.pushSubscription.create).not.toHaveBeenCalled();
+      // Refreshing an existing endpoint is never counted against the cap.
+      expect(prismaMock.pushSubscription.count).not.toHaveBeenCalled();
     });
 
     it('refuses to steal an endpoint owned by another user (CWE-639)', async () => {
@@ -69,6 +73,30 @@ describe('notifications service — web push', () => {
       // No write of any kind: the row keeps its real owner.
       expect(prismaMock.pushSubscription.update).not.toHaveBeenCalled();
       expect(prismaMock.pushSubscription.create).not.toHaveBeenCalled();
+    });
+
+    it('caps the number of endpoints one account can register (CWE-770)', async () => {
+      prismaMock.pushSubscription.findUnique.mockResolvedValue(null);
+      prismaMock.pushSubscription.count.mockResolvedValue(MAX_PUSH_SUBSCRIPTIONS_PER_USER);
+
+      await expect(
+        subscribePush('user-1', { endpoint: ENDPOINT, keys: KEYS }, 'agent')
+      ).rejects.toThrow(/batas|perangkat|limit/i);
+
+      expect(prismaMock.pushSubscription.create).not.toHaveBeenCalled();
+    });
+
+    it('still creates when the account is below the cap', async () => {
+      prismaMock.pushSubscription.findUnique.mockResolvedValue(null);
+      prismaMock.pushSubscription.count.mockResolvedValue(MAX_PUSH_SUBSCRIPTIONS_PER_USER - 1);
+      prismaMock.pushSubscription.create.mockResolvedValue({ id: 'row-new' });
+
+      await expect(
+        subscribePush('user-1', { endpoint: ENDPOINT, keys: KEYS }, 'agent')
+      ).resolves.toBe('created');
+      expect(prismaMock.pushSubscription.count).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+      });
     });
   });
 

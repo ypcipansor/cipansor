@@ -653,6 +653,16 @@ export async function deleteAnnouncement(id: string) {
 // ==================== WEB PUSH (browser) ====================
 
 /**
+ * How many devices one account may register a push endpoint from.
+ *
+ * A person plausibly uses a few (phone, tablet, laptop); an unbounded table lets
+ * one authenticated client create unlimited rows with distinct endpoints
+ * (CWE-770). Generous enough that a real user never hits it, small enough to
+ * bound the table.
+ */
+export const MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10;
+
+/**
  * Store the caller's browser push subscription.
  *
  * A browser endpoint identifies a *device*, not a person, and it is stable
@@ -662,7 +672,8 @@ export async function deleteAnnouncement(id: string) {
  * already owned by another user is refused rather than moved.
  *
  * Re-subscribing with the *same* user is the normal case (keys rotate, the
- * device changes UA) and refreshes the row in place.
+ * device changes UA) and refreshes the row in place — so an existing endpoint is
+ * never counted against the per-user cap.
  */
 export async function subscribePush(
   userId: string,
@@ -693,6 +704,16 @@ export async function subscribePush(
       },
     });
     return 'updated';
+  }
+
+  // A brand-new endpoint: refuse once the account already holds the maximum, so
+  // one client cannot grow the table without bound (CWE-770).
+  const current = await prisma.pushSubscription.count({ where: { userId } });
+  if (current >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+    throw Errors.badRequest(
+      `Batas ${MAX_PUSH_SUBSCRIPTIONS_PER_USER} perangkat untuk notifikasi push tercapai. ` +
+        'Matikan push di salah satu perangkat lalu coba lagi.'
+    );
   }
 
   await prisma.pushSubscription.create({

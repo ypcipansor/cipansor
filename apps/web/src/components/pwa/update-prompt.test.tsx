@@ -51,11 +51,32 @@ describe("UpdatePrompt", () => {
     expect(screen.getByText("Versi baru tersedia")).toBeInTheDocument();
   });
 
-  it("stays hidden on a first install (no controller yet)", () => {
+  it("stays hidden on a first install (nothing announced yet)", () => {
     installServiceWorker(null);
-    window.__swWaiting = {} as ServiceWorker;
+    // ServiceWorkerRegister only announces once a controller exists, so on a
+    // true first install the stash is never set.
+    window.__swWaiting = null;
     render(<UpdatePrompt />);
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("a tab open before the first claim still hears a later update", () => {
+    // A clean-profile tab: the worker has not claimed it yet, so the listeners
+    // must already be attached (the regression this covers is the old early
+    // return that attached nothing until *after* a claim).
+    const sw = installServiceWorker(null);
+    render(<UpdatePrompt />);
+    expect(screen.queryByRole("status")).toBeNull();
+
+    // The worker claims the page, then a deploy installs a waiting update —
+    // exactly what ServiceWorkerRegister announces (it only does so once a
+    // controller is present).
+    act(() => {
+      sw.controller = {};
+      window.__swWaiting = {} as ServiceWorker;
+      window.dispatchEvent(new Event("sw-update-ready"));
+    });
+    expect(screen.getByText("Versi baru tersedia")).toBeInTheDocument();
   });
 
   it("asks the waiting worker to activate and reloads on accept", async () => {

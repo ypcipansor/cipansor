@@ -22,9 +22,46 @@ import { notificationsService } from "@/services/notifications.service";
  * only in Safari — the same install path the InstallPrompt guides the user to.
  */
 export type WebPushState =
-  "unsupported" | "unconfigured" | "denied" | "subscribed" | "unsubscribed";
+  | "unsupported"
+  | "needs-install"
+  | "unconfigured"
+  | "denied"
+  | "subscribed"
+  | "unsubscribed";
 
 const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
+
+/**
+ * True on an iPhone/iPad whose Safari has no `PushManager` yet.
+ *
+ * iOS delivers Web Push only to a PWA the user has *added to the Home Screen*;
+ * until then `window.PushManager` is simply absent. Reporting that as
+ * "unsupported" tells the user their browser cannot do it, when the real answer
+ * is one install away — the same trap `InstallPrompt` exists to avoid. iPadOS
+ * reports a desktop UA, so the touch-point check is what catches it.
+ */
+function hasPushManager(): boolean {
+  // Read it off a loose type: `"PushManager" in window` narrows the *false*
+  // branch of `window` to `never` (the global is declared non-optional), which
+  // then fails to type-check the `matchMedia` access below.
+  return (
+    typeof (window as unknown as { PushManager?: unknown }).PushManager !==
+    "undefined"
+  );
+}
+
+function isIosNotInstalled(): boolean {
+  if (typeof window === "undefined" || hasPushManager()) return false;
+  const ua = navigator.userAgent;
+  const ios =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (ua.includes("Macintosh") && navigator.maxTouchPoints > 1);
+  if (!ios) return false;
+  return !(
+    window.matchMedia?.("(display-mode: standalone)").matches === true ||
+    (navigator as { standalone?: boolean }).standalone === true
+  );
+}
 
 /** The push API returns base64url; subscribe() wants the raw bytes. */
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -93,7 +130,9 @@ export function useWebPush() {
 
   useEffect(() => {
     if (!supported) {
-      setState("unsupported");
+      // On iOS the missing piece is the install, not the browser. Say so
+      // instead of a flat "not supported" that hides the one step that fixes it.
+      setState(isIosNotInstalled() ? "needs-install" : "unsupported");
       return;
     }
     if (!VAPID_PUBLIC_KEY) {

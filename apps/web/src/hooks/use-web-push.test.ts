@@ -162,4 +162,31 @@ describe("useWebPush", () => {
       expect.objectContaining({ endpoint: "https://push.example.com/abc" }),
     );
   });
+
+  it("guides an iPhone user to install instead of calling the browser unsupported", () => {
+    // iOS Safari exposes no PushManager until the PWA is on the Home Screen.
+    // Reporting "unsupported" hides the one step that makes push work.
+    delete (window as unknown as { PushManager?: unknown }).PushManager;
+    Object.defineProperty(window.navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      configurable: true,
+    });
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false });
+
+    const { result } = renderHook(() => useWebPush());
+    expect(result.current.state).toBe("needs-install");
+  });
+
+  it("reports unsupported for a non-iOS browser with no push API", () => {
+    delete (window as unknown as { PushManager?: unknown }).PushManager;
+    Object.defineProperty(window.navigator, "userAgent", {
+      value:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useWebPush());
+    expect(result.current.state).toBe("unsupported");
+  });
 });

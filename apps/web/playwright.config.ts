@@ -181,6 +181,16 @@ export default defineConfig({
     // `next start` honours the PORT env var. In CI the job sets PORT=3001 for
     // the API, which would make the web server try to bind 3001 too
     // (EADDRINUSE). Pin the web server to 3000 regardless of the inherited PORT.
-    env: { PORT: "3000" },
+    env: {
+      PORT: "3000",
+      // A VAPID *public* key is not a secret (only the private half is), and the
+      // client only checks that it is non-empty before offering the enable
+      // control. Setting it here lets the push subscribe/disable browser flow be
+      // exercised in CI; without it the card is permanently "unconfigured" and
+      // the real flow could never run. Overridable, so a developer pointing at a
+      // real key is not stomped.
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY:
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "B".repeat(87),
+    },
   },
 });

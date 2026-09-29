@@ -6,8 +6,12 @@
  * needs the seeded stack up (`/login`, `superadmin@cipansor.or.id`, `parent3@`).
  * Output goes to `/tmp/pwa-shots`; `scripts/gen-pwa-assets.py` reshapes it.
  *
- *     pnpm --filter web exec playwright test e2e/_capture-mobile.spec.ts \
- *       --project=chromium --workers=1
+ * It must run under `playwright.pwa.config.ts`, not the default config: the
+ * default `testIgnore` skips every underscore-prefixed spec, so the plain
+ * command below captures nothing (the config drops that ignore and adds this
+ * file back).
+ *
+ *     pnpm --filter web exec playwright test -c playwright.pwa.config.ts --workers=1
  */
 import { test } from "@playwright/test";
 import { loginAs } from "./helpers/auth-api";
