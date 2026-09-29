@@ -392,6 +392,7 @@ model User {
   givenMedications                  MedicationUsageLog[]        @relation("MedicationGiver")
   createdAnnouncements              Announcement[]              @relation("AnnouncementCreator")
   notifications                     Notification[]
+  pushSubscriptions                 PushSubscription[]
   sentMessages                      Message[]                   @relation("SentMessages")
   receivedMessages                  Message[]                   @relation("ReceivedMessages")
   leaveBalances                     LeaveBalance[]
@@ -2597,6 +2598,29 @@ model Notification {
   @@index([createdAt])
   @@index([scheduledAt])
   @@map("notifications")
+}
+
+/// A browser Web Push subscription (one row per device/browser).
+///
+/// Distinct from `User.fcmToken`, which is a single FCM token for a native
+/// Android build: a person can have the portal installed on several devices, and
+/// each produces its own endpoint + keys. The server sender (not in this repo
+/// yet) reads these to deliver push; the endpoint is the natural idempotency key
+/// because re-subscribing the same browser returns the same endpoint.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 /// Message - Pesan Internal (Buku Penghubung)

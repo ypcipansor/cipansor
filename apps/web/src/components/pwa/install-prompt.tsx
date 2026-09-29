@@ -51,6 +51,26 @@ function isInstalled(): boolean {
   );
 }
 
+/**
+ * True on an iOS device not yet installed.
+ *
+ * iOS never fires `beforeinstallprompt` — there is no programmatic install —
+ * so on iPhone/iPad the only way to install is the manual Share → "Tambah ke
+ * Layar Utama". The native banner therefore never appears there, and without
+ * this path iOS users (a large share of wali santri) are simply never told the
+ * app can be installed. All iOS browsers are WebKit, so we do not restrict to
+ * Safari: the Share-sheet step is the same instruction everywhere.
+ *
+ * iPadOS 13+ reports a desktop UA, so a touch-capable "Mac" counts as iOS.
+ */
+function isIosNotInstalled(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  const iOS = /iPad|iPhone|iPod/.test(ua);
+  const iPadOs = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  return (iOS || iPadOs) && !isInstalled();
+}
+
 declare global {
   interface Window {
     __installPromptEvent?: BeforeInstallPromptEvent | null;
@@ -72,7 +92,9 @@ export function InstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(
     null,
   );
-  const [visible, setVisible] = useState(false);
+  // "ios" shows the manual Share-sheet instructions; the native path stores the
+  // deferred event instead.
+  const [mode, setMode] = useState<"native" | "ios" | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -83,8 +105,13 @@ export function InstallPrompt() {
       // Chrome re-fires the event, long after mount.
       if (isSnoozed() || isInstalled()) return;
       setDeferred(e);
-      setVisible(true);
+      setMode("native");
     };
+
+    // iOS has no install event; guide the user manually instead.
+    if (isIosNotInstalled() && !isSnoozed()) {
+      setMode("ios");
+    }
 
     // The event may already have fired before this component mounted.
     if (window.__installPromptEvent) {
@@ -96,7 +123,7 @@ export function InstallPrompt() {
     };
     const onInstalled = () => {
       window.__installPromptEvent = null;
-      setVisible(false);
+      setMode(null);
     };
 
     window.addEventListener("installpromptready", onReady);
@@ -114,7 +141,7 @@ export function InstallPrompt() {
     // The event is single-use — Chrome will not let it be prompted twice.
     window.__installPromptEvent = null;
     setDeferred(null);
-    setVisible(false);
+    setMode(null);
   };
 
   const dismiss = () => {
@@ -127,10 +154,10 @@ export function InstallPrompt() {
       // Storage unavailable. The banner still closes for this page-session;
       // dropping the click entirely would be worse than forgetting it later.
     }
-    setVisible(false);
+    setMode(null);
   };
 
-  if (!visible) return null;
+  if (!mode) return null;
 
   return (
     <div
@@ -146,14 +173,23 @@ export function InstallPrompt() {
       />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium">Pasang aplikasi Cipansor</p>
-        <p className="text-xs text-muted-foreground">
-          Akses lebih cepat langsung dari layar utama.
-        </p>
+        {mode === "ios" ? (
+          <p className="text-xs text-muted-foreground">
+            Ketuk <strong>Bagikan</strong> lalu{" "}
+            <strong>Tambah ke Layar Utama</strong>.
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Akses lebih cepat langsung dari layar utama.
+          </p>
+        )}
       </div>
-      <Button size="sm" onClick={install}>
-        <Download className="mr-1 h-4 w-4" />
-        Pasang
-      </Button>
+      {mode === "native" && (
+        <Button size="sm" onClick={install}>
+          <Download className="mr-1 h-4 w-4" />
+          Pasang
+        </Button>
+      )}
       <button
         aria-label="Tutup"
         onClick={dismiss}

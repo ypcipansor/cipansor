@@ -85,3 +85,57 @@ test.describe("Outgoing mail configuration", () => {
     await expect(page.getByText("halo@cipansor.or.id").first()).toBeVisible();
   });
 });
+
+/**
+ * Browser Web Push is per-device, unlike the per-user "Push" channel above it.
+ * The page used to carry only the per-user toggle; the control that actually
+ * subscribes this browser is the new card. These check it renders with a real
+ * state and that it does not lie about being ready.
+ */
+test.describe("Browser push control", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAs(page, "superAdmin");
+    await page.goto("/notifications/settings");
+  });
+
+  test("shows a per-device push control with one honest state", async ({
+    page,
+  }) => {
+    await expect(
+      page.getByText("Notifikasi Push di Perangkat Ini"),
+    ).toBeVisible();
+
+    // Exactly one of the states must render, and headless Chromium never grants
+    // push, so the toggle is either offered or explains why it is not.
+    const states = [
+      "Browser ini tidak mendukung notifikasi push.",
+      "Notifikasi push belum diaktifkan oleh pengelola sistem.",
+      /Izin notifikasi diblokir/,
+      /Aktif di perangkat ini/,
+      "Belum aktif di perangkat ini.",
+    ];
+    const visible = await Promise.all(
+      states.map(async (s) =>
+        page
+          .getByText(s)
+          .isVisible()
+          .catch(() => false),
+      ),
+    );
+    expect(visible.filter(Boolean)).toHaveLength(1);
+  });
+
+  test("does not offer a button it cannot honour without VAPID keys", async ({
+    page,
+  }) => {
+    // In CI there is no NEXT_PUBLIC_VAPID_PUBLIC_KEY, so the card must be in the
+    // "unconfigured" state — a button here would only ever produce an error.
+    const enable = page.getByRole("button", {
+      name: "Aktifkan di perangkat ini",
+    });
+    await expect(enable).toBeDisabled();
+    await expect(
+      page.getByText("Notifikasi push belum diaktifkan oleh pengelola sistem."),
+    ).toBeVisible();
+  });
+});

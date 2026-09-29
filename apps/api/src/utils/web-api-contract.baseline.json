@@ -134,8 +134,6 @@
     "POST /kitab-progress/progress/complete  apps/web/src/hooks/use-kitab-progress.ts",
     "POST /kitab-progress/progress/update  apps/web/src/hooks/use-kitab-progress.ts",
     "POST /notifications/mark-all-read  apps/web/src/services/notifications.service.ts",
-    "POST /notifications/push/subscribe  apps/web/src/services/notifications.service.ts",
-    "POST /notifications/push/unsubscribe  apps/web/src/services/notifications.service.ts",
     "POST /notifications/send  apps/web/src/services/notifications.service.ts",
     "POST /parent/messages  apps/web/src/hooks/use-parent-portal.ts",
     "POST /parent/notifications/{id}/read  apps/web/src/app/parent/announcements/page.tsx",

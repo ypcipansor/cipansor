@@ -5,6 +5,7 @@
 
 import { api } from "@/lib/api";
 import type { ApiResponse, PaginatedResponse, PaginationParams } from "./types";
+import type { WebPushSubscriptionPayload } from "@cipansor/shared";
 
 export type NotificationType =
   | "INFO"
@@ -209,18 +210,22 @@ export const notificationsService = {
   },
 
   /**
-   * Subscribe to push notifications
+   * Subscribe to push notifications.
+   *
+   * Takes the raw endpoint + keys rather than a `PushSubscription` because the
+   * caller (the settings page) has already read them off the live subscription;
+   * sending exactly what the API stores keeps the two in step.
    */
-  async subscribePush(subscription: PushSubscription): Promise<void> {
-    await api.post("/notifications/push/subscribe", {
-      subscription: subscription.toJSON(),
-    });
+  async subscribePush(subscription: WebPushSubscriptionPayload): Promise<void> {
+    await api.post("/notifications/push/subscribe", { subscription });
   },
 
   /**
-   * Unsubscribe from push notifications
+   * Unsubscribe from push notifications.
+   *
+   * The endpoint identifies which device to drop — a user may have several.
    */
-  async unsubscribePush(): Promise<void> {
-    await api.post("/notifications/push/unsubscribe");
+  async unsubscribePush(endpoint: string): Promise<void> {
+    await api.post("/notifications/push/unsubscribe", { endpoint });
   },
 };

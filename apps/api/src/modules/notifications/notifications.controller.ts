@@ -11,6 +11,8 @@ import {
   createTemplateSchema,
   updateTemplateSchema,
   queryTemplateSchema,
+  pushSubscribeSchema,
+  pushUnsubscribeSchema,
 } from './notifications.schema';
 import { Errors } from '../../middleware/error';
 import { whatsAppService } from './whatsapp.service';
@@ -281,6 +283,57 @@ export async function updateFcmToken(req: Request, res: Response, next: NextFunc
       data: { fcmToken: token },
     });
     res.json({ success: true, message: token ? 'FCM token registered' : 'FCM token cleared' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ==================== WEB PUSH (browser) ====================
+
+/**
+ * Store the caller's browser push subscription (idempotent on endpoint).
+ *
+ * A re-subscribe of the same browser returns the same endpoint, so upsert
+ * rather than insert: it refreshes the keys and userAgent in place instead of
+ * failing on the unique constraint. One user may hold several rows (phone,
+ * laptop), which is why this is a table and not `users.fcm_token`.
+ */
+export async function subscribePush(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { subscription } = pushSubscribeSchema.parse(req.body);
+    const userId = req.user!.sub;
+    await prisma.pushSubscription.upsert({
+      where: { endpoint: subscription.endpoint },
+      create: {
+        userId,
+        endpoint: subscription.endpoint,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent: req.get('user-agent') ?? null,
+      },
+      update: {
+        userId,
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent: req.get('user-agent') ?? null,
+      },
+    });
+    res.json({ success: true, message: 'Push subscription registered' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Remove the caller's subscription for one endpoint (on unsubscribe/logout). */
+export async function unsubscribePush(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { endpoint } = pushUnsubscribeSchema.parse(req.body);
+    // Scoped to the caller: another user's endpoint is not theirs to delete,
+    // and matching on userId also makes a stale/foreign endpoint a no-op.
+    await prisma.pushSubscription.deleteMany({
+      where: { endpoint, userId: req.user!.sub },
+    });
+    res.json({ success: true, message: 'Push subscription removed' });
   } catch (error) {
     next(error);
   }

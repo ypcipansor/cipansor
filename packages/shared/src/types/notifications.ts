@@ -128,3 +128,19 @@ export interface DashboardNotification {
   data?: Record<string, unknown>;
   createdAt: string | Date;
 }
+
+/**
+ * A browser Web Push subscription as the client sends it to the API.
+ *
+ * One shape, one home: the API validates it at the edge and the web builds it
+ * from `PushSubscription.toJSON()`. `expirationTime` is null for the common
+ * non-expiring subscription.
+ */
+export interface WebPushSubscriptionPayload {
+  endpoint: string;
+  expirationTime: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+}

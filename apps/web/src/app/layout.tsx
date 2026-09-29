@@ -10,6 +10,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { SkipLink, OfflineBanner } from "@/components/shared";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
+import { UpdatePrompt } from "@/components/pwa/update-prompt";
 import { pwaEnabledForHost, indexableHost } from "@/lib/host-split";
 
 const geistSans = Geist({
@@ -165,6 +166,7 @@ export default async function RootLayout({
             */}
             <ServiceWorkerRegister enabled={pwa} />
             {pwa && <InstallPrompt />}
+            {pwa && <UpdatePrompt />}
           </QueryProvider>
         </I18nProvider>
       </body>

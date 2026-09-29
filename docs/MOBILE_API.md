@@ -22,6 +22,8 @@ dikirim dan aplikasi tidak dapat menyelesaikan tantangan 2FA.
 | `POST /auth/login` `{email, password}` | Orang tua login. Admin ber-2FA mendapat `requiresTwoFactor + tempToken`. |
 | `POST /auth/refresh` `{refreshToken}` | Perpanjang sesi. |
 | `PUT /notifications/fcm-token` `{token}` | Daftarkan token push FCM perangkat (kirim `{token: null}` saat logout). |
+| `POST /notifications/push/subscribe` `{subscription}` | Simpan langganan Web Push peramban (per perangkat). |
+| `POST /notifications/push/unsubscribe` `{endpoint}` | Hapus langganan Web Push untuk satu endpoint. |
 
 ## 2. Capaian anak (role PARENT)
 
@@ -81,15 +83,27 @@ Dart terpisah, toko aplikasi, atau CI mobile tambahan.
 
 Yang sudah ada di repo:
 
-- `apps/web/public/manifest.json` — nama, ikon (72–512, maskable), `display:
-  standalone`, shortcuts.
-- `apps/web/public/icons/icon-*.png` — set ikon aplikasi.
+- `apps/web/public/manifest.json` — nama, `id`, `scope`, ikon 72–512 dengan
+  entri `maskable` terpisah (aman untuk topeng OS), `screenshots` (wide + narrow
+  untuk Richer Install UI), `display: standalone`, shortcuts. Orientasi tidak
+  dikunci agar tablet bisa lanskap.
+- `apps/web/public/icons/icon-*.png` + `icons/maskable-*.png` — set ikon
+  aplikasi dan rendisi maskable-nya. Dibuat ulang oleh
+  `apps/web/scripts/gen-pwa-assets.py` saat logo berubah.
 - `apps/web/public/sw.js` — service worker: navigasi network-first + fallback
-  `offline.html`, aset statis cache-first, `/api/**` selalu ke jaringan (tidak
-  pernah di-cache agar data auth/sesi selalu segar). Handler `push` +
-  `notificationclick` sudah siap untuk Web Push.
-- `ServiceWorkerRegister` + `InstallPrompt` (`components/pwa/*`) di root layout —
-  registrasi SW (produksi saja) dan tombol "Pasang aplikasi".
+  `offline.html`, `/api/**` selalu ke jaringan (tidak pernah di-cache agar data
+  auth/sesi selalu segar). `_next/static/**` cache-first (nama ber-hash),
+  aset statis lain stale-while-revalidate, dua cache dibatasi jumlah entri.
+  Versi baru **tidak** langsung `skipWaiting()`; menunggu sampai pengguna
+  menyetujui muat ulang.
+- `ServiceWorkerRegister` + `InstallPrompt` + `UpdatePrompt`
+  (`components/pwa/*`) di root layout — registrasi SW (produksi saja), tombol
+  "Pasang aplikasi" (dengan panduan Share-sheet di iOS, yang tidak pernah
+  memicu `beforeinstallprompt`), dan banner "Versi baru tersedia".
+- `useWebPush` (`hooks/use-web-push.ts`) + kartu "Notifikasi Push di Perangkat
+  Ini" di `/notifications/settings` — langganan Web Push per perangkat, terhubung
+  ke `POST /notifications/push/{subscribe,unsubscribe}` dan tabel
+  `push_subscriptions`.
 - Metadata iOS (`appleWebApp`, apple-touch-icon) + `themeColor`.
 
 Portal Orang Tua (`/parent/*`) adalah target utama mobile dan sudah responsif
@@ -97,8 +111,11 @@ Portal Orang Tua (`/parent/*`) adalah target utama mobile dan sudah responsif
 
 **Langkah lanjut opsional (butuh kredensial/tooling di luar repo):**
 
-- **Push nyata:** Web Push (VAPID) atau FCM. Endpoint pendaftaran token perangkat
-  (`PUT /notifications/fcm-token`) sudah ada; server-side sender menunggu
-  kredensial VAPID/`google-services`.
+- **Push nyata:** server-side sender untuk langganan yang sudah tersimpan.
+  Klien sudah mendaftar (`POST /notifications/push/subscribe`) dan service
+  worker sudah menangani `push`/`notificationclick`; sender menunggu kredensial
+  VAPID (`NEXT_PUBLIC_VAPID_PUBLIC_KEY` di klien, kunci privat + `web-push` di
+  server). Selama kunci kosong, kontrol push menampilkan status "belum
+  diaktifkan" dan tidak meminta izin yang tidak bisa dipakai.
 - **APK Play Store:** bungkus PWA yang sama dengan Capacitor (≈95% reuse) —
   butuh Android SDK/signing (dibangun di luar environment ini).

@@ -151,3 +151,30 @@ export type QueryTemplateInput = z.infer<typeof queryTemplateSchema>;
 export type CreateAnnouncementInput = z.infer<typeof createAnnouncementSchema>;
 export type UpdateAnnouncementInput = z.infer<typeof updateAnnouncementSchema>;
 export type QueryAnnouncementInput = z.infer<typeof queryAnnouncementSchema>;
+
+// ==================== WEB PUSH ====================
+
+/**
+ * A browser PushSubscription, serialised by `subscription.toJSON()`.
+ *
+ * `endpoint` is a URL to the push service; p256dh and auth are the base64 key
+ * material the server encrypts with. Length caps keep an oversized body from
+ * being stored; the lower bounds reject empty strings.
+ */
+export const pushSubscribeSchema = z.object({
+  subscription: z.object({
+    endpoint: z.string().url().max(2048),
+    expirationTime: z.number().nullable().optional(),
+    keys: z.object({
+      p256dh: z.string().min(1).max(512),
+      auth: z.string().min(1).max(512),
+    }),
+  }),
+});
+
+export const pushUnsubscribeSchema = z.object({
+  endpoint: z.string().url().max(2048),
+});
+
+export type PushSubscribeInput = z.infer<typeof pushSubscribeSchema>;
+export type PushUnsubscribeInput = z.infer<typeof pushUnsubscribeSchema>;

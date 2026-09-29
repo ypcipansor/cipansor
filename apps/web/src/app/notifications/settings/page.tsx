@@ -25,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { notificationsService } from "@/services/notifications.service";
+import { useWebPush } from "@/hooks/use-web-push";
 import {
   Bell,
   Mail,
@@ -165,6 +166,7 @@ export default function NotificationSettingsPage() {
     useState<NotificationPreferences>(DEFAULT_PREFERENCES);
   const [hasChanges, setHasChanges] = useState(false);
   const queryClient = useQueryClient();
+  const webPush = useWebPush();
 
   // What the server is actually configured to send with.
   const { data: transport, isLoading: transportLoading } = useQuery({
@@ -456,6 +458,56 @@ export default function NotificationSettingsPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        {/* Web Push (browser) — a per-device control, separate from the
+            per-user "Push" channel above. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Notifikasi Push di Perangkat Ini
+            </CardTitle>
+            <CardDescription>
+              Terima notifikasi langsung di perangkat ini, termasuk saat portal
+              dipasang sebagai aplikasi.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {webPush.state === "unsupported" &&
+                "Browser ini tidak mendukung notifikasi push."}
+              {webPush.state === "unconfigured" &&
+                "Notifikasi push belum diaktifkan oleh pengelola sistem."}
+              {webPush.state === "denied" &&
+                "Izin notifikasi diblokir. Buka pengaturan situs di browser untuk mengizinkan."}
+              {webPush.state === "subscribed" &&
+                "Aktif di perangkat ini. Notifikasi akan muncul walau portal tidak dibuka."}
+              {webPush.state === "unsubscribed" &&
+                "Belum aktif di perangkat ini."}
+            </p>
+            {webPush.state === "subscribed" ? (
+              <Button
+                variant="outline"
+                onClick={webPush.disable}
+                disabled={webPush.busy}
+              >
+                Matikan
+              </Button>
+            ) : (
+              <Button
+                onClick={webPush.enable}
+                disabled={
+                  webPush.busy ||
+                  webPush.state === "unsupported" ||
+                  webPush.state === "unconfigured" ||
+                  webPush.state === "denied"
+                }
+              >
+                Aktifkan di perangkat ini
+              </Button>
+            )}
           </CardContent>
         </Card>
 

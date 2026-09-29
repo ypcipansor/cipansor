@@ -38,6 +38,51 @@ test.describe("PWA assets", () => {
     }
   });
 
+  test("ships maskable icons separate from the full-bleed ones", async ({
+    request,
+  }) => {
+    const manifest = await (await request.get("/manifest.json")).json();
+    const maskable = manifest.icons.filter((i: { purpose?: string }) =>
+      (i.purpose ?? "").split(/\s+/).includes("maskable"),
+    );
+    // A masked launcher must have a safe-zone rendering; the full-bleed artwork
+    // alone gets clipped. Both installability sizes need one.
+    const maskableSizes = maskable.map((i: { sizes: string }) => i.sizes);
+    expect(maskableSizes).toContain("192x192");
+    expect(maskableSizes).toContain("512x512");
+    for (const icon of maskable) {
+      const res = await request.get(icon.src);
+      expect(res.status(), `${icon.src} should resolve`).toBe(200);
+    }
+  });
+
+  test("declares screenshots for the richer install UI, one aspect per factor", async ({
+    request,
+  }) => {
+    const manifest = await (await request.get("/manifest.json")).json();
+    expect(Array.isArray(manifest.screenshots)).toBe(true);
+    expect(manifest.screenshots.length).toBeGreaterThan(0);
+
+    const ratios = new Map<string, Set<number>>();
+    for (const shot of manifest.screenshots) {
+      const res = await request.get(shot.src);
+      expect(res.status(), `${shot.src} should resolve`).toBe(200);
+      expect(["wide", "narrow"]).toContain(shot.form_factor);
+      const [w, h] = shot.sizes.split("x").map(Number);
+      const set = ratios.get(shot.form_factor) ?? new Set<number>();
+      set.add(Math.round((w / h) * 100));
+      ratios.set(shot.form_factor, set);
+    }
+    // Chrome requires every screenshot of one form factor to share an aspect
+    // ratio, or it drops them all from the install sheet.
+    for (const [, set] of ratios) expect(set.size).toBe(1);
+  });
+
+  test("does not lock orientation", async ({ request }) => {
+    const manifest = await (await request.get("/manifest.json")).json();
+    expect(manifest.orientation).toBeUndefined();
+  });
+
   test("serves the service worker and offline fallback", async ({
     request,
   }) => {

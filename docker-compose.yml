@@ -206,6 +206,10 @@ services:
         # image web dibangun ulang. Kosong = widget tidak dirender sama sekali,
         # yang berpasangan dengan TURNSTILE_SECRET_KEY kosong di sisi API.
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY-}
+        # Web Push public key. Baked into the client bundle at build time, so a
+        # value added later needs a rebuild of the web image, not just a restart.
+        # Empty = the push control reports itself unconfigured.
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY-}
     container_name: cipansor-web
     restart: unless-stopped
     logging: *default-logging
