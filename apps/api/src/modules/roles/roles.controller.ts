@@ -4,6 +4,7 @@ import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
+import { randomCsrfToken, setSessionCookies } from '@/modules/auth/auth.cookies';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -179,6 +180,12 @@ export class RolesController {
         },
       });
 
+      // Rotate the session in HttpOnly cookies, exactly as login does. The
+      // browser cannot read tokens, so they are never returned in the body.
+      setSessionCookies(res, tokens.accessToken, tokens.refreshToken, randomCsrfToken());
+
+      const bearer = String(req.headers['x-client'] ?? '').toLowerCase() === 'bearer';
+
       res.json({
         success: true,
         data: {
@@ -188,7 +195,7 @@ export class RolesController {
             role: result.activeRole.role,
             unit: result.activeRole.unit,
           },
-          ...tokens,
+          ...(bearer ? tokens : {}),
         },
       });
     } catch (error) {

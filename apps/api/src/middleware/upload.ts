@@ -4,6 +4,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { tokenFromRequest } from './auth';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -260,11 +261,12 @@ export const handleSingleUpload = (fieldName: string) => {
  */
 export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    let token: string | undefined;
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice('Bearer '.length);
-    } else if (typeof req.query.token === 'string') {
+    // The browser sends the HttpOnly session cookie with an <img>/<a> fetch, so
+    // no token needs to appear in the URL. `?token=` is kept as a fallback for
+    // callers that still build one (see the note above); it is a legacy shape
+    // to be retired with a per-file signed URL.
+    let token = tokenFromRequest(req);
+    if (!token && typeof req.query.token === 'string') {
       token = req.query.token;
     }
 

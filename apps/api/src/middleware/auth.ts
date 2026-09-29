@@ -12,6 +12,7 @@ import {
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
+import { accessTokenFromCookie } from '@/modules/auth/auth.cookies';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -174,21 +175,32 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
 }
 
 /**
+ * The access token for a request, from the `Authorization: Bearer` header when
+ * a client presents one (the mobile app, the e2e API helpers) or from the
+ * `cipansor_at` HttpOnly session cookie otherwise (every browser request).
+ *
+ * Header first on purpose: an explicit bearer is the caller's stated intent,
+ * and the cookie is the fallback the browser attaches silently.
+ */
+export function tokenFromRequest(req: Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const headerToken = authHeader.slice('Bearer '.length);
+    if (headerToken) return headerToken;
+  }
+  return accessTokenFromCookie(req);
+}
+
+/**
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
  */
 export function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = tokenFromRequest(req);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
@@ -214,16 +226,10 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
  */
 export function authenticate2FA(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = tokenFromRequest(req);
 
-    if (!authHeader) {
+    if (!token) {
       throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
     }
 
     const payload = verifyToken(token);
@@ -244,19 +250,14 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
  */
 export function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
+    const token = tokenFromRequest(req);
+    if (!token) {
       return next();
     }
 
-    const [type, token] = authHeader.split(' ');
-
-    if (type === 'Bearer' && token) {
-      const payload = verifyToken(token);
-      if (payload.type === 'access' && !payload.isTemp) {
-        req.user = buildReqUser(payload);
-      }
+    const payload = verifyToken(token);
+    if (payload.type === 'access' && !payload.isTemp) {
+      req.user = buildReqUser(payload);
     }
 
     next();

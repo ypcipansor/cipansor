@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import axios from "axios";
+import { api } from "@/lib/api";
 import { MainLayout } from "@/components/layout/main-layout";
 import { PageHeader } from "@/components/shared/page-header";
 import {
@@ -59,9 +59,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-// `??` so an empty value stays empty and the base is relative — see lib/api.ts.
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
-
 interface UnitMetrics {
   unitId: string;
   unitName: string;
@@ -115,9 +112,11 @@ export default function BenchmarkPage() {
     useQuery<BenchmarkSummary>({
       queryKey: ["benchmark-summary"],
       queryFn: async () => {
-        const res = await axios.get(`${API_BASE}/api/analytics/benchmark`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        });
+        // The shared axios instance carries the HttpOnly session cookie
+        // (`withCredentials`); there is no token in JavaScript to attach.
+        const res = await api.get<{ data: BenchmarkSummary }>(
+          "/analytics/benchmark",
+        );
         return res.data.data;
       },
     });
@@ -129,12 +128,12 @@ export default function BenchmarkPage() {
   }>({
     queryKey: ["benchmark-compare"],
     queryFn: async () => {
-      const res = await axios.get(
-        `${API_BASE}/api/analytics/benchmark/compare`,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        },
-      );
+      const res = await api.get<{
+        data: {
+          units: UnitMetrics[];
+          averages: BenchmarkSummary["overallAverages"];
+        };
+      }>("/analytics/benchmark/compare");
       return res.data.data;
     },
   });
@@ -145,12 +144,9 @@ export default function BenchmarkPage() {
   >({
     queryKey: ["benchmark-rankings", selectedMetric],
     queryFn: async () => {
-      const res = await axios.get(
-        `${API_BASE}/api/analytics/benchmark/rankings`,
-        {
-          params: { metric: selectedMetric },
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        },
+      const res = await api.get<{ data: RankingResult[] }>(
+        "/analytics/benchmark/rankings",
+        { params: { metric: selectedMetric } },
       );
       return res.data.data;
     },

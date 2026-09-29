@@ -1,12 +1,14 @@
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
+import { csrfProtection } from '@/middleware/csrf';
 import {
   defaultLimiter,
   authLimiter,
@@ -135,6 +137,11 @@ app.use(buildCorsMiddleware(config.cors.origins));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Parse the session cookies the auth module issues. `authenticate` reads the
+// access token from `cipansor_at` when no Authorization header is present, so
+// every browser request is authenticated without any JavaScript-visible token.
+app.use(cookieParser());
+
 // Express 5 leaves `req.body` **undefined** when a request carries no body (or
 // no matching Content-Type); Express 4 defaulted it to {}. Forty-two
 // controllers destructure `req.body` directly, so any of them reached without
@@ -261,6 +268,12 @@ const apiRouter = express.Router();
 // and hand them to Prisma unvalidated. Normalise once here so no module can
 // forget. See middleware/normalize-pagination.ts.
 apiRouter.use(normalizePagination);
+
+// Once the session lives in an HttpOnly cookie the browser sends it on every
+// request, including ones another site forces. Reject an unsafe request that
+// carries a session cookie but no matching double-submit header. Read-only
+// routes and bearer-only clients are untouched (see middleware/csrf.ts).
+apiRouter.use(csrfProtection);
 
 // Apply the strict brute-force limiter to credential-bearing endpoints ONLY.
 //

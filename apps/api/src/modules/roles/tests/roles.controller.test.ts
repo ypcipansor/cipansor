@@ -33,21 +33,36 @@ function mockReqRes(overrides: Partial<Request> = {}) {
     params: {},
     body: {},
     user: { sub: 'user-1' },
+    // Bearer clients get the tokens in the body; the browser path (no header)
+    // gets them only in the Set-Cookie below.
+    headers: { 'x-client': 'bearer' },
     ...overrides,
   } as unknown as Request;
 
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
+    cookies: [] as Array<{ name: string; value: string }>,
     status(code: number) {
       (this as any).statusCode = code;
+      return this;
+    },
+    cookie(name: string, value: string) {
+      (this as any).cookies.push({ name, value });
+      return this;
+    },
+    clearCookie() {
       return this;
     },
     json(payload: unknown) {
       (this as any).jsonPayload = payload;
       return this;
     },
-  } as unknown as Response & { statusCode: number; jsonPayload: any };
+  } as unknown as Response & {
+    statusCode: number;
+    jsonPayload: any;
+    cookies: Array<{ name: string; value: string }>;
+  };
 
   return { req, res, next: vi.fn() };
 }

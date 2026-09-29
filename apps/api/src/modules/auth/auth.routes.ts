@@ -222,6 +222,12 @@ router.post(
   controller.verifyTwoFactorLogin
 );
 
+// The identity the web edge asks for. It runs BEFORE the `authenticate` wall
+// below and answers 401 as a normal "no session", which the Next middleware
+// reads as anonymous. GET only: it reads state and must not look like a write
+// to the public-route gate (src/middleware/public-routes-gated.test.ts).
+router.get('/principal', controller.getPrincipal);
+
 // Protected routes (Requires Full Access Token)
 router.use(authenticate);
 

@@ -8,8 +8,6 @@ import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
   getDashboardForRole,
-  getPrimaryRoleCode,
-  getEffectiveRole,
   type LegacyRole,
 } from "@/lib/rbac";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
@@ -76,48 +74,60 @@ const publicPrefixes = [
   "/public/verify-card",
 ];
 
-// Helper function to get auth state from cookie
-function getAuthState(request: NextRequest): {
-  isAuthenticated: boolean;
-  role?: LegacyRole;
-  roleCode?: string;
-} {
-  // Check for auth storage in cookies (set by zustand persist)
-  const authStorage = request.cookies.get("auth-storage")?.value;
-
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // The primary assignment's RoleCode decides, as on the API; the legacy
-        // `user.role` column is only the fallback (see getEffectiveRole).
-        const role = getEffectiveRole(parsed.state.user);
-        if (role) {
-          return {
-            isAuthenticated: true,
-            role,
-            roleCode: getPrimaryRoleCode(parsed.state.user),
-          };
-        }
-      }
-    } catch {
-      // Parse error - not authenticated
-    }
-  }
-
-  // Fallback: check for accessToken
-  const token =
-    request.cookies.get("accessToken")?.value ||
-    request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (token) {
-    return { isAuthenticated: true };
-  }
-
-  return { isAuthenticated: false };
+/**
+ * Where to reach the API from the Next server, for the principal lookup.
+ *
+ * Production runs the web and API behind one nginx, so the API is reachable at
+ * its container address (`API_INTERNAL_URL`, e.g. http://api:3001). In `pnpm
+ * dev` the two are separate origins and `NEXT_PUBLIC_API_URL` names the API;
+ * CI sets the same. `||` (not `??`) so an empty NEXT_PUBLIC_API_URL — the
+ * production setting, meaning same-origin — falls through to the dev default.
+ */
+function principalUrl(): string {
+  const base =
+    process.env.API_INTERNAL_URL ||
+    process.env.NEXT_PUBLIC_API_URL ||
+    "http://localhost:3001";
+  return `${base.replace(/\/+$/, "")}/api/auth/principal`;
 }
 
-export function middleware(request: NextRequest) {
+/**
+ * Ask the API who the caller is, forwarding the session cookie.
+ *
+ * The session now lives in an HttpOnly cookie the middleware cannot read, so
+ * the answer comes from the API rather than a client-written cookie. Only the
+ * caller's own cookie is forwarded, and the response is the slim
+ * `{ id, role, roleCode }` the RBAC helpers need. A 401 is "not signed in", the
+ * same normal answer a missing cookie used to be.
+ */
+async function fetchPrincipal(
+  request: NextRequest,
+): Promise<{ role: LegacyRole; roleCode: string } | null> {
+  const cookie = request.headers.get("cookie");
+  if (!cookie) return null;
+
+  try {
+    const res = await fetch(principalUrl(), {
+      method: "GET",
+      headers: { cookie },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      data?: { role?: string; roleCode?: string };
+    };
+    const role = body.data?.role;
+    if (!role) return null;
+    return { role: role as LegacyRole, roleCode: body.data?.roleCode ?? role };
+  } catch {
+    // The API is unreachable: treat as anonymous rather than crash the edge.
+    // Protected routes then bounce to /login, which the API will also refuse —
+    // a loud failure, not a silent bypass.
+    return null;
+  }
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Host split, before anything else.
@@ -160,8 +170,23 @@ export function middleware(request: NextRequest) {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     );
 
-  // Get authentication state
-  const { isAuthenticated, role, roleCode } = getAuthState(request);
+  // Authentication, only where it decides the outcome.
+  //
+  // `fetchPrincipal` costs an API round-trip, so it is skipped when the result
+  // cannot change the response: public routes and `/` never consult it, and a
+  // request to `/login` only needs to know whether to bounce to a dashboard.
+  let isAuthenticated = false;
+  let role: LegacyRole | undefined;
+  let roleCode: string | undefined;
+
+  if (!isPublicRoute || pathname === "/login" || pathname === "/") {
+    const principal = await fetchPrincipal(request);
+    if (principal) {
+      isAuthenticated = true;
+      role = principal.role;
+      roleCode = principal.roleCode;
+    }
+  }
 
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {

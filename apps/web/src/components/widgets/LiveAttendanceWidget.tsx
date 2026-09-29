@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -94,14 +95,13 @@ export function LiveAttendanceWidget({
     let mounted = true;
     const fetchRecentAttendance = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch(
-          // `??` keeps an empty value empty, making the base relative — see lib/api.ts.
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/api/analytics/dashboard`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        // The session rides an HttpOnly cookie; `api` attaches it (and the
+        // CSRF header on writes). No token is read from JavaScript.
+        const response = await api.get("/analytics/dashboard", {
+          skipErrorToast: true,
+        });
 
-        if (response.ok && mounted) {
+        if (response.status === 200 && mounted) {
           setIsConnected(true);
           setLastUpdate(new Date());
         }

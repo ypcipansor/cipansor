@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
-import { middlewareAuthCookieValue } from "@/lib/auth-cookie";
 
 interface AuthState {
   user: User | null;
@@ -11,7 +10,6 @@ interface AuthState {
   error: string | null;
   requiresTwoFactor: boolean;
   requiresTwoFactorSetup: boolean;
-  tempToken: string | null;
 
   login: (credentials: LoginRequest) => Promise<void>;
   verifyTwoFactor: (token: string) => Promise<void>;
@@ -22,37 +20,34 @@ interface AuthState {
   resetAuth: () => void;
 }
 
-// Custom storage that syncs with cookies for middleware
 /**
- * Mirror the persisted auth state into the cookie the middleware reads — the
- * slim form only (see `lib/auth-cookie.ts`: the full user overflowed 4 KB and
- * the browser dropped it silently). An unreadable value clears the cookie
- * instead of leaving a stale or oversized one behind.
+ * Auth state.
+ *
+ * The session itself is no longer here. The API issues the access and refresh
+ * tokens as HttpOnly cookies the page's JavaScript cannot read; this store
+ * keeps only the *user*, so the UI can render a name and a role. That is why
+ * there is no `accessToken`/`refreshToken` anywhere below — an earlier version
+ * kept both in `localStorage` and mirrored a readable `accessToken` cookie for
+ * `middleware.ts`, which one XSS could exfiltrate.
+ *
+ * Persisting the user still matters (a reload should show the shell before
+ * `/auth/me` answers), but it is no longer a credential: a forged
+ * `auth-storage` localStorage entry cannot authenticate anything, because the
+ * API — not the client — decides whether the request carries a session. The
+ * Next middleware no longer reads it at all; it asks the API for the principal.
  */
-function syncMiddlewareCookie(name: string, persisted: string) {
-  const slim = middlewareAuthCookieValue(persisted);
-  document.cookie = slim
-    ? `${name}=${encodeURIComponent(slim)}; path=/; max-age=86400; samesite=lax`
-    : `${name}=; path=/; max-age=0`;
-}
-
-const customStorage = {
+const userOnlyStorage = {
   getItem: (name: string) => {
     if (typeof window === "undefined") return null;
-    const item = localStorage.getItem(name);
-    if (item) syncMiddlewareCookie(name, item);
-    return item;
+    return localStorage.getItem(name);
   },
   setItem: (name: string, value: string) => {
     if (typeof window === "undefined") return;
     localStorage.setItem(name, value);
-    syncMiddlewareCookie(name, value);
   },
   removeItem: (name: string) => {
     if (typeof window === "undefined") return;
     localStorage.removeItem(name);
-    // Also remove from cookie
-    document.cookie = `${name}=; path=/; max-age=0`;
   },
 };
 
@@ -68,58 +63,39 @@ let inFlightFetchUser: Promise<void> | null = null;
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isAuthenticated: false,
       isLoading: false,
       error: null,
       requiresTwoFactor: false,
       requiresTwoFactorSetup: false,
-      tempToken: null,
 
       login: async (credentials: LoginRequest) => {
         set({ isLoading: true, error: null });
         try {
           const response = await authApi.login(credentials);
-          const data = response.data.data as any;
+          const data = response.data.data;
 
           if (data.requiresTwoFactor) {
-            set({
-              requiresTwoFactor: true,
-              tempToken: data.tempToken,
-              isLoading: false,
-            });
+            set({ requiresTwoFactor: true, isLoading: false });
             return;
           }
 
           if (data.requiresTwoFactorSetup) {
-            set({
-              requiresTwoFactorSetup: true,
-              tempToken: data.tempToken,
-              isLoading: false,
-            });
-            // We'll treat setup as a form of partial auth, but won't set isAuthenticated yet
-            // The UI should redirect to setup page if this flag is true
-            // We need to store tempToken to use it for enabling 2FA
-            localStorage.setItem("accessToken", data.tempToken); // Use temp token as access token for setup
-            document.cookie = `accessToken=${data.tempToken}; path=/; max-age=3600; samesite=lax`;
+            // The short-lived 2FA token is in an HttpOnly cookie; the setup
+            // component calls /auth/2fa/generate next, which the cookie
+            // authenticates, and then signs in again.
+            set({ requiresTwoFactorSetup: true, isLoading: false });
             return;
           }
 
-          const { user, accessToken, refreshToken } = data;
-
-          localStorage.setItem("accessToken", accessToken);
-          localStorage.setItem("refreshToken", refreshToken);
-          // Also set token in cookie for middleware
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
-
           set({
-            user,
+            user: data.user,
             isAuthenticated: true,
             isLoading: false,
             requiresTwoFactor: false,
             requiresTwoFactorSetup: false,
-            tempToken: null,
           });
         } catch (error: unknown) {
           const message =
@@ -143,31 +119,16 @@ export const useAuthStore = create<AuthState>()(
       verifyTwoFactor: async (token: string) => {
         set({ isLoading: true, error: null });
         try {
-          // We need to send the token. Since tempToken might not be in headers if we didn't save it to localStorage yet?
-          // Actually, for verifyLogin, we might need to manually pass Authorization header if not in localStorage.
-          // But wait, my interceptor uses localStorage.
-
-          // If we have tempToken in state, we should probably set it in localStorage before calling verify2FA?
-          // Or verify2FA endpoint expects `token` in BODY (the OTP), but expects Bearer token (tempToken) in HEADER.
-
-          const tempToken = get().tempToken;
-          if (tempToken) {
-            localStorage.setItem("accessToken", tempToken);
-          }
-
+          // The temporary token authenticates this call from its HttpOnly
+          // cookie, so there is nothing to place in a header first.
           const response = await authApi.verify2FA({ token });
-          const { user, accessToken, refreshToken } = response.data.data;
-
-          localStorage.setItem("accessToken", accessToken);
-          localStorage.setItem("refreshToken", refreshToken);
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
+          const { user } = response.data.data;
 
           set({
             user,
             isAuthenticated: true,
             isLoading: false,
             requiresTwoFactor: false,
-            tempToken: null,
           });
         } catch (error: unknown) {
           const message =
@@ -190,31 +151,22 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
+          // The API revokes the refresh token from its cookie and clears every
+          // session cookie. The client only drops its copy of the user.
           await authApi.logout();
         } catch {
-          // Ignore logout errors
+          // Ignore logout errors — the local wipe below is the important part.
         } finally {
-          localStorage.removeItem("accessToken");
-          localStorage.removeItem("refreshToken");
-          // Also remove from cookies
-          document.cookie = "accessToken=; path=/; max-age=0";
-          document.cookie = "auth-storage=; path=/; max-age=0";
           set({
             user: null,
             isAuthenticated: false,
             requiresTwoFactor: false,
             requiresTwoFactorSetup: false,
-            tempToken: null,
           });
         }
       },
 
       fetchUser: async () => {
-        const token = localStorage.getItem("accessToken");
-        if (!token) {
-          set({ isAuthenticated: false, user: null });
-          return;
-        }
         if (inFlightFetchUser) return inFlightFetchUser;
 
         set({ isLoading: true });
@@ -229,12 +181,8 @@ export const useAuthStore = create<AuthState>()(
           } catch (error: unknown) {
             const status = (error as AxiosError)?.response?.status;
             if (status === 401 || status === 403) {
-              // Token genuinely rejected — clear the session.
-              localStorage.removeItem("accessToken");
-              localStorage.removeItem("refreshToken");
-              // Also remove from cookies
-              document.cookie = "accessToken=; path=/; max-age=0";
-              document.cookie = "auth-storage=; path=/; max-age=0";
+              // The session cookie is gone or rejected. There is nothing
+              // client-side to clear beyond the cached user.
               set({ user: null, isAuthenticated: false, isLoading: false });
             } else {
               // Transient failure (network blip, timeout, 5xx). Do NOT log the
@@ -256,15 +204,10 @@ export const useAuthStore = create<AuthState>()(
       switchRole: async (roleAssignmentId: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await rolesApi.switchRole(roleAssignmentId);
-          const { accessToken, refreshToken } = response.data.data;
+          // The API rotates the session cookies; the body carries the new
+          // active role only.
+          await rolesApi.switchRole(roleAssignmentId);
 
-          // Update tokens
-          localStorage.setItem("accessToken", accessToken);
-          localStorage.setItem("refreshToken", refreshToken);
-          document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
-
-          // Fetch updated user data
           const userResponse = await authApi.me();
           set({ user: userResponse.data.data, isLoading: false });
 
@@ -290,16 +233,11 @@ export const useAuthStore = create<AuthState>()(
       },
 
       resetAuth: () => {
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
         set({
           user: null,
           isAuthenticated: false,
           requiresTwoFactor: false,
           requiresTwoFactorSetup: false,
-          tempToken: null,
           error: null,
         });
       },
@@ -308,19 +246,16 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "auth-storage",
-      storage: createJSONStorage(() => customStorage),
+      storage: createJSONStorage(() => userOnlyStorage),
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
       }),
       onRehydrateStorage: () => (state) => {
-        // After hydration, trigger fetchUser if token exists
+        // After hydration, ask the API who we are — the cookie decides, not
+        // anything persisted here.
         if (state && typeof window !== "undefined") {
-          const token = localStorage.getItem("accessToken");
-          if (token) {
-            // Delay fetchUser to next tick to ensure store is ready
-            setTimeout(() => state.fetchUser(), 0);
-          }
+          setTimeout(() => state.fetchUser(), 0);
         }
       },
     },

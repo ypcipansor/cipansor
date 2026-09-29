@@ -45,7 +45,10 @@ export const registerSchema = z
 
 // Refresh token schema
 export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(1, 'Refresh token is required'),
+  // Optional because the browser presents the refresh token in an HttpOnly
+  // cookie, not the body; a bearer-only client still posts it here. The
+  // controller refuses when neither is present.
+  refreshToken: z.string().min(1, 'Refresh token is required').optional(),
 });
 
 // Two-factor code: six authenticator digits, or on the sign-in step a recovery

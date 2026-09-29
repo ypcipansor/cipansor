@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '@/middleware/error';
+import { asyncHandler, Errors } from '@/middleware/error';
+import { deriveLegacyRole } from '@/middleware/auth';
+import { verifyToken } from '@/lib/jwt';
 import { authService } from './auth.service';
 import {
   LoginInput,
@@ -9,20 +11,61 @@ import {
   SendPasswordResetInput,
   ResetPasswordInput,
 } from './auth.schema';
+import {
+  accessTokenFromCookie,
+  clearAuthCookies,
+  randomCsrfToken,
+  refreshTokenFromCookie,
+  setSessionCookies,
+  setTempCookie,
+} from './auth.cookies';
 import { eventBus } from '@/lib/event-bus';
 import { logger } from '@/lib/logger';
 
 /**
+ * A bearer-only client (the mobile app, the e2e API helpers).
+ *
+ * The browser uses HttpOnly cookies and never sees a token; a client that
+ * cannot hold cookies asks for the tokens in the body with `X-Client: bearer`.
+ * Opt-in, not the default, so a script cannot force a token into the page's
+ * reach — the request has to be made by a client that wants one.
+ */
+function isBearerClient(req: Request): boolean {
+  return String(req.headers['x-client'] ?? '').toLowerCase() === 'bearer';
+}
+
+/**
  * Login
  * POST /api/auth/login
+ *
+ * The tokens are issued as HttpOnly cookies, not in the JSON body, so page
+ * JavaScript can never read them. The response still carries the user (for
+ * 2FA flow state) but deliberately omits `accessToken`/`refreshToken`. A
+ * bearer-only client that needs the raw token in hand (the mobile app) logs in
+ * with `X-Client: bearer` — see `docs/MOBILE_API.md`.
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const input: LoginInput = req.body;
+  const bearer = isBearerClient(req);
   const result = await authService.login(input);
+
+  if (!('accessToken' in result)) {
+    const requiresTwoFactor = 'requiresTwoFactor' in result && result.requiresTwoFactor;
+    setTempCookie(res, result.tempToken, requiresTwoFactor ? 5 * 60 * 1000 : 10 * 60 * 1000);
+    return res.json({
+      success: true,
+      data: requiresTwoFactor
+        ? { requiresTwoFactor: true, ...(bearer ? { tempToken: result.tempToken } : {}) }
+        : { requiresTwoFactorSetup: true, ...(bearer ? { tempToken: result.tempToken } : {}) },
+    });
+  }
+
+  const { user, accessToken, refreshToken } = result;
+  setSessionCookies(res, accessToken, refreshToken, randomCsrfToken());
 
   res.json({
     success: true,
-    data: result,
+    data: bearer ? { user, accessToken, refreshToken } : { user },
   });
 });
 
@@ -47,12 +90,62 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  * POST /api/auth/refresh
  */
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: RefreshTokenInput = req.body;
-  const tokens = await authService.refreshToken(refreshToken);
+  // The refresh token rides an HttpOnly cookie on the browser path; a
+  // bearer-only client may still POST it in the body.
+  const bearer = isBearerClient(req);
+  const fromBody = (req.body as RefreshTokenInput | undefined)?.refreshToken;
+  const token = refreshTokenFromCookie(req) || fromBody;
+  if (!token) {
+    throw Errors.unauthorized('Refresh token required');
+  }
+
+  const tokens = await authService.refreshToken(token);
+  setSessionCookies(res, tokens.accessToken, tokens.refreshToken, randomCsrfToken());
 
   res.json({
     success: true,
-    data: tokens,
+    data: bearer
+      ? { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken }
+      : { refreshed: true },
+  });
+});
+
+/**
+ * The authenticated principal for the web edge (Next.js `middleware.ts`).
+ *
+ * `middleware.ts` runs before the app and needs to know *who* the caller is to
+ * gate a route, but every durable record of that identity is now in an
+ * HttpOnly cookie it cannot read. So it asks the API, forwarding the session
+ * cookie, and receives the same slim role shape it used to parse out of its own
+ * client-written cookie — an id, the legacy role and the primary role code.
+ *
+ * Unauthenticated is a normal answer, not an error: the middleware treats a
+ * 401 as "no session", exactly as it used to treat a missing cookie.
+ */
+export const getPrincipal = asyncHandler(async (req: Request, res: Response) => {
+  const token = accessTokenFromCookie(req);
+  if (!token) {
+    throw Errors.unauthorized();
+  }
+
+  let payload;
+  try {
+    payload = verifyToken(token);
+  } catch {
+    throw Errors.unauthorized();
+  }
+
+  if (payload.type !== 'access' || payload.isTemp) {
+    throw Errors.unauthorized();
+  }
+
+  res.json({
+    success: true,
+    data: {
+      id: payload.sub,
+      role: deriveLegacyRole(payload.roleCode),
+      roleCode: payload.roleCode,
+    },
   });
 });
 
@@ -73,9 +166,15 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // toast on the login page.
   const { refreshToken } = req.body ?? {};
 
+  // Prefer the cookie's refresh token so a browser logout revokes the session
+  // that is actually signed in, even though the body carries none.
+  const token = refreshTokenFromCookie(req) || refreshToken;
+
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, refreshToken);
+  await authService.logout(userId, token);
+
+  clearAuthCookies(res);
 
   res.json({
     success: true,
@@ -142,8 +241,16 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   const userId = req.user!.sub;
   const { token } = req.body;
   const isTemp = req.user?.isTemp;
+  const bearer = isBearerClient(req);
   const result = await authService.verifyTwoFactorLogin(userId, token, isTemp);
-  res.json({ success: true, data: result });
+
+  const { user, accessToken, refreshToken } = result;
+  setSessionCookies(res, accessToken, refreshToken, randomCsrfToken());
+
+  res.json({
+    success: true,
+    data: bearer ? { user, accessToken, refreshToken } : { user },
+  });
 });
 
 /**
