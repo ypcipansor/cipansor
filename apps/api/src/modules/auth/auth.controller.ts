@@ -155,7 +155,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // lifetime after the user had logged out. The store swallows the error
   // client-side, so the only visible symptom was an "Internal server error"
   // toast on the login page.
-  const { refreshToken } = req.body ?? {};
+  const { refreshToken, pushEndpoint } = req.body ?? {};
 
   // Prefer the cookie's refresh token so a browser logout revokes the session
   // that is actually signed in, even though the body carries none.
@@ -163,7 +163,12 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, token);
+  //
+  // `pushEndpoint` scopes the push cleanup to this browser so the user's other
+  // signed-in devices keep receiving push; the client sends it when it can read
+  // its subscription. Absent, the service clears every device (the safe
+  // direction, and what an older client does).
+  await authService.logout(userId, token, typeof pushEndpoint === 'string' ? pushEndpoint : null);
 
   clearAuthCookies(res);
 

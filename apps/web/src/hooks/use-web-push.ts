@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { WebPushSubscriptionPayload } from "@cipansor/shared";
 import { notificationsService } from "@/services/notifications.service";
@@ -116,10 +117,22 @@ async function activeRegistration(): Promise<ServiceWorkerRegistration | null> {
  * `state` is derived on mount from the live subscription *and* the server row,
  * so the toggle shows the truth for *this* device even though `pushEnabled` in
  * preferences is per-user.
+ *
+ * Server calls go through React Query (status query + subscribe/unsubscribe
+ * mutations), per the web data-layer rule; the browser's own `pushManager` is
+ * not server data and is read/written directly. The mount effect reconciles a
+ * browser subscription that the server has no row for — a registration that
+ * failed after `subscribe()` succeeded, a logout-time purge, or a rotated
+ * endpoint — so the device is reachable again on the next visit. That
+ * reconciliation is also what `useWebPushReconcile` runs on every authenticated
+ * page, not just this settings screen.
  */
 export function useWebPush() {
-  const [state, setState] = useState<WebPushState>("unsubscribed");
-  const [busy, setBusy] = useState(false);
+  const queryClient = useQueryClient();
+  // `undefined` = still reading the browser's subscription; `null` = none.
+  const [browserSubscription, setBrowserSubscription] = useState<
+    PushSubscription | null | undefined
+  >(undefined);
 
   // `Notification` does not exist during SSR; resolve support on the client.
   const supported =
@@ -130,55 +143,106 @@ export function useWebPush() {
 
   useEffect(() => {
     if (!supported) {
-      // On iOS the missing piece is the install, not the browser. Say so
-      // instead of a flat "not supported" that hides the one step that fixes it.
-      setState(isIosNotInstalled() ? "needs-install" : "unsupported");
-      return;
-    }
-    if (!VAPID_PUBLIC_KEY) {
-      setState("unconfigured");
-      return;
-    }
-    if (Notification.permission === "denied") {
-      setState("denied");
+      setBrowserSubscription(null);
       return;
     }
     let cancelled = false;
     currentSubscription()
-      .then(async (sub) => {
-        if (cancelled) return;
-        if (!sub) {
-          setState("unsubscribed");
-          return;
-        }
-        // A browser subscription can exist while the API has no row for it — a
-        // registration that failed after `subscribe()` succeeded, or a row the
-        // server dropped on logout. Claiming "Aktif" then leaves the device
-        // silently unable to receive anything, so confirm the server really has
-        // this endpoint and repair it if not.
-        const registered = await notificationsService.pushStatus(sub.endpoint);
-        if (cancelled) return;
-        if (!registered) {
-          try {
-            await notificationsService.subscribePush(
-              sub.toJSON() as WebPushSubscriptionPayload,
-            );
-          } catch {
-            if (!cancelled) setState("unsubscribed");
-            return;
-          }
-          if (!cancelled) setState("subscribed");
-          return;
-        }
-        if (!cancelled) setState("subscribed");
+      .then((sub) => {
+        if (!cancelled) setBrowserSubscription(sub);
       })
       .catch(() => {
-        if (!cancelled) setState("unsubscribed");
+        if (!cancelled) setBrowserSubscription(null);
       });
     return () => {
       cancelled = true;
     };
   }, [supported]);
+
+  const endpoint = browserSubscription?.endpoint ?? null;
+
+  // Does the API hold a row for this browser's endpoint? Distinct from "the
+  // browser has a subscription" — the two disagree after a failed registration
+  // or a logout-time purge, and claiming "Aktif" then leaves the device
+  // silently unable to receive anything.
+  const statusQuery = useQuery({
+    queryKey: ["web-push-status", endpoint],
+    queryFn: () => notificationsService.pushStatus(endpoint as string),
+    enabled: supported && !!VAPID_PUBLIC_KEY && !!endpoint,
+    retry: false,
+  });
+
+  const registerMutation = useMutation({
+    mutationFn: (sub: PushSubscription) =>
+      notificationsService.subscribePush(
+        sub.toJSON() as WebPushSubscriptionPayload,
+      ),
+    retry: false,
+    // Write the status straight back: the server now has this endpoint, so the
+    // toggle flips to "Aktif" at once instead of after a refetch round-trip.
+    onSuccess: (_data, sub) =>
+      queryClient.setQueryData(["web-push-status", sub.endpoint], true),
+  });
+
+  const unregisterMutation = useMutation({
+    // Delete the server row *first*, while we still hold the endpoint. Doing it
+    // the other way round loses the endpoint the moment `unsubscribe()`
+    // succeeds, so a failed API call could never be retried and the row would
+    // linger, still pushing to this device (CWE-200).
+    mutationFn: async (sub: PushSubscription) => {
+      await notificationsService.unsubscribePush(sub.endpoint);
+      const unsubscribed = await sub.unsubscribe();
+      // `unsubscribe()` resolves false if the browser still holds the
+      // subscription; don't report success we did not achieve.
+      if (!unsubscribed) throw new Error("Browser refused to unsubscribe");
+    },
+    retry: false,
+    onSuccess: (_data, sub) => {
+      setBrowserSubscription(null);
+      queryClient.setQueryData(["web-push-status", sub.endpoint], false);
+    },
+  });
+
+  // Reconcile a browser subscription the server has no row for. Silent by
+  // design: it runs on every authenticated page (see useWebPushReconcile), and
+  // a failure only means the next visit retries.
+  const { mutate: reconcile, isPending: reconciling } = registerMutation;
+  const registered = statusQuery.data;
+  useEffect(() => {
+    if (
+      !browserSubscription ||
+      registered !== false ||
+      registerMutation.isPending
+    ) {
+      return;
+    }
+    reconcile(browserSubscription);
+  }, [browserSubscription, registered, registerMutation.isPending, reconcile]);
+
+  const [busy, setBusy] = useState(false);
+  // Read once on the client, then refreshed by `enable()`. `Notification` does
+  // not exist during SSR, and the value can change when the user answers the
+  // permission prompt — which is a state change React must see to re-render.
+  const [permission, setPermission] = useState<NotificationPermission | null>(
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : null,
+  );
+
+  let state: WebPushState;
+  if (!supported) {
+    // On iOS the missing piece is the install, not the browser. Say so instead
+    // of a flat "not supported" that hides the one step that fixes it.
+    state = isIosNotInstalled() ? "needs-install" : "unsupported";
+  } else if (!VAPID_PUBLIC_KEY) {
+    state = "unconfigured";
+  } else if (permission === "denied") {
+    state = "denied";
+  } else if (browserSubscription && registered === true) {
+    state = "subscribed";
+  } else {
+    state = "unsubscribed";
+  }
 
   const enable = useCallback(async () => {
     if (!supported || !VAPID_PUBLIC_KEY) {
@@ -187,9 +251,9 @@ export function useWebPush() {
     }
     setBusy(true);
     try {
-      const permission = await Notification.requestPermission();
-      if (permission !== "granted") {
-        setState(permission === "denied" ? "denied" : "unsubscribed");
+      const result = await Notification.requestPermission();
+      setPermission(result);
+      if (result !== "granted") {
         toast.error(
           "Izin notifikasi ditolak. Aktifkan lewat pengaturan browser.",
         );
@@ -208,10 +272,8 @@ export function useWebPush() {
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         }));
-      await notificationsService.subscribePush(
-        subscription.toJSON() as WebPushSubscriptionPayload,
-      );
-      setState("subscribed");
+      setBrowserSubscription(subscription);
+      await registerMutation.mutateAsync(subscription);
       toast.success("Notifikasi push aktif di perangkat ini.");
     } catch {
       // Deliberately leaves the browser subscription in place: the reconcile on
@@ -220,34 +282,41 @@ export function useWebPush() {
     } finally {
       setBusy(false);
     }
-  }, [supported]);
+  }, [supported, registerMutation]);
 
   const disable = useCallback(async () => {
     setBusy(true);
     try {
-      const subscription = await currentSubscription();
-      if (subscription) {
-        const { endpoint } = subscription;
-        // Delete the server row *first*, while we still hold the endpoint. Doing
-        // it the other way round loses the endpoint the moment `unsubscribe()`
-        // succeeds, so a failed API call could never be retried and the row
-        // would linger, still pushing to this device (CWE-200).
-        await notificationsService.unsubscribePush(endpoint);
-        const unsubscribed = await subscription.unsubscribe();
-        // `unsubscribe()` resolves false if the browser still holds the
-        // subscription; don't report success we did not achieve.
-        if (!unsubscribed) {
-          throw new Error("Browser refused to unsubscribe");
-        }
-      }
-      setState("unsubscribed");
+      const subscription = browserSubscription ?? (await currentSubscription());
+      if (subscription) await unregisterMutation.mutateAsync(subscription);
       toast.success("Notifikasi push dimatikan.");
     } catch {
       toast.error("Gagal mematikan notifikasi push.");
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [browserSubscription, unregisterMutation]);
 
-  return { state, supported, busy, enable, disable };
+  return {
+    state,
+    supported,
+    busy: busy || reconciling,
+    enable,
+    disable,
+  };
+}
+
+/**
+ * Reconcile this device's push row on ordinary app entry.
+ *
+ * A browser subscription can go stale with no page open: a logout clears the
+ * row, and the push service can rotate the endpoint behind a
+ * `pushsubscriptionchange`. `useWebPush` repairs both, but it used to mount
+ * only on the notification settings page, so a device could sit logged in with
+ * a valid subscription and no server row — receiving nothing — until someone
+ * happened to open that screen. Mounting this on the authenticated shell runs
+ * the same reconciliation on every page. It renders nothing and never toasts.
+ */
+export function useWebPushReconcile(): void {
+  useWebPush();
 }

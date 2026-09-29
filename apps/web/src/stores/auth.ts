@@ -6,7 +6,10 @@ import {
   clearTwoFactorInvite,
   markTwoFactorInvite,
 } from "@/lib/two-factor-invite";
-import { clearPrivateServiceWorkerCaches } from "@/lib/push-cache";
+import {
+  clearPrivateServiceWorkerCaches,
+  currentPushEndpoint,
+} from "@/lib/push-cache";
 
 interface AuthState {
   user: User | null;
@@ -176,9 +179,14 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
+          // Name this browser's push endpoint so the server clears only this
+          // device's row — otherwise a logout here would silently stop push on
+          // the user's other signed-in devices. Read before the session ends;
+          // it is a browser value, not a server one.
+          const pushEndpoint = await currentPushEndpoint();
           // The API revokes the refresh token from its cookie and clears every
           // session cookie. The client only drops its copy of the user.
-          await authApi.logout();
+          await authApi.logout(pushEndpoint);
         } catch {
           // Ignore logout errors — the local wipe below is the important part.
         } finally {

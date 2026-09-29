@@ -3,6 +3,9 @@ import {
   MAX_NOTIFICATION_CONTENT_LENGTH,
   createAnnouncementSchema,
   createNotificationSchema,
+  pushSubscribeSchema,
+  pushUnsubscribeSchema,
+  pushStatusQuerySchema,
 } from '../notifications.schema';
 import { MAX_EMAIL_BODY_LENGTH } from '../email-transport';
 
@@ -50,5 +53,55 @@ describe('notification content size cap', () => {
     expect(
       createAnnouncementSchema.safeParse({ title: 'Pengumuman', content: oversized }).success
     ).toBe(false);
+  });
+});
+
+/**
+ * The push endpoint is attacker-controlled and the (future) sender POSTs to it
+ * from inside our network, so an unvalidated value is an SSRF primitive
+ * (CWE-918). Real push services are public HTTPS hosts, so the guard rejects
+ * nothing a browser produces while refusing loopback, link-local, private and
+ * unique-local addresses.
+ */
+describe('push endpoint validation (SSRF guard)', () => {
+  const keys = { p256dh: 'p', auth: 'a' };
+  const withEndpoint = (endpoint: string) =>
+    pushSubscribeSchema.safeParse({
+      subscription: { endpoint, expirationTime: null, keys },
+    }).success;
+
+  it('accepts a public HTTPS push service', () => {
+    expect(withEndpoint('https://fcm.googleapis.com/fcm/send/abc')).toBe(true);
+    expect(withEndpoint('https://updates.push.services.mozilla.com/wpush/v2/abc')).toBe(true);
+  });
+
+  it('rejects a non-HTTPS endpoint', () => {
+    expect(withEndpoint('http://fcm.googleapis.com/fcm/send/abc')).toBe(false);
+  });
+
+  it.each([
+    'https://127.0.0.1/x',
+    'https://localhost/x',
+    'https://foo.localhost/x',
+    'https://10.0.0.5/x',
+    'https://192.168.1.4/x',
+    'https://172.16.0.1/x',
+    'https://169.254.169.254/latest/meta-data/',
+    'https://0.0.0.0/x',
+    'https://[::1]/x',
+    'https://[fe80::1]/x',
+    'https://[fd00::1]/x',
+  ])('rejects a server-reachable host: %s', (endpoint) => {
+    expect(withEndpoint(endpoint)).toBe(false);
+  });
+
+  it('applies the same guard to unsubscribe and status endpoints', () => {
+    expect(pushUnsubscribeSchema.safeParse({ endpoint: 'https://127.0.0.1/x' }).success).toBe(
+      false
+    );
+    expect(pushStatusQuerySchema.safeParse({ endpoint: 'https://10.0.0.1/x' }).success).toBe(false);
+    expect(
+      pushUnsubscribeSchema.safeParse({ endpoint: 'https://push.example.com/abc' }).success
+    ).toBe(true);
   });
 });

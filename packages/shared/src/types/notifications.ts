@@ -1,3 +1,5 @@
+import type { WebPushSubscription } from "../schemas/notifications";
+
 export type NotificationType =
   | "ANNOUNCEMENT"
   | "ATTENDANCE"
@@ -132,15 +134,9 @@ export interface DashboardNotification {
 /**
  * A browser Web Push subscription as the client sends it to the API.
  *
- * One shape, one home: the API validates it at the edge and the web builds it
- * from `PushSubscription.toJSON()`. `expirationTime` is null for the common
- * non-expiring subscription.
+ * Inferred from `webPushSubscriptionSchema` in `schemas/notifications.ts` —
+ * that schema is the one home for the shape; the API validates with it and the
+ * web builds the payload from this type, so the two cannot drift. `expirationTime`
+ * is null for the common non-expiring subscription.
  */
-export interface WebPushSubscriptionPayload {
-  endpoint: string;
-  expirationTime: number | null;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
-}
+export type WebPushSubscriptionPayload = WebPushSubscription;

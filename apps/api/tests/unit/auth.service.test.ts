@@ -531,8 +531,21 @@ describe('AuthService', () => {
         },
       });
       // Push endpoints outlive the session; logout asks the bus to drop them.
+      // No endpoint named → null, so every device for this user is cleared.
       expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
         userId: 'user-1',
+        endpoint: null,
+      });
+    });
+
+    it('scopes the push cleanup to the endpoint when the client names one', async () => {
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+
+      await authService.logout('user-1', 'specific-token', 'https://push.example.com/laptop');
+
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: 'https://push.example.com/laptop',
       });
     });
 

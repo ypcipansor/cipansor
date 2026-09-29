@@ -21,3 +21,28 @@ export async function clearPrivateServiceWorkerCaches(): Promise<void> {
     // will sweep them on the next activate.
   }
 }
+
+/**
+ * This browser's push endpoint, or null when it has no live subscription.
+ *
+ * Read from the browser's own `PushSubscription`, never from a cache of a
+ * previous session: it names *this* device so logout can clear just this
+ * device's server row (see the `auth:logged_out` listener). Best-effort —
+ * logout must proceed even if this fails.
+ */
+export async function currentPushEndpoint(): Promise<string | null> {
+  if (
+    typeof navigator === "undefined" ||
+    !("serviceWorker" in navigator) ||
+    !("PushManager" in window)
+  ) {
+    return null;
+  }
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    return subscription?.endpoint ?? null;
+  } catch {
+    return null;
+  }
+}

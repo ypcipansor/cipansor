@@ -550,8 +550,12 @@ export class AuthService {
 
   /**
    * Logout (invalidate refresh token)
+   *
+   * `pushEndpoint` names the browser's push subscription so only that device is
+   * cleared — see the `auth:logged_out` listener. Callers that end every
+   * session (password reset) omit it, and the listener clears all devices.
    */
-  async logout(userId: string, refreshToken?: string) {
+  async logout(userId: string, refreshToken?: string, pushEndpoint?: string | null) {
     if (refreshToken) {
       // Delete specific token
       await prisma.refreshToken.deleteMany({
@@ -571,7 +575,7 @@ export class AuthService {
     // place it would keep pushing this user's private notifications to a device
     // they have signed out of (CWE-200); clearing it is handled by the event
     // bus so auth does not reach into the notifications module.
-    eventBus.emit('auth:logged_out', { userId });
+    eventBus.emit('auth:logged_out', { userId, endpoint: pushEndpoint ?? null });
   }
 
   /**

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { pushEndpointSchema, webPushSubscriptionSchema } from '@cipansor/shared';
 import { partialUpdateSchema } from '@/lib/partial';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
@@ -155,30 +156,23 @@ export type QueryAnnouncementInput = z.infer<typeof queryAnnouncementSchema>;
 // ==================== WEB PUSH ====================
 
 /**
- * A browser PushSubscription, serialised by `subscription.toJSON()`.
- *
- * `endpoint` is a URL to the push service; p256dh and auth are the base64 key
- * material the server encrypts with. Length caps keep an oversized body from
- * being stored; the lower bounds reject empty strings.
+ * The push contract lives once, in `@cipansor/shared`
+ * (`webPushSubscriptionSchema`) — the API validates with it at the edge and the
+ * web builds its payload from the same type, so the two cannot drift. The
+ * endpoint refinement (HTTPS, no loopback/link-local/private host) that blocks
+ * the sender becoming an SSRF primitive is part of that shared schema.
  */
 export const pushSubscribeSchema = z.object({
-  subscription: z.object({
-    endpoint: z.string().url().max(2048),
-    expirationTime: z.number().nullable().optional(),
-    keys: z.object({
-      p256dh: z.string().min(1).max(512),
-      auth: z.string().min(1).max(512),
-    }),
-  }),
+  subscription: webPushSubscriptionSchema,
 });
 
 export const pushUnsubscribeSchema = z.object({
-  endpoint: z.string().url().max(2048),
+  endpoint: pushEndpointSchema,
 });
 
 /** Query for the ownership check (GET /notifications/push/status). */
 export const pushStatusQuerySchema = z.object({
-  endpoint: z.string().url().max(2048),
+  endpoint: pushEndpointSchema,
 });
 
 export type PushSubscribeInput = z.infer<typeof pushSubscribeSchema>;

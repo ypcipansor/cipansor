@@ -78,10 +78,7 @@ self.addEventListener("activate", (event) => {
         .keys()
         .then((keys) =>
           Promise.all(
-            keys
-              // Drop this version's stale names AND any older version's caches.
-              .filter((k) => k.startsWith(CACHE_PREFIX) && !k.endsWith(VERSION))
-              .map((k) => caches.delete(k)),
+            keys.filter(shouldDropCache).map((k) => caches.delete(k)),
           ),
         ),
       // Navigation preload: the browser starts the navigation request in
@@ -96,6 +93,31 @@ self.addEventListener("activate", (event) => {
     ]).then(() => self.clients.claim()),
   );
 });
+
+/** The trailing `vN` of a cache name (or of `VERSION` itself), else null. */
+function cacheVersion(name) {
+  const match = /v(\d+)$/.exec(name);
+  return match ? Number(match[1]) : null;
+}
+
+/**
+ * Whether a cache belongs to a version old enough to delete.
+ *
+ * The previous version's caches are kept, not just the current one. An accepted
+ * update calls skipWaiting(), which takes control of *every* open tab at once —
+ * but only the tab the user clicked in reloads. Another tab can still be
+ * running the previous Next build and lazily ask for a hashed chunk that the
+ * new build no longer serves; if its own HTTP cache has evicted that chunk, the
+ * only other place it can come from is the cache this worker would have just
+ * deleted. Keeping one version back gives those tabs their chunks until they
+ * reload, and the version after next sweeps them.
+ */
+function shouldDropCache(name) {
+  if (!name.startsWith(CACHE_PREFIX)) return false;
+  const version = cacheVersion(name);
+  if (version === null) return false; // not a versioned cache of ours; leave it
+  return version < cacheVersion(VERSION) - 1;
+}
 
 /**
  * Trim a cache to `max` entries, oldest first.
@@ -127,12 +149,24 @@ function isImmutable(url) {
   return url.pathname.startsWith("/_next/static/");
 }
 
+/**
+ * Paths that must never be stored in Cache Storage, whatever they look like.
+ *
+ * `/uploads/**` is the only one today: student photos and documents behind
+ * `uploadsAuth`. Cache Storage outlives the session that filled it, so keeping
+ * one there leaves it readable by the next person on the device (CWE-524). Any
+ * future same-origin route that serves per-user data goes in this list — the
+ * alternative, inferring "private" from a file extension or a query string, is
+ * exactly the guess that lets the next one through.
+ */
+const PRIVATE_PATH_PREFIXES = ["/uploads/"];
+
+function isPrivatePath(url) {
+  return PRIVATE_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+}
+
 function isStaticAsset(url) {
-  // `/uploads/**` holds student photos and documents behind `uploadsAuth`. They
-  // are private per-user data: caching them would leave another account's
-  // pictures readable from Cache Storage after logout (CWE-524), so they are
-  // never stored here regardless of extension.
-  if (url.pathname.startsWith("/uploads/")) return false;
+  if (isPrivatePath(url)) return false;
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
@@ -141,8 +175,18 @@ function isStaticAsset(url) {
   );
 }
 
-/** Immutable assets: serve from cache, fill on miss. */
+/**
+ * Serve a public static asset without touching Cache Storage for private paths.
+ *
+ * A cache hit is returned before the network, so a stored copy is served with
+ * no session check at all — which is why a private path must never reach the
+ * cache in the first place. The guard here is the belt to `isStaticAsset`'s
+ * braces: even if a private URL is routed through this handler, it is fetched
+ * fresh every time and never stored.
+ */
 function cacheFirst(request, event) {
+  const url = new URL(request.url);
+  if (isPrivatePath(url)) return fetch(request);
   return caches.match(request).then((cached) => {
     if (cached) return cached;
     return fetch(request).then((resp) => {
@@ -162,10 +206,22 @@ function cacheFirst(request, event) {
   });
 }
 
-/** Mutable static assets: serve the cached copy, refresh in the background. */
+/**
+ * Mutable static assets: serve the cached copy, refresh in the background.
+ *
+ * Precache is consulted first. Public install assets (icons, manifest, the
+ * notification badge) live in `PRECACHE`; without this lookup a cached-first
+ * request that misses the runtime cache falls through to the network, which is
+ * exactly what is unavailable offline — the notification badge then has no
+ * image to render.
+ */
 function staleWhileRevalidate(request, event) {
+  const url = new URL(request.url);
+  if (isPrivatePath(url)) return fetch(request);
   return caches.open(RUNTIME).then(async (cache) => {
-    const cached = await cache.match(request);
+    const cached =
+      (await cache.match(request)) ||
+      (await caches.match(request, { cacheName: PRECACHE }));
     const network = fetch(request)
       .then(async (resp) => {
         if (isCacheable(resp)) {
@@ -195,6 +251,15 @@ function staleWhileRevalidate(request, event) {
  * A successful page is stored so a later offline visit can still open the last
  * version of *that* page (not just the generic offline page), then the offline
  * page is the final fallback.
+ *
+ * Portal pages are dynamically rendered — the root layout reads cookies and
+ * headers — so Next answers them `no-store`, and `isCacheable` honours that:
+ * no per-page HTML is stored, and an offline reload of a portal route lands on
+ * `/offline.html`. That is the deliberate choice, not an oversight. Caching a
+ * signed-in page would put one user's rendered HTML in Cache Storage for the
+ * next person on the device to read (CWE-524), and the same `no-store` the
+ * server sends is the signal not to. Offline is promised at the app shell
+ * (static assets, install, the offline page), not per-route.
  */
 function navigationHandler(request, event) {
   // Navigation preload (see activate) already started the request, so we can

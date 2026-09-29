@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 
 const subscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unsubscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
@@ -16,6 +18,21 @@ vi.hoisted(() => {
 });
 
 import { useWebPush } from "./use-web-push";
+
+// Server calls now go through React Query, so every render needs a client.
+function wrapper({ children }: { children: ReactNode }) {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+
+function renderWebPush() {
+  return renderHook(() => useWebPush(), { wrapper });
+}
 
 const subscription = {
   endpoint: "https://push.example.com/abc",
@@ -67,19 +84,19 @@ describe("useWebPush", () => {
 
   it("reports the live per-device state on mount", async () => {
     installPushEnv({ existing: subscription });
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
   });
 
   it("reports unsubscribed when no subscription exists", async () => {
     installPushEnv({ existing: null });
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
   });
 
   it("enables: requests permission, subscribes, and posts to the API", async () => {
     const { subscribe } = installPushEnv({ existing: null });
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
 
     await act(async () => {
@@ -95,11 +112,19 @@ describe("useWebPush", () => {
 
   it("does not subscribe when permission is denied", async () => {
     const { subscribe } = installPushEnv({ existing: null });
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
 
     Object.defineProperty(window.Notification, "requestPermission", {
-      value: vi.fn().mockResolvedValue("denied"),
+      // A real browser also flips `Notification.permission` to "denied" and
+      // never asks again; the hook reads that, so the mock must too.
+      value: vi.fn().mockImplementation(() => {
+        Object.defineProperty(window.Notification, "permission", {
+          value: "denied",
+          configurable: true,
+        });
+        return Promise.resolve("denied");
+      }),
       configurable: true,
     });
     await act(async () => {
@@ -113,7 +138,7 @@ describe("useWebPush", () => {
 
   it("disables: deletes the endpoint server-side, then unsubscribes locally", async () => {
     installPushEnv({ existing: subscription });
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
 
     await act(async () => {
@@ -136,7 +161,7 @@ describe("useWebPush", () => {
   it("keeps the browser subscription usable when the server delete fails", async () => {
     installPushEnv({ existing: subscription });
     unsubscribePush.mockRejectedValueOnce(new Error("network"));
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
 
     await act(async () => {
@@ -154,7 +179,7 @@ describe("useWebPush", () => {
     // reachable, so the hook must re-register rather than show "Aktif".
     installPushEnv({ existing: subscription });
     pushStatus.mockResolvedValueOnce(false);
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
 
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
     expect(pushStatus).toHaveBeenCalledWith("https://push.example.com/abc");
@@ -174,7 +199,7 @@ describe("useWebPush", () => {
     });
     window.matchMedia = vi.fn().mockReturnValue({ matches: false });
 
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     expect(result.current.state).toBe("needs-install");
   });
 
@@ -186,7 +211,7 @@ describe("useWebPush", () => {
       configurable: true,
     });
 
-    const { result } = renderHook(() => useWebPush());
+    const { result } = renderWebPush();
     expect(result.current.state).toBe("unsupported");
   });
 });

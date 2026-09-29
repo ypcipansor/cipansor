@@ -409,6 +409,24 @@ describe('Event bus — logout clears push subscriptions', () => {
     });
   });
 
+  it('drops only the named device on a normal logout (other devices keep push)', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+    });
+    await settle();
+
+    // Scoped to this endpoint: logging out on the laptop must not stop push on
+    // the still-signed-in phone.
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+  });
+
   it('swallows a cleanup failure so logout still succeeds', async () => {
     (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('db down')

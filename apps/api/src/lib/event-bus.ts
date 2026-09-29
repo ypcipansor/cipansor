@@ -16,6 +16,7 @@ import { notificationService } from '@/modules/notifications/email-sms.service';
 import {
   getChannelPolicy,
   deleteAllPushSubscriptions,
+  unsubscribePush,
   type ChannelPolicy,
 } from '@/modules/notifications/notifications.service';
 import {
@@ -358,6 +359,17 @@ export interface DashboardRefreshEvent {
 
 export interface AuthLoggedOutEvent {
   userId: string;
+  /**
+   * The push endpoint this browser belongs to, when the client could name it.
+   *
+   * A browser push endpoint identifies a *device*, not a person. On a normal
+   * logout we clear only this device's row, so the user's other signed-in
+   * devices keep receiving push. `endpoint: null` (or absent) means "clear
+   * every device" — the deliberate choice for a password reset, which must end
+   * every session everywhere, and the safe fallback when the client could not
+   * name the endpoint.
+   */
+  endpoint?: string | null;
 }
 
 /**
@@ -607,20 +619,31 @@ export function initializeEventBus(): void {
   // ===== AUTH EVENT HANDLERS =====
 
   /**
-   * Logout revokes a device's push subscription.
+   * Logout clears a device's push subscription.
    *
    * A browser push endpoint identifies a device, not a person. Left behind, it
    * would keep delivering the signed-out user's private notifications to anyone
-   * who later uses that device (CWE-200). Clearing every row for the user is the
-   * safe choice: the device re-subscribes on its next login, and a logout cannot
-   * tell which of the user's rows belongs to *this* browser.
+   * who later uses that device (CWE-200).
+   *
+   * Which rows to clear depends on *why* the user is leaving. A normal logout
+   * ends one session, so it clears only the endpoint that session's browser
+   * named — otherwise logging out on the laptop would silently stop push on the
+   * still-signed-in phone (the phone keeps a valid session but loses its server
+   * row until its settings page happens to reopen). A password reset ends every
+   * session everywhere and passes no endpoint, so every device is cleared.
+   * When the client cannot name the endpoint we fall back to clearing all of
+   * them: a stale row leaks private data, a missing row only costs a
+   * re-subscribe, and the safe direction is to over-clear.
    */
   eventBus.on('auth:logged_out', async (event) => {
     try {
-      const removed = await deleteAllPushSubscriptions(event.userId);
+      const removed = event.endpoint
+        ? await unsubscribePush(event.userId, event.endpoint)
+        : await deleteAllPushSubscriptions(event.userId);
       if (removed > 0) {
         logger.info('Cleared push subscriptions on logout', {
           userId: event.userId,
+          scope: event.endpoint ? 'endpoint' : 'all-devices',
           count: removed,
         });
       }

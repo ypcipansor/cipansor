@@ -77,8 +77,13 @@ class FakeCacheStorage {
   async delete(name: string) {
     return this.caches.delete(name);
   }
-  async match(request: { url: string }) {
-    for (const cache of this.caches.values()) {
+  async match(request: { url: string }, options?: { cacheName?: string }) {
+    const names = options?.cacheName
+      ? [options.cacheName]
+      : [...this.caches.keys()];
+    for (const name of names) {
+      const cache = this.caches.get(name);
+      if (!cache) continue;
       const hit = await cache.match(request);
       if (hit) return hit;
     }
@@ -335,6 +340,22 @@ describe("sw.js fetch routing", () => {
     expect(responded).toBeUndefined();
   });
 
+  it("serves a precached install asset offline (the notification badge)", async () => {
+    // The badge is in PRECACHE; with the network down, a runtime-cache miss must
+    // still find it there or the push notification renders with no image.
+    const worker = loadWorker();
+    worker.fetchMock.mockRejectedValue(new Error("offline"));
+    await worker.cacheStorage
+      .open(`cipansor-precache-${SW_VERSION}`)
+      .then((c) => c.put("/icons/badge-96.png", asset("badge")));
+
+    const res = await dispatchFetch(
+      worker.listeners,
+      get("/icons/badge-96.png"),
+    );
+    expect(await res!.text()).toBe("badge");
+  });
+
   it("fetches when navigation preload resolves undefined", async () => {
     // Older browsers / a disabled preload can resolve the promise to undefined;
     // passing that to respondWith would fail the navigation outright.
@@ -387,11 +408,14 @@ describe("sw.js logout cache purge", () => {
 });
 
 describe("sw.js lifecycle", () => {
-  it("deletes caches from older versions on activate", async () => {
+  it("deletes caches two versions old on activate, keeps the previous one", async () => {
     const worker = loadWorker();
-    // Seed a stale cache from a previous version plus a live one.
-    await worker.cacheStorage.open("cipansor-precache-v2");
-    await worker.cacheStorage.open(`cipansor-runtime-${SW_VERSION}`);
+    const current = Number(SW_VERSION.slice(1));
+    // Current version, the immediately-previous version (kept so a still-open
+    // tab can fetch its old hashed chunks), and a much older one.
+    await worker.cacheStorage.open(`cipansor-precache-${SW_VERSION}`);
+    await worker.cacheStorage.open(`cipansor-runtime-v${current - 1}`);
+    await worker.cacheStorage.open("cipansor-pages-v1");
 
     let activation!: Promise<unknown>;
     worker.listeners.get("activate")?.({
@@ -402,8 +426,9 @@ describe("sw.js lifecycle", () => {
     await activation;
 
     const names = await worker.cacheStorage.keys();
-    expect(names).not.toContain("cipansor-precache-v2");
-    expect(names).toContain(`cipansor-runtime-${SW_VERSION}`);
+    expect(names).toContain(`cipansor-precache-${SW_VERSION}`);
+    expect(names).toContain(`cipansor-runtime-v${current - 1}`);
+    expect(names).not.toContain("cipansor-pages-v1");
     // Navigation preload is enabled alongside the cache sweep.
     expect(worker.enableNavigationPreload).toHaveBeenCalled();
   });

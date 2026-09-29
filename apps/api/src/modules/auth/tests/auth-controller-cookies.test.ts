@@ -241,9 +241,32 @@ describe('auth controller: cookies, not body tokens', () => {
       vi.fn()
     );
 
-    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1');
+    // No pushEndpoint in the body → null, so the service clears every device
+    // (the safe fallback for an older client that cannot name its endpoint).
+    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1', null);
     expect(cleared).toEqual(
       expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
+  });
+
+  it('scopes the push cleanup to the endpoint the browser named', async () => {
+    const { res } = mockRes();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+        body: { pushEndpoint: 'https://push.example.com/abc' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    // Only this device is cleared, so the user's other signed-in devices keep
+    // receiving push.
+    expect(authServiceMock.logout).toHaveBeenCalledWith(
+      'u-1',
+      'refresh-1',
+      'https://push.example.com/abc'
     );
   });
 });
