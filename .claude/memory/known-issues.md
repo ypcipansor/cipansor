@@ -250,7 +250,8 @@ decision.
   shown apart from the teacher's suggestion for home.
 - **The daily-report photo rule knows only local uploads.**
   `dailyReportPhotoSchema` accepts `…/uploads/<file>`; when stored files move
-  to blob storage (#441, to be split), widen it in the same change.
+  to blob storage (roadmap 4, PR B), it references a file id instead, in the
+  same change.
 - **The module standard is not followed.**
   22 of 93 modules have all five parts; 12 call Prisma from a route or
   controller; 23 import other modules directly (the rule is the event bus);
