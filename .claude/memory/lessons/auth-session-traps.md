@@ -38,11 +38,21 @@ named the cause at once.
   decides a session is over — clears every session cookie in its response.
   The commonest trigger is ordinary: changing your own password revokes every
   refresh token, the current one included.
-- **Read "was there a session" before the call that may end it.** A refused
-  refresh clears the cookies in its own response, so a check made afterwards
-  sees an anonymous visitor and skips the redirect to `/login`. An anonymous
-  visitor must never be redirected (a public page calling a protected
-  endpoint is normal); a signed-in one must be.
+- **No session, no refresh — and decide it before the refresh.** The client
+  cannot see an HttpOnly session, so without a check every anonymous 401 (the
+  login page itself calls `/auth/me`) sends a refresh: it spends the per-IP
+  auth rate limit, and once a refusal clears cookies its answer can land after
+  a sign-in has set them and wipe them — seen on the e2e rig as a test sent
+  back to `/login` right after injecting a session. The readable CSRF cookie
+  is set and cleared with the session; read it before any refresh (a refused
+  one clears it in its own response). An anonymous visitor is never
+  refreshed or redirected; a signed-in one whose refresh is refused is sent to
+  `/login`. A refresh with no token clears nothing.
+- **An e2e suite that shares one cached session must not rotate or revoke
+  it.** A test that refreshes or logs out the shared session leaves every
+  later test holding a deleted refresh token; give such a test its own
+  sign-in. And assert the refresh answered 200, not only the URL: a refused
+  refresh bounced back by the middleware still ends on the right URL.
 - **The routing cookie's bucket is minted, not derived by the client.** Every
   place that mints a token (login, 2FA, refresh, role switch) must compute
   the bucket the same way (`tokenLegacyRole`): a switch that wrote the legacy
