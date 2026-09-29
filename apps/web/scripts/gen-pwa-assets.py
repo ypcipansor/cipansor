@@ -22,7 +22,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 WEB = Path(__file__).resolve().parent.parent
 PUBLIC = WEB / "public"
@@ -44,6 +44,31 @@ for size in (192, 512):
     base.alpha_composite(art, (off, off))
     out = PUBLIC / f"icons/maskable-{size}.png"
     base.save(out)
+
+
+# --- notification badge ---------------------------------------------------
+# Android draws `showNotification`'s `badge` as a monochrome silhouette: it
+# keeps only the alpha channel and paints the status-bar icon in a flat tint,
+# so a full-colour icon (let alone the brand-green maskable square, which is
+# opaque to every edge) comes out as a solid grey blob. The badge therefore has
+# to be a white glyph on transparent, sized to the platform's 24dp target.
+#
+# A bell, drawn from primitives so it stays crisp at badge size, reads as
+# "notification" the way a shrunken logo does not.
+BADGE = 96
+badge = Image.new("RGBA", (BADGE, BADGE), (255, 255, 255, 0))
+draw = ImageDraw.Draw(badge)
+WHITE = (255, 255, 255, 255)
+# Dome + skirt: an ellipse for the top and a rectangle for the straight sides,
+# merged into one bell body.
+draw.ellipse((24, 16, 72, 64), fill=WHITE)
+draw.rectangle((24, 40, 72, 68), fill=WHITE)
+# Rim and clapper.
+draw.rounded_rectangle((18, 66, 78, 74), radius=4, fill=WHITE)
+draw.ellipse((42, 74, 54, 86), fill=WHITE)
+# Hanger loop above the dome.
+draw.ellipse((44, 6, 52, 14), fill=WHITE)
+badge.save(PUBLIC / "icons/badge-96.png")
 
 
 # --- manifest screenshots -------------------------------------------------

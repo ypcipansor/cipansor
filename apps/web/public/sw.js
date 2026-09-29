@@ -16,7 +16,7 @@
 // with the current prefix, so a new version forces returning clients to drop
 // stale icons/manifest — without it the old PWA icon is served from
 // cache-first storage indefinitely.
-const VERSION = "v3";
+const VERSION = "v4";
 const PRECACHE = `cipansor-precache-${VERSION}`;
 const RUNTIME = `cipansor-runtime-${VERSION}`;
 const PAGES = `cipansor-pages-${VERSION}`;
@@ -255,8 +255,10 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(payload.title, {
       body: payload.body,
       icon: "/icons/icon-192.png",
-      // Maskable rendition: Android crops the status-bar badge to a shape.
-      badge: "/icons/maskable-192.png",
+      // A monochrome white glyph on transparent, not the colour icon: Android
+      // keeps only the badge alpha channel and tints the status-bar icon, so a
+      // full-colour (or opaque) image renders as a solid blob.
+      badge: "/icons/badge-96.png",
       // Carry the target URL on the notification so click can route to it.
       data: { url: payload.url || "/" },
       tag: payload.tag,

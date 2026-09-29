@@ -95,6 +95,21 @@ test.describe("PWA assets", () => {
     expect(await offline.text()).toContain("Tidak ada koneksi");
   });
 
+  test("ships a monochrome notification badge the worker points at", async ({
+    request,
+  }) => {
+    // Android tints the badge by its alpha channel only, so a full-colour (or
+    // opaque) image renders as a solid blob — the badge must be its own asset,
+    // distinct from the colour icon, and the worker must reference it.
+    const badge = await request.get("/icons/badge-96.png");
+    expect(badge.status()).toBe(200);
+    expect(badge.headers()["content-type"]).toContain("image/png");
+
+    const sw = await (await request.get("/sw.js")).text();
+    expect(sw).toContain('badge: "/icons/badge-96.png"');
+    expect(sw).not.toContain('badge: "/icons/maskable-192.png"');
+  });
+
   test("links the manifest from the document head", async ({ page }) => {
     await page.goto("/login");
     const manifestHref = await page

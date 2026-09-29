@@ -21,6 +21,12 @@ const SW_SOURCE = readFileSync(
 );
 const ORIGIN = "https://portal.test";
 
+// Read the cache version out of the worker rather than hard-coding it: these
+// tests seed and assert on versioned cache names, so a VERSION bump must not
+// silently turn "the live cache is kept" into "a stale one survived".
+const SW_VERSION = /const VERSION = "([^"]+)"/.exec(SW_SOURCE)?.[1];
+if (!SW_VERSION) throw new Error("could not read VERSION from sw.js");
+
 type Entry = { request: { url: string }; response: Response };
 
 /** A Cache with just the surface sw.js touches, keyed by request URL. */
@@ -99,6 +105,7 @@ function loadWorker() {
   const fetchMock = vi.fn();
   const enableNavigationPreload = vi.fn().mockResolvedValue(undefined);
   const pushSubscribe = vi.fn().mockResolvedValue({ endpoint: "https://new" });
+  const showNotification = vi.fn();
 
   const self = {
     location: { origin: ORIGIN },
@@ -111,7 +118,7 @@ function loadWorker() {
       matchAll: async () => [],
     },
     registration: {
-      showNotification: vi.fn(),
+      showNotification,
       navigationPreload: { enable: enableNavigationPreload },
       pushManager: { subscribe: pushSubscribe },
     },
@@ -140,6 +147,7 @@ function loadWorker() {
     fetchMock,
     enableNavigationPreload,
     pushSubscribe,
+    showNotification,
   };
 }
 
@@ -344,9 +352,9 @@ describe("sw.js fetch routing", () => {
 describe("sw.js logout cache purge", () => {
   it("drops the page + runtime caches on CLEAR_PRIVATE_CACHES, keeps precache", async () => {
     const worker = loadWorker();
-    await worker.cacheStorage.open("cipansor-pages-v3");
-    await worker.cacheStorage.open("cipansor-runtime-v3");
-    await worker.cacheStorage.open("cipansor-precache-v3");
+    await worker.cacheStorage.open(`cipansor-pages-${SW_VERSION}`);
+    await worker.cacheStorage.open(`cipansor-runtime-${SW_VERSION}`);
+    await worker.cacheStorage.open(`cipansor-precache-${SW_VERSION}`);
 
     let work!: Promise<unknown>;
     worker.listeners.get("message")?.({
@@ -358,10 +366,10 @@ describe("sw.js logout cache purge", () => {
     await work;
 
     const names = await worker.cacheStorage.keys();
-    expect(names).not.toContain("cipansor-pages-v3");
-    expect(names).not.toContain("cipansor-runtime-v3");
+    expect(names).not.toContain(`cipansor-pages-${SW_VERSION}`);
+    expect(names).not.toContain(`cipansor-runtime-${SW_VERSION}`);
     // Public precached assets are not private data; they stay for offline use.
-    expect(names).toContain("cipansor-precache-v3");
+    expect(names).toContain(`cipansor-precache-${SW_VERSION}`);
   });
 
   it("does not skipWaiting on a CLEAR_PRIVATE_CACHES message", async () => {
@@ -383,7 +391,7 @@ describe("sw.js lifecycle", () => {
     const worker = loadWorker();
     // Seed a stale cache from a previous version plus a live one.
     await worker.cacheStorage.open("cipansor-precache-v2");
-    await worker.cacheStorage.open("cipansor-runtime-v3");
+    await worker.cacheStorage.open(`cipansor-runtime-${SW_VERSION}`);
 
     let activation!: Promise<unknown>;
     worker.listeners.get("activate")?.({
@@ -395,7 +403,7 @@ describe("sw.js lifecycle", () => {
 
     const names = await worker.cacheStorage.keys();
     expect(names).not.toContain("cipansor-precache-v2");
-    expect(names).toContain("cipansor-runtime-v3");
+    expect(names).toContain(`cipansor-runtime-${SW_VERSION}`);
     // Navigation preload is enabled alongside the cache sweep.
     expect(worker.enableNavigationPreload).toHaveBeenCalled();
   });
@@ -408,6 +416,56 @@ describe("sw.js lifecycle", () => {
     // An unrelated message must not force an update.
     worker.listeners.get("message")?.({ data: { type: "PING" } });
     expect(worker.skipWaiting).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sw.js push notification rendering", () => {
+  /** Fire a push event and return the work it handed to waitUntil. */
+  async function dispatchPush(
+    worker: ReturnType<typeof loadWorker>,
+    payload: unknown,
+  ) {
+    let work!: Promise<unknown>;
+    worker.listeners.get("push")?.({
+      data: { json: () => payload },
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    await work;
+  }
+
+  it("shows a notification with a monochrome badge, not the opaque icon", async () => {
+    const worker = loadWorker();
+
+    await dispatchPush(worker, { title: "Halo", body: "Ada setoran baru" });
+
+    expect(worker.showNotification).toHaveBeenCalledTimes(1);
+    const [, options] = worker.showNotification.mock.calls[0];
+    // Android keeps only the badge's alpha channel and tints it, so an opaque
+    // full-colour image (the old maskable square) renders as a solid blob.
+    expect(options.badge).toBe("/icons/badge-96.png");
+    expect(options.badge).not.toBe(options.icon);
+  });
+
+  it("falls back to a default title/body when the payload is not JSON", async () => {
+    const worker = loadWorker();
+    let work!: Promise<unknown>;
+    worker.listeners.get("push")?.({
+      data: {
+        json: () => {
+          throw new Error("not json");
+        },
+        text: () => "Pesan biasa",
+      },
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    await work;
+
+    const [, options] = worker.showNotification.mock.calls[0];
+    expect(options.body).toBe("Pesan biasa");
   });
 });
 
