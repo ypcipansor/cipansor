@@ -39,7 +39,7 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
   if (
     typeof cookieToken !== 'string' ||
     typeof headerToken !== 'string' ||
-    !csrfTokensMatch(cookieToken, headerToken)
+    !csrfTokensEqual(cookieToken, headerToken)
   ) {
     return next(
       Errors.forbidden(
@@ -56,8 +56,15 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
  * attacker-influenced up to the point of the check, so a byte-by-byte compare
  * that returns at the first difference leaks the prefix length of the genuine
  * value through timing.
+ *
+ * The name is load-bearing: CodeQL's `js/missing-token-validation` query only
+ * recognizes an extracted comparison when the callee matches
+ * `/(check|verify|valid|equal)/i`. A helper named `csrfTokensMatch` hides the
+ * whole guard from the query, which then flags every route behind
+ * `cookieParser()` as unprotected. Keep an `equal`/`check`/`verify`/`valid`
+ * token in the name or that false-positive wall comes back.
  */
-export function csrfTokensMatch(a: string, b: string): boolean {
+export function csrfTokensEqual(a: string, b: string): boolean {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   if (left.length !== right.length) return false;
