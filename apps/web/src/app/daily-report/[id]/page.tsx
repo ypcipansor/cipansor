@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { use, useState } from "react";
 import { safeFormat } from "@/lib/date";
 import { useRouter } from "next/navigation";
 import {
@@ -30,9 +30,9 @@ import { Separator } from "@/components/ui/separator";
 import { useDailyReport } from "@/hooks/use-daily-report";
 
 import { MainLayout } from "@/components/layout";
-function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
+function DailyReportDetailPageContent({ id }: { id: string }) {
   const router = useRouter();
-  const { data: report, isLoading } = useDailyReport(params.id);
+  const { data: report, isLoading } = useDailyReport(id);
 
   if (isLoading) {
     return (
@@ -117,7 +117,7 @@ function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
           )}
           <Button
             variant="outline"
-            onClick={() => router.push(`/daily-report/${params.id}/edit`)}
+            onClick={() => router.push(`/daily-report/${id}/edit`)}
           >
             <Edit2 className="w-4 h-4 mr-2" />
             Edit
@@ -394,12 +394,14 @@ function DailyReportDetailPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function DailyReportDetailPage(
-  props: Parameters<typeof DailyReportDetailPageContent>[0],
-) {
+export default function DailyReportDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <MainLayout>
-      <DailyReportDetailPageContent {...props} />
+      <DailyReportDetailPageContent id={use(params).id} />
     </MainLayout>
   );
 }

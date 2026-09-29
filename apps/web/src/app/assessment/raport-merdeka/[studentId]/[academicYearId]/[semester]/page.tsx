@@ -1,20 +1,28 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, use } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
 interface RaportMerdekaPageProps {
-  params: {
+  params: Promise<{
     studentId: string;
     academicYearId: string;
     semester: string;
-  };
+  }>;
 }
 
-function RaportMerdekaPrintPageContent({ params }: RaportMerdekaPageProps) {
-  const { studentId, academicYearId, semester } = params;
+function RaportMerdekaPrintPageContent({
+  params,
+}: {
+  params: Promise<{
+    studentId: string;
+    academicYearId: string;
+    semester: string;
+  }>;
+}) {
+  const { studentId, academicYearId, semester } = use(params);
 
   const {
     data: raport,

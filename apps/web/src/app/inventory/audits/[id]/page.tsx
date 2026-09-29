@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
@@ -45,9 +45,9 @@ import {
 import { AssetAuditItem } from "@cipansor/shared";
 
 import { MainLayout } from "@/components/layout";
-function AuditDetailPageContent({ params }: { params: { id: string } }) {
+function AuditDetailPageContent({ id }: { id: string }) {
   const router = useRouter();
-  const auditId = params.id;
+  const auditId = id;
   const { data: audit, isLoading } = useAssetAudit(auditId);
   const updateItemMutation = useUpdateAuditItem();
   const completeAuditMutation = useCompleteAudit();
@@ -366,12 +366,14 @@ function AuditDetailPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function AuditDetailPage(
-  props: Parameters<typeof AuditDetailPageContent>[0],
-) {
+export default function AuditDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <MainLayout>
-      <AuditDetailPageContent {...props} />
+      <AuditDetailPageContent id={use(params).id} />
     </MainLayout>
   );
 }

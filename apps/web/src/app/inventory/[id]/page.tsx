@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { use, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Edit, Trash2, QrCode, Wrench, Printer } from "lucide-react";
@@ -83,9 +83,9 @@ function getStatusBadge(status: AssetStatus) {
   );
 }
 
-function InventoryDetailPageContent({ params }: { params: { id: string } }) {
+function InventoryDetailPageContent({ id }: { id: string }) {
   const router = useRouter();
-  const itemId = params.id;
+  const itemId = id;
   const { data: item, isLoading } = useInventoryItem(itemId);
   const deleteMutation = useDeleteInventoryItem();
   const { data: units } = useUnits();
@@ -804,12 +804,14 @@ function InventoryDetailPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function InventoryDetailPage(
-  props: Parameters<typeof InventoryDetailPageContent>[0],
-) {
+export default function InventoryDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <MainLayout>
-      <InventoryDetailPageContent {...props} />
+      <InventoryDetailPageContent id={use(params).id} />
     </MainLayout>
   );
 }

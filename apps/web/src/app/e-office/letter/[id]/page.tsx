@@ -1,4 +1,5 @@
 "use client";
+import { use } from "react";
 import { useRouter } from "next/navigation";
 import { authFileUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
@@ -97,8 +98,12 @@ const REVIEWER_STATUS_LABEL: Record<string, string> = {
 export default function LetterDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
+  return <LetterDetailPageContent letterId={use(params).id} />;
+}
+
+function LetterDetailPageContent({ letterId }: { letterId: string }) {
   const router = useRouter();
   const { user } = useAuth();
   const {
@@ -117,7 +122,7 @@ export default function LetterDetailPage({
     search: participantSearch || undefined,
     limit: 100,
   });
-  const { data: letter, isLoading } = useLetter(params.id);
+  const { data: letter, isLoading } = useLetter(letterId);
 
   const [notes, setNotes] = useState("");
   const [dispositionOpen, setDispositionOpen] = useState(false);

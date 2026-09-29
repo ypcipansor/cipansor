@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
@@ -48,9 +48,9 @@ const formSchema = z.object({
   recommendations: z.string().optional(),
 });
 
-function GradeSimaanPageContent({ params }: { params: { id: string } }) {
+function GradeSimaanPageContent({ id }: { id: string }) {
   const router = useRouter();
-  const { data: exam, isLoading } = useSimaanExam(params.id);
+  const { data: exam, isLoading } = useSimaanExam(id);
   const { mutate: submitScores, isPending } = useSubmitSimaanScores();
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -107,7 +107,7 @@ function GradeSimaanPageContent({ params }: { params: { id: string } }) {
 
   function onSubmit(values: z.infer<typeof formSchema>) {
     submitScores(
-      { id: params.id, data: values },
+      { id: id, data: values },
       {
         onSuccess: () => {
           toast.success("Nilai simaan berhasil disimpan");
@@ -349,12 +349,14 @@ function GradeSimaanPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function GradeSimaanPage(
-  props: Parameters<typeof GradeSimaanPageContent>[0],
-) {
+export default function GradeSimaanPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <MainLayout>
-      <GradeSimaanPageContent {...props} />
+      <GradeSimaanPageContent id={use(params).id} />
     </MainLayout>
   );
 }

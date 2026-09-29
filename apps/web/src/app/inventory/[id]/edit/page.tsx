@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useEffect } from "react";
+import { use, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@/lib/zod-resolver";
 import { z } from "zod";
@@ -64,9 +64,9 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
-function EditInventoryPageContent({ params }: { params: { id: string } }) {
+function EditInventoryPageContent({ id }: { id: string }) {
   const router = useRouter();
-  const itemId = params.id;
+  const itemId = id;
   const updateMutation = useUpdateInventoryItem();
   const { data: item, isLoading } = useInventoryItem(itemId);
   const { data: units } = useUnits();
@@ -510,12 +510,14 @@ function EditInventoryPageContent({ params }: { params: { id: string } }) {
   );
 }
 
-export default function EditInventoryPage(
-  props: Parameters<typeof EditInventoryPageContent>[0],
-) {
+export default function EditInventoryPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   return (
     <MainLayout>
-      <EditInventoryPageContent {...props} />
+      <EditInventoryPageContent id={use(params).id} />
     </MainLayout>
   );
 }
