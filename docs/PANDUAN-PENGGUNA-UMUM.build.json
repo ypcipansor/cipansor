@@ -1,0 +1,10 @@
+{
+    "source": "PANDUAN-PENGGUNA-UMUM.md",
+    "source_sha256": "43776bb68c9948cf833858784808a2e191ebd2858548c0a5b6af9af99571e80b",
+    "commit": "1a0e6b1e",
+    "built": "2026-09-29",
+    "outputs": {
+        "PANDUAN-PENGGUNA-UMUM.docx": "3a502dbf586cb6959532b5a144888bdf9fa1eaf95231538bcdb99e54c14f243a",
+        "PANDUAN-PENGGUNA-UMUM.pdf": "825aa1b25b2a924635a58d3f66ab30d19dcac1b37fbca41c7867bb7f845bfe1e"
+    }
+}

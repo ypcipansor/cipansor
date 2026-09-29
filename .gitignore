@@ -154,6 +154,6 @@ __pycache__/
 # (sumber) + `*.build.json` (hash sumber, dasar `check_docs.py --built`);
 # `.docx`/`.pdf` sengaja tetap dilacak karena itu yang dikirim ke pengurus,
 # donor, dan auditor.
-docs/dokumen-aplikasi/fakta/
-docs/dokumen-aplikasi/diagrams/
-docs/dokumen-aplikasi/alur/
+docs/fakta/
+docs/diagrams/
+docs/alur/
