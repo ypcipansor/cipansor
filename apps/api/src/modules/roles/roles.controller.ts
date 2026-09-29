@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { rolesService } from './roles.service';
-import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
+import { generateTokenPair, getExpirationDate, decodeToken } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
-import { randomCsrfToken, setSessionCookies } from '@/modules/auth/auth.cookies';
+import { mayReturnTokens, randomCsrfToken, setSessionCookies } from '@/modules/auth/auth.cookies';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -180,11 +180,19 @@ export class RolesController {
         },
       });
 
-      // Rotate the session in HttpOnly cookies, exactly as login does. The
-      // browser cannot read tokens, so they are never returned in the body.
-      setSessionCookies(res, tokens.accessToken, tokens.refreshToken, randomCsrfToken());
+      // Rotate the session in HttpOnly cookies, exactly as login does. A
+      // request authenticated by a cookie never gets a token back (see
+      // mayReturnTokens): a page script setting `X-Client: bearer` must not be
+      // handed a fresh access and refresh token.
+      const payload = decodeToken(tokens.accessToken);
+      const roleCode = payload?.roleCode ?? result.activeRole.role.code;
+      setSessionCookies(res, tokens.accessToken, tokens.refreshToken, randomCsrfToken(), {
+        id: payload?.sub ?? result.user.id,
+        role: payload?.role ?? roleCode,
+        roleCode,
+      });
 
-      const bearer = String(req.headers['x-client'] ?? '').toLowerCase() === 'bearer';
+      const bearer = mayReturnTokens(req);
 
       res.json({
         success: true,

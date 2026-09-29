@@ -30,6 +30,28 @@ const FIXED_2FA_SECRET =
 export const ACCESS_COOKIE = "cipansor_at";
 export const REFRESH_COOKIE = "cipansor_rt";
 export const CSRF_COOKIE = "cipansor_csrf";
+export const PRINCIPAL_COOKIE = "cipansor_principal";
+
+/**
+ * The slim routing cookie the Next middleware reads (no API round trip).
+ * Derived from the authenticated user, the same values the API writes at login.
+ */
+function principalValue(session: {
+  user: Record<string, unknown> & { role?: string; id?: string };
+}): string {
+  const user = session.user as {
+    id?: string;
+    role?: string;
+    userRoles?: Array<{ isPrimary?: boolean; role?: { code?: string } }>;
+  };
+  const primary =
+    user.userRoles?.find((a) => a?.isPrimary) ?? user.userRoles?.[0];
+  return JSON.stringify({
+    id: user.id ?? "",
+    role: user.role ?? primary?.role?.code ?? "",
+    roleCode: primary?.role?.code ?? user.role ?? "",
+  });
+}
 
 /** A stable double-submit value; the API only requires cookie === header. */
 export const E2E_CSRF_TOKEN = "e2e-csrf-token";
@@ -228,11 +250,13 @@ export async function injectSession(page: Page, session: AuthSession) {
   });
 
   const expires = Math.floor(Date.now() / 1000) + 86400;
+  const host = new URL(BASE_URL).hostname;
   await page.context().addCookies([
     {
       name: ACCESS_COOKIE,
       value: session.accessToken,
-      url: BASE_URL,
+      domain: host,
+      path: "/",
       httpOnly: true,
       secure: false,
       sameSite: "Lax",
@@ -241,7 +265,20 @@ export async function injectSession(page: Page, session: AuthSession) {
     {
       name: REFRESH_COOKIE,
       value: session.refreshToken,
-      url: BASE_URL,
+      domain: host,
+      // The API scopes this to the auth endpoints; mirror it, or logout (which
+      // clears path /api/auth) leaves a stray /-scoped cookie behind.
+      path: "/api/auth",
+      httpOnly: true,
+      secure: false,
+      sameSite: "Lax",
+      expires,
+    },
+    {
+      name: PRINCIPAL_COOKIE,
+      value: principalValue(session),
+      domain: host,
+      path: "/",
       httpOnly: true,
       secure: false,
       sameSite: "Lax",
@@ -250,7 +287,8 @@ export async function injectSession(page: Page, session: AuthSession) {
     {
       name: CSRF_COOKIE,
       value: session.csrfToken,
-      url: BASE_URL,
+      domain: host,
+      path: "/",
       httpOnly: false,
       secure: false,
       sameSite: "Lax",
@@ -340,6 +378,13 @@ export function buildStorageState(session: AuthSession) {
         sameSite: "Lax" as const,
       },
       {
+        name: PRINCIPAL_COOKIE,
+        value: principalValue(session),
+        httpOnly: true,
+        secure: false,
+        sameSite: "Lax" as const,
+      },
+      {
         name: CSRF_COOKIE,
         value: session.csrfToken,
         httpOnly: false,
@@ -349,7 +394,7 @@ export function buildStorageState(session: AuthSession) {
     ].map((c) => ({
       ...c,
       domain: new URL(BASE_URL).hostname,
-      path: "/",
+      path: c.name === REFRESH_COOKIE ? "/api/auth" : "/",
       expires,
     })),
     origins: [

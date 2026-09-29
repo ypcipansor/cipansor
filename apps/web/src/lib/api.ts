@@ -148,10 +148,31 @@ api.interceptors.request.use(
  */
 let refreshInFlight: Promise<void> | null = null;
 
+/**
+ * Serialize the refresh across tabs of the same origin.
+ *
+ * The in-page single-flight above only covers one document. Two tabs whose
+ * access token expired at the same moment both call `/auth/refresh`, and the
+ * server rotates the refresh token on first use — so the second tab presents a
+ * token that was just deleted and is logged out. The Web Locks API holds the
+ * lock while one tab refreshes; the other waits, then presents the *rotated*
+ * refresh cookie the first tab's response already set, and succeeds. Falls back
+ * to running inline where the API is unavailable.
+ */
+function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && "locks" in navigator) {
+    return navigator.locks.request(
+      "cipansor-session-refresh",
+      fn,
+    ) as Promise<T>;
+  }
+  return fn();
+}
+
 function refreshAccessToken(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
+  refreshInFlight = withRefreshLock(async () => {
     // The refresh token is an HttpOnly cookie the API reads itself; there is
     // nothing to read here. `withCredentials` on the shared instance makes the
     // browser attach it. No local session is a normal, non-error state for an
@@ -161,7 +182,8 @@ function refreshAccessToken(): Promise<void> {
     // This bypasses the `api` instance (and its request interceptor), so it
     // must echo the CSRF cookie itself: the refresh cookie makes this an
     // unsafe, cookie-authenticated POST, which the API's CSRF gate rejects
-    // without a matching header.
+    // without a matching header. The API keeps the same CSRF value across a
+    // refresh, so a request holding the previous value still matches.
     const csrf = readCookie("cipansor_csrf");
     await axios.post(
       `${API_URL}/auth/refresh`,
@@ -171,7 +193,7 @@ function refreshAccessToken(): Promise<void> {
         ...(csrf ? { headers: { "x-csrf-token": csrf } } : {}),
       },
     );
-  })().finally(() => {
+  }).finally(() => {
     refreshInFlight = null;
   });
 

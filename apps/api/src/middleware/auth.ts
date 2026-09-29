@@ -200,17 +200,17 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     const token = tokenFromRequest(req);
 
     if (!token) {
-      throw Errors.unauthorized('No authorization header');
+      throw Errors.unauthorized('Sesi tidak ditemukan. Silakan masuk kembali.');
     }
 
     const payload = verifyToken(token);
 
     if (payload.type !== 'access') {
-      throw Errors.unauthorized('Invalid token type');
+      throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
     if (payload.isTemp) {
-      throw Errors.unauthorized('2FA Verification Required');
+      throw Errors.unauthorized('Verifikasi dua langkah diperlukan.');
     }
 
     req.user = buildReqUser(payload);
@@ -229,13 +229,13 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
     const token = tokenFromRequest(req);
 
     if (!token) {
-      throw Errors.unauthorized('No authorization header');
+      throw Errors.unauthorized('Sesi tidak ditemukan. Silakan masuk kembali.');
     }
 
     const payload = verifyToken(token);
 
     if (payload.type !== 'access') {
-      throw Errors.unauthorized('Invalid token type');
+      throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
     req.user = buildReqUser(payload);

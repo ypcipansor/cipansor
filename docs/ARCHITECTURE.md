@@ -89,12 +89,16 @@ Next.js 16 App Router (RSC + client components). Conventions in
   `||` would fold the empty string into the localhost fallback. Wrap calls in React Query hooks under
   `src/hooks/*`; surface errors via `src/lib/api-error.ts`.
 - **Auth** — the API issues the session as `HttpOnly; Secure; SameSite=Lax`
-  cookies (`cipansor_at`/`cipansor_rt`); `middleware.ts` cannot read them, so it
-  asks `GET /auth/principal` (forwarding the cookie) before page JS runs. Unsafe
-  requests echo the readable `cipansor_csrf` cookie in `x-csrf-token`
-  (double-submit CSRF). The Axios response interceptor refreshes on 401 then
-  redirects to `/login`. No token is ever in `localStorage` or a script-written
-  cookie.
+  cookies (`cipansor_at`/`cipansor_rt`), plus a readable `cipansor_csrf` for
+  double-submit CSRF and an HttpOnly `cipansor_principal` holding only
+  `{id, role, roleCode}` for routing. `middleware.ts` reads
+  `cipansor_principal` locally before page JS runs — no API round trip, so a
+  page load and every `<Link>` prefetch cost no rate-limit slot. Unsafe requests
+  echo `cipansor_csrf` in `x-csrf-token`. The Axios response interceptor
+  refreshes on 401 then redirects to `/login`. No token is ever in
+  `localStorage` or a script-written cookie, and a request authenticated by a
+  session cookie never receives a token in a JSON body (`X-Client: bearer` is
+  honoured only for cookie-less clients — the mobile app).
 - **Routing/menus** — gate by role/permission (`config/navigation.ts`,
   `components/auth/protected-route.tsx`).
 

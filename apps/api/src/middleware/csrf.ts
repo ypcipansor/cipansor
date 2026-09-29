@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
+import { timingSafeEqual } from 'crypto';
 import { Errors } from './error';
 import { ACCESS_COOKIE, CSRF_COOKIE, REFRESH_COOKIE } from '@/modules/auth/auth.cookies';
 
@@ -38,7 +39,7 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
   if (
     typeof cookieToken !== 'string' ||
     typeof headerToken !== 'string' ||
-    cookieToken !== headerToken
+    !csrfTokensMatch(cookieToken, headerToken)
   ) {
     return next(
       Errors.forbidden(
@@ -48,4 +49,17 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
   }
 
   next();
+}
+
+/**
+ * Compare the double-submit pair in constant time. Both sides are
+ * attacker-influenced up to the point of the check, so a byte-by-byte compare
+ * that returns at the first difference leaks the prefix length of the genuine
+ * value through timing.
+ */
+export function csrfTokensMatch(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
 }

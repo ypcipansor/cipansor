@@ -6,11 +6,13 @@
  * carried `accessToken`/`refreshToken`, the page could read them and the
  * vulnerability would be unchanged, just harder to notice. So the controller
  * answers a browser with the user only, and returns the raw tokens only to a
- * client that explicitly declares itself bearer (`X-Client: bearer`) — the
- * mobile app and the e2e API helpers.
+ * client that explicitly declares itself bearer AND presents no session cookie.
  *
- * These tests also pin the rotation on refresh and the clearing on logout, both
- * of which the issue lists as required.
+ * The second condition is the one the review added. `X-Client: bearer` is set by
+ * page JavaScript, so a cookie-authenticated request could add it and the API
+ * would hand back a fresh 15-minute access token and a 30-day refresh token —
+ * exactly the exfiltration #523 is about. The test below runs the fetch the
+ * review wrote and asserts the body carries no token.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Request, Response } from 'express';
@@ -27,14 +29,16 @@ const { authServiceMock } = vi.hoisted(() => ({
 vi.mock('../auth.service', () => ({ authService: authServiceMock }));
 vi.mock('@/lib/jwt', () => ({
   getExpirationDate: vi.fn(() => new Date(Date.now() + 86_400_000)),
+  // The routing claims are read from the token the controller just minted.
+  decodeToken: vi.fn(() => ({ sub: 'u-1', role: 'UNIT_ADMIN', roleCode: 'SDIT_ADMIN' })),
 }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { login, refreshToken, logout } from '../auth.controller';
-import { ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE } from '../auth.cookies';
+import { login, refreshToken, logout, verifyTwoFactorLogin } from '../auth.controller';
+import { ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE } from '../auth.cookies';
 
 const USER = {
   id: 'u-1',
@@ -100,9 +104,10 @@ describe('auth controller: cookies, not body tokens', () => {
     expect(cookies.find((c) => c.name === REFRESH_COOKIE)?.value).toBe('refresh-1');
     expect(cookies.find((c) => c.name === REFRESH_COOKIE)?.options.httpOnly).toBe(true);
     expect(cookies.some((c) => c.name === CSRF_COOKIE)).toBe(true);
+    expect(cookies.some((c) => c.name === PRINCIPAL_COOKIE)).toBe(true);
   });
 
-  it('still returns tokens to an explicit bearer client', async () => {
+  it('still returns tokens to an explicit, cookie-less bearer client', async () => {
     authServiceMock.login.mockResolvedValue({
       user: USER,
       accessToken: 'access-1',
@@ -123,13 +128,67 @@ describe('auth controller: cookies, not body tokens', () => {
     });
 
     const { res, cookies } = mockRes();
-    await refreshToken(mockReq({ cookies: { [REFRESH_COOKIE]: 'refresh-1' } }), res, vi.fn());
+    await refreshToken(
+      mockReq({ cookies: { [REFRESH_COOKIE]: 'refresh-1', [CSRF_COOKIE]: 'csrf-1' } }),
+      res,
+      vi.fn()
+    );
 
     expect(authServiceMock.refreshToken).toHaveBeenCalledWith('refresh-1');
     expect(cookies.find((c) => c.name === ACCESS_COOKIE)?.value).toBe('access-2');
     expect(cookies.find((c) => c.name === REFRESH_COOKIE)?.value).toBe('refresh-2');
     // The browser body says only that it refreshed; no token leaves in JSON.
     expect(res.jsonPayload.data).toEqual({ refreshed: true });
+    // The CSRF token is not rotated on refresh — the request keeps working.
+    expect(cookies.find((c) => c.name === CSRF_COOKIE)?.value).toBe('csrf-1');
+  });
+
+  it('never answers a cookie-authenticated refresh with tokens, even with X-Client: bearer', async () => {
+    // The review's exact reproduction: an injected script on the portal origin
+    // calls refresh with credentials, the X-Client header, and the CSRF echo.
+    authServiceMock.refreshToken.mockResolvedValue({
+      accessToken: 'AT-new',
+      refreshToken: 'RT-new',
+    });
+
+    const { res } = mockRes();
+    await refreshToken(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'RT-old', [CSRF_COOKIE]: 'csrf' },
+        headers: { 'x-client': 'bearer', 'x-csrf-token': 'csrf' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    const data = res.jsonPayload.data;
+    expect(data.refreshToken).toBeUndefined();
+    expect(data.accessToken).toBeUndefined();
+    // The rotated tokens still reach the browser — as HttpOnly cookies.
+    expect(res.jsonPayload.data).toEqual({ refreshed: true });
+  });
+
+  it('never answers a cookie-authenticated 2FA verify with tokens', async () => {
+    authServiceMock.verifyTwoFactorLogin.mockResolvedValue({
+      user: USER,
+      accessToken: 'AT-new',
+      refreshToken: 'RT-new',
+    });
+
+    const { res } = mockRes();
+    await verifyTwoFactorLogin(
+      mockReq({
+        body: { token: '123456' },
+        user: { sub: 'u-1', isTemp: true },
+        cookies: { [ACCESS_COOKIE]: 'temp' },
+        headers: { 'x-client': 'bearer' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    expect(res.jsonPayload.data.refreshToken).toBeUndefined();
+    expect(res.jsonPayload.data.accessToken).toBeUndefined();
   });
 
   it('revokes the cookie refresh token on logout and clears every cookie', async () => {
@@ -144,6 +203,8 @@ describe('auth controller: cookies, not body tokens', () => {
     );
 
     expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1');
-    expect(cleared).toEqual(expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE]));
+    expect(cleared).toEqual(
+      expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
   });
 });

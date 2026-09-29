@@ -206,7 +206,7 @@ describe('uploadsAuth', () => {
   });
 
   it('rejects a garbage token with 401', () => {
-    const next = run({ query: { token: 'not-a-jwt' } as Request['query'] });
+    const next = run({ headers: { authorization: 'Bearer not-a-jwt' } });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
@@ -216,10 +216,10 @@ describe('uploadsAuth', () => {
     expect(next).toHaveBeenCalledWith();
   });
 
-  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', () => {
+  it('rejects a valid token in ?token= — the log-leaking fallback is gone', () => {
     const token = generateAccessToken(payload);
     const next = run({ query: { token } as Request['query'] });
-    expect(next).toHaveBeenCalledWith();
+    expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
   it('accepts a valid access token from the HttpOnly session cookie', () => {
@@ -232,7 +232,7 @@ describe('uploadsAuth', () => {
 
   it('rejects temporary 2FA tokens', () => {
     const token = generateAccessToken({ ...payload, isTemp: true });
-    const next = run({ query: { token } as Request['query'] });
+    const next = run({ cookies: { cipansor_at: token } });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 });

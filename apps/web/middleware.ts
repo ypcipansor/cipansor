@@ -8,8 +8,10 @@ import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
   getDashboardForRole,
+  isLegacyRole,
   type LegacyRole,
 } from "@/lib/rbac";
+import { PRINCIPAL_COOKIE } from "@cipansor/shared";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
 
 // Public routes that don't require authentication.
@@ -75,54 +77,34 @@ const publicPrefixes = [
 ];
 
 /**
- * Where to reach the API from the Next server, for the principal lookup.
+ * The caller's role, read from the API-set routing cookie.
  *
- * Production runs the web and API behind one nginx, so the API is reachable at
- * its container address (`API_INTERNAL_URL`, e.g. http://api:3001). In `pnpm
- * dev` the two are separate origins and `NEXT_PUBLIC_API_URL` names the API;
- * CI sets the same. `||` (not `??`) so an empty NEXT_PUBLIC_API_URL — the
- * production setting, meaning same-origin — falls through to the dev default.
- */
-function principalUrl(): string {
-  const base =
-    process.env.API_INTERNAL_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    "http://localhost:3001";
-  return `${base.replace(/\/+$/, "")}/api/auth/principal`;
-}
-
-/**
- * Ask the API who the caller is, forwarding the session cookie.
+ * The session itself is an HttpOnly `cipansor_at` token the middleware cannot
+ * make sense of, so the API sets a second HttpOnly cookie beside it holding only
+ * what routing needs — `{ id, role, roleCode }`. Reading it here, locally, is
+ * the whole point: the earlier shape asked the API for every page request,
+ * which meant one round trip per page and per `<Link>` prefetch, all keyed on
+ * the web container's loopback address and shared by every user.
  *
- * The session now lives in an HttpOnly cookie the middleware cannot read, so
- * the answer comes from the API rather than a client-written cookie. Only the
- * caller's own cookie is forwarded, and the response is the slim
- * `{ id, role, roleCode }` the RBAC helpers need. A 401 is "not signed in", the
- * same normal answer a missing cookie used to be.
+ * It is not a credential. The value is not trusted to authorise anything: the
+ * API decides that on every request, so a stale or forged cookie only reaches a
+ * page whose first call answers 401. A missing/malformed cookie is "not signed
+ * in", the same normal answer a missing cookie always was.
  */
-async function fetchPrincipal(
+function readPrincipal(
   request: NextRequest,
-): Promise<{ role: LegacyRole; roleCode: string } | null> {
-  const cookie = request.headers.get("cookie");
-  if (!cookie) return null;
-
+): { role: LegacyRole; roleCode: string } | null {
+  const raw = request.cookies.get(PRINCIPAL_COOKIE)?.value;
+  if (!raw) return null;
   try {
-    const res = await fetch(principalUrl(), {
-      method: "GET",
-      headers: { cookie },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as {
-      data?: { role?: string; roleCode?: string };
+    const parsed = JSON.parse(raw) as { role?: unknown; roleCode?: unknown };
+    if (!isLegacyRole(parsed.role)) return null;
+    return {
+      role: parsed.role,
+      roleCode:
+        typeof parsed.roleCode === "string" ? parsed.roleCode : parsed.role,
     };
-    const role = body.data?.role;
-    if (!role) return null;
-    return { role: role as LegacyRole, roleCode: body.data?.roleCode ?? role };
   } catch {
-    // The API is unreachable: treat as anonymous rather than crash the edge.
-    // Protected routes then bounce to /login, which the API will also refuse —
-    // a loud failure, not a silent bypass.
     return null;
   }
 }
@@ -172,15 +154,16 @@ export async function middleware(request: NextRequest) {
 
   // Authentication, only where it decides the outcome.
   //
-  // `fetchPrincipal` costs an API round-trip, so it is skipped when the result
-  // cannot change the response: public routes and `/` never consult it, and a
-  // request to `/login` only needs to know whether to bounce to a dashboard.
+  // `readPrincipal` is a local cookie read, but it is still skipped when the
+  // result cannot change the response: public routes and `/` never consult it,
+  // and a request to `/login` only needs to know whether to bounce to a
+  // dashboard.
   let isAuthenticated = false;
   let role: LegacyRole | undefined;
   let roleCode: string | undefined;
 
   if (!isPublicRoute || pathname === "/login" || pathname === "/") {
-    const principal = await fetchPrincipal(request);
+    const principal = readPrincipal(request);
     if (principal) {
       isAuthenticated = true;
       role = principal.role;

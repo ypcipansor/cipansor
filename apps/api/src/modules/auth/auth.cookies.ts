@@ -1,5 +1,12 @@
 import type { Request, Response } from 'express';
 import { randomBytes } from 'crypto';
+import {
+  ACCESS_COOKIE,
+  CSRF_COOKIE,
+  PRINCIPAL_COOKIE,
+  REFRESH_COOKIE,
+  type PrincipalClaims,
+} from '@cipansor/shared';
 import { config } from '@/config';
 import { getExpirationDate } from '@/lib/jwt';
 
@@ -19,21 +26,16 @@ import { getExpirationDate } from '@/lib/jwt';
  * - `SameSite=Lax` — not attached to the cross-site POSTs that make up CSRF.
  *   The double-submit token in `middleware/csrf.ts` covers what `Lax` leaves open.
  *
- * `SameSite=Lax` also fixes the refresh-cookie scope: it is sent on the
- * top-level GETs the middleware issues and on same-site fetches, so the API's
- * `/auth/principal` sees it while a cross-site form post does not.
+ * A fourth cookie, `cipansor_principal`, is NOT a credential and carries no
+ * token: it holds the slim `{ id, role, roleCode }` the Next middleware needs to
+ * route a request. The middleware runs on the server *before* the app and cannot
+ * make sense of an opaque `cipansor_at`, so it reads this instead of asking the
+ * API for every page request — which used to be one rate-limited round trip per
+ * page and per `<Link>` prefetch, keyed on the web container's loopback address
+ * and shared by every user.
  */
 
-/**
- * Cookie names.
- *
- * A `cipansor_` prefix keeps them clear of the legacy `accessToken` /
- * `auth-storage` cookies the old client wrote, so a browser upgrading mid-
- * session cannot have a stale, script-written value shadow the real one.
- */
-export const ACCESS_COOKIE = 'cipansor_at';
-export const REFRESH_COOKIE = 'cipansor_rt';
-export const CSRF_COOKIE = 'cipansor_csrf';
+export { ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE };
 
 /** A fresh, unguessable double-submit CSRF value. */
 export function randomCsrfToken(): string {
@@ -101,12 +103,68 @@ export function setCsrfCookie(
   });
 }
 
-/** Issue the full session: HttpOnly access + refresh cookies, plus the CSRF token. */
+/**
+ * The routing cookie the Next middleware reads.
+ *
+ * HttpOnly (so no page script can overwrite the session's routing), and it
+ * lives exactly as long as the refresh cookie so a browsing session and its
+ * routing do not diverge. It is not a credential: the API still decides what a
+ * request may do, and a forged value only reaches a page whose first API call
+ * answers 401.
+ */
+export function setPrincipalCookie(
+  res: Response,
+  claims: PrincipalClaims,
+  secure: boolean = config.env === 'production'
+): void {
+  res.cookie(PRINCIPAL_COOKIE, JSON.stringify(claims), {
+    httpOnly: true,
+    secure,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: ttlMs(config.jwt.refreshExpiresIn),
+  });
+}
+
+/** Read and parse the routing cookie, or null when absent/malformed. */
+export function principalFromCookie(req: Request): PrincipalClaims | null {
+  const raw = req.cookies?.[PRINCIPAL_COOKIE];
+  if (typeof raw !== 'string') return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<PrincipalClaims>;
+    if (typeof parsed?.role !== 'string') return null;
+    return {
+      id: typeof parsed.id === 'string' ? parsed.id : '',
+      role: parsed.role,
+      roleCode: typeof parsed.roleCode === 'string' ? parsed.roleCode : parsed.role,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The request's existing CSRF value, or a fresh one when there is none.
+ *
+ * Used by `/auth/refresh`, which must NOT rotate the CSRF token. Rotating it
+ * mid-session means a request that read the old value and is sent after a
+ * parallel refresh set a new cookie is refused with 403 — not a 401, so the
+ * client does not retry and the user sees an error toast every ~15 minutes
+ * under load. OWASP's per-session token is enough; it is set at login and kept
+ * through refreshes.
+ */
+export function csrfTokenForRefresh(req: Request): string {
+  const existing = req.cookies?.[CSRF_COOKIE];
+  return typeof existing === 'string' && existing ? existing : randomCsrfToken();
+}
+
+/** Issue the full session: HttpOnly access + refresh cookies, routing, CSRF. */
 export function setSessionCookies(
   res: Response,
   accessToken: string,
   refreshToken: string,
   csrfToken: string,
+  principal: PrincipalClaims,
   secure: boolean = config.env === 'production'
 ): void {
   res.cookie(ACCESS_COOKIE, accessToken, { ...sessionCookieOptions(), secure });
@@ -117,6 +175,7 @@ export function setSessionCookies(
     path: REFRESH_COOKIE_PATH,
     maxAge: ttlMs(config.jwt.refreshExpiresIn),
   });
+  setPrincipalCookie(res, principal, secure);
   setCsrfCookie(res, csrfToken, secure);
 }
 
@@ -142,6 +201,7 @@ export function clearAuthCookies(res: Response): void {
   res.clearCookie(ACCESS_COOKIE, { path: '/', secure, sameSite: 'lax' });
   res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH, secure, sameSite: 'lax' });
   res.clearCookie(CSRF_COOKIE, { path: '/', secure, sameSite: 'lax' });
+  res.clearCookie(PRINCIPAL_COOKIE, { path: '/', secure, sameSite: 'lax' });
 }
 
 /** The access/temp token carried in the request cookie, if any. */
@@ -152,4 +212,22 @@ export function accessTokenFromCookie(req: Request): string | undefined {
 /** The refresh token carried in the request cookie, if any. */
 export function refreshTokenFromCookie(req: Request): string | undefined {
   return req.cookies?.[REFRESH_COOKIE];
+}
+
+/**
+ * Whether this response may carry raw tokens in its JSON body.
+ *
+ * Two conditions, both required:
+ * 1. the caller declared itself bearer-only (`X-Client: bearer`), and
+ * 2. the credential did NOT arrive in a session cookie.
+ *
+ * The second is the load-bearing one. A header is set by page JavaScript, so a
+ * cookie-authenticated request that merely *adds* `X-Client: bearer` would
+ * otherwise be handed back a fresh access and refresh token — exactly the
+ * exfiltration the migration exists to stop. A request authenticated by a
+ * cookie never gets a token back, whatever headers it carries.
+ */
+export function mayReturnTokens(req: Request): boolean {
+  if (String(req.headers['x-client'] ?? '').toLowerCase() !== 'bearer') return false;
+  return !accessTokenFromCookie(req) && !refreshTokenFromCookie(req);
 }

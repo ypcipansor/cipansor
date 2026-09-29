@@ -10,6 +10,7 @@ vi.mock('../roles.service', () => ({
 vi.mock('@/lib/jwt', () => ({
   generateTokenPair: vi.fn(() => ({ accessToken: 'token-123', refreshToken: 'refresh-123' })),
   getExpirationDate: vi.fn(() => new Date()),
+  decodeToken: vi.fn(() => ({ sub: 'user-1', role: 'UNIT_ADMIN', roleCode: 'SMPIT_ADMIN' })),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -166,6 +167,33 @@ describe('RolesController.switchRole', () => {
         unitId: 'unit-home-sd',
       })
     );
+  });
+
+  it('never returns tokens to a cookie-authenticated switch', async () => {
+    // Same shape as the refresh exfiltration: page JS sets X-Client: bearer on
+    // a cookie-authenticated request. The body must not carry a fresh token.
+    const mockSwitchResult = {
+      user: { id: 'u-1', email: 'user@cipansor.or.id', role: 'TEACHER', unitId: 'unit-home-sd' },
+      activeRole: {
+        id: 'role-assign-1',
+        roleId: 'r-smp',
+        unitId: 'unit-active-smp',
+        role: { code: 'SMPIT_ADMIN', permissions: [] },
+        unit: { id: 'unit-active-smp', name: 'SMP IT' },
+      },
+    };
+    vi.mocked(rolesService.switchRole).mockResolvedValue(mockSwitchResult as any);
+
+    const { req, res, next } = mockReqRes({
+      body: { roleAssignmentId: 'role-assign-1' } as any,
+      // A session cookie is present, so this is a browser, not a bearer client.
+      cookies: { cipansor_at: 'session' },
+    });
+
+    await rolesController.switchRole(req, res, next);
+
+    expect(res.jsonPayload.data.accessToken).toBeUndefined();
+    expect(res.jsonPayload.data.refreshToken).toBeUndefined();
   });
 
   it('keeps a cross-unit service role on its home unit — only foundation roles carry no unit', async () => {

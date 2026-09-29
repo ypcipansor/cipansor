@@ -34,7 +34,8 @@ interface AuthState {
  * `/auth/me` answers), but it is no longer a credential: a forged
  * `auth-storage` localStorage entry cannot authenticate anything, because the
  * API — not the client — decides whether the request carries a session. The
- * Next middleware no longer reads it at all; it asks the API for the principal.
+ * Next middleware no longer reads it at all; it reads the API-set HttpOnly
+ * `cipansor_principal` cookie for routing.
  */
 const userOnlyStorage = {
   getItem: (name: string) => {
