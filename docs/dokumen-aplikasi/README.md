@@ -13,14 +13,27 @@ pengguna ([Diátaxis](https://diataxis.fr)).
 | `panduan-pengguna-guru.md` / `.docx` / `.pdf` | Panduan pengguna buklet peran Guru |
 | `*.build.json` | Hash sumber dan hasil bangun; `check_docs.py --built` memakainya untuk menolak `.docx`/`.pdf` yang basi |
 | `evaluasi-dokumen.md` | Audit terhadap kode (bukan terhadap standar): temuan, akar masalah, perbaikan, yang belum selesai |
-| `diagrams/` | Diagram Mermaid (`.mmd`) dan gambar (`.png`) hasil bangun |
-| `fakta/` | `facts.json` + `facts.md` terukur dari kode, dasar angka di dokumen |
+
+Dua direktori hasil bangun **tidak** dilacak git (lihat `.gitignore`); keduanya dibuat
+ulang oleh perintah di bawah:
+
+| Hasil (diabaikan) | Dibuat oleh | Isi |
+|---|---|---|
+| `diagrams/` | `build_docs.py` | Diagram Mermaid (`.mmd`) dan gambar (`.png`); nama gambar berhash, berubah tiap bangun |
+| `fakta/` | `collect_facts.py` | `facts.json` + `facts.md` terukur dari kode, dasar angka di dokumen |
+| `alur/` | ditulis tangan (skill `screenshot-roles`) | Alur proses `*.flow.json` untuk menangkap tangkapan layar |
 
 ## Membangun ulang
 
 Markdown adalah sumbernya; `.docx` dan `.pdf` dihasilkan darinya. Jangan menyunting
 `.docx`. Alat ada di `.claude/skills/dokumen-aplikasi-cipansor/scripts/`; alur
 lengkap dan aturannya di `SKILL.md` skill itu.
+
+> **Yang dilacak git:** `.md` (sumber), `*.build.json` (hash), dan `.docx`/`.pdf`
+> (yang dikirim ke pengurus, donor, auditor). `fakta/`, `diagrams/`, dan `alur/`
+> diabaikan — hasil bangun/ukur yang basi begitu repo bergerak, dan gambar
+> bernama hash membuat diff git berisik. Hasilkan dulu `fakta/` sebelum memeriksa
+> atau membangun, karena `check_docs.py --facts` membacanya.
 
 ```bash
 S=.claude/skills/dokumen-aplikasi-cipansor/scripts

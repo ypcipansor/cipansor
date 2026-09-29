@@ -143,3 +143,17 @@ apps/api/private/
 # Bytecode dari helper hook — dibuat saat hook mengimpornya, bukan sumber.
 __pycache__/
 *.pyc
+
+# Hasil bangun/ukur dokumen aplikasi — bukan sumber.
+#
+# `fakta/` dan `diagrams/` dihasilkan skrip (`collect_facts.py`, `build_docs.py`)
+# dari kode dan dari Mermaid di dalam `.md`. Meng-commit-nya berarti menyimpan
+# salinan yang basi begitu repo bergerak, dan tiap bangun menulis PNG bernama
+# hash yang baru. `alur/` adalah berkas kerja untuk menangkap tangkapan layar
+# (skill `screenshot-roles`), bukan keluaran terbit. Yang dilacak cukup `.md`
+# (sumber) + `*.build.json` (hash sumber, dasar `check_docs.py --built`);
+# `.docx`/`.pdf` sengaja tetap dilacak karena itu yang dikirim ke pengurus,
+# donor, dan auditor.
+docs/dokumen-aplikasi/fakta/
+docs/dokumen-aplikasi/diagrams/
+docs/dokumen-aplikasi/alur/
