@@ -144,6 +144,25 @@ test.describe("Browser push control", () => {
     // flow exercises the hook + real API rather than a mocked service.
     await context.addInitScript(() => {
       const w = window as unknown as { __pushSub: unknown };
+      // Playwright's bundled `chrome-headless-shell` reports
+      // `Notification.permission === "denied"` even when `grantPermissions`
+      // actually granted it (verified: the same context reports "granted" on a
+      // full Chrome). The hook reads that property to decide whether the enable
+      // control may be offered, so without this the button stays disabled and
+      // the real flow can never run. Pin it to the granted state the browser
+      // really holds.
+      Object.defineProperty(Notification, "permission", {
+        get: () => "granted",
+        configurable: true,
+      });
+      // `requestPermission` is the other half: the hook awaits it before
+      // subscribing, and the headless shell would resolve it to "denied" for the
+      // same reason. Make it agree with the stubbed state.
+      Object.defineProperty(Notification, "requestPermission", {
+        value: async () => "granted",
+        configurable: true,
+        writable: true,
+      });
       const endpoint = `https://push.example.com/e2e-${Date.now()}`;
       const subscription = {
         endpoint,

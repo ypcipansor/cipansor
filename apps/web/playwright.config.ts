@@ -185,10 +185,11 @@ export default defineConfig({
       PORT: "3000",
       // A VAPID *public* key is not a secret (only the private half is), and the
       // client only checks that it is non-empty before offering the enable
-      // control. Setting it here lets the push subscribe/disable browser flow be
-      // exercised in CI; without it the card is permanently "unconfigured" and
-      // the real flow could never run. Overridable, so a developer pointing at a
-      // real key is not stomped.
+      // control. In CI the web server runs the production build (`pnpm start`),
+      // where NEXT_PUBLIC_* is inlined at `next build` — so the value that
+      // matters there is the job env in .github/workflows/e2e-tests.yml. This
+      // one is what the *dev* server (`pnpm dev`) reads at runtime for local
+      // runs. Both keep the push subscribe/disable flow exercisable.
       NEXT_PUBLIC_VAPID_PUBLIC_KEY:
         process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "B".repeat(87),
     },
