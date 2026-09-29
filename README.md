@@ -61,14 +61,14 @@ Angka-angka berikut diambil langsung dari basis kode (per September 2026):
 | Metrik                               | Jumlah    |
 | ------------------------------------ | --------- |
 | Modul API (`apps/api/src/modules`)   | **94**    |
-| Model Prisma                         | **286**   |
-| Enum Prisma                          | **155**   |
-| Halaman web (`page.tsx`)             | **440**   |
+| Model Prisma                         | **289**   |
+| Enum Prisma                          | **157**   |
+| Halaman web (`page.tsx`)             | **435**   |
 | Peran (`RoleCode`)                   | **53**    |
 | Akun demo                            | **65**    |
-| Spesifikasi Playwright e2e           | **94**    |
-| Berkas test API (vitest)             | **325**   |
-| Berkas test web (vitest)             | **39**    |
+| Spesifikasi Playwright e2e           | **102**   |
+| Berkas test API (vitest)             | **342**   |
+| Berkas test web (vitest)             | **40**    |
 | Halaman terverifikasi visual (sweep) | **746**   |
 | Halaman per peran terverifikasi      | **920**   |
 

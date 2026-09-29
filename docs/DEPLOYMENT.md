@@ -435,5 +435,5 @@ kill -9 <PID>
 - Konvensi pengembangan: [`AGENTS.md`](../AGENTS.md)
 
 Untuk catatan insiden produksi dan langkah pemulihannya, lihat
-[`KNOWN_ISSUES.md`](./KNOWN_ISSUES.md); untuk konteks dua-host (apex vs portal)
-lihat [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+[`.claude/memory/known-issues.md`](../.claude/memory/known-issues.md); untuk
+konteks dua-host (apex vs portal) lihat [`ARCHITECTURE.md`](./ARCHITECTURE.md).
