@@ -108,6 +108,7 @@ describe('a kepala sekolah without 2FA', () => {
     await expect(authService.getTwoFactorStatus('user-1')).resolves.toEqual({
       isEnabled: true,
       isRequired: true,
+      isInvited: false,
     });
   });
 
@@ -130,6 +131,6 @@ describe('a teacher', () => {
     const status = await authService.getTwoFactorStatus('user-1');
 
     expect(result).toHaveProperty('accessToken', 'access');
-    expect(status).toEqual({ isEnabled: false, isRequired: false });
+    expect(status).toEqual({ isEnabled: false, isRequired: false, isInvited: true });
   });
 });

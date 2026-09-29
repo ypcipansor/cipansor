@@ -8,6 +8,7 @@ import {
   isGovernanceRoleCode,
   deriveLegacyRole,
   requiresSecondFactor,
+  invitesSecondFactor,
 } from '@/middleware/auth';
 import { config } from '@/config';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
@@ -1081,10 +1082,12 @@ export class AuthService {
 
     if (!user) throw Errors.notFound('User');
 
+    const codes = user.userRoles.map((r) => r.role.code);
     return {
       isEnabled: user.isTwoFactorEnabled,
       // The profile shows "wajib" instead of a button the API would refuse.
-      isRequired: requiresSecondFactor(user.userRoles.map((r) => r.role.code)),
+      isRequired: requiresSecondFactor(codes),
+      isInvited: !user.isTwoFactorEnabled && invitesSecondFactor(codes),
     };
   }
 

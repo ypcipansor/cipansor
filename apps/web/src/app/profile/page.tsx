@@ -7,7 +7,8 @@ import { MainLayout } from "@/components/layout";
  */
 
 import { getEffectiveRole } from "@/lib/rbac";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -96,7 +97,12 @@ const ROLE_LABELS: Record<string, string> = {
 function ProfilePageContent() {
   const { user, fetchUser } = useAuthStore();
   const photo = demoPhotoForEmail(user?.email);
-  const [activeTab, setActiveTab] = useState("profile");
+  // `/profile?tab=security` opens Keamanan — where the post-sign-in 2FA
+  // invitation sends "Aktifkan sekarang".
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState(
+    searchParams.get("tab") === "security" ? "security" : "profile",
+  );
 
   const updateUser = useUpdateUser();
   const changePassword = useChangePassword();
@@ -450,7 +456,10 @@ function ProfilePageContent() {
 export default function ProfilePageWithShell() {
   return (
     <MainLayout>
-      <ProfilePageContent />
+      {/* useSearchParams needs a boundary while the page is prerendered. */}
+      <Suspense fallback={null}>
+        <ProfilePageContent />
+      </Suspense>
     </MainLayout>
   );
 }

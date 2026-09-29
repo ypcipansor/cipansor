@@ -3,6 +3,10 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { AxiosError } from "axios";
 import { User, authApi, rolesApi, LoginRequest } from "@/lib/api";
 import { middlewareAuthCookieValue } from "@/lib/auth-cookie";
+import {
+  clearTwoFactorInvite,
+  markTwoFactorInvite,
+} from "@/lib/two-factor-invite";
 
 interface AuthState {
   user: User | null;
@@ -112,6 +116,9 @@ export const useAuthStore = create<AuthState>()(
           localStorage.setItem("refreshToken", refreshToken);
           // Also set token in cookie for middleware
           document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
+          // Signed in with the password alone: the app shell may invite this
+          // account to turn 2FA on (it asks the API whether it is invited).
+          markTwoFactorInvite();
 
           set({
             user,
@@ -199,6 +206,7 @@ export const useAuthStore = create<AuthState>()(
           // Also remove from cookies
           document.cookie = "accessToken=; path=/; max-age=0";
           document.cookie = "auth-storage=; path=/; max-age=0";
+          clearTwoFactorInvite();
           set({
             user: null,
             isAuthenticated: false,

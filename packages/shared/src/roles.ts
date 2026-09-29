@@ -150,6 +150,25 @@ export const PARENT_ROLE_CODES: readonly string[] = perSchool("ORANG_TUA");
 /** School committees (komite sekolah). */
 export const KOMITE_ROLE_CODES: readonly string[] = perSchool("KOMITE");
 
+/**
+ * Accounts invited to turn 2FA on, right after signing in, until they do
+ * (decided 2026-09-28, `decisions/autentikasi-2fa-dan-sandi.md`): every
+ * educator and staff member whose role does not already make 2FA mandatory,
+ * and the wali santri. "Nanti saja" has no limit; the invitation returns at the
+ * next sign-in. Santri are not invited — most do not hold a phone — and the
+ * decision names neither komite nor alumni. Anyone may still turn 2FA on from
+ * their profile.
+ */
+export const SECOND_FACTOR_INVITE_ROLE_CODES: readonly string[] = [
+  ...SCHOOL_TEACHER_ROLE_CODES,
+  ...PESANTREN_EDUCATOR_ROLE_CODES,
+  ...TATA_USAHA_ROLE_CODES,
+  ...BENDAHARA_ROLE_CODES,
+  ...SUPPORT_ROLE_CODES,
+  ...BUSINESS_ROLE_CODES,
+  ...PARENT_ROLE_CODES,
+];
+
 /** Alumni across the secondary units (no TK Qur'an / SD IT alumni role). */
 export const ALUMNI_ROLE_CODES: readonly string[] = [
   "SMPIT_ALUMNI",
