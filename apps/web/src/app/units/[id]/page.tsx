@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { useUnit, UNIT_TYPES } from "@/hooks/use-units";
+import { useUnit, useUnitSummary, UNIT_TYPES } from "@/hooks/use-units";
 import { UnitAccreditationCard } from "@/components/units/unit-accreditation-card";
 import { getPrimaryRoleCode } from "@/lib/rbac";
 import { useAuthStore } from "@/stores/auth";
@@ -62,10 +62,18 @@ export default function UnitDetailPage() {
   const unitId = params.id as string;
 
   const { data: unit, isLoading } = useUnit(unitId);
+  const { data: summary, isError: summaryFailed } = useUnitSummary(unitId);
   // The kepala sekolah and the yayasan's organs read this page (Profil Unit);
-  // editing the unit is the admins' (PUT /units/:id).
-  const roleCode = getPrimaryRoleCode(useAuthStore((s) => s.user));
-  const canEdit = !!roleCode && ADMIN_ROLE_CODES.includes(roleCode);
+  // the Super Admin edits every unit, a unit's admin their own (PATCH /units/:id).
+  const user = useAuthStore((s) => s.user);
+  const roleCode = getPrimaryRoleCode(user);
+  const canEdit =
+    roleCode === "SUPER_ADMIN" ||
+    (!!roleCode &&
+      ADMIN_ROLE_CODES.includes(roleCode) &&
+      user?.unitId === unitId);
+  const count = (n: number | undefined) =>
+    n !== undefined ? n.toLocaleString("id-ID") : summaryFailed ? "–" : "…";
 
   if (isLoading) {
     return (
@@ -153,21 +161,22 @@ export default function UnitDetailPage() {
                   </p>
                   <p className="text-sm">{getUnitTypeLabel(unit.type)}</p>
                 </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
+                    NPSN
+                  </p>
+                  <p className="text-sm" data-testid="unit-npsn">
+                    {unit.npsn ?? (
+                      <span className="text-muted-foreground">
+                        Belum diisi
+                        {canEdit ? " — isi lewat Edit Unit" : ""}
+                      </span>
+                    )}
+                  </p>
+                </div>
               </div>
 
               <Separator />
-
-              {unit.headName && (
-                <div className="flex items-center gap-3">
-                  <User className="h-5 w-5 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Kepala Unit
-                    </p>
-                    <p className="text-sm">{unit.headName}</p>
-                  </div>
-                </div>
-              )}
 
               {unit.address && (
                 <div className="flex items-start gap-3">
@@ -244,28 +253,36 @@ export default function UnitDetailPage() {
           <Card>
             <CardHeader>
               <CardTitle>Statistik Unit</CardTitle>
-              <CardDescription>Ringkasan data unit</CardDescription>
+              <CardDescription>Hari ini, dari data portal</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
                 <Users className="h-8 w-8 text-blue-600" />
                 <div>
-                  <p className="text-2xl font-bold">-</p>
-                  <p className="text-sm text-muted-foreground">Total Siswa</p>
+                  <p className="text-2xl font-bold" data-testid="stat-students">
+                    {count(summary?.activeStudents)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Santri aktif</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
                 <GraduationCap className="h-8 w-8 text-green-600" />
                 <div>
-                  <p className="text-2xl font-bold">-</p>
-                  <p className="text-sm text-muted-foreground">Total Guru</p>
+                  <p className="text-2xl font-bold" data-testid="stat-teachers">
+                    {count(summary?.teachers)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">Guru</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-muted rounded-lg">
                 <Building2 className="h-8 w-8 text-purple-600" />
                 <div>
-                  <p className="text-2xl font-bold">-</p>
-                  <p className="text-sm text-muted-foreground">Total Kelas</p>
+                  <p className="text-2xl font-bold" data-testid="stat-classes">
+                    {count(summary?.classes)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    Kelas tahun ajaran aktif
+                  </p>
                 </div>
               </div>
             </CardContent>

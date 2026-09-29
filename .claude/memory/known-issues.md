@@ -32,14 +32,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
   Types entries below are part of this. Phase 1 of the audit plan fixes it area
   by area; the guard (#563) stops new ones.
-- **A unit's NPSN cannot be entered anywhere.** `units.npsn` is read by the
-  public accreditation section (which tells visitors to check the rating by
-  NPSN), the EMIS and Dapodik exports and the SKHUN, but no API field, form or
-  seed writes it; the EMIS check answers "Unit belum memiliki NPSN" for every
-  unit. The Edit Unit form (`/units/[id]`) is the place; next PR.
-- **Profil Unit → Statistik Unit is a placeholder.** Total Siswa, Total Guru
-  and Total Kelas are a hard-coded "-" (`apps/web/src/app/units/[id]/page.tsx`)
-  while `GET /units/:id` already returns counts; next PR, with the NPSN.
 - **The profile names a kepala sekolah "Guru/Ustadz".** The badge under the
   name on *avatar → Profile* labels the legacy bucket (`getEffectiveRole`),
   so every kepala and the Pimpinan Pesantren read as teachers, and organs as
@@ -202,9 +194,12 @@ decision.
    column so the rollback image could still write. Drop it in a release of its
    own, after one full release with no old writer — or keep it as a snapshot.
 3. **Who may accept or reject an SPMB applicant** (the disabled buttons above).
-4. **Takhosus as a fifth unit** (`UnitType.PESANTREN`, decided 2026-09-13) is
-   not built. Until it is, every pesantren role — the Kiai included — is
-   assigned in the **SMP IT** unit, and takhosus halaqoh sit under SMA.
+4. **Takhosus as a fifth unit** (`UnitType.PESANTREN`, decided 2026-09-13;
+   to be built, decided again 2026-09-29 in
+   `decisions/struktur-organisasi-dan-identitas.md`) is not built. Until it
+   is, every pesantren role — the Kiai included — is assigned in the **SMP
+   IT** unit, and takhosus halaqoh sit under SMA. The seed also still makes an
+   `OrgUnit` "Direktorat Pendidikan" with a "Direktur Pendidikan" post.
 5. **Dashboard metrics cadence.** `aggregateDashboardMetrics` runs every minute
    and writes 6 rows a run (`jobs/scheduler.ts`), for figures that move on the
    scale of a class period. Retention was fixed; the cadence is a product call.

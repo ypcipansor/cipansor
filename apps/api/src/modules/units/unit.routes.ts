@@ -108,6 +108,21 @@ router.get('/:id', validateParams(unitIdParamSchema), controller.getById);
 
 /**
  * @swagger
+ * /api/units/{id}/summary:
+ *   get:
+ *     summary: What the unit's profile counts — active santri, teachers, classes of the active year
+ *     description: The Super Admin and the yayasan's organs read every unit's; everyone else only their own.
+ *     tags: [Units]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: UnitSummary }
+ *       404: { description: No such unit, or not the caller's }
+ */
+router.get('/:id/summary', validateParams(unitIdParamSchema), controller.summary);
+
+/**
+ * @swagger
  * /api/units:
  *   post:
  *     summary: Create unit (Super Admin only)
@@ -149,8 +164,8 @@ router.post('/', isSuperAdmin, validate(createUnitSchema), controller.create);
 /**
  * @swagger
  * /api/units/{id}:
- *   put:
- *     summary: Update unit (Admin only)
+ *   patch:
+ *     summary: Update a unit — the Super Admin any unit, a unit's admin their own (not its type)
  *     tags: [Units]
  *     security:
  *       - bearerAuth: []
@@ -179,13 +194,20 @@ router.post('/', isSuperAdmin, validate(createUnitSchema), controller.create);
  *                 type: string
  *               email:
  *                 type: string
+ *               npsn:
+ *                 type: string
+ *                 pattern: '^\d{8}$'
  *     responses:
  *       200:
  *         description: Unit updated
+ *       403:
+ *         description: Not an admin, or a unit's admin changing the type
  *       404:
  *         $ref: '#/components/responses/NotFound'
+ *       409:
+ *         description: The NPSN is recorded for another unit
  */
-router.put(
+router.patch(
   '/:id',
   isAdmin,
   validateParams(unitIdParamSchema),

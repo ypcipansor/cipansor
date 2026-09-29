@@ -1,13 +1,13 @@
 "use client";
 
 import { useRouter, useParams } from "next/navigation";
-import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
+import { NPSN_MESSAGE, NPSN_PATTERN } from "@cipansor/shared";
 
 import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
@@ -33,76 +33,31 @@ import {
   useUpdateUnit,
   UNIT_TYPES,
   UNIT_TYPE_VALUES,
+  type Unit,
 } from "@/hooks/use-units";
+import { getErrorMessage } from "@/lib/api-error";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { useAuthStore } from "@/stores/auth";
 
 const unitSchema = z.object({
-  name: z.string().min(1, "Nama unit wajib diisi"),
+  name: z.string().trim().min(3, "Nama unit minimal 3 karakter"),
   // Derived from UNIT_TYPES so the form can never accept a narrower set than
   // the database holds — this literal list had fallen two values behind.
   type: z.enum(UNIT_TYPE_VALUES, {
     error: "Tipe unit wajib dipilih",
   }),
-  address: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email("Email tidak valid").optional().or(z.literal("")),
-  headName: z.string().optional(),
+  address: z.string().trim().min(5, "Alamat minimal 5 karakter"),
+  phone: z.string().trim(),
+  email: z.string().trim().email("Email tidak valid").or(z.literal("")),
+  npsn: z.string().trim().regex(NPSN_PATTERN, NPSN_MESSAGE).or(z.literal("")),
 });
 
 type UnitFormData = z.infer<typeof unitSchema>;
 
 export default function EditUnitPage() {
-  const router = useRouter();
   const params = useParams();
   const unitId = params.id as string;
-
   const { data: unit, isLoading: unitLoading } = useUnit(unitId);
-  const updateUnit = useUpdateUnit();
-
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    reset,
-    formState: { errors, isSubmitting },
-  } = useForm<UnitFormData>({
-    resolver: zodResolver(unitSchema),
-  });
-
-  // Populate form with existing data
-  useEffect(() => {
-    if (unit) {
-      reset({
-        name: unit.name,
-        type: unit.type,
-        address: unit.address || "",
-        phone: unit.phone || "",
-        email: unit.email || "",
-        headName: unit.headName || "",
-      });
-    }
-  }, [unit, reset]);
-
-  const onSubmit = async (data: UnitFormData) => {
-    try {
-      await updateUnit.mutateAsync({
-        id: unitId,
-        data: {
-          ...data,
-          address: data.address || undefined,
-          phone: data.phone || undefined,
-          email: data.email || undefined,
-          headName: data.headName || undefined,
-        },
-      });
-      toast.success("Unit berhasil diperbarui");
-      router.push(`/units/${unitId}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Gagal memperbarui unit";
-      toast.error(errorMessage);
-    }
-  };
 
   if (unitLoading) {
     return (
@@ -126,6 +81,61 @@ export default function EditUnitPage() {
       </MainLayout>
     );
   }
+
+  // Built once the unit is here, with it as the defaults: filling the form
+  // with reset() after mount left the Tipe Unit select empty, and the form
+  // then refused to save ("Tipe unit wajib dipilih") —
+  // lessons/select-empty-value-sentinel.
+  return <EditUnitForm key={unit.id} unit={unit} />;
+}
+
+function EditUnitForm({ unit }: { unit: Unit }) {
+  const router = useRouter();
+  const unitId = unit.id;
+  const updateUnit = useUpdateUnit();
+  // The type decides where the unit appears on the public site; only the
+  // Super Admin changes it (the API refuses anyone else).
+  const mayChangeType =
+    getPrimaryRoleCode(useAuthStore((s) => s.user)) === "SUPER_ADMIN";
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<UnitFormData>({
+    resolver: zodResolver(unitSchema),
+    defaultValues: {
+      name: unit.name,
+      type: unit.type,
+      address: unit.address || "",
+      phone: unit.phone || "",
+      email: unit.email || "",
+      npsn: unit.npsn || "",
+    },
+  });
+
+  const onSubmit = async (data: UnitFormData) => {
+    try {
+      await updateUnit.mutateAsync({
+        id: unitId,
+        data: {
+          name: data.name,
+          ...(mayChangeType ? { type: data.type } : {}),
+          address: data.address,
+          // An emptied field is cleared, not left as it was.
+          phone: data.phone || null,
+          email: data.email || null,
+          npsn: data.npsn || null,
+        },
+      });
+      toast.success("Unit berhasil diperbarui");
+      router.push(`/units/${unitId}`);
+    } catch (error: unknown) {
+      toast.error(getErrorMessage(error) || "Gagal memperbarui unit");
+    }
+  };
 
   return (
     <MainLayout>
@@ -156,7 +166,7 @@ export default function EditUnitPage() {
                   <Label htmlFor="name">Nama Unit *</Label>
                   <Input
                     id="name"
-                    placeholder="Contoh: SMP IT Al-Hikmah"
+                    placeholder="Contoh: SMP IT Cipansor"
                     {...register("name")}
                   />
                   {errors.name && (
@@ -173,8 +183,9 @@ export default function EditUnitPage() {
                     onValueChange={(value) =>
                       setValue("type", value as UnitFormData["type"])
                     }
+                    disabled={!mayChangeType}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger id="type">
                       <SelectValue placeholder="Pilih tipe unit" />
                     </SelectTrigger>
                     <SelectContent>
@@ -185,6 +196,11 @@ export default function EditUnitPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {!mayChangeType && (
+                    <p className="text-xs text-muted-foreground">
+                      Hanya Super Admin yang dapat mengubah jenis unit.
+                    </p>
+                  )}
                   {errors.type && (
                     <p className="text-sm text-destructive">
                       {errors.type.message}
@@ -193,15 +209,22 @@ export default function EditUnitPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="headName">Kepala Unit</Label>
+                  <Label htmlFor="npsn">NPSN</Label>
                   <Input
-                    id="headName"
-                    placeholder="Nama kepala sekolah/pimpinan"
-                    {...register("headName")}
+                    id="npsn"
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="8 angka, dari Dapodik"
+                    {...register("npsn")}
                   />
-                  {errors.headName && (
+                  <p className="text-xs text-muted-foreground">
+                    Tampil di situs publik bersama akreditasi, dan dipakai
+                    ekspor EMIS/Dapodik serta SKHUN. Kosongkan bila unit ini
+                    tidak memilikinya.
+                  </p>
+                  {errors.npsn && (
                     <p className="text-sm text-destructive">
-                      {errors.headName.message}
+                      {errors.npsn.message}
                     </p>
                   )}
                 </div>
@@ -215,7 +238,7 @@ export default function EditUnitPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="address">Alamat</Label>
+                  <Label htmlFor="address">Alamat *</Label>
                   <Textarea
                     id="address"
                     placeholder="Alamat lengkap unit"
@@ -233,7 +256,7 @@ export default function EditUnitPage() {
                   <Label htmlFor="phone">Telepon</Label>
                   <Input
                     id="phone"
-                    placeholder="021-12345678"
+                    placeholder="0265-1234567"
                     {...register("phone")}
                   />
                   {errors.phone && (
@@ -248,7 +271,7 @@ export default function EditUnitPage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="unit@pesantren.sch.id"
+                    placeholder="unit@cipansor.or.id"
                     {...register("email")}
                   />
                   {errors.email && (
