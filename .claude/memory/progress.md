@@ -95,7 +95,8 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   2FA recovery codes that work and the 2FA screens in Indonesian (#614),
   sessions that follow the account's live roles (#615), and 2FA mandatory for
   the head of every unit (#616). Then a unit's NPSN, set on *Edit Unit*, and
-  Profil Unit's real statistics (this change). Next in 00.9: the post-login
+  Profil Unit's real statistics (#619). #441 (SSO and Blob storage) closed
+  after its third audit; rebuilt as six PRs (roadmap 4). Next in 00.9: the post-login
   invitation, then the password policy. Then the wali's approval for
   staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
