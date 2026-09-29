@@ -106,6 +106,20 @@ page was broken — **read the skipped count and names**, not only "0 failed";
 and a `waitForToast` helper used 22 times looked for `role="status"`, which the
 toast library does not render, so it never found any toast.
 
+**An absence assertion that retries waits the thing out** (2026-09-29, the
+password PR). `expect(toast).toHaveCount(0)` retries for five seconds; a Sonner
+toast closes itself after four, so "no toast" passed while a toast was on the
+screen — the screenshot showed it, the test did not. And the field assertion
+beside it, `getByText(/nama Cipansor/)`, had passed on the toast's words while
+the field itself said "Data yang dikirim tidak sesuai format". Scope the text
+to the form, and check absence once, after a short settle:
+`expect(await locator.count()).toBe(0)`. Then run it against the build that
+has the defect and watch it go red.
+
+Likewise a URL assertion after a redirect: #620's two-tabs test ended on
+`/dashboard` only because a refused refresh bounced from `/login` straight
+back. Assert the cause (the refresh answered 200), not the resting place.
+
 ## E2E that fails on a random spec each run
 
 Three CI runs failed three different specs. The cause was one pattern in 15

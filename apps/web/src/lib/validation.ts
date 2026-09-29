@@ -319,40 +319,6 @@ export const futureDate = (
 });
 
 /**
- * Password strength validation
- */
-export const password = (options?: {
-  minLength?: number;
-  requireUppercase?: boolean;
-  requireLowercase?: boolean;
-  requireNumber?: boolean;
-  requireSpecial?: boolean;
-}): ValidationRule => {
-  const {
-    minLength: min = 8,
-    requireUppercase = true,
-    requireLowercase = true,
-    requireNumber = true,
-    requireSpecial = false,
-  } = options || {};
-
-  return {
-    validate: (value) => {
-      if (!value || typeof value !== "string") return true;
-
-      if (value.length < min) return false;
-      if (requireUppercase && !/[A-Z]/.test(value)) return false;
-      if (requireLowercase && !/[a-z]/.test(value)) return false;
-      if (requireNumber && !/[0-9]/.test(value)) return false;
-      if (requireSpecial && !/[!@#$%^&*(),.?":{}|<>]/.test(value)) return false;
-
-      return true;
-    },
-    message: `Password harus minimal ${min} karakter${requireUppercase ? ", huruf besar" : ""}${requireLowercase ? ", huruf kecil" : ""}${requireNumber ? ", angka" : ""}${requireSpecial ? ", karakter spesial" : ""}`,
-  };
-};
-
-/**
  * Confirm password match validation
  */
 export const confirmPassword = (

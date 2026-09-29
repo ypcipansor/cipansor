@@ -63,11 +63,16 @@ items before 2026-09-25 is in the history of this file and of
        - the post-login invitation for staff and wali ("Nanti saja", no
          limit; santri not invited): the list is
          `SECOND_FACTOR_INVITE_ROLE_CODES`, and the API answers `isInvited`
+         (done, #623);
+       - passwords, part A: length 8 with 2FA / 15 without, a local list of
+         common and leaked passwords plus the service's and the account's
+         own name, no composition rules, one check wherever a password is set
          (this change);
-       - passwords: a must-change flag (first login, set by someone else,
-         marked compromised, and every account once at that release), length
-         8 with 2FA / 15 without, a local list of common and leaked
-         passwords, no composition rules.
+       - passwords, part B: a must-change flag (first login, set by someone
+         else, marked compromised, and every account once at that release);
+         and changing one's own password should end the *other* sessions,
+         not this one — today every refresh token is revoked, the current
+         one included.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

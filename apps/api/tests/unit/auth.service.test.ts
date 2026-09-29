@@ -350,10 +350,11 @@ describe('AuthService', () => {
   });
 
   describe('register', () => {
+    // A new account has no 2FA: 15 characters, and nothing from the blocklist.
     const baseInput = {
       name: 'New User',
       email: 'newuser@example.com',
-      password: 'password123',
+      password: 'sawah hijau di kaki gunung',
     };
 
     // Common happy-path lookups: the target unit and the requested role exist.
@@ -390,7 +391,7 @@ describe('AuthService', () => {
       expect(result).toHaveProperty('id');
       expect(result.email).toBe('newuser@example.com');
       expect(result).not.toHaveProperty('passwordHash');
-      expect(mockHashPassword).toHaveBeenCalledWith('password123');
+      expect(mockHashPassword).toHaveBeenCalledWith('sawah hijau di kaki gunung');
     });
 
     it('should throw error when email already exists', async () => {
@@ -568,7 +569,7 @@ describe('AuthService', () => {
   describe('changePassword', () => {
     const changePasswordInput = {
       currentPassword: 'old-password',
-      newPassword: 'new-password',
+      newPassword: 'hujan turun di sore hari',
     };
 
     it('should successfully change password', async () => {
@@ -584,7 +585,7 @@ describe('AuthService', () => {
       const result = await authService.changePassword('user-1', changePasswordInput);
 
       expect(result.message).toBe('Password changed successfully');
-      expect(mockHashPassword).toHaveBeenCalledWith('new-password');
+      expect(mockHashPassword).toHaveBeenCalledWith('hujan turun di sore hari');
     });
 
     it('should throw error for incorrect current password', async () => {
@@ -592,8 +593,47 @@ describe('AuthService', () => {
       mockComparePassword.mockResolvedValue(false);
 
       await expect(authService.changePassword('user-1', changePasswordInput)).rejects.toThrow(
-        'Current password is incorrect'
+        'Kata sandi saat ini salah'
       );
+    });
+  });
+
+  describe('changePassword follows the password policy', () => {
+    const account = (isTwoFactorEnabled: boolean) => ({
+      id: 'user-1',
+      email: 'guru@example.test',
+      name: 'Guru Contoh',
+      passwordHash: 'old-hash',
+      isTwoFactorEnabled,
+    });
+
+    it('asks 15 characters without 2FA and 8 with it', async () => {
+      mockComparePassword.mockResolvedValue(true);
+      mockPrisma.user.update.mockResolvedValue({});
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({});
+
+      mockPrisma.user.findFirst.mockResolvedValue(account(false));
+      await expect(
+        authService.changePassword('user-1', { currentPassword: 'x', newPassword: 'kopi-susu' })
+      ).rejects.toThrow(/minimal 15 karakter/);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
+
+      mockPrisma.user.findFirst.mockResolvedValue(account(true));
+      await expect(
+        authService.changePassword('user-1', { currentPassword: 'x', newPassword: 'kopi-susu' })
+      ).resolves.toMatchObject({ message: 'Password changed successfully' });
+    });
+
+    it("refuses a common password and one made of the account holder's name", async () => {
+      mockComparePassword.mockResolvedValue(true);
+      mockPrisma.user.findFirst.mockResolvedValue(account(true));
+      await expect(
+        authService.changePassword('user-1', { currentPassword: 'x', newPassword: 'password1' })
+      ).rejects.toThrow(/terlalu umum/);
+      await expect(
+        authService.changePassword('user-1', { currentPassword: 'x', newPassword: 'Contoh2026' })
+      ).rejects.toThrow(/nama Anda/);
+      expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
 

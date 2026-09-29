@@ -101,7 +101,8 @@ export const queryLeaveSchema = z.object({
 export const createEmployeeSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
-  password: z.string().min(6).optional(), // Defaults to 'password123' if empty
+  // Optional: without one a random password is set (see createEmployee).
+  password: z.string().min(8).max(256).optional(),
   role: z.enum([UserRole.TEACHER, UserRole.STAFF]),
   unitId: z.string().uuid(),
   phone: z.string().optional(),

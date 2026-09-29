@@ -100,7 +100,7 @@ describe('user.service unit scoping (one admin per unit)', () => {
     const input = {
       name: 'Admin SMAQ',
       email: 'admin@smaq.sch.id',
-      password: 'Secret123!',
+      password: 'kunci rumah di bawah pot',
       role: 'UNIT_ADMIN',
       unitId: unitB,
     } as CreateUserInput;
