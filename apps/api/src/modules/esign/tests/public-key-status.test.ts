@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EsignService } from '../esign.service';
 import { prisma } from '@/lib/prisma';
-import { createKeyMaterial, publicKeyFingerprint, normaliseFingerprint } from '@/utils/esign';
+import { createKeyMaterial, normaliseFingerprint } from '@/utils/esign';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
@@ -17,8 +17,9 @@ vi.mock('@/lib/prisma', () => ({
 const findUnique = vi.mocked(prisma.userSigningKey.findUnique);
 const findHistory = vi.mocked(prisma.signingKeyStatusRecord.findUnique);
 
-const PUBLIC_KEY = createKeyMaterial('passphrase-status-kunci-2026').publicKey;
-const FP = publicKeyFingerprint(PUBLIC_KEY);
+const MATERIAL = createKeyMaterial('kalimat-sandi-status-2026');
+const PUBLIC_KEY = MATERIAL.publicKey;
+const FP = MATERIAL.fingerprint;
 const DAY = 24 * 60 * 60 * 1000;
 
 /**

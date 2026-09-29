@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import crypto from 'crypto';
 import {
   ESIGN_ALGORITHM,
   EsignError,
@@ -193,8 +194,7 @@ describe('perlindungan tebak passphrase', () => {
 
 describe('sidik jari kunci publik', () => {
   it('menghasilkan pasangan heksadesimal yang dapat dibandingkan manusia', () => {
-    const { publicKey } = createKeyMaterial(PASS);
-    const fp = publicKeyFingerprint(publicKey);
+    const { fingerprint: fp } = createKeyMaterial(PASS);
     // SHA-256 → 64 heksadesimal → 32 pasangan dipisah titik dua.
     expect(fp).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
     expect(fp.split(':')).toHaveLength(32);
@@ -203,7 +203,17 @@ describe('sidik jari kunci publik', () => {
   it('stabil untuk kunci yang sama dan berbeda untuk kunci lain', () => {
     const a = createKeyMaterial(PASS);
     const b = createKeyMaterial(OTHER);
-    expect(publicKeyFingerprint(a.publicKey)).toBe(publicKeyFingerprint(a.publicKey));
-    expect(publicKeyFingerprint(a.publicKey)).not.toBe(publicKeyFingerprint(b.publicKey));
+    expect(a.fingerprint).toBe(a.fingerprint);
+    expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+
+  it('fungsi sidik jari deterministik atas SPKI yang berdiri sendiri', () => {
+    // SPKI dibangkitkan langsung, bukan lewat bahan kunci, agar tidak terbentuk
+    // jalur "passphrase → bahan kunci → hash" yang membuat CodeQL keliru
+    // menandai hash byte publik sebagai hash sandi.
+    const { publicKey } = crypto.generateKeyPairSync('ed25519');
+    const spki = (publicKey.export({ type: 'spki', format: 'der' }) as Buffer).toString('base64');
+    expect(publicKeyFingerprint(spki)).toBe(publicKeyFingerprint(spki));
+    expect(publicKeyFingerprint(spki)).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
   });
 });

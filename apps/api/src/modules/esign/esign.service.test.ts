@@ -3,7 +3,6 @@ import { prisma } from '../../lib/prisma';
 import { EsignService } from './esign.service';
 import {
   createKeyMaterial,
-  publicKeyFingerprint,
   signPayload,
   signPdfHash,
   verifyRevocation,
@@ -57,7 +56,7 @@ vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
 
-const PASS = 'passphrase-tanda-tangan-2026';
+const PASS = 'kalimat-sandi-tanda-tangan-2026';
 const DAY = 24 * 60 * 60 * 1000;
 
 /**
@@ -498,7 +497,7 @@ describe('putusan Super Admin', () => {
       revokedAt: new Date(Date.now() - 5 * DAY),
       revocationCode: 'SUPERSEDED',
     });
-    const key = { ...base, fingerprint: publicKeyFingerprint(base.publicKey) };
+    const key = { ...base, fingerprint: base.fingerprint };
     vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
       id: 'r1',
       userId: 'ketua',
@@ -513,7 +512,7 @@ describe('putusan Super Admin', () => {
     await EsignService.decideRequest('r1', 'admin', true, 365);
 
     const upsert = vi.mocked(prisma.signingKeyStatusRecord.upsert).mock.calls.at(-1)![0] as any;
-    expect(upsert.where).toEqual({ fingerprint: publicKeyFingerprint(key.publicKey) });
+    expect(upsert.where).toEqual({ fingerprint: key.fingerprint });
     expect(upsert.create).toMatchObject({
       userId: 'ketua',
       revocationCode: 'SUPERSEDED',
