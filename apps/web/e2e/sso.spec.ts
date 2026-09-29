@@ -137,9 +137,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await page.goto("/login");
     await page.getByRole("button", { name: /Google Workspace/i }).click();
 
-    await expect(
-      page.getByText(/Two-Factor Authentication/i).first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Verifikasi Dua Langkah/i).first()).toBeVisible(
+      { timeout: 10000 },
+    );
   });
 
   test("should surface a Google sign-in failure without leaving the page", async ({
@@ -256,9 +256,9 @@ test.describe("Single Sign-On (SSO) Buttons", () => {
     await expect(button).toBeVisible();
     await button.click();
 
-    await expect(
-      page.getByText(/Two-Factor Authentication/i).first(),
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/Verifikasi Dua Langkah/i).first()).toBeVisible(
+      { timeout: 10000 },
+    );
   });
 
   test("should start the Microsoft flow with the configured client id", async ({
