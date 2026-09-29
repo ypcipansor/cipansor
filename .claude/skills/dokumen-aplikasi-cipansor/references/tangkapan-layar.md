@@ -38,7 +38,7 @@ SHOT="../api/node_modules/.bin/tsx ../../.claude/skills/screenshot-roles/scripts
 
 ```bash
 $SHOT plan  sdit.walikelas@cipansor.or.id                       # daftar halaman akun itu (tanpa browser)
-$SHOT flow  ../docs/dokumen-aplikasi/alur/absensi-harian.flow.json --out /tmp/capture   # satu atau lebih alur
+$SHOT flow  ../docs/alur/absensi-harian.flow.json --out /tmp/capture   # satu atau lebih alur
 $SHOT atlas sdit.walikelas@cipansor.or.id --out /tmp/capture     # atau beberapa akun, atau: all
 ```
 
@@ -49,7 +49,7 @@ Akun ditulis sebagai **e-mail akun demo** (`sdit.walikelas@cipansor.or.id`), buk
 kode peran (`sdit.guru`, `sdit.walikelas`, `sdit.wakasek` semuanya `SDIT_GURU`) dan hanya wali kelas yang punya kelas sendiri.
 Daftar akun: `packages/shared/src/types/demo-accounts.ts`. Kata sandi tidak pernah ditulis di alur.
 
-## Menulis alur (`*.flow.json`, tempatnya `docs/dokumen-aplikasi/alur/`)
+## Menulis alur (`*.flow.json`, tempatnya `docs/alur/`)
 
 Contoh yang sudah diuji dan berhasil: `assets/contoh-alur/absensi-harian.flow.json` (satu akun, 6 langkah) dan
 `assets/contoh-alur/pengesahan-rka-yayasan.flow.json` (empat akun bergantian, setup lewat API, 12 langkah). **Salin lalu ubah.**
@@ -114,7 +114,7 @@ Runner mencetak yang di layar **dalam kata-kata** (url, judul, heading, tombol, 
 ## Menyemat di dokumen
 
 ```bash
-python scripts/screens_manifest.py select --md docs/dokumen-aplikasi/panduan-pengguna-guru.md --capture /tmp/capture
+python scripts/screens_manifest.py select --md docs/PANDUAN-PENGGUNA-GURU.md --capture /tmp/capture
 ```
 
 `select` menyalin **hanya** gambar yang dirujuk naskah, mengecilkannya (lebar ≤ 1280 px, 256 warna; ≈ 145 → 55 KB), menolak gambar

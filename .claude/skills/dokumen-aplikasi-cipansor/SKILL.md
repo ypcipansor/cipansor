@@ -5,7 +5,7 @@ description: Menyusun dokumen aplikasi Sistem Informasi Cipansor (repo ypcipanso
 
 # Dokumen Aplikasi Cipansor
 
-Dua terbitan dari satu sumber Markdown (`docs/dokumen-aplikasi/`):
+Dua terbitan dari satu sumber Markdown (`docs/`):
 
 | Terbitan | Pembaca | Kerangka | Baca dulu |
 |---|---|---|---|
@@ -36,7 +36,7 @@ Kerjakan berurutan. Tiap langkah punya **gerbang**: perintah yang harus berhasil
 
 ### 0. Tentukan permintaan (tanya paling banyak satu kali, hanya bila benar-benar tak jelas)
 
-- Jenis: teknis / panduan / keduanya (bawaan: keduanya). Format: Markdown di `docs/dokumen-aplikasi/` (bawaan di repo) dan
+- Jenis: teknis / panduan / keduanya (bawaan: keduanya). Format: Markdown di `docs/` (bawaan di repo) dan
   `.docx`/`.pdf` bila untuk dicetak atau dikirim keluar.
 - Panduan: peran mana didahulukan. Jangan menulis semua peran dalam satu putaran; terbitkan Bagian Umum + satu–dua buklet.
 - Baru atau pembaruan? Ada dokumen lama atau `facts.json` lama → **mode pembaruan** (langkah 8).
@@ -65,7 +65,7 @@ Baca `fakta/facts.md`. Lalu baca (ringkas, jangan salin): `docs/ARCHITECTURE.md`
 
 Panduan T1 dan "Alur proses" memerlukan gambar dari aplikasi yang berjalan. Baca `references/tangkapan-layar.md` (lapisan gambar, format
 alur JSON, perintah, aturan menyemat) dan `references/katalog-proses.md` (proses, akun, spec untuk ditiru). Ringkas: nyalakan aplikasi
-(skill `stack`) → tulis `docs/dokumen-aplikasi/alur/<nama>.flow.json` → jalankan `screenshot-flow.ts flow` (skill `screenshot-roles`) →
+(skill `stack`) → tulis `docs/alur/<nama>.flow.json` → jalankan `screenshot-flow.ts flow` (skill `screenshot-roles`) →
 `screens_manifest.py select` (hanya gambar yang tersemat masuk git) → `check_docs.py`. Atlas Layar (semua halaman per akun) adalah
 artefak hasil bangun, tidak di-commit.
 
@@ -122,9 +122,23 @@ diagram. Bila tidak dapat melihat gambar, gerbang langkah 5 adalah satu-satunya 
 
 ### 7. Serahkan
 
-Taruh keluaran di `docs/dokumen-aplikasi/` (`.md` sebagai sumber; `.docx`, `.pdf`, `diagrams/`, `fakta/`, `*.build.json` sebagai
+Taruh keluaran di `docs/` (`.md` sebagai sumber; `.docx`, `.pdf`, `diagrams/`, `fakta/`, `*.build.json` sebagai
 hasil bangun), lalu ikuti aturan repo: cabang fitur, komit dengan pesan jelas, jangan mendorong ke `main`; perubahan hanya
-dokumen tidak menjalankan CI kode. Laporan singkat ke pengguna, **apa adanya**:
+dokumen tidak menjalankan CI kode.
+
+**Penamaan di `docs/`** (satu berkas, satu nama, tiga berkas senama per terbitan — `.md` + `.docx`/`.pdf` + `.build.json`):
+
+| Terbitan | Nama |
+|---|---|
+| Dokumen Teknis | `DOKUMEN-TEKNIS.md` (+ `.docx`, `.pdf`, `.build.json`) |
+| Panduan Pengguna, bagian umum | `PANDUAN-PENGGUNA-UMUM.md` (+ …) |
+| Panduan Pengguna, per peran | `PANDUAN-PENGGUNA-<PERAN>.md`, mis. `PANDUAN-PENGGUNA-GURU.md` (+ …) |
+| Audit dokumen | `EVALUASI-DOKUMEN.md` |
+
+`docs/README.md` adalah peta seluruh dokumentasi; **perbarui ia** bila terbitan atau namanya berubah (tabel "Mulai dari
+mana" dan bagian "Dokumen aplikasi"). Hasil bangun `fakta/`, `diagrams/`, `alur/` **tidak** dilacak git (lihat `.gitignore`).
+
+Laporan singkat ke pengguna, **apa adanya**:
 
 - basis kode (commit + tanggal) dan format yang dibuat;
 - tingkat verifikasi tiap bagian panduan (T1/T2/T3) dan hasil uji kemampuan; untuk T2, siapa yang sebaiknya mencobanya;

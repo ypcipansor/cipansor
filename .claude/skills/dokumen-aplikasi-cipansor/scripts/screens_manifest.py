@@ -13,7 +13,7 @@ Subperintah
               — artefak hasil bangun, TIDAK di-commit
 
 Pemakaian
-  python screens_manifest.py select --md docs/dokumen-aplikasi/panduan-pengguna-guru.md \\
+  python screens_manifest.py select --md docs/PANDUAN-PENGGUNA-GURU.md \\
         --capture .capture [--max-width 1280]
   python screens_manifest.py storyboard --report .capture/absensi-harian/flow-report.json --out naskah/alur-absensi.md
   python screens_manifest.py atlas-md --capture .capture --account sdit.walikelas --out .capture/atlas-sdit-walikelas.md

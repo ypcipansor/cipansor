@@ -1,7 +1,7 @@
 # Evaluasi dan perbaikan skill
 
 Catatan perubahan skill, terbaru di atas. Audit lengkap atas hasil pemakaiannya ada di
-`docs/dokumen-aplikasi/evaluasi-dokumen.md`; katalog kesalahan dan kode pemeriksanya di
+`docs/EVALUASI-DOKUMEN.md`; katalog kesalahan dan kode pemeriksanya di
 `references/kesalahan-yang-sudah-terjadi.md`.
 
 ## 29 September 2026 (riset standar) — periksa ulang pilihan standar terhadap praktik terbaik
@@ -21,7 +21,7 @@ ISO 26514 + ADR + docs-as-code). Yang berubah, dan yang ditambahkan ke
 | Tidak ada tabel "sumber yang dikutip" | Bagian **Sumber yang dikutip** ditambahkan (arc42, c4model, MADR, 42010, diataxis, 26514, Carroll, agilemodeling) |
 
 Tidak diubah: kerangka bab, kontrak bab, pemeriksa. Perubahan ini hanya memperkuat
-*alasan* dan *cara menulis*, bukan struktur. Ketiga dokumen di `docs/dokumen-aplikasi/`
+*alasan* dan *cara menulis*, bukan struktur. Ketiga dokumen di `docs/`
 masih lolos `check_docs.py` 0 ERROR tanpa perubahan isi.
 
 ## 29 September 2026 (audit) — dari "aturan prosa" ke "aturan yang diperiksa mesin"

@@ -80,14 +80,18 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
-- **Application documents (`docs/dokumen-aplikasi/`), branch
+- **Application documents (`docs/`), branch
   `docs/dokumen-aplikasi-cipansor`, no PR yet.** A technical document (arc42 +
   C4-1/2/3) and the user manuals (general part + Guru booklet, all T2: written
   from code, never run, every card ⚠), built by the `dokumen-aplikasi-cipansor`
   skill. The first run (2026-09-29, another agent) shipped broken tables,
   invented routes and a wrong job count; the audit is
-  `docs/dokumen-aplikasi/evaluasi-dokumen.md`, and the skill now carries machine
+  `docs/EVALUASI-DOKUMEN.md`, and the skill now carries machine
   checks (`check_docs.py`, `check_env.py`, a self-verifying `build_docs.py`).
+  The documents were later flattened from `docs/dokumen-aplikasi/` into `docs/`
+  root (source `DOKUMEN-TEKNIS.md`, `PANDUAN-PENGGUNA-*.md`, `EVALUASI-DOKUMEN.md`;
+  generated `fakta/`, `diagrams/`, `alur/` untracked) with `docs/README.md` as
+  the index.
   The fix commits (`0b6c189`, `0f993b3`) are on the branch (the first push
   attempts were refused with 403 until the Claude GitHub App access was
   restored).

@@ -13,7 +13,7 @@
  *   cd apps/web
  *   export PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium-1194/chrome-linux/chrome   # adjust
  *   ../api/node_modules/.bin/tsx ../../.claude/skills/screenshot-roles/scripts/screenshot-flow.ts \
- *       flow  ../docs/dokumen-aplikasi/alur/absensi-harian.flow.json  --out /tmp/capture
+ *       flow  ../../docs/alur/absensi-harian.flow.json  --out /tmp/capture
  *   ../api/node_modules/.bin/tsx ../../.claude/skills/screenshot-roles/scripts/screenshot-flow.ts \
  *       atlas sdit.walikelas@cipansor.or.id SDIT_TATA_USAHA --out /tmp/capture   # or: atlas all
  *   ../api/node_modules/.bin/tsx ../../.claude/skills/screenshot-roles/scripts/screenshot-flow.ts \
