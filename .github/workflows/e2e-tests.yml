@@ -102,6 +102,11 @@ jobs:
       ESIGN_RATE_LIMIT_MAX: '100000'
       # Baked into the web build: API base origin only (the app appends /api).
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      # A VAPID *public* key is not a secret (only the private half is), and it
+      # is inlined into the web build at `next build`, so it must be present
+      # HERE, not only in the webServer env. Without it the push card reports
+      # "unconfigured" and the subscribe/disable e2e can never run.
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       # Used by the e2e test runner, which builds full paths — keep the /api.
       API_URL: http://localhost:3001/api
       BASE_URL: http://localhost:3000
@@ -250,6 +255,8 @@ jobs:
       TWO_FACTOR_RATE_LIMIT_MAX: '100000'
       ESIGN_RATE_LIMIT_MAX: '100000'
       NEXT_PUBLIC_API_URL: http://localhost:3001
+      # Baked at build time (see the chromium job above for why it must be here).
+      NEXT_PUBLIC_VAPID_PUBLIC_KEY: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       API_URL: http://localhost:3001/api
       BASE_URL: http://localhost:3000
 
