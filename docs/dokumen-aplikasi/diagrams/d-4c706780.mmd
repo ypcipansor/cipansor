@@ -4,10 +4,10 @@ sequenceDiagram
   participant W as Web publik
   participant A as API
   participant T as Cloudflare Turnstile
-  W->>A: GET /admissions/public/active-period
+  W->>A: GET /api/admissions/public/active-period
   A-->>W: gelombang aktif dan unit
   C->>W: mengisi formulir pendaftaran
-  W->>A: POST /admissions/public/register + token Turnstile
+  W->>A: POST /api/admissions/public/registrants (dan token Turnstile)
   A->>T: verifikasi token anti-bot
   T-->>A: lolos
   A-->>W: nomor pendaftaran dan tautan pelacakan

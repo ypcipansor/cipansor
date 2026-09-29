@@ -2,7 +2,8 @@
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| 0.1 | 29 September 2026 | commit `aefc719`, cabang `main` (produksi berjalan lebih lama) | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
+| 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
+| 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Jalur ubah kata sandi dikoreksi (Profile → Keamanan, bukan Settings); nama menu dan tombol dicocokkan ke layar (Logout); nama enum basis data diganti label layar; istilah pengembang dikeluarkan |
 
 > **Tingkat verifikasi T2.** Seluruh kartu tugas pada panduan ini disusun dengan
 > membaca kode (`navigation.ts`, halaman, hook, dan rute API) pada commit yang
@@ -34,13 +35,16 @@ jadi Anda tidak perlu membacanya berurutan.
 | Mengajar → Absensi | Jalur menu: klik menu pertama, lalu butir berikutnya |
 | *Status menjadi "Menunggu Paraf"* | Hasil yang seharusnya tampak setelah sebuah langkah |
 | ⚠ Belum dicoba di aplikasi berjalan | Langkah disusun dari kode dan belum diuji pada aplikasi yang berjalan |
-| Tersedia: produksi / staging / `main` / cabang | Sejauh mana fitur itu sampai ke pengguna |
+| Ketersediaan | Fitur ada pada versi aplikasi yang dijelaskan panduan ini (bagian 1.4) |
 
 ## 1.4 Versi aplikasi yang dijelaskan
 
-Panduan ini menjelaskan aplikasi pada commit `aefc719` (29 September 2026).
-Produksi yang berjalan saat ini mungkin belum memuat seluruh perbaikan terbaru,
-karena rilis produksi terakhir ditunda. Tampilan dapat berubah antar versi.
+Panduan ini menjelaskan versi terbaru aplikasi per 29 September 2026. Aplikasi
+yang Anda pakai mungkin belum memuat semua perubahan itu; bila layar Anda
+berbeda dari yang dijelaskan, tanyakan kepada admin unit apakah versi terbaru
+sudah dipasang. Tampilan dapat berubah antar versi. Di beberapa layar, santri
+masih tertulis **Siswa** dan sebagian menu berbahasa Inggris; panduan ini
+menulis nama tombol dan menu persis seperti di layar.
 
 # 2. Mulai Memakai Aplikasi
 
@@ -51,17 +55,17 @@ karena rilis produksi terakhir ditunda. Tampilan dapat berubah antar versi.
 Ikuti urutan ini sekali untuk membiasakan diri. Anda hanya membaca; tidak ada
 perubahan data.
 
-1. Buka **portal.cipansor.or.id**, isi Email dan Password, klik **Masuk**.
+1. Buka **portal.cipansor.or.id**, isi **Email** dan **Password**, klik **Masuk**.
    *Anda tiba di dasbor peran Anda.*
 2. Perhatikan menu kiri. Kelompok teratas adalah pekerjaan harian Anda; klik
    salah satu butirnya.
    *Halaman tugas itu terbuka.*
 3. Klik ikon lonceng di header.
    *Panel notifikasi terbuka.*
-4. Klik **avatar → Settings**, lihat pilihan yang ada, lalu tutup tanpa mengubah
+4. Klik avatar (kanan atas), lalu **Profile**. Lihat halamannya tanpa mengubah
    apa pun.
-   *Anda kembali ke halaman sebelumnya.*
-5. Klik **avatar → Keluar**.
+   *Halaman profil terbuka dengan dua tab: **Profil** dan **Keamanan**.*
+5. Klik avatar lagi, lalu **Logout**.
    *Anda kembali ke halaman masuk.*
 
 Setelah mencoba, lanjutkan ke bagian tugas sesuai peran Anda (bagian 4.5).
@@ -93,8 +97,9 @@ saja").
 2. Buka aplikasi autentikator, lalu ketik kodenya.
    *Anda masuk dan sesi berlanjut.*
 
-Bila Anda belum pernah mendaftarkan autentikator, pada masuk pertama aplikasi
-mengarahkan Anda menyiapkan 2FA (memindai kode QR).
+Bila akun Anda wajib 2FA tetapi belum menyiapkannya, aplikasi mengarahkan Anda
+menyiapkannya setelah email dan password benar (memindai kode QR dengan aplikasi
+autentikator).
 
 ## 2.4 Mengenal dasbor, menu, dan notifikasi
 
@@ -112,18 +117,22 @@ mengarahkan Anda menyiapkan 2FA (memindai kode QR).
 
 > ⚠ **Belum dicoba di aplikasi berjalan.**
 
-Kata sandi dan profil diubah dari **avatar (kanan atas) → Settings**. Kata
-sandi minimal 8 karakter bila 2FA aktif, atau 15 karakter bila tidak ada 2FA;
-hindari kata sandi yang umum atau memuat nama akun. Tidak ada tombol "lupa
-sandi" mandiri — bila lupa kata sandi, minta admin unit mengirim tautan reset
-dari menu Pengguna.
+Klik avatar (kanan atas), lalu **Profile**. Nama dan data profil ada di tab
+**Profil**; kata sandi ada di tab **Keamanan**, pada kartu **Ubah Password**:
+isi **Password Lama**, **Password Baru**, dan **Konfirmasi Password Baru**, lalu
+klik **Ubah Password**. Kata sandi minimal 15 karakter, atau 8 karakter bila
+verifikasi dua langkah aktif; kalimat pendek yang mudah Anda ingat paling baik,
+dan tidak perlu huruf besar, angka, atau simbol. Hindari kata sandi yang umum
+atau memuat nama akun. (Halaman **Settings** tidak dipakai untuk kata sandi.)
+Tidak ada tombol "lupa sandi" mandiri — bila lupa kata sandi, minta admin unit
+mengirim tautan reset dari menu Pengguna.
 
 ## 2.6 Keluar
 
 > ⚠ **Belum dicoba di aplikasi berjalan.**
 
-Klik **avatar → Keluar**. Sesi berakhir; jangan biarkan aplikasi terbuka di
-komputer bersama.
+Klik avatar (kanan atas), lalu **Logout**. Sesi berakhir; jangan biarkan
+aplikasi terbuka di komputer bersama.
 
 # 3. Konsep yang Perlu Diketahui
 
@@ -153,13 +162,13 @@ unit. Jangan membagikan tangkapan layar berisi data santri.
 
 ## 4.1 Arti status (perizinan)
 
-| Status | Arti | Giliran siapa |
+| Status di layar | Arti | Giliran siapa |
 |---|---|---|
-| Menunggu (PENDING) | Baru diajukan | Pemutus: musyrif/wali kelas santri itu |
-| Disetujui (APPROVED) | Sudah diputuskan | Santri menunggu pintu gerbang |
-| Ditolak (REJECTED) | Ditolak dengan alasan | Pemohon membaca alasan |
-| Selesai (COMPLETED) | Sudah keluar dan kembali | — |
-| Dibatalkan (CANCELLED) | Dibatalkan pemohon | — |
+| Menunggu | Baru diajukan | Pemutus: musyrif atau wali kelas santri itu |
+| Disetujui | Sudah diputuskan | Santri menunggu pintu gerbang |
+| Ditolak | Ditolak dengan alasan | Pemohon membaca alasan |
+| Selesai | Sudah keluar dan kembali | — |
+| Dibatalkan | Dibatalkan pemohon | — |
 
 ## 4.2 Peran dan tanggung jawab singkat
 
@@ -173,14 +182,17 @@ unit. Jangan membagikan tangkapan layar berisi data santri.
 | Wali santri | Memantau perkembangan, tagihan, izin, laporan harian anak |
 | Santri | Hafalan, ujian, jadwal, portofolio |
 
-## 4.3 Pesan galat yang sering muncul
+## 4.3 Pesan yang sering muncul
 
 | Pesan | Artinya | Yang perlu dilakukan |
 |---|---|---|
-| "Tidak memiliki akses" / 403 | Peran Anda tidak berhak atas tindakan ini | Hubungi wali kelas/pemutus yang benar, atau admin unit |
-| "Sesi berakhir, silakan masuk kembali" | Sesi kedaluwarsa | Masuk ulang |
-| "Terlalu banyak percobaan" | Batas laju terlampaui | Tunggu beberapa menit |
-| "Data tidak ditemukan" | Baris sudah dihapus atau di luar lingkup Anda | Muat ulang halaman |
+| "Terlalu banyak percobaan kode. Coba lagi dalam 15 menit." | Kode verifikasi dua langkah salah terlalu sering | Tunggu 15 menit, lalu coba lagi |
+| "Terlalu banyak permintaan reset password. Silakan coba lagi nanti." | Permintaan tautan reset terlalu sering | Tunggu, lalu coba lagi |
+| "Anda tidak memiliki akses ke data anak ini" | Anda mencoba membuka data santri yang bukan anak Anda | Periksa akun yang dipakai; hubungi admin unit bila keliru |
+| "Data tidak ditemukan" | Data sudah dihapus atau di luar lingkup Anda | Muat ulang halaman |
+
+Pesan lain berbeda menurut layar; kartu tugas di buklet peran mencantumkan pesan
+yang muncul pada tugas itu.
 
 ## 4.4 Glosarium
 

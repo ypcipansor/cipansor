@@ -1,0 +1,10 @@
+{
+  "source": "dokumen-teknis-cipansor.md",
+  "source_sha256": "6d93979a30fca8a74f17d4d5951f9545cf7cf595ce3ece0de4c1c3d04eb5f34c",
+  "commit": "aefc719",
+  "built": "2026-09-29",
+  "outputs": {
+    "dokumen-teknis-cipansor.docx": "221745d3d85efe96dfe3b464488ed51621b95301ad854ffaf9be78f5d7013913",
+    "dokumen-teknis-cipansor.pdf": "c7a9d66d316384b6aea49d8d58ccc7411598b9b463de7db3ba223de91fd82a00"
+  }
+}

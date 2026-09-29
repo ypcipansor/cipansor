@@ -3,6 +3,7 @@
 | Versi | Tanggal | Basis kode | Perubahan | Penyusun |
 |---|---|---|---|---|
 | 0.1 | 29 September 2026 | commit `aefc719` | Penyusunan awal | Agen OpenHands |
+| 0.2 | 29 September 2026 | commit `aefc719` (kode identik dengan `ab82539`) | Koreksi hasil audit: alamat rute SPMB dan alur persuratan dibaca ulang dari kode; hitungan pekerjaan terjadwal; ukuran tata letak modul disebut dua-duanya; ERD memakai nama model Prisma yang nyata; diagram C4 berlabel tingkat 1–3; bab 9–11 disusun ulang; rincian kontrol akses dan data pribadi dikeluarkan dari bab 11 | Agen OpenHands; audit oleh Claude |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -13,8 +14,8 @@ Cipansor adalah Sistem Informasi Manajemen (SIM) milik Yayasan Pesantren
 Cipansor untuk mengelola TK Qur'an, SD IT, SMP IT, SMA Qur'an, dan pesantren
 Tahfidz. Aplikasi ini menyatukan pekerjaan harian unit pendidikan dan pesantren:
 data santri, kehadiran, penilaian, tahfidz, keuangan dan SPP, kepegawaian,
-persuratan, perencanaan dan penganggaran yayasan, sampai layanan publik seperti
-prasekolah, pendaftaran santri baru (SPMB), dan donasi.
+persuratan, perencanaan dan penganggaran yayasan, sampai layanan publik berupa
+situs profil, pendaftaran santri baru (SPMB), dan donasi.
 
 Penggunanya adalah seluruh jenjang peran yayasan: organ yayasan (Pembina,
 Pengurus, Pengawas), kepala sekolah dan pengelola unit, guru dan pendidik
@@ -25,20 +26,19 @@ setiap peran melihat menu, dasbor, dan data yang berbeda.
 
 Pada commit ini, basis kode berisi **93 modul API**, **289 model data** dan
 **157 enum**, sekitar **1.395 hulu rute API**, **435 halaman web**, serta
-**14 pekerjaan terjadwal**. Data disimpan di satu basis data PostgreSQL dan
+**15 entri jadwal** (dari 13 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
 diakses lewat Prisma 7. Aplikasi berjalan sebagai dua layanan: API (Express 5)
 dan web (Next.js 16), dengan paket tipe bersama `@cipansor/shared`.
 
 **Yang sudah berjalan di produksi.** Produksi berada di `cipansor.or.id` dan
 `portal.cipansor.or.id`, di-host pada Azure App Service sejak 24 September 2026.
 Staging (`staging.cipansor.or.id`) menyajikan data contoh dan menyusul setiap
-`main` yang lolos CI dan E2E. Rilis produksi menunggu persetujuan pengguna dan
-belum dijalankan lagi sejak 27 September 2026, sehingga sebagian perbaikan
-terbaru masih berada di `main` dan staging.
+`main` yang lolos CI dan E2E. Setiap rilis produksi memerlukan persetujuan
+eksplisit pengguna; staging dan produksi karena itu bisa berbeda versi.
 
 **Yang perlu diketahui pembaca.** Basis kode tumbuh lebih cepat daripada
 kerapiannya: sejumlah modul belum mengikuti lapisan baku, sejumlah halaman web
-memanggil alamat API yang belum ada, dan satu pekerjaan terjadwal mengandaikan
+memanggil alamat API yang belum ada, dan pekerjaan terjadwal mengandaikan
 satu instans API. Bab 11 mendaftar utang teknis ini secara jujur tanpa membuka
 celah yang masih terbuka di produksi. Dokumen ini memakai angka terukur dan
 menyebut status setiap kemampuan (di cabang, di `main`, di staging, atau di
@@ -104,45 +104,45 @@ setiap orang pada data yang berhak dilihatnya.
 | Teknis | Monorepo pnpm + Turborepo. API: Express 5, Prisma 7.10.0, Zod 4, PostgreSQL, Redis (opsional), Node 22, TypeScript 6. Web: Next.js 16, React 19, React Query 5, Tailwind 4. Manajer paket `pnpm@9.15.9`. | `package.json` |
 | Organisasi | Tim pengembang kecil; yayasan nirlaba memakai perkakas hibah; satu basis data untuk semua unit; repositori bersifat **publik sampai rilis** (lisensi proprietary, menjadi privat saat rilis). | `AGENTS.md`, `LICENSE` |
 | Hukum (yang tercatat di repo) | UU 16/2001 (Yayasan) untuk wewenang organ; UU 27/2022 (PDP) untuk data pribadi; PP 71/2019 untuk tanda tangan elektronik. | `decisions/pengesahan-dokumen-yayasan.md`, `decisions/esign-standards-ceiling.md`, `skills/tata-kelola-yayasan` |
-| Konvensi | Portal berbahasa Indonesia; situs publik tiga bahasa (Indonesia, Inggris, Arab, Arab RTL). Istilah pesantren tidak diterjemahkan; istilah umum berbahasa Inggris di kode/URL, label berbahasa Indonesia. | `decisions/istilah-dan-penamaan.md` |
+| Konvensi | Portal berbahasa Indonesia; situs publik tiga bahasa (Indonesia, Inggris, Arab; Arab ditulis kanan ke kiri). Istilah pesantren tidak diterjemahkan; istilah umum berbahasa Inggris di kode/URL, label berbahasa Indonesia. | `decisions/istilah-dan-penamaan.md` |
 | Operasional | Pekerjaan terjadwal berjalan di dalam proses API tanpa kunci, sehingga setiap aplikasi dijaga **satu instans**. | `docs/ARCHITECTURE.md`, `docs/deploy-azure.md` |
 
 # 3. Konteks dan Lingkup
 
 ```mermaid
-%% caption: Konteks sistem — siapa dan apa yang berinteraksi dengan Cipansor
+%% caption: C4-1 Konteks — siapa memakai Cipansor dan sistem luar mana yang dipanggilnya
 flowchart LR
-  subgraph Pengguna
-    U1["Organ yayasan"]
-    U2["Kepala sekolah, guru, TU, bendahara"]
+  subgraph Pengguna["Pengguna"]
+    U1["Organ yayasan<br/>Pembina, Pengurus, Pengawas"]
+    U2["Kepala unit, guru,<br/>TU, bendahara"]
     U3["Pendidik pesantren"]
-    U4["Wali santri, santri, alumni"]
-    U5["Pengunjung situs publik / calon santri"]
+    U4["Wali santri, santri,<br/>alumni"]
+    U5["Pengunjung situs publik,<br/>calon santri"]
   end
-  C["Sistem Informasi Cipansor"]
-  subgraph Sistem luar
-    E1["Penyedia surel<br/>SMTP / Gmail"]
-    E2["WhatsApp (provider pesan)"]
+  C["Sistem Informasi Cipansor<br/>portal pegawai, situs publik, API"]
+  subgraph Luar["Sistem luar"]
+    E1["Penyedia surel<br/>SMTP atau Gmail"]
+    E2["Penyedia WhatsApp"]
     E3["Cloudflare Turnstile"]
     E4["Penyedia model bahasa<br/>untuk chatbot"]
-    E5["Penyimpanan berkas unggahan"]
   end
-  U1 --> C
-  U2 --> C
-  U3 --> C
-  U4 --> C
-  U5 --> C
-  C --> E1
-  C --> E2
-  C --> E3
-  C --> E4
-  C --> E5
+  U1 -->|"mengesahkan dokumen, mengawasi"| C
+  U2 -->|"mengelola kegiatan unit"| C
+  U3 -->|"mencatat tahfidz, ibadah, izin"| C
+  U4 -->|"memantau anak, melihat tagihan"| C
+  U5 -->|"membaca profil, mendaftar, berdonasi"| C
+  C -->|"mengirim surel"| E1
+  C -->|"mengirim pesan"| E2
+  C -->|"memverifikasi anti-bot"| E3
+  C -->|"mengirim pertanyaan dan korpus"| E4
 ```
 
 Diagram di atas harus dibaca sebagai batas sistem: semua peran masuk melalui
-web atau API, dan sistem keluar hanya ke lima jenis layanan luar itu —
-pengiriman surel, pesan WhatsApp, verifikasi anti-bot, model bahasa untuk
-chatbot, dan penyimpanan berkas.
+web atau API, dan sistem keluar hanya ke empat jenis layanan luar —
+pengiriman surel, pesan WhatsApp, verifikasi anti-bot, dan model bahasa untuk
+chatbot. Berkas unggahan disimpan di disk aplikasi sendiri, bukan layanan luar
+(pemindahan ke penyimpanan objek privat sudah diputuskan, belum dibangun;
+lihat bab 9).
 
 ## 3.1 Di luar lingkup
 
@@ -174,63 +174,96 @@ chatbot, dan penyimpanan berkas.
 ## 5.1 Tingkat 1 — Kontainer
 
 ```mermaid
-%% caption: Kontainer — bagian-bagian yang berjalan sendiri
+%% caption: C4-2 Kontainer — bagian yang berjalan sendiri dan cara mereka berhubungan
 flowchart TB
   Browser["Peramban pengguna"]
-  subgraph Yayasan["Cipansor"]
-    Web["Web<br/>Next.js 16 + React 19"]
-    API["API<br/>Express 5"]
-    Jobs["Penjadwal<br/>node-cron, dalam proses API"]
-    Shared["packages/shared<br/>tipe dan validasi bersama"]
-    DB[("PostgreSQL<br/>via Prisma 7")]
-    Redis[("Redis<br/>cache, opsional")]
-    Files["Berkas unggahan<br/>di penyimpanan aplikasi"]
+  subgraph Cipansor["Sistem Informasi Cipansor"]
+    Nginx["nginx<br/>reverse proxy (staging dan produksi)"]
+    Web["Web<br/>Next.js 16, React 19"]
+    API["API<br/>Express 5, Node 22<br/>penjadwal node-cron di dalamnya"]
+    DB[("PostgreSQL<br/>lewat Prisma 7")]
+    Redis[("Redis<br/>cache")]
+    Files[("Berkas unggahan<br/>disk aplikasi")]
   end
-  Browser --> Web
-  Web -->|"/api"| API
-  API --> DB
-  API -.-> Redis
-  API --> Files
-  API --- Jobs
-  Web -.-> Shared
-  API -.-> Shared
+  Browser -->|"HTTPS"| Nginx
+  Nginx -->|"halaman"| Web
+  Nginx -->|"/api, /uploads, /healthz"| API
+  Web -->|"data sisi server"| API
+  API -->|"kueri SQL"| DB
+  API -.->|"cache metrik, izin, jawaban chatbot"| Redis
+  API -->|"tulis dan baca berkas"| Files
 ```
 
-Web memanggil API pada asal (origin) yang sama di produksi: `NEXT_PUBLIC_API_URL`
-dibiarkan kosong sehingga dasar Axios menjadi relatif (`/api`), dan satu image
-melayani kedua host. Redis dipakai sebagai cache (metrik dasbor, izin, jawaban
-chatbot) dan isinya boleh hilang. Penjadwal bukan layanan terpisah: `node-cron`
-berjalan di dalam proses API.
+Peramban hanya berbicara dengan nginx: `/api`, `/uploads`, dan `/healthz` diteruskan
+ke API, sisanya ke web. Di pengembangan lokal (`docker-compose.yml`) tidak ada nginx;
+web dan API dipanggil langsung. Web memanggil API pada asal (origin) yang sama di
+produksi (`NEXT_PUBLIC_API_URL` dibiarkan kosong sehingga dasar Axios menjadi
+relatif, `/api`), dan satu image melayani kedua host. Redis menyimpan cache
+(metrik dasbor, izin, jawaban chatbot) dan isinya boleh hilang; kegagalan
+sambungan ke Redis hanya dicatat. Penjadwal bukan layanan terpisah: `node-cron`
+berjalan di dalam proses API. Paket `@cipansor/shared` (tipe dan skema Zod
+bersama) adalah pustaka yang ikut dibangun ke web dan API, bukan kontainer.
 
-## 5.2 Tingkat 2 — Lapisan modul API
+## 5.2 Tingkat 2 — Komponen API dan lapisan modul
 
 ```mermaid
-%% caption: Lapisan modul API — satu permintaan dari rute sampai basis data
+%% caption: C4-3 Komponen — bagian utama di dalam kontainer API
+flowchart TB
+  Req["Permintaan dari nginx"]
+  subgraph API["API (Express 5)"]
+    MW["Rantai middleware<br/>helmet, cors, csrf, rate limit,<br/>normalisasi paginasi"]
+    Auth["Autentikasi dan otorisasi<br/>authenticate, authorize,<br/>Turnstile untuk rute publik"]
+    Mod["Modul ranah, 93 buah<br/>routes, controller, service, schema"]
+    Bus["Event bus bertipe<br/>lib/event-bus.ts"]
+    Jobs["Penjadwal<br/>jobs/scheduler.ts"]
+    Err["Penanganan galat<br/>middleware/error.ts"]
+  end
+  DB[("PostgreSQL")]
+  Cache[("Redis")]
+  Ext["Surel dan WhatsApp"]
+  Req -->|"HTTP"| MW
+  MW -->|"lolos"| Auth
+  Auth -->|"tervalidasi"| Mod
+  Mod -->|"kueri lewat Prisma"| DB
+  Mod -->|"cache metrik dan izin"| Cache
+  Mod -->|"menerbitkan peristiwa"| Bus
+  Bus -->|"kirim notifikasi"| Ext
+  Jobs -->|"kueri langsung lewat Prisma"| DB
+  Mod -.->|"galat"| Err
+```
+
+Modul-modul itu saling berbicara lewat event bus bertipe atau lewat `index.ts`
+modul lain, bukan dengan mengimpor berkas service-nya (aturan `AGENTS.md`).
+Di dalam satu modul, satu permintaan mengalir seperti pada diagram berikut.
+
+```mermaid
+%% caption: Lapisan satu modul API — satu permintaan dari rute sampai basis data
 flowchart LR
-  R["routes<br/>authenticate, authorize,<br/>validate"] --> Ctl["controller<br/>asyncHandler"]
-  Ctl --> S["service<br/>logika bisnis"]
-  S --> P[("Prisma")]
-  Sch["schema Zod"] -.-> R
-  M["middleware<br/>rate limit, csrf, error"] -.-> R
+  R["routes<br/>authenticate, authorize,<br/>validate"] -->|"memanggil"| Ctl["controller<br/>asyncHandler"]
+  Ctl -->|"meneruskan"| S["service<br/>logika bisnis"]
+  S -->|"kueri"| P[("Prisma")]
+  Sch["schema Zod"] -.->|"memvalidasi masukan"| R
+  M["middleware<br/>rate limit, csrf, error"] -.->|"membungkus"| R
 ```
 
 Aturan lapisannya: **rute tidak pernah memanggil Prisma; controller tidak memuat
 logika bisnis.** Aturan itu belum sepenuhnya menjadi kenyataan. Pada pengukuran
-commit ini, **66 dari 93 modul** memiliki tata letak lengkap
-(routes+controller+service+schema), dan **12 modul** memanggil Prisma dari rute
-atau controller (`apps/api/src/utils/…` dan `known-issues.md` mencatatnya;
-perbaikannya fase 6 dari rencana audit). Tanggapan memakai satu amplop
-`{ success, data, meta? }` lewat `src/utils/response.ts`.
+commit ini, **66 dari 93 modul** memiliki empat berkas inti (routes, controller,
+service, schema), tetapi hanya **24** yang lengkap lima bagian, yaitu keempatnya
+ditambah `index.ts` (ukuran yang dipakai `known-issues.md`, yang mencatat 22
+pada 25 September 2026). **12 modul** memanggil Prisma langsung dari rute atau
+controller. Perbaikannya adalah fase 6 rencana audit (`roadmap.md`). Tanggapan
+memakai satu amplop `{ success, data, meta? }` lewat `src/utils/response.ts`.
 
 ## 5.3 Modul menurut ranah
 
 | Ranah | Contoh modul | Catatan |
 |---|---|---|
-| Akademik | `classes`, `curriculum`, `kurikulum-merdeka`, `assessment`, `cbt`, `paud-assessment`, `rapor-pesantren`, `daily-report` | Rapor, ujian, kurikulum, laporan harian TK |
-| Kehadiran & kesantrian | `attendance`, `homeroom`, `violations`, `rewards`, `counseling`, `permits`, `health` | Absensi harian, perizinan, catatan perilaku, UKS |
+| Akademik | `students`, `parent`, `classes`, `curriculum`, `kurikulum-merdeka`, `assessment`, `cbt`, `paud-assessment`, `paud-report`, `rapor-pesantren`, `daily-report` | Rapor, ujian, kurikulum, laporan harian TK |
+| Kehadiran & kesantrian | `attendance`, `homeroom`, `violations`, `rewards`, `counseling`, `permits`, `health`, `meals` | Absensi harian, perizinan, catatan perilaku, UKS |
 | Tahfidz & pesantren | `tahfidz`, `takhosus`, `murojaah`, `simaan`, `sanad-certificate`, `kitab-progress`, `muhadatsah`, `muhadhoroh`, `muhasabah`, `ibadah`, `dormitories` | Lima modul menyentuh tabel tahfidz; konsolidasi fase 3 |
 | Penerimaan & data negara | `admissions`, `dapodik`, `emis`, `wilayah` | SPMB publik memakai Turnstile |
-| Keuangan | `finance`, `finance-enhancement`, `wallet`, `donation`, `payroll`, `procurement`, `suppliers`, `canteen`, `laundry` | Verifikasi pembayaran berjenjang |
+| Keuangan | `finance`, `finance-enhancement`, `wallet`, `donation`, `payroll`, `procurement`, `suppliers`, `canteen`, `laundry`, `scholarship` | Verifikasi pembayaran berjenjang; `scholarship` hanya pustaka penilaian tanpa rute |
 | Sarana & aset | `inventory`, `facilities`, `library` | Inventaris adalah aset tetap |
 | Kepegawaian & kinerja | `hr`, `performance-management` | PK dan evaluasi periodik |
 | Tata kelola yayasan | `foundation`, `perencanaan`, `pengawasan`, `risk`, `syariah`, `quality`, `organisasi`, `tatalaksana`, `business-unit`, `lingkungan` | Rantai RPJP → Renstra → RKA |
@@ -259,7 +292,7 @@ sequenceDiagram
   A-->>W: requiresTwoFactor true, tempToken di cookie sementara
   W->>A: POST /api/auth/2fa/login (kode)
   A->>DB: periksa kode OTP, terbitkan sesi
-  A-->>W: cookie HttpOnly cipansor_at dan cipansor_rt, data pengguna
+  A-->>W: cookie sesi HttpOnly, data pengguna
   W->>A: GET /api/auth/me
   A-->>W: pengguna, peran, izin
 ```
@@ -329,28 +362,36 @@ Super Admin sengaja tidak dapat mengajukan, mereviu, atau menetapkan.
 ## 6.4 Persuratan dan verifikasi naskah
 
 ```mermaid
-%% caption: Urutan penerbitan dan verifikasi naskah dinas
+%% caption: Urutan penerbitan naskah dinas dan verifikasi publiknya
 sequenceDiagram
   participant S as Penyusun surat
   participant A as API
-  participant T as Penandatangan (kunci TTE)
-  participant V as Verifikator publik
-  S->>A: POST /correspondence/letters
-  A-->>S: surat dibuat
-  S->>A: POST /correspondence/letters/:id/review
-  T->>A: tandatangani (kunci TTE)
-  A-->>T: PDF bertanda tangan dengan hash
-  V->>A: unggah PDF ke /public/verify-letter + Turnstile
-  A->>A: SHA-256 isi PDF terhadap pdfHash
+  participant P as Pemaraf dan penandatangan
+  participant V as Pemeriksa publik
+  S->>A: POST /api/correspondence/letters
+  S->>A: POST /api/correspondence/letters/:id/submit
+  P->>A: POST /api/correspondence/letters/:id/review (APPROVE atau REJECT)
+  P->>A: POST /api/esign/letters/:letterId/sign (frasa sandi kunci TTE)
+  A->>A: buat PDF, hitung SHA-256, tandatangani hash
+  A-->>P: surat bertanda tangan, hash tersimpan
+  S->>A: POST /api/correspondence/letters/:id/dispatch
+  V->>A: POST /api/esign/verify-pdf (unggah PDF dan token Turnstile)
+  A->>A: SHA-256 byte unggahan dibandingkan dengan pdfHash
   A-->>V: sah atau tidak, terikat pada byte dokumen
 ```
 
-Verifikasi publik **sengaja** memakai unggah PDF, bukan pemindaian QR ke token:
-halaman token hanya membuktikan ada surat bertoken itu, bukan bahwa dokumen yang
-dipegang orang adalah surat itu. Server menghitung SHA-256 byte unggahan dan
-membandingkannya dengan `LetterSignature.pdfHash`, sehingga jawabannya terikat
-pada isi dokumen. QR pada PDF memuat alamat halaman verifikasi (tanpa token) agar
-pemindai sampai ke tempat menyerahkan berkas.
+Surat dibuat, diajukan ke pemaraf (`submit`), lalu tiap pemaraf menyetujui atau
+menolak (`review`); penandatangan akhir menandatangani dengan kunci TTE pribadi
+(`esign/letters/:letterId/sign`), baru surat dikirim (`dispatch`) dan diarsipkan.
+Verifikasi publik **sengaja** memakai unggah PDF (`POST /api/esign/verify-pdf`,
+dijaga Turnstile), bukan pemindaian QR ke token: halaman token hanya
+membuktikan ada surat bertoken itu, bukan bahwa dokumen yang dipegang orang
+adalah surat itu. Server menghitung SHA-256 byte unggahan dan membandingkannya
+dengan `LetterSignature.pdfHash`, sehingga jawabannya terikat pada isi
+dokumen. QR pada PDF memuat alamat halaman verifikasi (tanpa token) agar
+pemindai sampai ke tempat menyerahkan berkas. Pencabutan naskah
+(`esign/letters/:letterId/revoke`) adalah pernyataan bertanda tangan dengan
+kewenangan yang diatur (Pengawas, bukan Ketua dan bukan Super Admin).
 
 ## 6.5 Pendaftaran santri baru (SPMB) publik
 
@@ -361,10 +402,10 @@ sequenceDiagram
   participant W as Web publik
   participant A as API
   participant T as Cloudflare Turnstile
-  W->>A: GET /admissions/public/active-period
+  W->>A: GET /api/admissions/public/active-period
   A-->>W: gelombang aktif dan unit
   C->>W: mengisi formulir pendaftaran
-  W->>A: POST /admissions/public/register + token Turnstile
+  W->>A: POST /api/admissions/public/registrants (dan token Turnstile)
   A->>T: verifikasi token anti-bot
   T-->>A: lolos
   A-->>W: nomor pendaftaran dan tautan pelacakan
@@ -372,31 +413,36 @@ sequenceDiagram
 
 Rute publik didaftarkan **sebelum** middleware `authenticate`, memakai pembatas
 laju yang lebih ketat dan Turnstile (`requireTurnstile('spmb-daftar')`).
-Pendaftar mendapat nomor pendaftaran dan dapat melacak statusnya. Keputusan
+Pendaftar mendapat nomor pendaftaran dan dapat melacak statusnya lewat
+`GET /api/admissions/public/track`. Keputusan
 penerimaan berada di ranah panel (dan masih menunggu satu keputusan pengguna
 tentang siapa yang berhak memutuskan).
 
 ## 6.6 Pekerjaan terjadwal
 
-Empat belas berkas pekerjaan berjalan lewat `jobs/scheduler.ts` dengan zona
-waktu `Asia/Jakarta`, di dalam proses API:
+`jobs/scheduler.ts` memuat **15 entri jadwal** atas **13 berkas pekerjaan**
+(diukur pada commit `aefc719`), berzona waktu `Asia/Jakarta` dan berjalan di
+dalam proses API. Satu berkas bisa dijadwalkan lebih dari sekali
+(`dashboard-snapshot` tiga kali).
 
-| Pekerjaan | Yang dilakukan (satu baris) |
-|---|---|
-| `dashboard-metrics.job` | Menghitung dan menyimpan metrik dasbor tiap menit |
-| `dashboard-snapshot.job` | Cuplikan harian dan ringkasan mingguan, pemangkasan cuplikan lama |
-| `finance-billing.job` | Penagihan otomatis bulanan |
-| `spp-reminder.job` | Pengingat SPP bulanan (tanggal 1) |
-| `attendance-register-reminder.job` | Pengingat mengisi register kelas |
-| `attendance-follow-up.job` | Pengingat tindak lanjut Alpa |
-| `attendance-pattern.job` | Menandai pola kehadiran |
-| `accreditation-reminder.job` | Pengingat akreditasi unit 12 bulan sebelum berakhir |
-| `asset-depreciation.job` | Penyusutan aset |
-| `identity-purge.job` | Menghapus dokumen identitas yang habis masa simpannya |
-| `permit-note-erasure.job` | Menghapus surat dokter izin setelah tahun ajaran berakhir |
-| `chatbot-spend.job` | Memeriksa belanja chatbot terhadap anggaran |
-| `chatbot-transcript-purge.job` | Memangkas transkrip chatbot |
-| `chatbot-escalation-retry.job` | Mengulang eskalasi chatbot yang gagal |
+| Berkas | Jadwal | Yang dilakukan |
+|---|---|---|
+| `dashboard-metrics.job` | tiap menit | Menghitung dan menyimpan metrik dasbor |
+| `dashboard-snapshot.job` | harian 01:00; Minggu 02:00; harian 03:00 | Cuplikan harian; ringkasan mingguan; memangkas cuplikan lama |
+| `finance-billing.job` | tanggal 1, 04:00 | Penagihan otomatis bulanan |
+| `spp-reminder.job` | tanggal 1, 06:00 | Pengingat SPP bulanan |
+| `attendance-register-reminder.job` | tiap 5 menit, pukul 05:00–16:55 | Pengingat mengisi register kelas |
+| `attendance-follow-up.job` | harian 15:00 | Pengingat tindak lanjut Alpa |
+| `attendance-pattern.job` | harian 16:00 | Menandai pola kehadiran |
+| `accreditation-reminder.job` | harian 07:00 | Pengingat akreditasi unit 12 bulan sebelum berakhir |
+| `identity-purge.job` | harian 02:30 | Menghapus dokumen identitas yang habis masa simpannya |
+| `permit-note-erasure.job` | harian 01:15 | Menghapus surat dokter izin setelah tahun ajaran berakhir |
+| `chatbot-spend.job` | harian 07:00 | Memeriksa belanja chatbot terhadap anggaran |
+| `chatbot-transcript-purge.job` | harian 03:15 | Memangkas transkrip chatbot |
+| `chatbot-escalation-retry.job` | tiap 30 menit | Mengulang eskalasi chatbot yang gagal |
+
+Berkas keempat belas, `asset-depreciation.job` (penyusutan aset bulanan),
+**tidak dijadwalkan**; modul `inventory` memanggilnya.
 
 > **Batasan.** Pekerjaan berjalan tanpa kunci, sehingga desainnya mengandaikan
 > **satu instans API**; menambah instans akan menjalankan tiap pekerjaan dua
@@ -406,24 +452,26 @@ waktu `Asia/Jakarta`, di dalam proses API:
 # 7. Tampak Penempatan
 
 ```mermaid
-%% caption: Penempatan — dari kode sampai produksi
-flowchart LR
-  Dev["Pengembang<br/>git push"] --> GH["GitHub<br/>CI: uji, keamanan, e2e"]
-  GH -->|"deploy otomatis"| Stg["Staging<br/>data contoh"]
-  GH -->|"deploy dengan persetujuan"| Prod["Produksi"]
-  subgraph Prod["Produksi (Azure App Service)"]
-    W["Web<br/>Next.js standalone"]
-    A["API<br/>Express + cron"]
-    N["nginx<br/>main container"]
-    D[("PostgreSQL<br/>terkelola, jaringan privat")]
+%% caption: Penempatan — dari kode sampai staging dan produksi
+flowchart TB
+  Dev["Pengembang<br/>git push"] -->|"pull request"| GH["GitHub<br/>CI: uji, keamanan, e2e"]
+  GH -->|"otomatis setelah CI dan E2E lolos"| Stg["Staging<br/>data contoh saja"]
+  GH -->|"hanya dengan persetujuan pengguna"| N
+  subgraph ProdSet["Produksi: Azure App Service, satu instans"]
+    N["nginx<br/>kontainer utama"]
+    W["web<br/>Next.js"]
+    A["api<br/>Express dan penjadwal"]
+    R[("redis<br/>cache")]
   end
-  N --> W
-  N --> A
-  A --> D
+  D[("PostgreSQL terkelola")]
+  N -->|"halaman"| W
+  N -->|"/api dan /uploads"| A
+  A -->|"cache"| R
+  A -->|"SQL"| D
 ```
 
 Produksi dan staging berjalan di Azure App Service sebagai kumpulan sidecar
-(empat kontainer berbagi `localhost`): nginx sebagai kontainer utama yang
+(empat kontainer berbagi `localhost`: nginx, web, api, redis): nginx sebagai kontainer utama yang
 menerima seluruh lalu lintas dan mengarahkan `/api`, `/uploads`, dan `/healthz`
 ke API, sisanya ke web. Rilis menempuh tiga tahap: pull request (CI dan E2E
 hijau), merge ke `main` (staging menyusul otomatis), lalu produksi hanya ketika
@@ -492,49 +540,52 @@ satu kalimat; buka berkasnya untuk alasannya.
 | Autentikasi & sandi | 2FA wajib untuk admin, organ, dan kepala unit; staf serta wali diundang; panjang sandi mengikuti NIST 800-63B-4. | `autentikasi-2fa-dan-sandi.md` |
 | Kanal realtime | Tidak ada kanal dorong; web melakukan polling. | `realtime-polling.md` |
 | Penyimpanan berkas | Satu tabel berkas, Blob privat lewat managed identity dan SAS delegasi pengguna; yang tak tertaut dihapus. | `penyimpanan-berkas.md` |
-| Akreditasi unit | Akreditasi tiap unit tampil di situs publik dari satu catatan resmi di portal; pengingat 12 bulan sebelum berakhir. | `akreditasi-unit.md` |
+| Akreditasi unit | Akreditasi tiap unit tampil di situs publik dari satu catatan resmi di portal, yang juga dibaca ekspor EMIS dan Dapodik serta SKHUN; pengingat 12 bulan sebelum berakhir. | `akreditasi-unit.md` |
 | TTE | Batas atas TTE menurut AATL/eIDAS/PP 71; Ed25519 menghalangi PAdES. | `esign-standards-ceiling.md` |
 | Verifikasi naskah | Verifikasi dengan mengunggah PDF, tidak pernah lewat halaman token/QR. | `eoffice-verify-by-upload-not-qr.md` |
 | Kewenangan cabut naskah | Pencabutan naskah adalah pernyataan bertanda tangan; kewenangannya diatur, bukan Super Admin. | `eoffice-revocation-authority.md`, `eoffice-revocation-mechanics.md` |
 | Chatbot | Seluruh korpus dikirim ke tiap prompt; BM25 tidak lagi menjadi gerbang. | `chatbot-retrieval-settled.md` |
 | Pengawasan & rapat Pembina | Keputusan Pembina sebagai rapat tercatat atau resolusi tertulis bulat; WBS di Aduan & Aspirasi; TPPK/Satgas per unit. | `pengawasan-dan-rapat-pembina.md` |
 | Fotografi situs publik | Foto asli berasal dari pesantrencipansor.com; klaim hanya yang tampak pada foto. | `public-site-photography.md` |
-| Akreditasi unit (keputusan) | Satu catatan resmi per unit dibaca ekspor EMIS/Dapodik dan SKHUN; situs publik menampilkan yang berlaku. | `akreditasi-unit.md` |
 
 # 10. Persyaratan Kualitas
 
-| Mutu | Skenario | Bukti | Status |
-|---|---|---|---|
-| Keamanan | Permintaan tanpa sesi yang sah ke rute terlindung ditolak; token JWT tidak pernah dikirim di badan respons untuk klien cookie. | Uji middleware (`auth.guards.test.ts`), CSRF, helmet, uji penjaga public-routes | Terbukti sebagian |
-| Keamanan | Kode berbahaya yang lolos pemeriksaan otomatis tidak merges. | CodeQL wajib di `main` sejak 25 September 2026 | Terbukti |
-| Ketersediaan & pemulihan | Aplikasi pulih dari kegagalan basis data; cadangan dapat dipulihkan. | Cadangan terkelola dengan point-in-time; langkah pemulihan di `docs/DEPLOYMENT.md` | Terbukti sebagian (belum diuji berkala) |
-| Kinerja | Satu gambar Next.js tidak dioptimasi sama sekali (`/_next/image` mengembalikan berkas asli). | `known-issues.md` → Performance | Belum terbukti perbaikan |
-| Keterpeliharaan | Perubahan diuji sebelum push; kontrak web↔API dijaga uji penjaga. | CI (Lint, Build, Tests, Security, E2E), `web-api-contract.guard.test.ts`, `route-shadowing.guard.test.ts` | Terbukti |
-| Kemudahan pakai | Portal berbahasa Indonesia konsisten; menu tiap peran sesuai. | `i18n-coverage.test.ts`, uji RBAC-nav | Terbukti sebagian |
+Tiap baris adalah skenario (pemicu → respons) dengan ukuran, bukti, dan status
+yang diakui apa adanya. Bila belum ada ambang yang ditetapkan, kolom ukuran
+berkata demikian; itu jujur, dan itu utang (bab 11).
+
+| Mutu | Skenario (pemicu → respons) | Ukuran / ambang | Bukti | Status |
+|---|---|---|---|---|
+| Keamanan: akses | Rute tulis yang dapat dijangkau tanpa sesi → dijaga Turnstile | 0 rute tulis publik tanpa Turnstile di luar daftar pengecualian beralasan | `public-routes-gated.test.ts` memindai pohon rute | Terbukti (uji di CI) |
+| Keamanan: kode | Perubahan yang memicu peringatan CodeQL tingkat tinggi → tidak dapat digabung ke `main` | 0 peringatan CodeQL tingkat tinggi ke atas yang lolos ke `main` (CodeQL berstatus wajib) | aturan repositori sejak 25 September 2026 (`progress.md`) | Terbukti |
+| Keterpeliharaan: kontrak | Halaman web memanggil alamat API yang tak ada → uji merah | jumlah panggilan tak terlayani hanya boleh menyusut dari baseline | `web-api-contract.guard.test.ts` | Sebagian: baseline lama belum nol |
+| Keterpeliharaan: rute | Rute berparameter menutupi rute statis → uji merah | 0 rute yang tertutup bayangan | `route-shadowing.guard.test.ts` | Terbukti |
+| Kemudahan pakai: bahasa | String situs publik hanya ada di satu bahasa → uji merah | 0 string yang hilang di salah satu dari 3 bahasa | `i18n-coverage.test.ts` | Terbukti |
+| Pemulihan | Basis data rusak atau migrasi gagal → dipulihkan dari cadangan | pemulihan titik-waktu 7 hari di server, ditambah `pg_dump` sebelum tiap rilis; RTO dan RPO belum ditetapkan | `docs/deploy-azure.md` | Sebagian: pemulihan dilatih hanya untuk uji migrasi |
+| Ketersediaan: penjadwal | Pekerjaan terjadwal berjalan satu kali per jadwal | tepat 1 instans API | `docs/deploy-azure.md` | Terbukti selama satu instans |
+| Kinerja | Halaman dimuat dalam waktu wajar | belum ditetapkan | tidak ada | Belum ada ambang (lihat optimasi gambar, bab 11) |
 
 # 11. Risiko dan Utang Teknis
 
-Tabel ini adalah daftar risiko arc42 §11 yang diperluas menjadi daftar utang
-teknis: setiap baris menyebut gejalanya, dampaknya, dan arah penanganannya.
-Praktik yang baik menautkan tiap butir ke tiket kerja dan meninjau ulang
-daftar ini tiap kuartal.
+Setiap baris menyebut gejala, dampak, dan arah penanganan. Daftar ini
+ditinjau ulang setiap kuartal.
 
 > **Catatan.** Bab ini merangkum kategori dan tingkat dampak. Butir keamanan
-> yang masih terbuka di produksi tidak diuraikan dalam dokumen ini dan dilacak
-> secara internal.
+> dan privasi yang masih terbuka di produksi tidak diuraikan dalam dokumen ini
+> dan dilacak secara internal.
 
 | Kategori | Ringkasan | Dampak | Arah penanganan |
 |---|---|---|---|
-| Kontrak web↔API | Sejumlah halaman web memanggil alamat API yang belum ada (ukur: berkas baseline yang hanya menyusut). | Sedang | Fase 1 rencana audit, area demi area; uji penjaga mencegah yang baru |
-| Konsistensi lapisan | 12 modul memanggil Prisma dari rute/controller; 1.457 `res.json` mentah terhadap 399 `ApiResponse`. | Sedang | Fase 6: satukan ke lapisan baku |
-| Pekerjaan terjadwal | Mengandaikan satu instans API; penskalaan menjalankan pekerjaan dua kali. | Tinggi bila diskalakan | Tambah kunci advisory atau worker sebelum scale-out |
-| Optimasi gambar | Optimizer `next/image` tidak pernah mengecilkan gambar. | Rendah–Sedang | Perbaikan image runtime (sharp musl/glibc) |
+| Kontrak web↔API | Sejumlah panggilan web belum terlayani API; jumlahnya tercatat di baseline uji yang hanya boleh menyusut. | Sedang | Fase 1 rencana audit, area demi area; uji penjaga mencegah yang baru |
+| Konsistensi lapisan | 12 modul memanggil Prisma dari rute atau controller; hanya 24 dari 93 modul lengkap lima bagian; bentuk respons belum seragam. | Sedang | Fase 6: satukan ke lapisan baku |
+| Pekerjaan terjadwal | Mengandaikan satu instans API; penskalaan menjalankan pekerjaan dua kali. | Tinggi bila diskalakan | Kunci advisory atau worker terpisah sebelum scale-out |
+| Optimasi gambar | Optimizer `next/image` tidak pernah mengecilkan gambar; gambar harus disajikan pada ukuran tampil. | Rendah–Sedang | Perbaikan image runtime |
 | Konsep ganda | Tahfidz di lima modul, rapor di lima tempat, P5 di dua modul. | Sedang | Fase 3: konsolidasi berdasar desain |
-| Penamaan | Beberapa modul bernama lain daripada isinya (mis. `practicum` = Amaliyah Tadris). | Rendah | Glosarium lalu ganti nama |
-| Pintu akses terlalu sempit | Sejumlah halaman/organisasi belum menyesuaikan keputusan peran terbaru. | Sedang | Model A + lingkup dari penugasan |
-| Kontrol izin | Halaman "Roles & Permissions" mengedit daftar yang hampir tak dibaca (13 rute vs 670 bucket). | Sedang | Model A (izin per fitur) |
-| Data & privasi | Beberapa tempat masih memakai `include` relasi penuh; satu tabel menampilkan NIK penuh. | Sedang–Tinggi | Pilih kolom eksplisit; minimalisasi tampilan |
-| Integritas skema | Dua titik antara skema dan migrasi tidak sepakat; satu unique parsial belum ada. | Rendah | Migrasi korektif tersendiri |
+| Penamaan | Beberapa modul bernama lain daripada isinya (mis. `practicum` berisi Amaliyah Tadris; sufiks `-enhancement`). | Rendah | Glosarium lalu ganti nama |
+| Kontrol akses | Daftar izin yang dapat disunting belum sejalan dengan pemeriksaan sebenarnya; akses masih banyak diatur per kelompok peran lama. | Sedang | Model A (izin per fitur), bertahap dengan baseline yang menyusut |
+| Data pribadi | Minimalisasi data pribadi belum merata di seluruh modul. | Sedang–Tinggi | Pilih kolom eksplisit; ditangani per modul; dilacak internal |
+| Integritas skema | Skema dan riwayat migrasi belum sepenuhnya sepakat. | Rendah | Migrasi korektif tersendiri |
+| Pemantauan galat | Belum ada layanan pemantauan galat; pilihan ditunda sampai sebelum peluncuran. | Sedang | Pilih sebelum peluncuran (`progress.md`) |
 
 # 12. Glosarium
 
@@ -672,23 +723,31 @@ Skema Prisma adalah rujukan tunggal (**289 model, 157 enum** pada commit ini).
 Berikut kelompok entitas utama dan hubungannya, bukan ratusan model satu per satu.
 
 ```mermaid
-%% caption: Model data tingkat ranah — kelompok entitas dan hubungan utamanya
+%% caption: Model data tingkat ranah — model Prisma utama dan relasinya
 erDiagram
-  UNIT ||--o{ USER : "menaungi pegawai"
-  USER ||--o{ ROLE_ASSIGNMENT : "memegang peran"
-  STUDENT ||--o{ ENROLLMENT : "terdaftar"
-  UNIT ||--o{ KELAS : "memiliki kelas"
-  KELAS ||--o{ ENROLLMENT : "berisi"
-  STUDENT ||--o{ ATTENDANCE : "dicatat hadir"
-  STUDENT ||--o{ TAHFIDZ_RECORD : "setoran"
-  STUDENT ||--o{ PERMIT : "mengajukan izin"
-  USER ||--o{ PERMIT : "memutuskan"
-  STUDENT ||--o{ INVOICE : "ditagih"
-  INVOICE ||--o{ PAYMENT : "dibayar"
-  ACADEMIC_YEAR ||--o{ ENROLLMENT : "berlaku"
-  STRATEGIC_PLAN ||--o{ STRATEGIC_PLAN : "menginduk"
-  LETTER ||--|| LETTER_SIGNATURE : "ditandatangani"
+  Unit ||--o{ User : "menaungi"
+  User ||--o{ UserRoleAssignment : "memegang peran"
+  Unit ||--o{ Student : "menaungi"
+  User ||--o| Student : "akun"
+  Unit ||--o{ "Class" : "memiliki"
+  AcademicYear ||--o{ "Class" : "berlaku"
+  "Class" ||--o{ ClassEnrollment : "berisi"
+  Student ||--o{ ClassEnrollment : "terdaftar"
+  Student ||--o{ Attendance : "dicatat"
+  "Class" ||--o{ Attendance : "register"
+  Student ||--o{ TahfidzRecord : "setoran"
+  Student ||--o{ Permit : "mengajukan"
+  Student ||--o{ Invoice : "ditagih"
+  Invoice ||--o{ Payment : "dibayar"
+  Unit ||--o{ Letter : "menerbitkan"
+  Letter ||--o{ LetterSignature : "ditandatangani"
+  Unit ||--o{ StrategicPlan : "menyusun"
+  StrategicPlan ||--o{ StrategicPlan : "menginduk"
 ```
+
+Nama entitas adalah nama model di `schema.prisma` (`Class` ditulis dengan tanda kutip karena kata kunci Mermaid); relasi dibaca dari bidang
+`@relation` model-model itu. Pendaftaran siswa ke kelas adalah `ClassEnrollment`;
+pendaftaran ke unit adalah `StudentUnitEnrollment` (tidak digambar).
 
 # Lampiran C — Variabel Lingkungan
 
@@ -734,6 +793,9 @@ Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure)
 |---|---|
 | Commit dan tanggal ukur | `aefc719`, 29 September 2026 (skrip `collect_facts.py`) |
 | Ringkasan sistem | `README.md`, `docs/ARCHITECTURE.md` |
+| Alamat rute yang disebut | `apps/api/src/modules/*/*.routes.ts` (dicek otomatis oleh `check_docs.py`) |
+| Model data | `apps/api/prisma/schema.prisma` |
+| Kontainer dan sidecar | `docs/deploy-azure.md`, `docker-compose.yml` |
 | Status & utang | `.claude/memory/progress.md`, `known-issues.md`, `roadmap.md` |
 | Urutan masuk & sesi | `apps/api/src/modules/auth/auth.controller.ts`, `auth.routes.ts`, `auth.service.ts`, `auth.cookies.ts` |
 | Middleware & rute | `apps/api/src/app.ts`, `apps/api/src/middleware/{auth,rate-limit,csrf,error}.ts` |

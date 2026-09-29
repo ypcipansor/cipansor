@@ -1,0 +1,18 @@
+%% caption: C4-2 Kontainer — bagian yang berjalan sendiri dan cara mereka berhubungan
+flowchart TB
+  Browser["Peramban pengguna"]
+  subgraph Cipansor["Sistem Informasi Cipansor"]
+    Nginx["nginx<br/>reverse proxy (staging dan produksi)"]
+    Web["Web<br/>Next.js 16, React 19"]
+    API["API<br/>Express 5, Node 22<br/>penjadwal node-cron di dalamnya"]
+    DB[("PostgreSQL<br/>lewat Prisma 7")]
+    Redis[("Redis<br/>cache")]
+    Files[("Berkas unggahan<br/>disk aplikasi")]
+  end
+  Browser -->|"HTTPS"| Nginx
+  Nginx -->|"halaman"| Web
+  Nginx -->|"/api, /uploads, /healthz"| API
+  Web -->|"data sisi server"| API
+  API -->|"kueri SQL"| DB
+  API -.->|"cache metrik, izin, jawaban chatbot"| Redis
+  API -->|"tulis dan baca berkas"| Files

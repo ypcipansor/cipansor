@@ -1,0 +1,16 @@
+%% caption: Penempatan — dari kode sampai staging dan produksi
+flowchart TB
+  Dev["Pengembang<br/>git push"] -->|"pull request"| GH["GitHub<br/>CI: uji, keamanan, e2e"]
+  GH -->|"otomatis setelah CI dan E2E lolos"| Stg["Staging<br/>data contoh saja"]
+  GH -->|"hanya dengan persetujuan pengguna"| N
+  subgraph ProdSet["Produksi: Azure App Service, satu instans"]
+    N["nginx<br/>kontainer utama"]
+    W["web<br/>Next.js"]
+    A["api<br/>Express dan penjadwal"]
+    R[("redis<br/>cache")]
+  end
+  D[("PostgreSQL terkelola")]
+  N -->|"halaman"| W
+  N -->|"/api dan /uploads"| A
+  A -->|"cache"| R
+  A -->|"SQL"| D

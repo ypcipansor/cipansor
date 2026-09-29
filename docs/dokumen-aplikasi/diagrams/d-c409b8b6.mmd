@@ -1,0 +1,7 @@
+%% caption: Lapisan satu modul API — satu permintaan dari rute sampai basis data
+flowchart LR
+  R["routes<br/>authenticate, authorize,<br/>validate"] -->|"memanggil"| Ctl["controller<br/>asyncHandler"]
+  Ctl -->|"meneruskan"| S["service<br/>logika bisnis"]
+  S -->|"kueri"| P[("Prisma")]
+  Sch["schema Zod"] -.->|"memvalidasi masukan"| R
+  M["middleware<br/>rate limit, csrf, error"] -.->|"membungkus"| R

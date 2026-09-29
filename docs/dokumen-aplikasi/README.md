@@ -8,56 +8,52 @@ pengguna ([Diátaxis](https://diataxis.fr)).
 
 | Berkas | Isi |
 |---|---|
-| `dokumen-teknis-cipansor.docx` / `.pdf` / `.md` | Dokumen teknis aplikasi — 12 bab arc42, 10 diagram Mermaid |
-| `panduan-pengguna-umum.docx` / `.pdf` / `.md` | Panduan pengguna bagian umum — tutorial, konsep, rujukan |
-| `panduan-pengguna-guru.docx` / `.pdf` / `.md` | Panduan pengguna buklet peran Guru |
-| `evaluasi-dokumen.docx` / `.pdf` / `.md` | Evaluasi terhadap standar (arc42, Diátaxis, ISO 26514, docs-as-code) |
-| `diagrams/` | Diagram Mermaid (`.mmd`) dan gambar (`.png`) |
-| `fakta/` | `facts.json` + `facts.md` terukur pada commit `aefc719`, dasar angka di dokumen |
+| `dokumen-teknis-cipansor.md` / `.docx` / `.pdf` | Dokumen teknis aplikasi — 12 bab arc42, C4-1/2/3, 11 diagram Mermaid |
+| `panduan-pengguna-umum.md` / `.docx` / `.pdf` | Panduan pengguna bagian umum — tutorial, konsep, rujukan |
+| `panduan-pengguna-guru.md` / `.docx` / `.pdf` | Panduan pengguna buklet peran Guru |
+| `*.build.json` | Hash sumber dan hasil bangun; `check_docs.py --built` memakainya untuk menolak `.docx`/`.pdf` yang basi |
+| `evaluasi-dokumen.md` | Audit terhadap kode (bukan terhadap standar): temuan, akar masalah, perbaikan, yang belum selesai |
+| `diagrams/` | Diagram Mermaid (`.mmd`) dan gambar (`.png`) hasil bangun |
+| `fakta/` | `facts.json` + `facts.md` terukur dari kode, dasar angka di dokumen |
 
 ## Membangun ulang
 
-Markdown adalah sumbernya; `.docx` dan `.pdf` dihasilkan darinya. Alat
-pembangunnya ada di skill `.claude/skills/dokumen-aplikasi-cipansor/scripts/`.
-Prasyarat: `pandoc`, `python-docx`, `lxml`, `mermaid-cli` (mmdc) dengan Chromium,
-dan LibreOffice (untuk mengisi daftar isi dan mengubah ke PDF).
+Markdown adalah sumbernya; `.docx` dan `.pdf` dihasilkan darinya. Jangan menyunting
+`.docx`. Alat ada di `.claude/skills/dokumen-aplikasi-cipansor/scripts/`; alur
+lengkap dan aturannya di `SKILL.md` skill itu.
 
 ```bash
 S=.claude/skills/dokumen-aplikasi-cipansor/scripts
-pip install python-docx lxml
-npm install -g @mermaid-js/mermaid-cli
-# pandoc dan libreoffice dari manajer paket sistem
-
-export PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-python3 $S/build_docs.py docs/dokumen-aplikasi/dokumen-teknis-cipansor.md --out . \
-  --format docx --title "Dokumen Teknis Aplikasi" --subtitle "Sistem Informasi Cipansor" \
-  --version 0.1 --status Draf --commit aefc719 --author "Agen OpenHands" \
-  --logo apps/web/public/logo.png
-
-# isi daftar isi (dipanggil otomatis oleh build_docs.py bila LibreOffice ada)
-python3 $S/update_toc.py dokumen-teknis-cipansor.docx
-soffice --headless --convert-to pdf --outdir . dokumen-teknis-cipansor.docx
-python3 $S/scan_sensitive.py *.md   # periksa data sensitif; kode keluar 1 = ada temuan
+python3 $S/check_env.py                                   # perkakas lengkap? (LibreOffice harus punya komponen Writer)
+python3 $S/collect_facts.py . --out docs/dokumen-aplikasi/fakta
+python3 $S/check_docs.py docs/dokumen-aplikasi/dokumen-teknis-cipansor.md --kind teknis \
+  --repo . --facts docs/dokumen-aplikasi/fakta/facts.json --final      # 0 ERROR
+python3 $S/build_docs.py docs/dokumen-aplikasi/dokumen-teknis-cipansor.md --out docs/dokumen-aplikasi \
+  --format docx --pdf --title "Dokumen Teknis Aplikasi" --subtitle "Sistem Informasi Cipansor" \
+  --version 0.2 --status Draf --commit <hash> --logo apps/web/public/logo.png
+python3 $S/check_docs.py docs/dokumen-aplikasi/dokumen-teknis-cipansor.md --kind teknis --repo . \
+  --facts docs/dokumen-aplikasi/fakta/facts.json --built docs/dokumen-aplikasi/dokumen-teknis-cipansor.build.json
+python3 $S/scan_sensitive.py docs/dokumen-aplikasi/*.md
 ```
 
-Angka diukur ulang dengan `python3 $S/collect_facts.py <folder-repo>` — hasilnya
-`fakta/facts.json`; jalankan dengan `--compare fakta/facts.json` saat memperbarui
-dokumen.
+Untuk panduan pengguna pakai `--kind pengguna` (dan `--trace jejak.md` untuk melihat dari
+berkas mana tiap nama tombol berasal). Bila `build_docs.py` mencetak `GAGAL`, jangan
+menyerahkan hasilnya.
 
 ## Menjaga dokumen tetap akurat
 
-Dokumen ini dihasilkan, bukan diketik ulang: **perbarui angka dengan mengukur
-ulang kode, lalu bangun kembali** — jangan menyunting angka di dalam `.docx`.
-Setiap dokumen mencatat commit basisnya di sampul dan riwayat revisi. Klasifikasi
-setiap dokumen: *Internal — Yayasan Pesantren Cipansor*.
+Dokumen ini dihasilkan, bukan diketik ulang: **ukur ulang kode, periksa, lalu bangun
+kembali** — jangan menyunting angka di dalam `.docx`. Tiap dokumen mencatat commit
+basisnya di sampul dan riwayat revisi. Klasifikasi: *Internal — Yayasan Pesantren Cipansor*.
 
 > Sebelum dokumen dibagikan ke luar (donor, auditor, vendor), jalankan
-> `scan_sensitive.py`. Repositori ini publik sampai rilis; jangan memuat
-> kredensial, host, IP, atau kelemahan yang masih terbuka.
+> `scan_sensitive.py` dan baca bab 11 dengan mata. Repositori ini publik sampai rilis;
+> jangan memuat kredensial, host, IP, kelemahan yang masih terbuka, ataupun daftar
+> perbaikan yang belum ada di produksi.
 
 ## Status
 
-Draf 0.1, basis commit `aefc719`. Panduan pengguna berperingkat **T2** (disusun
-dari kode, belum diuji pada aplikasi berjalan) dan setiap kartu tugasnya
-bertanda ⚠ sampai diverifikasi seorang pengguna peran itu. Rincian evaluasi dan
-usulan lanjutan ada di `evaluasi-dokumen.md`.
+Draf 0.2, basis kode `aefc719` (kode `apps/` dan `packages/` identik dengan `ab82539`).
+Panduan pengguna berperingkat **T2** (disusun dari kode, belum diuji pada aplikasi
+berjalan); setiap kartu tugasnya bertanda ⚠ sampai seorang pengguna peran itu
+mencobanya. Yang belum dikerjakan ada di `evaluasi-dokumen.md`, bagian 8.

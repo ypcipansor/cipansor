@@ -2,11 +2,12 @@
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| 0.1 | 29 September 2026 | commit `aefc719`, cabang `main` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
+| 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
+| 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Langkah dan nama tombol diperiksa ulang satu per satu ke kode layar; pesan yang dikutip disalin dari kode; istilah pengembang dan nomor PR dikeluarkan; kartu izin dipersempit ke wali kelas |
 
 > **Tingkat verifikasi T2.** Semua kartu tugas di bawah disusun dengan membaca
-> kode pada commit yang tertera; belum dijalankan pada aplikasi berjalan.
-> Setiap kartu bertanda ⚠ dan perlu diuji oleh seorang guru sungguhan sebelum
+> kode layar pada commit yang tertera; belum dijalankan pada aplikasi berjalan.
+> Setiap kartu bertanda ⚠ dan perlu dicoba oleh seorang guru sungguhan sebelum
 > dinaikkan ke T1.
 
 # 1. Tentang Buklet Ini
@@ -15,33 +16,39 @@ Buklet ini untuk **guru** (`*_GURU`, `*_GURU_BK`) di semua unit — TK Qur'an,
 SD IT, SMP IT, dan SMA Qur'an. Bagian umum (masuk, dasbor, konsep, glosarium)
 ada di *Panduan Pengguna — Bagian Umum*.
 
+Buklet ini menjelaskan versi aplikasi terbaru per 29 September 2026. Aplikasi
+yang Anda pakai mungkin belum memuat semua perubahan itu; bila layar Anda
+berbeda dari yang dijelaskan, tanyakan kepada admin unit apakah versi terbaru
+sudah dipasang. Di beberapa layar, santri masih tertulis **Siswa**; buklet ini
+menulis nama tombol dan judul persis seperti di layar.
+
 ## 1.1 Siapa Anda di aplikasi
 
-Sebagai guru, dasbor awal Anda adalah `/teacher`. Menu Anda memuat kelompok
-**Mengajar** (tahfidz, kelas, siswa, absensi, laporan harian/Mutabaah, portofolio)
-dan, bila Anda ditunjuk wali kelas sebuah kelas pada tahun ajaran berjalan,
-kelompok tambahan **Wali Kelas**. Wali kelas bukan kode peran terpisah: ia melekat
-pada kelas (`Class.homeroomTeacherId`), sehingga bisa muncul dan hilang sesuai
-penugasan Anda.
+Sebagai guru, dasbor awal Anda adalah halaman **Dashboard** di bawah kelompok
+**Ringkasan**. Menu Anda memuat kelompok **Mengajar** (Tahfidz, Kelas Saya,
+Siswa, Absensi, Mutabaah Yaumiyah, Portfolio Siswa) dan, bila Anda ditunjuk
+wali kelas sebuah kelas pada tahun ajaran berjalan, kelompok tambahan **Wali
+Kelas**. Wali kelas bukan peran terpisah: ia melekat pada kelas, sehingga
+kelompok itu bisa muncul dan hilang sesuai penugasan Anda.
 
 ## 1.2 Yang bisa dan tidak bisa Anda lakukan
 
 - Anda melihat kelas dan mata pelajaran yang Anda ampu; guru lain tidak.
 - Anda **mengisi absensi** kelas yang Anda ajar maupun kelas yang Anda wali.
-- Anda **memutuskan izin** hanya untuk santri yang menjadi tanggung jawab Anda:
-  wali kelas untuk santri harian, musyrif untuk santri mukim. Untuk santri lain,
-  tombolnya tidak muncul; kepala unit hanya turun tangan untuk izin panjang,
-  santri tanpa pembimbing, atau ambil alih.
-- Data anak hanya tampil sebatas lingkup kelas/unit Anda.
+- Sebagai wali kelas Anda memutuskan izin **santri harian** di kelas Anda.
+  Izin santri mukim diputuskan musyrif santri itu (lihat buklet Pendidik
+  Pesantren). Kepala unit hanya turun tangan untuk izin lebih dari 7 hari,
+  santri tanpa pembimbing, atau mengambil alih.
+- Data santri hanya tampil sebatas kelas dan unit Anda.
 
 ## 1.3 Tugas dalam buklet ini
 
-| Tugas | Seberapa sering | Tersedia |
+| Tugas | Seberapa sering | Menu |
 |---|---|---|
-| Mencatat absensi harian | Harian | `main` (perbaikan #585; produksi menyusul) |
-| Menindaklanjuti Alpa | Harian saat ada Alpa | `main` |
-| Menulis catatan perilaku | Sesuai kejadian | `main` |
-| Memutuskan izin santri | Sesuai pengajuan | `main` |
+| Mencatat absensi harian | Harian | Wali Kelas → Absensi Harian |
+| Menindaklanjuti Alpa | Harian saat ada Alpa | Wali Kelas → Tindak Lanjut Absensi |
+| Menulis catatan perilaku | Sesuai kejadian | Wali Kelas → Catatan Perilaku |
+| Memutuskan izin santri harian | Sesuai pengajuan | Wali Kelas → Perizinan |
 
 # 2. Tugas
 
@@ -51,44 +58,51 @@ penugasan Anda.
 
 **Tujuan.** Mencatat kehadiran santri satu kelas untuk satu tanggal.
 
-**Siapa.** Wali kelas kelas itu, guru yang mengajar di kelas itu, dan operator
+**Siapa.** Wali kelas dari kelas itu, guru yang mengajar di kelas itu, dan operator
 unit. Guru lain tidak dapat mengisi.
 
-**Jalur menu.** Wali Kelas → Absensi Harian — `\`/attendance/record\``.
-Guru yang bukan wali kelas membuka Mengajar → Absensi — `\`/attendance\``.
+**Jalur menu.** Wali Kelas → Absensi Harian (`/attendance/record`). Guru
+pengampu yang bukan wali kelas: Mengajar → Absensi (`/attendance`), lalu klik
+tombol **Isi Absensi Harian** di kanan atas halaman.
 
-**Sebelum mulai.** Kelas dan daftar santri tahun ajaran berjalan sudah ada.
+**Sebelum mulai.** Anda sudah ditugaskan sebagai wali kelas atau pengajar di
+sebuah kelas pada tahun ajaran berjalan, dan santri sudah terdaftar di kelas
+itu.
 
 **Langkah.**
 
-1. Buka **Absensi Harian**. Halaman terbuka pada kelas tempat Anda wali kelas.
-   *Judul kelas dan daftar santri tampil.*
-2. Periksa **kelas** dan **tanggal**. Tanggal esok hari dan sesudahnya tidak
-   dapat dipilih (tombolnya menonaktifkan tanggal setelah hari ini).
-   *Tanggal terpilih menampilkan register hari itu.*
-3. Untuk tiap santri, pilih status: **Hadir**, **Terlambat**, **Sakit**,
-   **Izin**, atau **Alpa**.
-   *Simbol ringkasan di atas memperbarui hitungannya.*
-4. Gunakan **Semua Hadir** atau **Semua Tidak Hadir** bila ingin mengisi massal,
-   lalu sesuaikan penyimpangannya.
-5. Tambahkan **Keterangan** bila perlu.
-6. Klik **Simpan Kehadiran**.
-   *Muncul pesan hasil; menyimpan ulang pada tanggal yang sama memperbaiki
-   register itu, bukan menggandakannya.*
+1. Buka **Absensi Harian** lewat jalur menu di atas.
+   *Halaman terbuka pada kelas pertama di daftar kelas Anda, lengkap dengan daftar santrinya.*
+2. Bila perlu kelas lain, buka pilihan **Kelas** dan pilih satu. Nama tiap kelas
+   diikuti "Wali Kelas" atau "Mengajar".
+   *Daftar santri berganti mengikuti kelas.*
+3. Bila perlu tanggal lain, klik tombol tanggal dan pilih tanggalnya. Hari ini
+   dapat dipilih; tanggal sesudah hari ini tidak.
+   *Bila tanggal itu sudah pernah diisi, muncul peringatan kuning bahwa data kehadiran untuk tanggal ini sudah ada dan menyimpan akan memperbaruinya.*
+4. Untuk tiap santri, klik satu tombol status. Tombolnya berbentuk ikon; arahkan
+   kursor untuk melihat namanya: **Hadir**, **Tidak Hadir**, **Terlambat**,
+   **Sakit**, atau **Izin**.
+   *Tombol yang dipilih berwarna dan angka ringkasan berubah.*
+5. Untuk mengisi sekaligus, klik **Semua Hadir** atau **Semua Tidak Hadir**,
+   lalu ubah santri yang berbeda.
+6. Bila perlu, isi kolom **Keterangan** di samping nama santri.
+7. Klik **Simpan Kehadiran**.
+   *Muncul pesan "Kehadiran disimpan:" diikuti jumlah data baru dan yang diperbarui. Menyimpan ulang pada tanggal yang sama memperbarui register itu.*
 
-**Hasilnya, dan giliran siapa berikutnya.** Register tersimpan. Bila ada Alpa
-tanpa keterangan, muncul pekerjaan tindak lanjut untuk pemiliknya (wali kelas
-untuk santri harian, musyrif untuk santri mukim).
+**Hasilnya, dan giliran siapa berikutnya.** Register tersimpan. Santri yang
+tercatat **Tidak Hadir** tanpa keterangan muncul di daftar tindak lanjut
+pemiliknya (wali kelas untuk santri harian, musyrif untuk santri mukim) dengan
+sebutan Alpa; lihat kartu berikutnya.
 
 **Bila tidak berhasil.**
 
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
-| "Pilih kelas terlebih dahulu" | Belum memilih kelas | Pilih kelas lalu ulangi |
-| Tombol **Simpan Kehadiran** nonaktif | Belum ada perubahan/perubahan tak lengkap | Periksa setiap santri terisi |
-| 403 saat menyimpan | Anda bukan wali kelas, guru pengampu, atau operator unit ini | Pastikan Anda mengajar di kelas itu |
+| "Pilih kelas terlebih dahulu" | Belum ada kelas terpilih | Pilih kelas dari pilihan **Kelas**, lalu klik **Simpan Kehadiran** lagi |
+| "Tidak ada kelas untuk dicatat" | Anda belum menjadi wali kelas atau mengajar di kelas mana pun pada tahun ajaran ini | Minta admin unit memeriksa penugasan Anda |
+| **Simpan Kehadiran** tidak dapat diklik | Daftar santri kosong (kelas belum dipilih atau belum ada santri terdaftar), atau penyimpanan sedang berjalan | Pilih kelas; bila daftar tetap kosong, hubungi admin unit |
 
-**Ketersediaan.** Sudah di `main`; belum tentu di produksi.
+**Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 ## Menindaklanjuti Alpa
 
@@ -99,109 +113,114 @@ mencatat hasilnya.
 
 **Siapa.** Wali kelas (santri harian) atau musyrif (santri mukim).
 
-**Jalur menu.** Wali Kelas → Tindak Lanjut Absensi — `\`/attendance/follow-ups\``.
+**Jalur menu.** Wali Kelas → Tindak Lanjut Absensi (`/attendance/follow-ups`).
 
 **Sebelum mulai.** Ada Alpa tanpa keterangan dalam 7 hari terakhir.
 
 **Langkah.**
 
 1. Buka **Tindak Lanjut Absensi**.
-   *Daftar Alpa 7 hari terakhir, lengkap dengan kontak wali dan yang sudah
-   dicoba.*
-2. Hubungi wali memakai tautan telepon atau WhatsApp pada baris itu.
-3. Klik **Catat hasil**.
-   *Dialog "Catat hasil tindak lanjut" terbuka.*
-4. Isi hasil kontaknya, lalu klik **Simpan**.
+   *Daftar Alpa tanpa keterangan dalam 7 hari terakhir untuk santri kelas perwalian Anda, lengkap dengan kontak wali.*
+2. Hubungi wali memakai tautan telepon atau WhatsApp pada baris santri itu.
+3. Klik **Catat hasil** pada baris itu.
+   *Muncul kotak "Catat hasil tindak lanjut".*
+4. Pada **Cara menghubungi**, pilih satu: **Telepon**, **WhatsApp**, **Bertemu langsung**, atau **Lainnya**.
+5. Pada **Hasilnya**, pilih satu: **Sakit**, **Izin**, **Tanpa keterangan**, atau **Wali tidak terhubungi**.
+6. Bila perlu, isi **Catatan (opsional)**.
+7. Klik **Simpan**.
 
-**Hasilnya, dan giliran siapa berikutnya.** Hasil kontak tercatat; status Alpa
-dapat berubah menjadi Sakit/Izin bila wali memberi alasan.
+**Hasilnya, dan giliran siapa berikutnya.** Pilihan **Sakit** atau **Izin**
+mengubah absensi santri itu menjadi Sakit atau Izin. **Tanpa keterangan**
+membiarkannya tetap Alpa dan menyelesaikan tindak lanjut. **Wali tidak
+terhubungi** membiarkannya di daftar agar dicoba lagi.
 
 **Bila tidak berhasil.**
 
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
-| Daftar kosong | Tidak ada Alpa tanpa keterangan | Tidak ada tindakan |
-| Baris milik musyrif | Santri itu mukim | Musyrifnya yang menindaklanjuti |
+| "Tidak ada Alpa yang perlu Anda tindak lanjuti" | Tidak ada Alpa tanpa keterangan dalam 7 hari terakhir | Tidak ada tindakan |
+| Santri mukim tidak ada di daftar Anda | Tindak lanjut santri mukim ada pada musyrifnya | Musyrifnya yang menindaklanjuti |
 
-**Ketersediaan.** Sudah di `main`.
+**Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 ## Menulis catatan perilaku
 
 > ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
-**Tujuan.** Mencatat perilaku santri (positif maupun yang perlu perhatian).
+**Tujuan.** Mencatat perilaku santri, positif maupun yang perlu perhatian.
 
-**Siapa.** Wali kelas kelas santri itu.
+**Siapa.** Wali kelas dari santri itu.
 
-**Jalur menu.** Wali Kelas → Catatan Perilaku — `\`/homeroom/behavior\``.
+**Jalur menu.** Wali Kelas → Catatan Perilaku (`/homeroom/behavior`).
 
 **Langkah.**
 
 1. Buka **Catatan Perilaku**.
-   *Daftar catatan kelas tampil.*
+   *Daftar catatan kelas Anda tampil.*
 2. Klik **Tambah Catatan**.
-   *Dialog "Tambah Catatan Perilaku" terbuka.*
-3. Pilih siswa dan kategori, lalu isi "Apa yang terjadi?" dan "Apa yang sudah
-   atau akan dilakukan?".
-4. Klik **Simpan**.
-   *Catatan muncul di daftar.*
+   *Muncul kotak "Tambah Catatan Perilaku".*
+3. Di **Pilih siswa**, pilih santrinya.
+4. Di **Kategori**, pilih kategorinya.
+5. Isi **Apa yang terjadi?**
+6. Bila perlu, isi **Apa yang sudah atau akan dilakukan?**
+7. Klik **Simpan**.
+   *Catatan tersimpan dan tampil di daftar.*
 
-**Hasilnya, dan giliran siapa berikutnya.** Catatan tersimpan; catatan positif
-tidak lagi tersimpan sebagai pelanggaran.
+**Hasilnya, dan giliran siapa berikutnya.** Catatan tersimpan pada santri itu.
+Catatan yang perlu perhatian dihitung pada ringkasan halaman ini.
 
 **Bila tidak berhasil.**
 
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
-| "Lengkapi siswa, kategori dan isi catatan" | Ada isian kosong | Lengkapi semua kolom wajib |
+| "Lengkapi siswa, kategori dan isi catatan" | Santri, kategori, atau isi catatan masih kosong | Isi ketiganya, lalu klik **Simpan** lagi |
 
-**Ketersediaan.** Sudah di `main`.
+**Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
-## Memutuskan izin santri
+## Memutuskan izin santri harian
 
 > ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
-**Tujuan.** Menyetujui atau menolak permohonan izin santri yang menjadi
-tanggung jawab Anda.
+**Tujuan.** Menyetujui atau menolak permohonan izin santri harian di kelas
+Anda.
 
-**Siapa.** Musyrif (santri mukim) atau wali kelas (santri harian). Kepala unit
-hanya untuk izin lebih dari 7 hari, santri tanpa pembimbing, atau ambil alih.
+**Siapa.** Wali kelas untuk santri harian. Santri mukim diputuskan musyrifnya
+(buklet Pendidik Pesantren). Kepala unit hanya untuk izin lebih dari 7 hari,
+santri tanpa pembimbing, atau mengambil alih.
 
-**Jalur menu.** Wali Kelas → Perizinan — `\`/permits\``. Izin yang menunggu Anda
-terkumpul di penyaring **"Perlu keputusan saya"**.
+**Jalur menu.** Wali Kelas → Perizinan (`/permits`). Izin yang menunggu Anda
+dikumpulkan lewat penyaring **Perlu keputusan saya**.
 
 **Langkah.**
 
-1. Buka **Perizinan**, aktifkan penyaring **Perlu keputusan saya**.
+1. Buka **Perizinan** dan aktifkan penyaring **Perlu keputusan saya**.
    *Daftar izin yang menunggu keputusan Anda.*
-2. Buka satu izin (klik barisnya).
-   *Rincian izin dan tombol keputusan tampil.*
-3. Untuk menerima, klik **Setujui**, lalu konfirmasi pada dialog.
-   *Pesan "Izin disetujui".*
-4. Untuk menolak, klik **Tolak**, isi alasannya, lalu konfirmasi.
-   *Pesan "Izin ditolak".*
-5. Bila perlu mengambil alih sebagai kepala unit, gunakan **Setujui (ambil
-   alih)** — hanya kepala unit yang melihat tombol ini.
+2. Untuk menyetujui, klik **Setujui** pada baris izinnya, lalu klik **Setujui**
+   pada kotak konfirmasi "Setujui izin".
+   *Muncul pesan "Izin disetujui".*
+3. Untuk menolak, klik **Tolak** pada baris izinnya, tuliskan alasannya di
+   kotak "Tolak izin", lalu klik **Tolak**.
+   *Muncul pesan "Izin ditolak".*
 
-**Hasilnya, dan giliran siapa berikutnya.** Izin disetujui menunggu pintu
-gerbang mencatat keberangkatan dan kepulangan; izin ditolak kembali ke pemohon
-dengan alasan.
+**Hasilnya, dan giliran siapa berikutnya.** Izin yang disetujui menunggu pintu
+gerbang mencatat keberangkatan dan kepulangan santri; izin yang ditolak kembali
+ke pemohon beserta alasannya.
 
 **Bila tidak berhasil.**
 
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
-| Izin tidak ada di daftar | Bukan tanggung jawab Anda | Pemutus yang benar adalah musyrif/wali kelas santri itu |
-| Tombol keputusan hilang | Sudah diputuskan atau di luar lingkup | Muat ulang halaman |
+| Izin tidak ada di daftar | Bukan tanggung jawab Anda | Pemutus yang benar adalah wali kelas atau musyrif santri itu |
+| Tombol **Setujui** dan **Tolak** tidak ada | Izin sudah diputuskan, atau di luar lingkup Anda | Muat ulang halaman; bila tetap, tanyakan admin unit |
 
-**Ketersediaan.** Sudah di `main`.
+**Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 # 3. Bila Ada Masalah
 
 - **Tidak bisa membuka halaman.** Laporkan ke admin unit; sebutkan jalur menu
   dan pesan yang muncul.
 - **Tombol tampil tetapi tindakan ditolak.** Aplikasi memeriksa lagi di server;
-  laporkan sebagai temuan.
+  laporkan kepada admin unit.
 - **Data terlihat salah atau kosong.** Pastikan tahun ajaran dan kelas benar,
   lalu laporkan bila masih salah.
 

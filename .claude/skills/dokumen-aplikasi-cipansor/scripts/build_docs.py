@@ -63,6 +63,17 @@ def find_chrome() -> str | None:
     return None
 
 
+def png_size(path: Path) -> tuple[int, int] | None:
+    """Lebar x tinggi PNG dari kepala berkas (tanpa Pillow — dulu diam-diam dilewati bila Pillow tak ada)."""
+    try:
+        head = path.read_bytes()[:24]
+        if head[:8] != b"\x89PNG\r\n\x1a\n":
+            return None
+        return int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+    except OSError:
+        return None
+
+
 def render_mermaid(md: str, outdir: Path) -> tuple[str, int, int]:
     """Ganti blok mermaid dengan gambar PNG. Kembalikan (md_baru, berhasil, gagal)."""
     blocks = list(MERMAID_RE.finditer(md))
@@ -100,19 +111,18 @@ def render_mermaid(md: str, outdir: Path) -> tuple[str, int, int]:
         if r.returncode == 0 and png.exists():
             ok += 1
             attr = ""
-            try:
-                from PIL import Image  # type: ignore
-                w, h_px = Image.open(png).size
-                ratio = h_px / w
+            dims = png_size(png)
+            if dims:
+                ratio = dims[1] / dims[0]
                 if ratio > 1.15:  # diagram tinggi: batasi supaya muat satu halaman
                     attr = "{width=%.1fcm}" % max(6.0, min(16.0, 19.0 / ratio))
-            except Exception:  # noqa: BLE001
-                pass
-            out.append(f"![{caption}]({png}){attr}")
+            # Gambar dan keterangannya HARUS paragraf terpisah (baris kosong di antaranya). Bila hanya
+            # satu baris baru, keduanya satu paragraf dan keterangan terbelah di sekitar gambar tinggi.
+            out.append(f"\n\n![{caption}]({png}){attr}\n\n")
             # Pembaca commonmark_x membuang keterangan gambar (alt) sehingga gaya
             # "Image Caption" tak pernah terpakai. Tulis keterangan eksplisit bila ada.
             if cap:
-                out.append(f"\n*Gambar: {caption}*\n")
+                out.append(f"*Gambar: {caption}*\n\n")
         else:
             bad += 1
             print(f"PERINGATAN: diagram '{caption}' gagal dirender:\n{r.stderr.strip()[:400]}", file=sys.stderr)
@@ -481,6 +491,89 @@ def postprocess(docx_path: Path, a: argparse.Namespace) -> None:
     doc.save(str(docx_path))
 
 
+def count_md_tables(md: str) -> int:
+    body = re.sub(r"```.*?```", "", md, flags=re.S)
+    return len(re.findall(r"^\s*\|?[\s:|-]*-{3,}[\s:|-]*\|?\s*$", body, flags=re.M))
+
+
+def verify_docx(docx_path: Path, md: str, expect_images: int) -> list[str]:
+    """Kembalikan daftar masalah. Kosong = struktur .docx sesuai sumber.
+
+    Ini menangkap kerusakan yang TIDAK terlihat dari kode keluar: pernah terjadi tabel terbit kosong
+    (kepala hijau tanpa teks, isi sel tercecer sebagai paragraf, judul bab masuk ke sel) karena
+    langkah pengisian daftar isi lewat LibreOffice, dan semua pemeriksaan lain tetap hijau.
+    """
+    from docx import Document
+    problems: list[str] = []
+    d = Document(str(docx_path))
+    tables = d.tables[1:]  # [0] = tabel metadata sampul
+    want = count_md_tables(md)
+    if len(tables) != want:
+        problems.append(f"jumlah tabel: sumber {want}, .docx {len(tables)}")
+    for i, t in enumerate(tables, 1):
+        if not any(c.text.strip() for r in t.rows for c in r.cells):
+            problems.append(f"tabel {i} kosong seluruhnya")
+        elif any(not c.text.strip() for c in t.rows[0].cells):
+            problems.append(f"tabel {i}: kepala tabel memuat sel kosong")
+        if any(p.style is not None and p.style.name.startswith("Heading")
+               for r in t.rows for c in r.cells for p in c.paragraphs):
+            problems.append(f"tabel {i} memuat judul bab di dalam sel (struktur tergeser)")
+    if len(d.inline_shapes) < expect_images:
+        problems.append(f"gambar: diharapkan {expect_images}, .docx memuat {len(d.inline_shapes)}")
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
+    if "Daftar Isi" not in "".join(t.text or "" for t in d.element.body.iter(w)):
+        problems.append("tidak ada 'Daftar Isi'")
+    return problems
+
+
+def verify_pdf(pdf_path: Path, md: str) -> list[str]:
+    """Pemeriksaan mekanis PDF (tanpa mata): setiap tabel sumber ada di PDF dengan kepala terbaca, dan
+    tidak ada halaman kosong. Perlu PyMuPDF (pip install pymupdf); bila tak ada, kembalikan peringatan."""
+    try:
+        import pymupdf  # type: ignore
+    except Exception:  # noqa: BLE001
+        try:
+            import fitz as pymupdf  # type: ignore
+        except Exception:  # noqa: BLE001
+            return ["PDF tidak diperiksa: pasang PyMuPDF (pip install pymupdf) agar tabel dan halaman diperiksa mesin"]
+    problems: list[str] = []
+    doc = pymupdf.open(str(pdf_path))
+    text_pages = [p.get_text() for p in doc]
+    for i, t in enumerate(text_pages, 1):
+        if len(t.strip()) < 40 and i > 1:
+            problems.append(f"halaman {i} nyaris kosong")
+    whole = "\n".join(text_pages)
+    body = re.sub(r"```.*?```", "", md, flags=re.S)
+    for m in re.finditer(r"^\s*\|(.+)\|\s*\n\s*\|?[\s:|-]*-{3,}[\s:|-]*\|?\s*$", body, flags=re.M):
+        first = re.sub(r"[*`_]", "", m.group(1).split("|")[0]).strip()
+        if first and first not in whole:
+            problems.append(f"kepala tabel '{first}' tidak terbaca di PDF (tabel rusak?)")
+    return problems
+
+
+def make_pdf(docx_path: Path) -> Path | None:
+    """PDF lewat LibreOffice dengan profil sementara. Kembalikan jalur PDF atau None."""
+    soffice = shutil.which("soffice") or shutil.which("libreoffice")
+    if not soffice:
+        print("PERINGATAN: soffice tidak ada — PDF tidak dibuat", file=sys.stderr)
+        return None
+    prof = tempfile.mkdtemp(prefix="lo-pdf-")
+    env = {**os.environ, "SAL_USE_VCLPLUGIN": "svp", "HOME": prof}
+    try:
+        r = subprocess.run([soffice, "--headless", "--norestore", f"-env:UserInstallation=file://{prof}",
+                            "--convert-to", "pdf", "--outdir", str(docx_path.parent), str(docx_path)],
+                           env=env, capture_output=True, text=True, timeout=300)
+    finally:
+        shutil.rmtree(prof, ignore_errors=True)
+    pdf = docx_path.with_suffix(".pdf")
+    if r.returncode != 0 or not pdf.exists():
+        print(f"PERINGATAN: PDF gagal dibuat: {(r.stderr or r.stdout).strip()[:300]}\n"
+              "  Bila galatnya 'source file could not be loaded': paket libreoffice-writer belum terpasang.",
+              file=sys.stderr)
+        return None
+    return pdf
+
+
 def set_update_fields(docx_path: Path) -> None:
     """Cadangan bila LibreOffice tak bisa mengisi daftar isi: minta Word memperbaruinya saat dibuka."""
     from docx import Document
@@ -513,6 +606,7 @@ def main() -> int:
     ap.add_argument("--accent", default="0B5D3B", help="Warna aksen heksadesimal tanpa #")
     ap.add_argument("--resource-path", default="", help="Folder untuk mencari gambar/tangkapan layar")
     ap.add_argument("--no-toc-update", action="store_true")
+    ap.add_argument("--pdf", action="store_true", help="buat juga PDF (LibreOffice) dari .docx")
     a = ap.parse_args()
     a.date_text = tanggal_id(date.today())
 
@@ -533,7 +627,8 @@ def main() -> int:
               f"Dokumen ini belum layak diserahkan sebagai final.", file=sys.stderr)
 
     if a.format in ("md", "both"):
-        shutil.copyfile(src, out / f"{name}.md")
+        if src != (out / f"{name}.md").resolve():  # sumber sudah di folder keluaran → tak perlu disalin
+            shutil.copyfile(src, out / f"{name}.md")
         print(f"OK  {out / (name + '.md')}")
 
     if a.format in ("docx", "both"):
@@ -543,6 +638,11 @@ def main() -> int:
         md2, ok, bad = render_mermaid(md, out)
         if ok or bad:
             print(f"    diagram: {ok} dirender, {bad} gagal")
+        if bad:
+            print(f"GAGAL: {bad} diagram tidak dapat dirender (lihat PERINGATAN di atas). Dokumen tidak dibangun: "
+                  "diagram yang gagal terbit sebagai blok kode. Perbaiki sintaks Mermaid di sumber "
+                  "(kata kunci seperti Class harus diberi tanda kutip; id simpul unik).", file=sys.stderr)
+            return 1
         with tempfile.TemporaryDirectory() as td:
             tdp = Path(td)
             ref = tdp / "ref.docx"
@@ -560,15 +660,53 @@ def main() -> int:
             if r.stderr.strip():
                 print("    pandoc:", r.stderr.strip()[:600])
         postprocess(target, a)
+        problems = verify_docx(target, md, ok)
+        if problems:
+            print("GAGAL: .docx tidak sesuai sumber SEBELUM daftar isi diisi:\n  - " + "\n  - ".join(problems),
+                  file=sys.stderr)
+            return 1
         if not a.no_toc_update:
-            rc = subprocess.run([sys.executable, str(HERE / "update_toc.py"), str(target)],
-                                capture_output=True, text=True)
-            if rc.returncode != 0:
-                set_update_fields(target)
-                print("    daftar isi: LibreOffice tidak tersedia; Word akan menawarkan pembaruan saat dibuka")
+            backup = target.with_suffix(".docx.bak")
+            shutil.copyfile(target, backup)
+            # update_toc.py butuh modul 'uno' milik LibreOffice; python di venv sering tak punya.
+            done = False
+            for py in dict.fromkeys([sys.executable, "/usr/bin/python3"]):
+                if not Path(py).exists():
+                    continue
+                rc = subprocess.run([py, str(HERE / "update_toc.py"), str(target)], capture_output=True, text=True)
+                if rc.returncode == 0:
+                    print("    " + rc.stdout.strip())
+                    done = True
+                    break
+            if done:
+                after = verify_docx(target, md, ok)
+                if after:
+                    shutil.copyfile(backup, target)
+                    set_update_fields(target)
+                    print("PERINGATAN: pengisian daftar isi lewat LibreOffice MERUSAK .docx, hasilnya dibuang:\n  - "
+                          + "\n  - ".join(after)
+                          + "\n  Dipakai cadangan sebelum pengisian; daftar isi terisi saat dibuka di Word (F9).",
+                          file=sys.stderr)
             else:
-                print("    " + rc.stdout.strip())
+                set_update_fields(target)
+                print("    daftar isi: LibreOffice/uno tidak tersedia; Word akan menawarkan pembaruan saat dibuka")
+            backup.unlink(missing_ok=True)
         print(f"OK  {target}")
+        if a.pdf:
+            pdf = make_pdf(target)
+            if pdf:
+                print(f"OK  {pdf}")
+                for prob in verify_pdf(pdf, md):
+                    print(f"PERINGATAN PDF: {prob}", file=sys.stderr)
+        # Catatan pembangunan: hash sumber + hasil. check_docs.py --built memakainya untuk menolak
+        # .docx/.pdf yang basi (sumber .md sudah berubah tetapi biner belum dibangun ulang).
+        info = {"source": src.name, "source_sha256": hashlib.sha256(md.encode()).hexdigest(),
+                "commit": a.commit, "built": date.today().isoformat(), "outputs": {}}
+        for ext in (".docx", ".pdf"):
+            f = out / f"{name}{ext}"
+            if f.exists():
+                info["outputs"][f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
+        (out / f"{name}.build.json").write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return 0
 
 

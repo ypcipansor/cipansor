@@ -6,6 +6,11 @@ Dua bentuk dalam satu berkas; pakai salah satu per terbitan:
 Isi tiap [ISI: …] dari sumber di references/panduan-pengguna.md. Hapus komentar ini.
 Judul/versi/sampul diberikan lewat opsi build_docs.py.
 Tingkat verifikasi (T1/T2/T3) WAJIB dinyatakan di Riwayat Revisi.
+
+PEMBACANYA BUKAN PENGEMBANG. Di seluruh teks (kecuali Riwayat Revisi dan banner ⚠) DILARANG:
+nama enum basis data (PENDING, APPROVED), nomor PR (#585), kata main/cabang/commit/staging/produksi,
+kode HTTP (403), jalur berkas kode. Tulis label yang TAMPIL DI LAYAR. Setelah tiap bagian selesai:
+  python scripts/check_docs.py naskah.md --kind pengguna --repo <repo> --facts facts.json --trace jejak.md
 -->
 
 <!-- ======================= (A) BAGIAN UMUM ======================= -->
@@ -14,7 +19,7 @@ Tingkat verifikasi (T1/T2/T3) WAJIB dinyatakan di Riwayat Revisi.
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| [ISI: 0.1] | [ISI: tanggal] | commit [ISI: hash], [ISI: cabang / staging / produksi] | [ISI: T1 terverifikasi di aplikasi berjalan / T2 dari kode, belum dicoba / campuran — sebut bagian mana] | Penyusunan awal |
+| [ISI: 0.1] | [ISI: tanggal] | commit [ISI: hash] | [ISI: T1 terverifikasi di aplikasi berjalan / T2 dari kode, belum dicoba / campuran — sebut bagian mana] | Penyusunan awal |
 
 # 1. Tentang Panduan Ini
 
@@ -34,11 +39,11 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 | Kinerja → Manajemen Kinerja | Jalur menu: klik menu pertama, lalu turun ke butir berikutnya |
 | *Status menjadi Menunggu Paraf* | Hasil yang seharusnya tampak setelah sebuah langkah |
 | ⚠ Belum dicoba di aplikasi berjalan | Langkah disusun dari kode dan belum diuji pada aplikasi yang berjalan |
-| Tersedia: produksi / staging / cabang | Sejauh mana fitur itu sampai ke pengguna |
+| Ketersediaan | Fitur ada pada versi aplikasi yang dijelaskan panduan ini (bagian 1.4) |
 
 ## 1.4 Versi aplikasi yang dijelaskan
 
-[ISI: commit dan tanggal; catatan bahwa tampilan dapat berubah.]
+[ISI: tanggal versi yang dijelaskan (commit hanya di Riwayat Revisi). Tulis: "Aplikasi yang Anda pakai mungkin belum memuat semua perubahan; bila layar Anda berbeda, tanyakan admin unit." JANGAN menyebut perbaikan atau fitur mana yang belum di produksi.]
 
 # 2. Mulai Memakai Aplikasi
 
@@ -46,9 +51,9 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 
 [ISI: dari layar nyata. Sertakan Gambar 1 — halaman masuk.]
 
-## 2.2 Verifikasi dua langkah (untuk peran admin)
+## 2.2 Verifikasi dua langkah (untuk peran yang diwajibkan)
 
-[ISI: hanya untuk peran yang diwajibkan. Sumber: auth.service.ts, halaman Settings.]
+[ISI: hanya untuk peran yang diwajibkan (decisions/autentikasi-2fa-dan-sandi.md). Sumber: halaman login dan halaman Profile → tab Keamanan.]
 
 ## 2.3 Mengenal dasbor, menu, dan notifikasi
 
@@ -56,7 +61,7 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 
 ## 2.4 Mengubah kata sandi dan profil
 
-[ISI]
+[ISI: cari di kode DI MANA layar itu berada (grep "Ubah Password" apps/web/src) — jangan menebak dari nama menu. Salin aturan panjang kata sandi dari packages/shared/src/password-policy.ts.]
 
 ## 2.5 Keluar
 
@@ -80,9 +85,9 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 
 ## 4.1 Arti status
 
-| Status | Arti | Giliran siapa |
+| Status di layar | Arti | Giliran siapa |
 |---|---|---|
-| [ISI: dari kode — enum status modul terkait] | [ISI] | [ISI] |
+| [ISI: LABEL yang tampil (mis. "Menunggu"), dicari di hooks/use-*.ts — BUKAN nama enum] | [ISI] | [ISI] |
 
 ## 4.2 Peran dan tanggung jawab singkat
 
@@ -90,11 +95,11 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 |---|---|
 | [ISI: dari panduan-peran, ringkas] | [ISI] |
 
-## 4.3 Pesan galat yang sering muncul
+## 4.3 Pesan yang sering muncul
 
 | Pesan | Artinya | Yang perlu dilakukan |
 |---|---|---|
-| [ISI: dari kode dan uji] | [ISI] | [ISI] |
+| [ISI: teks PERSIS dari toast / Alert / pesan API di kode; jangan diparafrasekan atau dipendekkan] | [ISI] | [ISI] |
 
 ## 4.4 Glosarium
 
@@ -119,7 +124,7 @@ Panduan ini disusun **per tugas**, bukan per menu. Cari tugas Anda di daftar isi
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| [ISI: 0.1] | [ISI: tanggal] | commit [ISI: hash], [ISI: cabang / staging / produksi] | [ISI: T1 / T2 / campuran] | Penyusunan awal |
+| [ISI: 0.1] | [ISI: tanggal] | commit [ISI: hash] | [ISI: T1 / T2 / campuran] | Penyusunan awal |
 
 # 1. Tentang Buklet Ini
 
@@ -136,9 +141,9 @@ baris, bukan hanya peran — mis. izin santri diputuskan musyrif atau wali kelas
 
 ## 1.3 Tugas dalam buklet ini
 
-| Tugas | Seberapa sering | Tersedia |
+| Tugas | Seberapa sering | Menu |
 |---|---|---|
-| [ISI: daftar tugas dalam istilah kerja] | [ISI: harian / bulanan / tahunan] | [ISI: produksi / staging / main / cabang] |
+| [ISI: daftar tugas dalam istilah kerja] | [ISI: harian / bulanan / tahunan] | [ISI: Grup → Butir, dicetak dari role-menus.ts] |
 
 # 2. Tugas
 

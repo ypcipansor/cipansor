@@ -1,0 +1,10 @@
+{
+  "source": "panduan-pengguna-umum.md",
+  "source_sha256": "aa3edef1491c11acc802b65db56ac68cdc9df9f68419e81fa29784ab9b500e18",
+  "commit": "aefc719",
+  "built": "2026-09-29",
+  "outputs": {
+    "panduan-pengguna-umum.docx": "b25e2766dd10c6cb34f4ff202141ea975f65fcb59981d4e4c639e8088c4a7dd0",
+    "panduan-pengguna-umum.pdf": "ee52a53b96eb8bb409aabba8a3364a8df8ffd0f9627044d5076ad7507ed8ef3a"
+  }
+}

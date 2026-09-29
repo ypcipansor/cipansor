@@ -8,6 +8,6 @@ sequenceDiagram
   A-->>W: requiresTwoFactor true, tempToken di cookie sementara
   W->>A: POST /api/auth/2fa/login (kode)
   A->>DB: periksa kode OTP, terbitkan sesi
-  A-->>W: cookie HttpOnly cipansor_at dan cipansor_rt, data pengguna
+  A-->>W: cookie sesi HttpOnly, data pengguna
   W->>A: GET /api/auth/me
   A-->>W: pengguna, peran, izin

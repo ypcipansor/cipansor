@@ -1,6 +1,6 @@
 # Fakta terukur — Cipansor
 
-Diukur pada commit `aefc719` (2026-09-29), cabang `HEAD`; skrip dijalankan 2026-09-29 13:09.
+Diukur pada commit `ab82539` (2026-09-29), cabang `docs/dokumen-aplikasi-cipansor`; skrip dijalankan 2026-09-29 14:05.
 
 Angka di bawah adalah hasil hitung, bukan ingatan. Kutip dengan menyebut commit/tanggal ini.
 
@@ -11,12 +11,15 @@ Angka di bawah adalah hasil hitung, bukan ingatan. Kutip dengan menyebut commit/
 | Modul API | 93 |
 | Handler rute API (perkiraan, `router.get/post/put/patch/delete`) | ≈1395 |
 | Modul dengan anotasi Swagger | 28 dari 93 |
-| Modul dengan tata letak lengkap (routes+controller+service+schema) | 66 |
+| Modul dengan empat berkas (routes+controller+service+schema) | 66 |
+| Modul dengan lima bagian (empat berkas + index.ts) — ukuran known-issues.md | 24 |
 | Modul yang memanggil Prisma dari route/controller | 12 |
 | Model Prisma / enum | 289 / 157 |
 | Baris `schema.prisma` | 10382 |
 | Kode peran (`RoleCode`) | 53 |
-| Job terjadwal | 14 |
+| Berkas *.job.ts | 14 |
+| Entri cron di scheduler.ts | 15 |
+| Berkas job yang dijadwalkan scheduler.ts | 13 |
 | Kunci variabel lingkungan di `.env.example` | 78 |
 | Halaman web (`page.tsx`) | 435 |
 | Hook data web | 125 |
@@ -136,7 +139,9 @@ Modul tanpa routes (pustaka internal, bukan endpoint): `scholarship`
 
 ## Job terjadwal
 
-`accreditation-reminder.job.ts`, `asset-depreciation.job.ts`, `attendance-follow-up.job.ts`, `attendance-pattern.job.ts`, `attendance-register-reminder.job.ts`, `chatbot-escalation-retry.job.ts`, `chatbot-spend.job.ts`, `chatbot-transcript-purge.job.ts`, `dashboard-metrics.job.ts`, `dashboard-snapshot.job.ts`, `finance-billing.job.ts`, `identity-purge.job.ts`, `permit-note-erasure.job.ts`, `spp-reminder.job.ts`
+Dijadwalkan oleh `scheduler.ts`: `accreditation-reminder.job.ts`, `attendance-follow-up.job.ts`, `attendance-pattern.job.ts`, `attendance-register-reminder.job.ts`, `chatbot-escalation-retry.job.ts`, `chatbot-spend.job.ts`, `chatbot-transcript-purge.job.ts`, `dashboard-metrics.job.ts`, `dashboard-snapshot.job.ts`, `finance-billing.job.ts`, `identity-purge.job.ts`, `permit-note-erasure.job.ts`, `spp-reminder.job.ts`
+
+**Ada berkas job yang TIDAK dijadwalkan** (dipanggil dari tempat lain; jangan disebut terjadwal): `asset-depreciation.job.ts`
 
 ## Variabel lingkungan (nama saja)
 
@@ -167,7 +172,7 @@ Modul tanpa routes (pustaka internal, bukan endpoint): `scholarship`
 ## Dokumen & catatan yang sudah ada di repo
 
 - `docs/`: ARCHITECTURE.md, DEPLOYMENT.md, EMAIL_SETUP.md, EOFFICE_ESIGN_PLAN.md, MOBILE_API.md, deploy-azure.md
-- Skill repo (`.claude/skills`): gate, naskah-dinas, panduan-peran, screenshot-roles, stack, sync-records, tata-kelola-yayasan
+- Skill repo (`.claude/skills`): dokumen-aplikasi-cipansor, gate, naskah-dinas, panduan-peran, screenshot-roles, stack, sync-records, tata-kelola-yayasan
 - Keputusan tercatat: 23 berkas di `.claude/memory/decisions/` (ringkasan di bawah)
 - Bagian `known-issues.md`: Broken flows and wrong figures; Access that is too narrow, or needs review; Waiting on a decision; Design gaps; Performance; Tests; Unverified; Deliberate — do not "fix"
 - Lisensi: HAK CIPTA DAN KETENTUAN PENGGUNAAN — PERANGKAT LUNAK PROPRIETARY
@@ -178,23 +183,23 @@ Bahan bab *Keputusan Arsitektur*. Kutip dan tautkan; jangan mengarang ulang alas
 
 - `absensi-harian.md` — Keputusan pengguna 2026-09-27 — register harian diisi di kelas oleh wali kelas atau guru yang mengajar di kelas itu (operator unit cadangan); satu halaman; tindak lanjut otomatis dengan pemilik yang sudah ada (wali kelas untuk murid harian, musyrif untuk santri mukim); tanpa guru piket. 2026-09-28: parameter tanda pola
 - `akreditasi-unit.md` — Keputusan pengguna 2026-09-28 — akreditasi tiap unit dicantumkan di situs publik (fakta, tautan cek BAN-PDM, PDF sertifikat) dari satu catatan resmi di portal yang diisi admin unit atau Super Admin; unit tampil begitu sertifikatnya ada; pengingat 12 bulan sebelum berakhir
-- `autentikasi-2fa-dan-sandi.md` — KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa
+- `autentikasi-2fa-dan-sandi.md` — KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa yang diajak sesudah login (staf dan wali, "Nanti saja" tanpa batas), dan kebijakan sandi (ganti karena kejadian, bukan kalender; panjang dan daftar terlarang, bukan aturan campuran). KEPUTUSAN 2026-09-29: "Masuk dengan Google" untuk akun @cipansor.or.id saja, dan peran wajib 2FA tetap memasukkan kode Cipansor sesudah Google. Riset dan sumbernya ada di bawah; jangan diulang.
 - `chatbot-retrieval-settled.md` — Korpus chatbot 628 token — ambang RAG ~100 ribu, jadi seluruh korpus dikirim dan BM25 tidak lagi menjadi gerbang; angka biayanya, dan pemicu untuk meninjau ulang
 - `eoffice-revocation-authority.md` — Kewenangan mencabut naskah dinas — tabelnya, tiga sumber yang menyepakatinya, dan mengapa Super Admin tidak termasuk
 - `eoffice-revocation-mechanics.md` — Pencabutan itu pernyataan bertanda tangan (bukan kolom status) — passphrase, cap DICABUT, dan alur permohonan
 - `eoffice-verify-by-upload-not-qr.md` — E-Office letter verification is deliberately upload-the-PDF + Turnstile, never scan-QR-and-trust — the feature as it stands is the `naskah-dinas` skill; its audit and plan are docs/EOFFICE_ESIGN_PLAN.md
 - `esign-standards-ceiling.md` — Batas atas TTE Cipansor menurut AATL/eIDAS/PP 71 — dan satu temuan: Ed25519 tidak ada di daftar algoritma AATL
-- `istilah-dan-penamaan.md` — Glossary and naming decisions of 2026-09-25, taken by the user on the
+- `istilah-dan-penamaan.md` — Glossary and naming decisions of 2026-09-25, taken by the user on the architecture audit (the learner's name revised 2026-09-27: santri on every portal screen, murid only in state formats); the yayasan's own spellings; the portal in Indonesian only and the public site in three languages; tables renamed with their models; `/api/v1`; no laboratory module; donations, ZIS and wakaf built properly. Read before naming anything.
 - `menu-ia-tiga-tingkat.md` — Riset IA menu (maks 3 tingkat, submenu maks 2 tingkat) + keputusan 2026-09-07 mengelompokkan menu utama per disiplin; jangan riset ulang dan jangan usulkan tingkat keempat
 - `pemutus-izin-santri.md` — Keputusan pengguna 2026-09-25 — izin santri diputuskan pembimbing langsungnya (musyrif atau wali kelas), bukan kepala sekolah; kepala unit hanya untuk izin panjang, santri tanpa pembimbing, atau ambil alih. 2026-09-27: batas 7 hari tetap; surat dokter bila perlu; pulang/menginap → koordinator asrama; izin staf keluar pondok menunggu wali. 2026-09-28: surat dokter disimpan sampai akhir TA, dibuka pemutus + wali + kepala unit (#606); koordinator asrama dibangun — "menginap" = di luar pondok melewati tengah malam WIB
-- `pengawasan-dan-rapat-pembina.md` — KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan
+- `pengawasan-dan-rapat-pembina.md` — KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan #509 (keputusan dan risalah organ) ditutup; keduanya dibangun ulang dengan syarat di bawah. Dasar hukum dan standarnya sudah diriset, jangan diulang. Rancangannya diputuskan pengguna pada hari yang sama (bagian "Diputuskan").
 - `pengesahan-dokumen-yayasan.md` — KEPUTUSAN 2026-09-11 — RPJP, Renstra, dan RKA Yayasan disahkan lewat Pengurus → Pengawas (reviu) → Pengurus (tanggapan) → Pembina (tetapkan/kembalikan); RKA Unit disusun kepala sekolah dan disahkan Ketua Pengurus; dokumen yang sudah disahkan beku; dasar hukumnya sudah diriset
-- `penyimpanan-berkas.md` — KEPUTUSAN 2026-09-29: berkas unggahan (foto, dokumen, surat) dicatat di satu
+- `penyimpanan-berkas.md` — KEPUTUSAN 2026-09-29: berkas unggahan (foto, dokumen, surat) dicatat di satu tabel berkas dengan pemilik dan status; isinya di Azure Blob **privat**, diakses lewat managed identity dan SAS delegasi pengguna berumur pendek; tanpa kunci akun dan tanpa kontainer publik; berkas yang tidak pernah ditautkan dihapus sesudah 24 jam. Riset di bawah; jangan diulang.
 - `peran-dan-tugas-tambahan.md` — Keputusan pengguna 2026-09-26 — kode peran = fungsi seseorang; tugas tambahan (wakasek, wali kelas, guru wali, kepala perpustakaan/lab, pembina, panitia) = relasi atau penugasan, bukan kode peran. `*_WAKASEK` dan `*_WALI_KELAS` digabung ke `*_GURU`. Sesi konseling rahasia dibaca konselornya dan guru BK unit; kepala sekolah hanya rujukannya.
 - `pimpinan-pesantren-kiai.md` — KEPUTUSAN 2026-09-24: tidak ada Direktur Pesantren di Cipansor — PESANTREN_DIREKTUR dihapus; Kiai = Pimpinan/Pengasuh = kepala unit pesantren DAN Pembina yayasan (dua peran); dasar UU 18/2019 Ps. 1(9), 9(2); UU 16/2001 Ps. 5, 29, 35(3) — jangan riset ulang
 - `pk-organ-yayasan-tanpa-kontrak.md` — Keputusan 2026-09-06 — Pembina, Pengurus, dan Pengawas TIDAK membuat Perjanjian Kinerja; kontrak Pengurus sudah berupa RKA Yayasan, dan PK unit menginduk pada dokumen RKA
 - `public-site-photography.md` — Where the pesantren's real photographs come from (pesantrencipansor.com), what was migrated for the Google for Nonprofits re-review, and the two articles deliberately left behind
-- `realtime-polling.md` — KEPUTUSAN 2026-09-28: portal tidak punya kanal dorong (Socket.IO, WebSocket,
+- `realtime-polling.md` — KEPUTUSAN 2026-09-28: portal tidak punya kanal dorong (Socket.IO, WebSocket, SSE). Web segar lewat polling React Query. Server Socket.IO dihapus karena tidak punya klien. Di bawah: pembandingnya, sumbernya, dan syarat membangun kanal dorong kelak. Jangan ulang risetnya.
 - `rka-dua-tingkat.md` — Keputusan pengguna 2026-09-06 — tingkat tahunan bertingkat DUA (RKA Yayasan konsolidasi → RKA Unit); jangan usulkan lagi rantai tiga tingkat
 - `route-naming.md` — Route/naming refactor decided 2026-07-21 — PPDB/PSB → SPMB, every retired path keeps a permanent redirect, and pesantren domain terms are never translated
 - `struktur-organisasi-dan-identitas.md` — Keputusan pengguna 2026-09-29, sesudah audit realm/group/sub group/unit organisasi — unit Pesantren dibuat (rumah Kiai, musyrif, ustadz, muhafidz, TU Pesantren, santri takhosus-only); satu pohon organisasi maks 3 tingkat (Yayasan → Unit → Bidang) dengan jabatan terpisah dari pemegangnya; Model A bertahap tetapi menyeluruh, dijaga uji "baseline hanya boleh menyusut"; Google Workspace: OU per kebijakan, grup diturunkan otomatis dari Cipansor; jalur identitas Cipansor → Google → Microsoft ditegaskan ulang dengan riset.

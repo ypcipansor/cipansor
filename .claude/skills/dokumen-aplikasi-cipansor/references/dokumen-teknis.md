@@ -1,126 +1,165 @@
 # Dokumen Teknis Aplikasi — cara menyusun
 
-Kerangka: arc42 (12 bab) + diagram C4 dalam Mermaid. Alasannya di
+Kerangka: arc42 (12 bab) + diagram C4 tingkat 1–3 dalam Mermaid. Alasannya di
 `standar-dan-alasan.md`. Templatnya: `assets/template-teknis.md` — salin, lalu
 isi tiap `[ISI: …]` dari sumber di bawah.
 
 **Pembaca:** pengurus yayasan (ringkasan eksekutif, bab 1, 3, 10), pengelola
-sistem (bab 5–7, 11, lampiran operasional), pengembang baru (bab 4–9).
-Tulis bab 1 dan ringkasan eksekutif dalam bahasa yang dipahami pengurus tanpa
-latar teknis; bab 5 ke atas boleh teknis.
+sistem (bab 5–7, 11, lampiran operasional), pengembang baru (bab 4–9). Tulis
+ringkasan eksekutif dan bab 1 untuk pengurus tanpa latar teknis; bab 5 ke atas
+boleh teknis.
+
+**Ukuran yang wajar:** 20–30 halaman `.docx`. Ringkasan eksekutif ≤ 350 kata.
+Bab 1–4 bersama ≤ 5 halaman. Bila lebih panjang, ada yang disalin dari repo
+(dilarang) atau modul dicatat satu per satu di bab utama (dilarang).
 
 ## Sebelum menulis
 
-1. Jalankan `collect_facts.py` → `facts.md`. Semua angka di dokumen berasal dari
-   sana dan disebut bersama commit + tanggalnya. Jangan menulis jumlah modul dari
-   ingatan; tulis "N modul (diukur pada commit abc1234, 28 September 2026)".
-2. Baca `docs/ARCHITECTURE.md`, `docs/DEPLOYMENT.md`, `docs/deploy-azure.md`,
-   `docs/EOFFICE_ESIGN_PLAN.md`, `docs/MOBILE_API.md`, `docs/EMAIL_SETUP.md`.
-   Dokumen teknis **merangkum dan menautkan** — tidak menyalin — karena
-   salinan pasti bergeser dari aslinya.
-3. Baca `.claude/memory/progress.md` (apa yang di produksi / staging / `main`),
-   `.claude/memory/known-issues.md`, dan `decisions/*.md`.
-4. Untuk tiap alur di bab 6, **baca kodenya** (rute → controller → service).
-   Diagram alur yang digambar dari dugaan adalah dokumen yang menyesatkan.
+```bash
+python scripts/collect_facts.py <repo> --out fakta          # facts.md + facts.json
+git -C <repo> log -1 --format='%h %ad' --date=short          # commit + tanggal untuk Riwayat Revisi
+```
 
-## Pemetaan bab → sumber
+Baca, berurutan: `docs/ARCHITECTURE.md`, `docs/deploy-azure.md`,
+`.claude/memory/progress.md`, `known-issues.md`, `INDEX.md`, dan `decisions/*.md`.
+Dokumen teknis **merangkum dan menautkan**; tidak menyalin.
 
-| Bab arc42 | Isi untuk Cipansor | Sumber (baca, jangan mengarang) | Diagram |
+## Cara kerja: satu bab, satu putaran
+
+Untuk **setiap** bab: (1) baca sumbernya, (2) tulis ke berkas, (3) jalankan pemeriksa,
+(4) perbaiki sampai tak ada ERROR, (5) baru bab berikutnya. Menulis semua bab lalu
+memeriksa di akhir menghasilkan puluhan kesalahan sekaligus dan model cenderung
+menambalnya dengan kalimat samar.
+
+```bash
+python scripts/check_docs.py naskah.md --kind teknis --repo <repo> --facts fakta/facts.json
+```
+
+Kode pemeriksa (mis. `rute-tak-ada`) dijelaskan di `kesalahan-yang-sudah-terjadi.md`.
+
+## Kontrak bab
+
+Tiap baris = apa yang **wajib** ada, dari mana sumbernya, dan pemeriksa mana yang menjaganya.
+
+| Bab | Wajib memuat | Sumber (perintah/berkas) | Dijaga oleh |
 |---|---|---|---|
-| **Ringkasan eksekutif** | Satu halaman: apa itu Cipansor, siapa yang memakai, apa yang sudah jalan, apa yang belum, seberapa aman dipelihara | `README.md`, `progress.md`, `facts.md` | — |
-| **1 Pendahuluan & tujuan** | Tujuan sistem; pemangku kepentingan (organ yayasan, unit: TKQ/SDIT/SMPIT/SMAQ dan pesantren, guru, staf, wali santri, santri, alumni, komite); 3–5 tujuan mutu teratas | `README.md`, `panduan-peran` (keluarga menu), `roadmap.md` | — |
-| **2 Batasan** | Teknis (stack & versi, pnpm workspaces, PostgreSQL, Node), organisasi (tim kecil, tools hibah nonprofit, repo publik sampai rilis), hukum (yang *tercatat di repo*: UU Yayasan, UU PDP, PP 71/2019 untuk TTE) | `facts.md` → stack; `decisions/esign-standards-ceiling.md`; `tata-kelola-yayasan` | — |
-| **3 Konteks & lingkup** | Siapa/apa di luar sistem: pengguna per keluarga peran; sistem luar (penyedia surel — Gmail API/SMTP, WhatsApp, Cloudflare Turnstile, penyedia model bahasa untuk chatbot, Sentry, Google Analytics). Apa yang **di luar lingkup** | `facts.md` → prefiks variabel lingkungan; `docs/EMAIL_SETUP.md`; `docs/MOBILE_API.md` | **C4-1** Konteks |
-| **4 Strategi solusi** | Keputusan besar dalam satu paragraf tiap satu: monorepo + modul per ranah; web & API terpisah; satu basis data; tipe & validasi bersama (`packages/shared`); RBAC dua lapis; pengujian berlapis | `docs/ARCHITECTURE.md`, `AGENTS.md`, `CLAUDE.md` | — |
-| **5 Blok bangunan** | Tingkat 1: kontainer (web, API, shared, PostgreSQL, Redis opsional, penjadwal). Tingkat 2: lapisan modul API (routes → controller → service → schema), middleware, pengelompokan modul menurut ranah. Katalog modul lengkap masuk Lampiran A | `apps/api/src/app.ts`, `apps/api/src/middleware/`, `apps/api/src/modules/`, `apps/web/src/`, `facts.md` | **C4-2** Kontainer; **C4-3** Komponen API |
-| **6 Runtime** | 4–6 skenario **yang benar-benar dibaca dari kode**: (a) masuk + 2FA + penyegaran token; (b) satu permintaan API melewati middleware (rate limit → autentikasi → otorisasi → validasi → service); (c) alur persetujuan dokumen yayasan (RPJP → Renstra → RKA); (d) persuratan & verifikasi naskah dengan unggah PDF; (e) SPMB publik dengan Turnstile; (f) pekerjaan terjadwal | modul terkait; `decisions/pengesahan-dokumen-yayasan.md`, `eoffice-verify-by-upload-not-qr.md`; `apps/api/src/jobs/` | diagram urutan (Mermaid `sequenceDiagram`) |
-| **7 Penempatan** | Lokal (docker-compose: db, api, web, redis), CI/CD (nama workflow), staging vs produksi, CDN/proxy. **Kategori** variabel lingkungan dan fungsinya — bukan nilainya | `docker-compose.yml`, `.github/workflows/`, `docs/deploy-azure.md`, `docs/DEPLOYMENT.md`, `facts.md` → env | **Penempatan** (`flowchart`) |
-| **8 Konsep lintas-bidang** | Autentikasi & sesi; otorisasi (bucket + kode peran + lingkup unit); validasi (Zod); amplop respons `{success, data}`; penanganan galat; log; data pribadi (pilih kolom eksplisit, jangan `include` relasi penuh); i18n (portal Indonesia; situs publik tiga bahasa); migrasi basis data; pengujian (unit, e2e, uji penjaga); pekerjaan terjadwal | `panduan-peran`; `lessons/*.md`; `apps/api/src/middleware/`; `apps/api/prisma/`; `istilah-dan-penamaan.md` | — |
-| **9 Keputusan arsitektur** | Tabel: keputusan · ringkasan · tautan berkas. Daftar berkas dari `facts.md` → *Keputusan tercatat*; **ringkasannya ditulis ulang** (lihat di bawah tabel ini) | `.claude/memory/decisions/`, `INDEX.md` | — |
-| **10 Persyaratan kualitas** | Skenario terukur per mutu: keamanan, ketersediaan/pemulihan, kinerja, keterpeliharaan, kemudahan pakai. Tiap skenario menyebut **buktinya** (uji, CI, kebijakan) atau berkata "belum terbukti" | `AGENTS.md`, CI, uji penjaga, `known-issues.md` → Performance & Tests | — |
-| **11 Risiko & utang teknis** | Ringkasan per kategori dari `known-issues.md` + jarak antara aturan repo dan kenyataan kode (mis. modul yang memanggil Prisma dari route/controller — angkanya dari `facts.md`). **Lihat aturan kepekaan di bawah** | `known-issues.md`, `roadmap.md`, `facts.md` | — |
-| **12 Glosarium** | Istilah pesantren (dengan ejaan yayasan) dan istilah teknis yang dipakai dokumen | `istilah-dan-penamaan.md`; kata yang muncul di dokumen | — |
-| **Lampiran** | A Katalog modul (tabel dari `facts.md`); B ERD tingkat ranah; C Variabel lingkungan (nama + fungsi); D Prosedur operasional (build, jalankan, migrasi, cadangkan, kembalikan) → tautkan `docs/DEPLOYMENT.md`; E Daftar sumber & commit | `facts.md`; `apps/api/prisma/schema.prisma` | ERD ranah |
+| **Ringkasan eksekutif** | 4 paragraf: apa itu Cipansor · angka kunci + commit · **Yang sudah berjalan** (per kemampuan) · **Yang perlu diketahui pembaca** (kategori utang). ≤ 350 kata | `README.md`, `progress.md`, `facts.md` | `angka-salah` |
+| **1 Pendahuluan** | 1.1 tujuan · 1.2 tabel pemangku kepentingan (organ, kepala unit, guru, pendidik pesantren, staf, wali, santri, alumni/komite, pengunjung) · 1.3 3–5 tujuan mutu berurutan · 1.4 cara membaca dokumen | `README.md`, skill `panduan-peran` | struktur arc42 |
+| **2 Batasan** | tabel Jenis · Batasan · Sumber: Teknis (versi dari `facts.md`), Organisasi, Hukum (**hanya yang tertulis di repo**), Konvensi, Operasional | `facts.md → Stack`; `decisions/`; `docs/deploy-azure.md` | — |
+| **3 Konteks** | **C4-1** berlabel · satu kalimat "apa yang dilihat" · **3.1 Di luar lingkup** (tiap butir: apa · mengapa · rujukan) | prefiks env di `facts.md`; `docs/MOBILE_API.md`; `roadmap.md` | `c4-hilang`, `c4-panah-tanpa-label` |
+| **4 Strategi** | tabel Tujuan · Pendekatan · Keputusan terkait, 6–8 baris | `docs/ARCHITECTURE.md`, `AGENTS.md` | — |
+| **5 Blok bangunan** | 5.1 **C4-2** · 5.2 **C4-3** + diagram lapisan modul + **dua** ukuran tata letak · 5.3 tabel modul menurut ranah (**semua** modul tercantum) | `app.ts`, `middleware/`, `facts.md` | `ukuran-tata-letak`, `modul-tak-tercantum` |
+| **6 Runtime** | 4–6 skenario; tiap skenario: diagram `sequenceDiagram` + satu paragraf; alamat lengkap `METODE /api/…` | routes → controller → service dari modul terkait (resep di bawah) | `rute-tak-ada`, `job-tak-terjadwal`, `angka-salah` |
+| **7 Penempatan** | diagram penempatan · rilis tiga tahap · 7.1 jumlah kunci env + kelompok (nama saja) | `docs/deploy-azure.md`, `.github/workflows/`, `facts.md → env` | `diagram-id-ganda`, `sensitif-*` |
+| **8 Lintas-bidang** | satu butir bertebal per konsep (autentikasi, otorisasi, validasi, amplop, galat, data pribadi, bahasa, migrasi, pengujian, penjadwal), tiap butir menyebut berkas kodenya | `apps/api/src/middleware/`, `lessons/`, `panduan-peran` | — |
+| **9 Keputusan** | **tepat satu baris per berkas** di `decisions/`; ringkasan Indonesia ≤ 30 kata (apa, bukan mengapa) | `ls .claude/memory/decisions/`; paragraf pembuka tiap berkas | `keputusan-hilang`, `keputusan-ganda`, `ringkasan-panjang` |
+| **10 Kualitas** | tabel `Mutu · Skenario (pemicu → respons) · Ukuran/ambang · Bukti · Status`; bukti = berkas nyata | `.github/workflows/`, `*.guard.test.ts`, `docs/deploy-azure.md` | `mutu-skenario`, `mutu-tanpa-angka` |
+| **11 Risiko** | tabel `Kategori · Ringkasan · Dampak · Arah`; **kategori dan dampak saja** | `known-issues.md`, `roadmap.md` | `risiko-topik-peka`, `risiko-rinci`, `produksi-tertinggal` |
+| **12 Glosarium** | hanya istilah yang benar-benar dipakai dokumen | `istilah-dan-penamaan.md` | — |
+| **Lampiran A** | tabel modul dari `facts.md`; jumlah baris = jumlah modul | `facts.json → api.modules` | `lampiran-a-jumlah` |
+| **Lampiran B** | ERD 10–20 entitas, **nama = nama model Prisma**, relasi dari `@relation` | `apps/api/prisma/schema.prisma` | `erd-model-fiktif` |
+| **Lampiran C** | env: nama + fungsi, tanpa nilai | `facts.md → env` | `sensitif-*` |
+| **Lampiran D** | prosedur ringkas + tautan `docs/DEPLOYMENT.md` | — | — |
+| **Lampiran E** | tabel Hal · Sumber, termasuk berkas yang dibaca untuk tiap skenario bab 6 | — | — |
 
-### Bab 9: tulis ulang, jangan menyalin mentah
+### Resep bab 6 (skenario runtime) — jangan dikira-kira
 
-Baris pertama tiap berkas keputusan bukan ringkasan yang siap terbit: sebagian berbahasa Inggris,
-sebagian diawali "Keputusan pengguna 2026-…", sebagian panjang sampai terpotong. Untuk tiap berkas:
-baca ringkasannya (`INDEX.md` dan paragraf pembuka), lalu tulis **satu kalimat Indonesia, ≤ 30 kata**
-yang mengatakan apa yang diputuskan — bukan mengapa. Jangan memotong di tengah kalimat. Jangan
-menambahkan alasan atau tanggal yang tidak ada di berkas. Kolom tautan tetap menunjuk berkasnya,
-supaya pembaca yang ingin alasannya membuka sumber aslinya. Pastikan **setiap** berkas keputusan
-punya baris (bandingkan jumlah baris dengan jumlah berkas di `facts.md`).
+1. Pilih alur dari daftar template. Temukan modulnya: `ls apps/api/src/modules | grep -i <kata>`.
+2. Baca rute: `grep -n "router\." apps/api/src/modules/<modul>/*.routes.ts` — **salin** metode dan alamatnya.
+3. Baca controller lalu service untuk urutan kejadian (siapa memanggil siapa, apa yang disimpan).
+4. Gambar `sequenceDiagram`: tiap panah dari klien ke API memakai alamat dari langkah 2, dengan awalan `/api/<mount>`
+   (mount ada di `facts.json → api.modules[].mount`).
+5. Langkah yang terjadi **di dalam** API (menghitung hash, memeriksa kata sandi) ditulis sebagai panah `A->>A:` tanpa METODE.
+6. Jika sebuah langkah tak punya rute yang bisa Anda tunjuk (mis. "tandatangani"), **cari** rutenya (`grep -rn "sign" …`);
+   jangan menulis kata kerja bebas di panah. Contoh yang pernah salah: menulis `POST /admissions/public/register` padahal
+   rutenya `/public/registrants`.
+7. Jalankan `check_docs.py`; `rute-tak-ada` mencetak alamat terdekat yang sebenarnya.
+
+### Resep bab 9 (keputusan)
+
+Untuk tiap berkas `decisions/*.md`: baca paragraf pembuka → tulis **satu kalimat Indonesia ≤ 30 kata** tentang apa yang
+diputuskan. Jangan memotong di tengah kalimat; jangan menambah alasan atau tanggal yang tak ada di berkas; jangan
+membuat dua baris untuk satu berkas (pernah terjadi: `akreditasi-unit.md` dua kali). Dua berkas yang sangat berkaitan boleh
+satu baris; yang dihitung pemeriksa adalah kemunculan nama berkas, bukan jumlah baris.
+
+### Resep bab 10 (kualitas): contoh baris yang benar
+
+| Mutu | Skenario (pemicu → respons) | Ukuran / ambang | Bukti | Status |
+|---|---|---|---|---|
+| Keamanan: akses | Rute tulis yang dapat dijangkau tanpa sesi → dijaga Turnstile | 0 rute tulis publik tanpa Turnstile di luar daftar pengecualian | `public-routes-gated.test.ts` | Terbukti |
+
+Contoh yang **salah** (pernah terbit): "Kode berbahaya yang lolos pemeriksaan otomatis tidak merges" — kalimatnya
+bertentangan dengan dirinya, tanpa ukuran. Dan: "Satu gambar Next.js tidak dioptimasi" — itu **cacat**, bukan skenario
+mutu; letakkan di bab 11.
+
+Bila tak ada ambang: tulis "belum ditetapkan" — itu jujur dan dicatat sebagai utang. Jangan mengarang angka RTO/RPO.
+
+### Resep bab 11 (risiko): apa yang boleh ditulis
+
+| Boleh | Tidak boleh |
+|---|---|
+| "Kontrol akses: daftar izin yang dapat disunting belum sejalan dengan pemeriksaan sebenarnya. Dampak: sedang." | "13 rute memeriksa izin, 670 memeriksa kelompok lama" (peta lemahnya kontrol akses) |
+| "Data pribadi: minimalisasi belum merata. Dampak: sedang–tinggi." | "Satu tabel menampilkan NIK penuh" (kelemahan yang masih terbuka; baris `known-issues.md` menyebutnya) |
+| "12 modul memanggil Prisma dari rute/controller" (angka dari `facts.md`) | "1.457 res.json mentah terhadap 399 ApiResponse" (angka dari `known-issues.md` tanggal lain; bukan dari `facts.json`) |
+| "Belum ada layanan pemantauan galat" | "Produksi belum memuat perbaikan #585" (daftar celah; `progress.md` sengaja tidak mencatatnya) |
+
+Aturan: ragu apakah butir masih terbuka di produksi → **jangan tulis, laporkan** ke pengguna butir mana yang ditahan.
+
+## Aturan angka
+
+- Semua angka berasal dari `facts.json` dan disebut bersama commit + tanggalnya. `check_docs.py` menolak angka modul,
+  model, enum, peran, halaman, kunci, dan pekerjaan terjadwal yang berbeda dari `facts.json`.
+- Angka dari `known-issues.md`/`progress.md` **bukan** ukuran commit ini. Kutip hanya bila disebut sumber dan tanggalnya,
+  atau ukur ulang dengan skrip.
+- "Tata letak lengkap" punya dua definisi: **empat berkas** (routes, controller, service, schema) dan **lima bagian**
+  (ditambah `index.ts`; ukuran `known-issues.md`). Sebut keduanya, atau sebut definisinya.
+- "Pekerjaan terjadwal" ≠ jumlah berkas `*.job.ts`. Tulis: "N entri jadwal atas M berkas"; berkas yang tak dijadwalkan
+  (dipanggil dari service) disebut terpisah.
 
 ## Aturan kepekaan (repo publik sampai rilis)
 
-Definisi resmi repo: *sensitif* = yang bisa dipakai penyerang — kredensial dan
-statusnya, kunci, token, connection string, **nama dan id sumber daya cloud**,
-alamat IP, jalur host, **kelemahan yang masih terbuka di produksi**, detail
-insiden, data pribadi.
+Sensitif = yang bisa dipakai penyerang: kredensial dan statusnya, kunci, token, connection string, **nama dan id
+sumber daya cloud**, IP, jalur host, **kelemahan yang masih terbuka di produksi**, detail insiden, data pribadi.
 
-- Sebut **jenis** layanan ("basis data PostgreSQL terkelola", "brankas rahasia"),
-  bukan nama/ID sumber dayanya.
-- Variabel lingkungan: **nama dan fungsi**, tidak pernah nilai, tidak pernah contoh yang menyerupai nilai asli.
-- Akun demo dan kata sandinya **tidak masuk** dokumen (masuk akal di repo; di
-  dokumen yang dikirim keluar tidak).
-- Bab 11: tulis *kategori dan tingkat dampak* ("ada N butir akses yang terlalu
-  sempit, dilacak internal"). Jangan menulis kelemahan produksi yang masih
-  terbuka beserta cara memanfaatkannya. Bila ragu apakah suatu butir masih
-  terbuka: **jangan tulis, dan katakan kepada pengguna** butir mana yang
-  ditahan dan mengapa.
-- Selalu jalankan `scan_sensitive.py`. Ia menangkap yang mekanis; yang butuh
-  penilaian (kelemahan terbuka) hanya bisa ditangkap dengan membaca bab 11.
+- Sebut **jenis** layanan ("basis data PostgreSQL terkelola"), bukan nama/ID sumber dayanya. Jangan menyebut topologi
+  jaringan ("jaringan privat") tanpa perlu.
+- Variabel lingkungan: **nama dan fungsi**, tidak pernah nilai atau contoh yang menyerupai nilai.
+- Akun demo dan kata sandinya tidak masuk dokumen.
+- **Status per kemampuan, bukan per perbaikan.** Jangan menulis perbaikan atau nomor PR mana yang belum di produksi.
+- Jalankan `scripts/scan_sensitive.py` dan `python .github/scripts/check-sensitive.py` (repo). Keduanya mekanis; bab 11
+  tetap harus dibaca dengan mata.
 
-## Kedalaman: jangan menulis semuanya
+## Diagram
 
-Dokumen yang mencatat puluhan modul satu per satu tidak akan dibaca dan akan basi.
-- **Bab utama:** ringkas per *ranah* (mis. Akademik, Kesantrian, Keuangan,
-  Persuratan, Tata Kelola, Situs publik). Kelompokkan modul dari `facts.md`
-  berdasarkan namanya; bila ragu pengelompokannya, tanyakan pengguna satu kali.
-- **Lampiran A:** satu tabel modul (nama, ranah, jumlah rute, anotasi Swagger).
-- Tulis rinci hanya untuk yang membedakan Cipansor: RBAC dua lapis, rantai
-  perencanaan empat tingkat, persuratan + TTE, perizinan santri, absensi harian,
-  chatbot.
-
-## Jebakan Mermaid (sudah pernah menggagalkan build)
-
-`build_docs.py` mencetak galat bila sebuah diagram gagal dirender, tetapi tetap menerbitkan dokumen
-dengan diagram itu sebagai kode. **Periksa keluarannya; jangan menyerahkan dokumen yang masih
-memuat blok kode Mermaid.**
-
-- **Titik koma (`;`) di dalam teks** `Note`/pesan pada `sequenceDiagram` dianggap pemisah pernyataan
-  dan memecah diagram. Pakai koma atau titik.
-- Label `flowchart` yang berisi tanda kurung, titik dua, atau tanda kutip: bungkus dengan kutip
-  ganda — `A["Teks (dengan kurung)"]`. Baris baru dalam label: `<br/>`.
-- Penanda `[ISI: …]` boleh berada di dalam **label**, tetapi jangan menggantikan sintaks
-  (mis. seluruh isi `erDiagram`) — blok itu tidak akan valid.
-- Diagram yang terlalu lebar dirender mengecil dan tak terbaca. Pecah menjadi dua, atau ubah
-  `flowchart LR` menjadi `flowchart TB`.
+- Mermaid, keterangan `%% caption: …` di baris pertama. Diagram C4 diawali `C4-1:`, `C4-2:`, `C4-3:`.
+- **Tiap panah diberi label** (`A -->|"kata kerja"| B`). C4 mewajibkannya; tanpa label pembaca menebak.
+- **C4-1** Konteks: sistem sebagai satu kotak, orang dan sistem luar di sekelilingnya. **C4-2** Kontainer: hal yang
+  berjalan sendiri (**bukan** pustaka seperti `packages/shared`). **C4-3** Komponen: isi satu kontainer (API).
+- Id simpul harus unik dan **tidak sama dengan id subgraph** (`Prod[...]` dan `subgraph Prod` → salah satunya hilang).
+- Titik koma di teks `sequenceDiagram` memecah pernyataan; pakai koma.
+- Label berisi kurung/titik dua/kutip: bungkus kutip ganda `A["Teks (dengan kurung)"]`; baris baru `<br/>`.
+- Diagram lebar mengecil dan tak terbaca: pecah, atau `LR` → `TB`. ERD: ≤ 20 entitas.
+- Tiap diagram diikuti satu kalimat yang mengatakan apa yang harus dilihat.
+- Sistem luar digambar **hanya bila kode memanggilnya** (cek prefiks env di `facts.md`). Sentry, Socket.IO, dan Flutter
+  sudah dihapus/tidak ada — jangan digambar dari ingatan.
 
 ## Gaya
 
-- Bahasa Indonesia baku, kalimat pendek, aktif. Istilah teknis dipertahankan
-  dalam bahasa Inggris (API, middleware, commit) dan dijelaskan di glosarium
-  pada kemunculan pertama.
-- *Santri*, bukan *murid*, di seluruh dokumen; *murid/peserta didik* hanya bila
-  menyebut format negara (rapor, SPMB, Dapodik/EMIS). Istilah pesantren tidak
-  diterjemahkan.
-- Tiap diagram: `%% caption: …` di baris pertama blok Mermaid, dan satu kalimat
-  di teks yang mengatakan apa yang harus dilihat pembaca darinya.
-- Tiap tabel angka: sebut sumber dan commit di bawahnya.
-- Catatan penting dalam kotak: awali baris dengan `> **Catatan.**` atau
-  `> **Batasan.**`.
-- Tanggal: "28 September 2026".
+- Bahasa Indonesia baku, kalimat aktif ≤ 25 kata, satu gagasan per kalimat. Paragraf: kalimat topik → bukti (berkas atau
+  angka) → artinya bagi pembaca.
+- Istilah teknis tetap Inggris (API, middleware, commit) dan masuk glosarium pada kemunculan pertama.
+- *Santri*, bukan *murid*; *murid/peserta didik* hanya untuk format negara (rapor, SPMB, Dapodik/EMIS).
+- Tiap tabel angka: sebut sumber dan commit di bawahnya. Catatan penting: `> **Catatan.**` atau `> **Batasan.**`.
+- Tanggal: "29 September 2026". Bentuk daftar: kalimat pengantar dulu, lalu butir.
+- Jangan menyalin teks Inggris dari repo ke prosa (pemeriksa `bahasa-inggris`).
 
-## Daftar periksa sebelum menyerahkan
+## Daftar periksa sebelum menyerahkan (semuanya perintah)
 
-- [ ] Setiap angka bisa ditelusuri ke `facts.md` (commit + tanggal disebut)
-- [ ] Setiap kemampuan yang disebut punya status: cabang / `main` / staging / produksi
-- [ ] Diagram C4-1, C4-2, C4-3 ada, tiap diagram punya keterangan
-- [ ] Bab 6: tiap skenario dibaca dari kode (sebutkan berkas rujukannya di Lampiran E)
-- [ ] Bab 9: satu baris per berkas keputusan, ringkasan Indonesia ditulis ulang (bukan salinan mentah), tak ada yang terpotong
-- [ ] Bab 11 jujur tetapi tidak membuka kelemahan terbuka
-- [ ] `scan_sensitive.py` bersih
-- [ ] Tidak ada `[ISI: …]`, `TODO`, `TBD` tersisa
-- [ ] `.docx` sudah dirender dan halamannya dilihat (sampul, daftar isi terisi, diagram terbaca, tabel tidak terpotong)
+```bash
+python scripts/check_docs.py naskah.md --kind teknis --repo <repo> --facts fakta/facts.json --final   # 0 ERROR
+python scripts/scan_sensitive.py naskah.md                                                            # bersih
+python scripts/build_docs.py naskah.md --out keluaran --format docx --pdf … --commit <hash>          # kode keluar 0, tanpa "GAGAL"
+python scripts/check_docs.py naskah.md --kind teknis --repo <repo> --facts fakta/facts.json --built keluaran/<nama>.build.json
+```
+
+Terakhir, baca dengan mata: ringkasan eksekutif, bab 11, dan satu skenario bab 6 dibandingkan dengan kodenya.

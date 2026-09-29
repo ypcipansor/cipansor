@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-09-29 13:09",
-  "repo_path": "/tmp/cip-aefc",
+  "generated_at": "2026-09-29 14:05",
+  "repo_path": "/home/user/cipansor",
   "git": {
-    "commit": "aefc719",
+    "commit": "ab82539",
     "commit_date": "2026-09-29",
-    "commit_subject": "feat(auth): password rules by NIST SP 800-63B-4 — 15 characters, or 8 with 2FA; no composition rules; common and self-named passwords refused (#625)",
-    "branch": "HEAD"
+    "commit_subject": "chore: hapus duplikat pola __pycache__ di .gitignore",
+    "branch": "docs/dokumen-aplikasi-cipansor"
   },
   "stack": {
     "package_manager": "pnpm@9.15.9",
@@ -408,6 +408,8 @@
     "module_count": 93,
     "handler_count_approx": 1395,
     "swagger_annotated_modules": 28,
+    "four_file_modules": 66,
+    "five_part_modules": 24,
     "full_layout_modules": 66,
     "prisma_in_route_or_controller_modules": 12,
     "unmounted_modules_with_routes": [],
@@ -426,6 +428,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -440,6 +443,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -454,6 +458,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -468,6 +473,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -482,6 +488,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -496,6 +503,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -510,6 +518,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -524,6 +533,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -538,6 +548,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -552,6 +563,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -566,6 +578,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -580,6 +593,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -594,6 +608,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -608,6 +623,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -622,6 +638,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -636,6 +653,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -650,6 +668,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -664,6 +683,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -678,6 +698,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -692,6 +713,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -706,6 +728,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -720,6 +743,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -734,6 +758,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -748,6 +773,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -762,6 +788,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -776,6 +803,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -790,6 +818,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -804,6 +833,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -818,6 +848,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -832,6 +863,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -846,6 +878,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -860,6 +893,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -874,6 +908,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -888,6 +923,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -902,6 +938,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -916,6 +953,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": true
       },
@@ -930,6 +968,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -944,6 +983,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -958,6 +998,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -972,6 +1013,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -986,6 +1028,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1000,6 +1043,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1014,6 +1058,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1028,6 +1073,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1042,6 +1088,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1056,6 +1103,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1070,6 +1118,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1084,6 +1133,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1098,6 +1148,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1112,6 +1163,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1126,6 +1178,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1140,6 +1193,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1154,6 +1208,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1168,6 +1223,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1182,6 +1238,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1196,6 +1253,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1210,6 +1268,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1224,6 +1283,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1238,6 +1298,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1252,6 +1313,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1266,6 +1328,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1280,6 +1343,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1294,6 +1358,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1308,6 +1373,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1322,6 +1388,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1336,6 +1403,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1350,6 +1418,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1364,6 +1433,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1378,6 +1448,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1392,6 +1463,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1406,6 +1478,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1420,6 +1493,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1434,6 +1508,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1448,6 +1523,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1460,6 +1536,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1474,6 +1551,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1488,6 +1566,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1502,6 +1581,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1516,6 +1596,7 @@
         "has_controller": false,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": true
       },
@@ -1530,6 +1611,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1544,6 +1626,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1558,6 +1641,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1572,6 +1656,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1586,6 +1671,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1600,6 +1686,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1614,6 +1701,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1628,6 +1716,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1642,6 +1731,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1656,6 +1746,7 @@
         "has_controller": true,
         "has_service": false,
         "has_schema": false,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1670,6 +1761,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1684,6 +1776,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": false,
         "has_tests_dir": false,
         "prisma_in_route_or_controller": false
       },
@@ -1698,6 +1791,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": true,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       },
@@ -1712,6 +1806,7 @@
         "has_controller": true,
         "has_service": true,
         "has_schema": false,
+        "has_index": true,
         "has_tests_dir": true,
         "prisma_in_route_or_controller": false
       }
@@ -1735,6 +1830,25 @@
       "spp-reminder.job.ts"
     ],
     "count": 14,
+    "cron_entries": 15,
+    "scheduled_job_files": [
+      "accreditation-reminder.job.ts",
+      "attendance-follow-up.job.ts",
+      "attendance-pattern.job.ts",
+      "attendance-register-reminder.job.ts",
+      "chatbot-escalation-retry.job.ts",
+      "chatbot-spend.job.ts",
+      "chatbot-transcript-purge.job.ts",
+      "dashboard-metrics.job.ts",
+      "dashboard-snapshot.job.ts",
+      "finance-billing.job.ts",
+      "identity-purge.job.ts",
+      "permit-note-erasure.job.ts",
+      "spp-reminder.job.ts"
+    ],
+    "job_files_not_scheduled": [
+      "asset-depreciation.job.ts"
+    ],
     "cron_expressions_in_scheduler": [
       "* * * * *",
       "0 1 * * *",
@@ -2042,6 +2156,7 @@
       "deploy-azure.md"
     ],
     "repo_skills": [
+      "dokumen-aplikasi-cipansor",
       "gate",
       "naskah-dinas",
       "panduan-peran",
@@ -2086,7 +2201,7 @@
       },
       {
         "file": "autentikasi-2fa-dan-sandi.md",
-        "summary": "KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa"
+        "summary": "KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa yang diajak sesudah login (staf dan wali, \"Nanti saja\" tanpa batas), dan kebijakan sandi (ganti karena kejadian, bukan kalender; panjang dan daftar terlarang, bukan aturan campuran). KEPUTUSAN 2026-09-29: \"Masuk dengan Google\" untuk akun @cipansor.or.id saja, dan peran wajib 2FA tetap memasukkan kode Cipansor sesudah Google. Riset dan sumbernya ada di bawah; jangan diulang."
       },
       {
         "file": "chatbot-retrieval-settled.md",
@@ -2110,7 +2225,7 @@
       },
       {
         "file": "istilah-dan-penamaan.md",
-        "summary": "Glossary and naming decisions of 2026-09-25, taken by the user on the"
+        "summary": "Glossary and naming decisions of 2026-09-25, taken by the user on the architecture audit (the learner's name revised 2026-09-27: santri on every portal screen, murid only in state formats); the yayasan's own spellings; the portal in Indonesian only and the public site in three languages; tables renamed with their models; `/api/v1`; no laboratory module; donations, ZIS and wakaf built properly. Read before naming anything."
       },
       {
         "file": "menu-ia-tiga-tingkat.md",
@@ -2122,7 +2237,7 @@
       },
       {
         "file": "pengawasan-dan-rapat-pembina.md",
-        "summary": "KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan"
+        "summary": "KEPUTUSAN 2026-09-28 — PR #508 (pemberhentian sementara Pengurus + WBS) dan #509 (keputusan dan risalah organ) ditutup; keduanya dibangun ulang dengan syarat di bawah. Dasar hukum dan standarnya sudah diriset, jangan diulang. Rancangannya diputuskan pengguna pada hari yang sama (bagian \"Diputuskan\")."
       },
       {
         "file": "pengesahan-dokumen-yayasan.md",
@@ -2130,7 +2245,7 @@
       },
       {
         "file": "penyimpanan-berkas.md",
-        "summary": "KEPUTUSAN 2026-09-29: berkas unggahan (foto, dokumen, surat) dicatat di satu"
+        "summary": "KEPUTUSAN 2026-09-29: berkas unggahan (foto, dokumen, surat) dicatat di satu tabel berkas dengan pemilik dan status; isinya di Azure Blob **privat**, diakses lewat managed identity dan SAS delegasi pengguna berumur pendek; tanpa kunci akun dan tanpa kontainer publik; berkas yang tidak pernah ditautkan dihapus sesudah 24 jam. Riset di bawah; jangan diulang."
       },
       {
         "file": "peran-dan-tugas-tambahan.md",
@@ -2150,7 +2265,7 @@
       },
       {
         "file": "realtime-polling.md",
-        "summary": "KEPUTUSAN 2026-09-28: portal tidak punya kanal dorong (Socket.IO, WebSocket,"
+        "summary": "KEPUTUSAN 2026-09-28: portal tidak punya kanal dorong (Socket.IO, WebSocket, SSE). Web segar lewat polling React Query. Server Socket.IO dihapus karena tidak punya klien. Di bawah: pembandingnya, sumbernya, dan syarat membangun kanal dorong kelak. Jangan ulang risetnya."
       },
       {
         "file": "rka-dua-tingkat.md",

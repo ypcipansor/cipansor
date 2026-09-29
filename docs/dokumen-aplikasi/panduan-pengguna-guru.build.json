@@ -1,0 +1,10 @@
+{
+  "source": "panduan-pengguna-guru.md",
+  "source_sha256": "c6811e861f99cd23a57c3bfe02983d49a87ef750dcd7637ffb9ded7088d8b6bd",
+  "commit": "aefc719",
+  "built": "2026-09-29",
+  "outputs": {
+    "panduan-pengguna-guru.docx": "0c3d44eda400906c78ed7ebb7b3900e5d83ea2ad9706b1916d5362c76bc99bae",
+    "panduan-pengguna-guru.pdf": "ea1ae013f9c7d7b5337014598035e55e939d4b3d6861b9a8c8fbea67f29c4d25"
+  }
+}

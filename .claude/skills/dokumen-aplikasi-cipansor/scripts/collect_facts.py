@@ -115,6 +115,27 @@ def prisma(repo: Path) -> dict:
 
 
 HANDLER_RE = re.compile(r"^\s*router\.(get|post|put|patch|delete)\(", re.M)
+# Argumen pertama bisa jatuh di baris berikutnya (router.post(\n  '/x', ...)), maka \s* melintasi baris.
+ROUTE_RE = re.compile(r"\brouter\.(get|post|put|patch|delete)\(\s*(['\"`])([^'\"`]+)\2")
+
+
+def route_index(repo: Path) -> list[dict]:
+    """Semua rute yang benar-benar didaftarkan: [{method, path, module}], path lengkap dengan /api.
+
+    Dipakai check_docs.py untuk membuktikan bahwa alamat yang disebut dokumen ada di kode.
+    Perkiraan: rute di sub-router yang di-mount di dalam modul tidak ikut terhitung.
+    """
+    facts = api_modules(repo)
+    out: list[dict] = []
+    for m in facts["modules"]:
+        d = repo / "apps/api/src/modules" / m["name"]
+        text = "".join(read(r) for r in sorted(d.glob("*.routes.ts")))
+        for mount in m["mount"]:
+            for r in ROUTE_RE.finditer(text):
+                sub = r.group(3)
+                path = mount if sub in ("/", "") else mount.rstrip("/") + "/" + sub.lstrip("/")
+                out.append({"method": r.group(1).upper(), "path": path, "module": m["name"]})
+    return out
 
 
 def api_modules(repo: Path) -> dict:
@@ -160,6 +181,7 @@ def api_modules(repo: Path) -> dict:
                     "has_controller": suffix(".controller.ts"),
                     "has_service": suffix(".service.ts"),
                     "has_schema": suffix(".schema.ts"),
+                    "has_index": (d / "index.ts").is_file(),
                     "has_tests_dir": (d / "tests").is_dir(),
                     "prisma_in_route_or_controller": layering_violation,
                 }
@@ -169,7 +191,19 @@ def api_modules(repo: Path) -> dict:
         "module_count": len(modules),
         "handler_count_approx": total_handlers,
         "swagger_annotated_modules": sum(1 for m in modules if m["has_swagger"]),
-        "full_layout_modules": sum(
+        # Dua ukuran yang BERBEDA — jangan dicampur. Empat berkas = routes+controller+service+schema.
+        # Lima bagian = keempatnya + index.ts (definisi yang dipakai known-issues.md: "22 of 93",
+        # diukur 2026-09-25). Dokumen yang menyebut "tata letak lengkap" harus menyebut yang mana.
+        "four_file_modules": sum(
+            1 for m in modules
+            if m["has_routes"] and m["has_controller"] and m["has_service"] and m["has_schema"]
+        ),
+        "five_part_modules": sum(
+            1 for m in modules
+            if m["has_routes"] and m["has_controller"] and m["has_service"] and m["has_schema"]
+            and m["has_index"]
+        ),
+        "full_layout_modules": sum(  # nama lama, sama dengan four_file_modules
             1 for m in modules
             if m["has_routes"] and m["has_controller"] and m["has_service"] and m["has_schema"]
         ),
@@ -187,11 +221,24 @@ def api_modules(repo: Path) -> dict:
 
 
 def jobs(repo: Path) -> dict:
+    """Berkas *.job.ts BUKAN sama dengan pekerjaan terjadwal: satu berkas bisa dipanggil dari
+    service (mis. asset-depreciation) dan satu berkas bisa dijadwalkan beberapa kali
+    (dashboard-snapshot). Hitung keduanya, dan pisahkan."""
     jd = repo / "apps/api/src/jobs"
     files = sorted(p.name for p in jd.glob("*.job.ts")) if jd.is_dir() else []
     sched = read(jd / "scheduler.ts") if jd.is_dir() else ""
     crons = re.findall(r"cron\.schedule\(\s*['\"`]([^'\"`]+)['\"`]", sched)
-    return {"job_files": files, "count": len(files), "cron_expressions_in_scheduler": crons}
+    imported = set(re.findall(r"from\s+['\"]\./([\w-]+\.job)['\"]", sched))
+    scheduled = sorted(f for f in files if f[:-3] in imported)
+    unscheduled = sorted(f for f in files if f[:-3] not in imported)
+    return {
+        "job_files": files,
+        "count": len(files),  # jumlah BERKAS, bukan jumlah pekerjaan terjadwal
+        "cron_entries": len(crons),
+        "scheduled_job_files": scheduled,
+        "job_files_not_scheduled": unscheduled,  # dipanggil dari tempat lain; jangan disebut "terjadwal"
+        "cron_expressions_in_scheduler": crons,
+    }
 
 
 def env_keys(repo: Path) -> dict:
@@ -283,8 +330,11 @@ def docs_and_memory(repo: Path) -> dict:
     if ddir.is_dir():
         for f in sorted(ddir.glob("*.md")):
             txt = read(f)
-            m = re.search(r"^>\s*(.+)$", txt, re.M)  # ringkasan satu kalimat (blockquote)
-            dec_summaries.append({"file": f.name, "summary": (m.group(1).strip() if m else "")})
+            # Ringkasan = blockquote pertama; bisa membentang beberapa baris — gabungkan semuanya,
+            # jangan berhenti di baris pertama (itu yang membuat ringkasan terpotong di tengah kalimat).
+            bq = re.search(r"(?:^>.*(?:\n|$))+", txt, re.M)
+            summary = " ".join(l.lstrip("> ").strip() for l in bq.group(0).splitlines()) if bq else ""
+            dec_summaries.append({"file": f.name, "summary": summary.strip()})
     ki = read(repo / ".claude/memory/known-issues.md")
     ki_sections = re.findall(r"^##\s+(.+)$", ki, re.M)
     shots = repo / "docs/images"
@@ -331,12 +381,15 @@ def to_markdown(f: dict) -> str:
     L.append(f"| Modul API | {a['module_count']} |")
     L.append(f"| Handler rute API (perkiraan, `router.get/post/put/patch/delete`) | ≈{a['handler_count_approx']} |")
     L.append(f"| Modul dengan anotasi Swagger | {a['swagger_annotated_modules']} dari {a['module_count']} |")
-    L.append(f"| Modul dengan tata letak lengkap (routes+controller+service+schema) | {a['full_layout_modules']} |")
+    L.append(f"| Modul dengan empat berkas (routes+controller+service+schema) | {a['four_file_modules']} |")
+    L.append(f"| Modul dengan lima bagian (empat berkas + index.ts) — ukuran known-issues.md | {a['five_part_modules']} |")
     L.append(f"| Modul yang memanggil Prisma dari route/controller | {a['prisma_in_route_or_controller_modules']} |")
     L.append(f"| Model Prisma / enum | {p['model_count']} / {p['enum_count']} |")
     L.append(f"| Baris `schema.prisma` | {p['lines']} |")
     L.append(f"| Kode peran (`RoleCode`) | {p['role_code_count']} |")
-    L.append(f"| Job terjadwal | {f['jobs']['count']} |")
+    L.append(f"| Berkas *.job.ts | {f['jobs']['count']} |")
+    L.append(f"| Entri cron di scheduler.ts | {f['jobs']['cron_entries']} |")
+    L.append(f"| Berkas job yang dijadwalkan scheduler.ts | {len(f['jobs']['scheduled_job_files'])} |")
     L.append(f"| Kunci variabel lingkungan di `.env.example` | {f['env']['total_keys']} |")
     L.append(f"| Halaman web (`page.tsx`) | {w['page_count']} |")
     L.append(f"| Hook data web | {w['hook_files']} |")
@@ -362,7 +415,10 @@ def to_markdown(f: dict) -> str:
         L.append("Modul tanpa routes (pustaka internal, bukan endpoint): "
                  + ", ".join(f"`{x}`" for x in a["service_only_modules"]) + "\n")
     L.append("## Job terjadwal\n")
-    L.append(", ".join(f"`{x}`" for x in f["jobs"]["job_files"]) or "(tidak ada)")
+    L.append("Dijadwalkan oleh `scheduler.ts`: " + (", ".join(f"`{x}`" for x in f["jobs"]["scheduled_job_files"]) or "(tidak ada)"))
+    if f["jobs"]["job_files_not_scheduled"]:
+        L.append("\n**Ada berkas job yang TIDAK dijadwalkan** (dipanggil dari tempat lain; jangan disebut terjadwal): "
+                 + ", ".join(f"`{x}`" for x in f["jobs"]["job_files_not_scheduled"]))
     L.append("\n## Variabel lingkungan (nama saja)\n")
     for grp in f["env"]["groups"]:
         L.append(f"- **{grp['group']}**: " + ", ".join(f"`{k}`" for k in grp["keys"]))
@@ -406,7 +462,8 @@ def compare(old: dict, new: dict) -> str:
         ("Model Prisma", ("prisma", "model_count")),
         ("Enum Prisma", ("prisma", "enum_count")),
         ("Kode peran", ("prisma", "role_code_count")),
-        ("Job terjadwal", ("jobs", "count")),
+        ("Berkas *.job.ts", ("jobs", "count")),
+        ("Entri cron", ("jobs", "cron_entries")),
         ("Kunci variabel lingkungan", ("env", "total_keys")),
         ("Halaman web", ("web", "page_count")),
         ("Berkas uji unit API", ("tests", "api_unit_test_files")),
@@ -439,7 +496,7 @@ def compare(old: dict, new: dict) -> str:
         ("Keputusan tercatat", ("docs", "decisions"), None),
         ("Dokumen di docs/", ("docs", "docs_md"), None),
         ("Skill repo", ("docs", "repo_skills"), None),
-        ("Job terjadwal", ("jobs", "job_files"), None),
+        ("Job terjadwal", ("jobs", "scheduled_job_files"), None),
         ("Kode peran", ("prisma", "role_codes"), None),
     ):
         a = names(old, *path, key=key) if key else names(old, *path)

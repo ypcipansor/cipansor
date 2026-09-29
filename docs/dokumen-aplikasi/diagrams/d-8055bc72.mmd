@@ -1,0 +1,25 @@
+%% caption: C4-1 Konteks — siapa memakai Cipansor dan sistem luar mana yang dipanggilnya
+flowchart LR
+  subgraph Pengguna["Pengguna"]
+    U1["Organ yayasan<br/>Pembina, Pengurus, Pengawas"]
+    U2["Kepala unit, guru,<br/>TU, bendahara"]
+    U3["Pendidik pesantren"]
+    U4["Wali santri, santri,<br/>alumni"]
+    U5["Pengunjung situs publik,<br/>calon santri"]
+  end
+  C["Sistem Informasi Cipansor<br/>portal pegawai, situs publik, API"]
+  subgraph Luar["Sistem luar"]
+    E1["Penyedia surel<br/>SMTP atau Gmail"]
+    E2["Penyedia WhatsApp"]
+    E3["Cloudflare Turnstile"]
+    E4["Penyedia model bahasa<br/>untuk chatbot"]
+  end
+  U1 -->|"mengesahkan dokumen, mengawasi"| C
+  U2 -->|"mengelola kegiatan unit"| C
+  U3 -->|"mencatat tahfidz, ibadah, izin"| C
+  U4 -->|"memantau anak, melihat tagihan"| C
+  U5 -->|"membaca profil, mendaftar, berdonasi"| C
+  C -->|"mengirim surel"| E1
+  C -->|"mengirim pesan"| E2
+  C -->|"memverifikasi anti-bot"| E3
+  C -->|"mengirim pertanyaan dan korpus"| E4

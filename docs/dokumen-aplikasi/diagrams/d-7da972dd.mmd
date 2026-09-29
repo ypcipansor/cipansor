@@ -1,0 +1,16 @@
+%% caption: Urutan penerbitan naskah dinas dan verifikasi publiknya
+sequenceDiagram
+  participant S as Penyusun surat
+  participant A as API
+  participant P as Pemaraf dan penandatangan
+  participant V as Pemeriksa publik
+  S->>A: POST /api/correspondence/letters
+  S->>A: POST /api/correspondence/letters/:id/submit
+  P->>A: POST /api/correspondence/letters/:id/review (APPROVE atau REJECT)
+  P->>A: POST /api/esign/letters/:letterId/sign (frasa sandi kunci TTE)
+  A->>A: buat PDF, hitung SHA-256, tandatangani hash
+  A-->>P: surat bertanda tangan, hash tersimpan
+  S->>A: POST /api/correspondence/letters/:id/dispatch
+  V->>A: POST /api/esign/verify-pdf (unggah PDF dan token Turnstile)
+  A->>A: SHA-256 byte unggahan dibandingkan dengan pdfHash
+  A-->>V: sah atau tidak, terikat pada byte dokumen

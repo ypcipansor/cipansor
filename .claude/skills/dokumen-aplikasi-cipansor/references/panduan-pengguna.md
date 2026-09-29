@@ -40,29 +40,23 @@ jauh*.
 | **T2 Dari kode** | Tidak bisa menjalankan aplikasi; langkah dirunut dari `navigation.ts`, halaman, komponen, dan rute API | Kartu tugas dengan jalur menu (dicetak dari kode) dan langkah yang *masuk akal dari kode* | `⚠ Belum dicoba di aplikasi berjalan` pada **setiap** kartu, dan dinyatakan di Riwayat Revisi |
 | **T3 Tidak ada akses** | Hanya deskripsi dari pengguna | Kerangka + daftar pertanyaan untuk pengguna; **tanpa langkah** | `[ISI: …]` — dokumen belum boleh disebut selesai |
 
-Cara mencapai T1 — bila repo di-clone dan ada waktu:
-1. Skill `stack` di repo (`.claude/skills/stack/SKILL.md`): PostgreSQL, `db:push`,
-   `db:seed` dengan `E2E_FIXED_2FA=1`, API :3001, web :3000.
-2. `apps/web/scripts/role-menus.ts` untuk menu tiap peran.
-3. `apps/web/scripts/screenshot-roles.ts` untuk tangkapan layar menu tiap
-   peran; untuk layar **tugas** tertentu, tulis skrip Playwright pendek yang
-   masuk sebagai akun demo, membuka halaman, mengisi formulir dengan data
-   contoh, dan mengambil gambar di tiap tahap.
-4. Bila tumpukan tak bisa dinyalakan: **turun ke T2 dan katakan terus terang**,
-   jangan berpura-pura T1.
+**Uji kemampuan dulu — jangan menganggap T1 mustahil, jangan menganggapnya mudah.** Jalankan ini dan catat hasilnya
+di Riwayat Revisi:
 
-**Batasan yang sudah terbukti di sandbox Claude.ai (diuji 2026-09-28).**
-- `pnpm install --frozen-lockfile --ignore-scripts --filter @cipansor/shared... --filter web... --filter api...`
-  selesai ±22 detik; `pnpm --filter @cipansor/shared build` jalan; PostgreSQL 16 bisa dipasang
-  (`apt-get update` dulu, baru `apt-get install -y postgresql-16`).
-- **`prisma generate` dan `prisma db push` GAGAL**: mesin Prisma diunduh dari `binaries.prisma.sh`,
-  yang **tidak ada di daftar domain yang diizinkan** (`403 host_not_allowed`), jadi skema tak bisa
-  dibuat, API tak bisa jalan, dan T1 mustahil. Jangan menghabiskan waktu mencoba jalan memutar.
-  Kalau pengguna ingin T1, katakan: *"Tambahkan `binaries.prisma.sh` ke domain yang diizinkan pada
-  pengaturan jaringan sesi/akun, lalu minta saya mengulang"* — keputusan itu milik pengguna, jangan
-  ditebak menunya.
-- `role-menus.ts` **tetap bisa dijalankan** (tidak butuh basis data) — jadi jalur menu selalu bisa dicetak
-  dari kode pada T2:
+```bash
+command -v docker psql pnpm node        # ada semua?
+pnpm --filter api db:generate           # mesin Prisma terunduh? (pernah diblokir di sandbox chat: binaries.prisma.sh)
+pnpm --filter web exec playwright --version
+```
+
+- Semua ada dan `db:generate` sukses → kerjakan **T1** lewat skill `stack` (`.claude/skills/stack/SKILL.md`): PostgreSQL,
+  `db:push`, `db:seed` dengan `E2E_FIXED_2FA=1`, API :3001, web :3000; lalu skrip Playwright pendek yang masuk sebagai
+  akun demo peran itu, membuka halaman, mengisi formulir dengan data contoh, dan mengambil gambar per layar penentu.
+  `apps/web/scripts/screenshot-roles.ts` mengambil gambar menu tiap peran.
+- Salah satunya gagal → **T2**, dan tulis di Riwayat Revisi *perintah mana yang gagal dan pesannya*. Jangan menghabiskan
+  waktu mencari jalan memutar; bila pengguna ingin T1, katakan apa yang perlu diizinkan (mis. domain
+  `binaries.prisma.sh` di daftar jaringan) — keputusannya milik pengguna.
+- `role-menus.ts` tetap bisa dijalankan tanpa basis data, jadi jalur menu selalu dicetak dari kode:
   `cd apps/web && ../api/node_modules/.bin/tsx scripts/role-menus.ts SMPIT_GURU`.
 
 **Tidak ada tingkat "kira-kira".** Bila sebuah langkah tidak bisa dipastikan
@@ -92,7 +86,34 @@ Untuk tiap tugas, baca berurutan:
 - **Tanggal/angka ambang.** "Tanggal esok tidak bisa dipilih" harus ada di kode (`disabled={(d) => d > new Date()}`),
   bukan asumsi.
 
+- **Tombol berbentuk ikon.** Tombol status absensi hanya ikon; namanya muncul sebagai `title`/`aria-label`. Tulis:
+  "tombolnya berbentuk ikon; arahkan kursor untuk melihat namanya". Cari `size="sm" className="w-10 h-10"`, `aria-label`.
+- **Nama status ≠ nama di daftar lain.** Tombol menyebut **Tidak Hadir**, daftar tindak lanjut menyebut **Alpa**. Salin
+  label dari komponen layar yang sedang dijelaskan, bukan dari layar lain.
+- **Penyebab `disabled` yang dikarang.** Tulis kondisi persis dari kode (`disabled={a || b.length === 0}` → "daftar kosong
+  atau sedang menyimpan"), bukan tebakan ("belum ada perubahan").
+- **Kata umum ditebalkan seolah label.** `**kelas**`, `**tanggal**` bukan label; label sebenarnya `Kelas` (pilihan) atau
+  tombol tanggal. Tebalkan hanya teks yang benar-benar tampil.
+- **Jalur yang salah ke layar yang benar.** Ubah kata sandi ada di **Profile → tab Keamanan → Ubah Password**, bukan
+  Settings. Sebelum menulis "di menu X", `grep -rn "<judul kartu>" apps/web/src` untuk menemukan halaman yang sebenarnya.
+- **Label menu bahasa Inggris dari menu.** Menu avatar berbunyi **Profile**, **Settings**, **Logout** (bukan "Keluar").
+  Tulis apa adanya; jangan menerjemahkan.
+- **Nama enum di teks pengguna** (`Menunggu (PENDING)`). Pengguna tidak melihat enum; cari label di `hooks/use-*.ts`.
+
+`check_docs.py --kind pengguna --trace jejak.md` menangkap sebagian besar ini secara mekanis (`label-layar`, `pesan-karangan`,
+`nama-enum`, `halaman-tak-ada`, `backtick-lolos`) dan menulis jejak berkas:baris tiap label. **Batasnya:** label yang
+kebetulan ada di layar lain lolos; karena itu buka berkas di jejak dan pastikan itu layar yang dimaksud.
+
 Karena perangkap ini, **setiap kartu T2 tetap bertanda ⚠** sampai seorang pengguna sungguhan mencobanya.
+
+## Pembacanya bukan pengembang
+
+Di seluruh teks pengguna (kecuali Riwayat Revisi dan banner ⚠) dilarang: nama enum basis data, nomor PR/isu, kata
+`main`/cabang/commit/staging/produksi, kode HTTP, jalur berkas kode, dan menyebut perbaikan mana yang belum di produksi
+(itu daftar celah; `progress.md` sengaja tidak mencatatnya). **Ketersediaan** ditulis sekali di bagian "Tentang", dalam
+bahasa pengguna: "Buklet ini menjelaskan versi terbaru per <tanggal>. Aplikasi yang Anda pakai mungkin belum memuat semua
+perubahan; bila layar Anda berbeda, tanyakan admin unit." Kartu menulis: "Ada pada versi aplikasi yang dijelaskan buklet ini."
+Status cabang/`main`/staging/produksi per kemampuan dilaporkan **kepada pengguna di percakapan**, bukan dicetak di manual.
 
 ## Kartu tugas (unit dasar panduan)
 
@@ -107,7 +128,7 @@ bukan "Modul attendance"). Empat bagian wajib + tiga opsional:
 | **Langkah** | Bernomor; **satu tindakan per langkah**; nama tombol/kolom persis seperti layar; hasil yang terlihat ditulis miring | aplikasi berjalan (T1) atau kode (T2) |
 | *Hasil & giliran berikutnya* | "Status menjadi *Menunggu Paraf*; giliran pemaraf pertama" | kode service + `decisions/` |
 | *Bila tidak berhasil* | 2–4 masalah paling umum + penyebab + apa yang harus dilakukan | uji, `lessons/`, pesan galat di kode |
-| *Ketersediaan* | Di cabang / `main` / staging / produksi | `progress.md` |
+| *Ketersediaan* | Satu kalimat baku: "Ada pada versi aplikasi yang dijelaskan buklet ini." (bukan cabang/`main`/produksi) | bagian "Pembacanya bukan pengembang" |
 
 Bila halamannya **tidak ada di menu perannya**, katakan: "tidak ada di menu —
 buka `/…`", dan catat sebagai celah (jangan dikarang jalurnya). Bila
@@ -115,6 +136,15 @@ buka `/…`", dan catat sebagai celah (jangan dikarang jalurnya). Bila
 keluarkan kartunya dan masukkan ke Lampiran *Belum tersedia*.
 
 Jangan menyalin pohon menu lengkap ke panduan; tautkan tugasnya saja.
+
+## Memilih tugas untuk satu buklet
+
+1. Cetak menu peran: `role-menus.ts <KODE_PERAN>` untuk tiap kode peran dalam keluarga itu.
+2. Ambil butir yang berupa **pekerjaan berulang** (isi, catat, putuskan, setujui, kirim), bukan butir yang hanya membaca.
+3. Untuk tiap butir, temukan penulisnya: `grep -n "authorize(" apps/api/src/modules/<modul>/*.routes.ts` — bila peran ini
+   tak ada di daftar, jangan tulis kartunya.
+4. Urutkan menurut frekuensi (harian → tahunan). 4–8 kartu per buklet; sisanya masuk "Tugas yang menyusul".
+5. Butir yang `known-issues.md` sebut rusak masuk Lampiran *Belum tersedia*, bukan kartu.
 
 ## Empat pertanyaan "bisakah peran X melakukan Y?"
 
@@ -128,7 +158,7 @@ mengajar di kelas itu). Tulis aturannya, bukan sekadar "guru bisa".
 
 1. **Tentang panduan ini** — siapa pembacanya; cara memakai; konvensi (tombol
    dalam **tebal**, jalur menu dengan panah, ⚠ untuk yang belum diverifikasi);
-   basis versi aplikasi (commit + tanggal); cara melapor kekeliruan.
+   tanggal versi aplikasi yang dijelaskan (commit hanya di Riwayat Revisi); cara melapor kekeliruan.
 2. **Mulai** (tutorial): membuka aplikasi; masuk; verifikasi dua langkah untuk
    admin; mengenal dasbor, menu, dan notifikasi; mengubah kata sandi dan profil;
    keluar. Semua dari layar nyata.
@@ -167,17 +197,21 @@ mengajar di kelas itu). Tulis aturannya, bukan sekadar "guru bisa".
 - Jangan menjanjikan fitur yang belum ada. Ketersediaan ditulis apa adanya.
 - Tanggal: "28 September 2026".
 
-## Daftar periksa sebelum menyerahkan
+## Daftar periksa sebelum menyerahkan (semuanya perintah)
 
-- [ ] Tingkat verifikasi tiap bagian dinyatakan di **Riwayat Revisi**
+```bash
+python scripts/check_docs.py naskah.md --kind pengguna --repo <repo> --facts fakta/facts.json --final --trace jejak.md   # 0 ERROR
+python scripts/scan_sensitive.py naskah.md                                                                              # bersih
+python scripts/build_docs.py naskah.md --out keluaran --format docx --pdf --commit <hash> …                             # kode keluar 0
+python scripts/check_docs.py naskah.md --kind pengguna --repo <repo> --facts fakta/facts.json --built keluaran/<nama>.build.json
+```
+
+Lalu, dengan mata: buka `jejak.md` dan pastikan tiap label berasal dari layar yang dimaksud; bandingkan satu kartu
+dengan `page.tsx`-nya baris demi baris (nilai bawaan, `disabled`, teks toast).
+
+- [ ] Tingkat verifikasi tiap bagian dinyatakan di **Riwayat Revisi**, beserta hasil uji kemampuan
 - [ ] Bila T2: **tiap** kartu bertanda ⚠
-- [ ] Jalur menu dicetak dari kode pada commit yang disebut, bukan disalin dari dokumen lain
 - [ ] Peran & lingkup data tiap tugas lolos empat lapis
-- [ ] Ketersediaan (cabang/main/staging/produksi) tertulis di tiap kartu
 - [ ] Tak ada tangkapan layar berisi data sungguhan
-- [ ] Istilah: santri / wali santri; ejaan yayasan; nama tombol persis layar
 - [ ] Alur yang dicatat rusak di `known-issues.md` tidak dipresentasikan sebagai jalan
-- [ ] `scan_sensitive.py` bersih (tak ada kata sandi demo, IP, dsb.)
-- [ ] Tak ada `[ISI: …]` tersisa **atau** dokumen ditandai Draf dan sisa isian dilaporkan
-- [ ] `.docx` dirender dan dilihat; daftar isi terisi; gambar terbaca
 - [ ] (Ideal) satu orang dari peran itu mencoba kartu tanpa bantuan — ISO 26514 meminta panduan diuji pada pembaca
