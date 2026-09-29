@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { rolesService } from './roles.service';
-import { generateTokenPair, getExpirationDate } from '@/lib/jwt';
+import { generateTokenPair, getExpirationDate, decodeToken } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
 import { config } from '@/config';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
+import { tokenLegacyRole } from '@/middleware/auth';
+import { mayReturnTokens, randomCsrfToken, setSessionCookies } from '@/modules/auth/auth.cookies';
 import type { Realm } from '@prisma/client';
 import type {
   GetRolesQuery,
@@ -156,7 +158,7 @@ export class RolesController {
         id: result.user.id,
         sub: result.user.id,
         email: result.user.email,
-        role: result.user.role ?? '',
+        role: tokenLegacyRole(result.activeRole.role.code, result.user.role),
         roleCode: result.activeRole.role.code,
         roleId: result.activeRole.roleId,
         // Same rule as login, 2FA and refresh (tokenUnitId): only a foundation
@@ -179,6 +181,20 @@ export class RolesController {
         },
       });
 
+      // Rotate the session in HttpOnly cookies, exactly as login does. A
+      // request authenticated by a cookie never gets a token back (see
+      // mayReturnTokens): a page script setting `X-Client: bearer` must not be
+      // handed a fresh access and refresh token.
+      const payload = decodeToken(tokens.accessToken);
+      const roleCode = payload?.roleCode ?? result.activeRole.role.code;
+      setSessionCookies(res, tokens.accessToken, tokens.refreshToken, randomCsrfToken(), {
+        id: payload?.sub ?? result.user.id,
+        role: payload?.role ?? roleCode,
+        roleCode,
+      });
+
+      const bearer = mayReturnTokens(req);
+
       res.json({
         success: true,
         data: {
@@ -188,7 +204,7 @@ export class RolesController {
             role: result.activeRole.role,
             unit: result.activeRole.unit,
           },
-          ...tokens,
+          ...(bearer ? tokens : {}),
         },
       });
     } catch (error) {

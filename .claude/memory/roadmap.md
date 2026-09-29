@@ -162,12 +162,12 @@ items before 2026-09-25 is in the history of this file and of
      replayed on a copy of production first.
    - **E. The upload rate limit and the boot-time secrets check.** Small and
      independent, so it can go first.
-   - **F. Tokens out of `localStorage`** (issue #523). PR #620 (OpenHands)
-     moves them into server-set HttpOnly cookies, which is the right
-     direction. It was reviewed 2026-09-29 and has three blocking problems,
-     listed in the PR: a page script still reads the tokens through refresh;
-     a page load 15 minutes after the last refresh signs the user out; and
-     every user's page requests share one rate-limit bucket.
+   - **F. Tokens out of `localStorage`** (issue #523) — done in #620: the
+     API issues the session as HttpOnly cookies plus a routing cookie the
+     Next middleware reads locally, with a double-submit CSRF check. Left
+     over: an upload's `<img>` fails once the 15-minute access cookie has
+     expired on an idle page, until a call refreshes it; the signed,
+     short-lived file URLs of B are the lasting answer.
 
 ## 2. Before a real launch
 

@@ -8,10 +8,10 @@ import type { NextRequest } from "next/server";
 import {
   canAccessRoute,
   getDashboardForRole,
-  getPrimaryRoleCode,
-  getEffectiveRole,
+  isLegacyRole,
   type LegacyRole,
 } from "@/lib/rbac";
+import { PRINCIPAL_COOKIE } from "@cipansor/shared";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
 
 // Public routes that don't require authentication.
@@ -76,48 +76,40 @@ const publicPrefixes = [
   "/public/verify-card",
 ];
 
-// Helper function to get auth state from cookie
-function getAuthState(request: NextRequest): {
-  isAuthenticated: boolean;
-  role?: LegacyRole;
-  roleCode?: string;
-} {
-  // Check for auth storage in cookies (set by zustand persist)
-  const authStorage = request.cookies.get("auth-storage")?.value;
-
-  if (authStorage) {
-    try {
-      const parsed = JSON.parse(authStorage);
-      if (parsed.state?.isAuthenticated === true && parsed.state?.user) {
-        // The primary assignment's RoleCode decides, as on the API; the legacy
-        // `user.role` column is only the fallback (see getEffectiveRole).
-        const role = getEffectiveRole(parsed.state.user);
-        if (role) {
-          return {
-            isAuthenticated: true,
-            role,
-            roleCode: getPrimaryRoleCode(parsed.state.user),
-          };
-        }
-      }
-    } catch {
-      // Parse error - not authenticated
-    }
+/**
+ * The caller's role, read from the API-set routing cookie.
+ *
+ * The session itself is an HttpOnly `cipansor_at` token the middleware cannot
+ * make sense of, so the API sets a second HttpOnly cookie beside it holding only
+ * what routing needs — `{ id, role, roleCode }`. Reading it here, locally, is
+ * the whole point: the earlier shape asked the API for every page request,
+ * which meant one round trip per page and per `<Link>` prefetch, all keyed on
+ * the web container's loopback address and shared by every user.
+ *
+ * It is not a credential. The value is not trusted to authorise anything: the
+ * API decides that on every request, so a stale or forged cookie only reaches a
+ * page whose first call answers 401. A missing/malformed cookie is "not signed
+ * in", the same normal answer a missing cookie always was.
+ */
+function readPrincipal(
+  request: NextRequest,
+): { role: LegacyRole; roleCode: string } | null {
+  const raw = request.cookies.get(PRINCIPAL_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { role?: unknown; roleCode?: unknown };
+    if (!isLegacyRole(parsed.role)) return null;
+    return {
+      role: parsed.role,
+      roleCode:
+        typeof parsed.roleCode === "string" ? parsed.roleCode : parsed.role,
+    };
+  } catch {
+    return null;
   }
-
-  // Fallback: check for accessToken
-  const token =
-    request.cookies.get("accessToken")?.value ||
-    request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (token) {
-    return { isAuthenticated: true };
-  }
-
-  return { isAuthenticated: false };
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Host split, before anything else.
@@ -160,8 +152,24 @@ export function middleware(request: NextRequest) {
       (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
     );
 
-  // Get authentication state
-  const { isAuthenticated, role, roleCode } = getAuthState(request);
+  // Authentication, only where it decides the outcome.
+  //
+  // `readPrincipal` is a local cookie read, but it is still skipped when the
+  // result cannot change the response: public routes and `/` never consult it,
+  // and a request to `/login` only needs to know whether to bounce to a
+  // dashboard.
+  let isAuthenticated = false;
+  let role: LegacyRole | undefined;
+  let roleCode: string | undefined;
+
+  if (!isPublicRoute || pathname === "/login" || pathname === "/") {
+    const principal = readPrincipal(request);
+    if (principal) {
+      isAuthenticated = true;
+      role = principal.role;
+      roleCode = principal.roleCode;
+    }
+  }
 
   // Redirect unauthenticated users to login
   if (!isPublicRoute && !isAuthenticated) {

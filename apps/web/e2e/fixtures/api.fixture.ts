@@ -73,12 +73,9 @@ export class APIMocker {
       role: "SUPER_ADMIN",
     },
   ) {
-    // Mock login
-    await this.mockSuccess("**/api/auth/login", {
-      accessToken: "mock-access-token",
-      refreshToken: "mock-refresh-token",
-      user,
-    });
+    // Mock login. The browser session is an HttpOnly cookie now, so the body
+    // carries the user only — no tokens.
+    await this.mockSuccess("**/api/auth/login", { user });
 
     // Mock /me endpoint
     await this.mockSuccess("**/api/auth/me", user);

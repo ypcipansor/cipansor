@@ -4,6 +4,7 @@ import fs from 'fs';
 import { randomUUID } from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
+import { tokenFromRequest } from './auth';
 import { Errors } from './error';
 
 // Ensure upload directory exists
@@ -240,8 +241,11 @@ export const handleSingleUpload = (fieldName: string) => {
  * longer an anonymous public directory.
  *
  * Browsers fetch these via <img src>/<a href>, which cannot send an
- * Authorization header, so a valid access token is also accepted as a
- * `?token=` query parameter (appended by the web client's authFileUrl helper).
+ * Authorization header. They *do* send cookies, so the HttpOnly session cookie
+ * the API issued authenticates them with no `?token=` in the URL — which would
+ * otherwise be written to the nginx access log by the default `combined`
+ * format. A caller with a bearer token still may present it in the
+ * `Authorization` header.
  *
  * KNOWN LIMIT — authentication, not authorisation. This proves the caller is
  * signed in. It does not check that *this* caller may read *this* file: any
@@ -253,28 +257,21 @@ export const handleSingleUpload = (fieldName: string) => {
  * cannot be enumerated, and that is the only thing separating one family's
  * documents from another's. Treat it as an open item, not as done.
  *
- * Second known limit: passing the token in the query string writes it into the
- * nginx access log, which uses the default `combined` format and records the
- * full request URI. Short access-token TTLs limit the damage. The proper fix is
- * a short-lived URL signed for one file rather than the session token itself.
  */
 export function uploadsAuth(req: Request, _res: Response, next: NextFunction) {
   try {
-    let token: string | undefined;
-    const authHeader = req.headers.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      token = authHeader.slice('Bearer '.length);
-    } else if (typeof req.query.token === 'string') {
-      token = req.query.token;
-    }
-
+    // The browser sends the HttpOnly session cookie with an <img>/<a> fetch, so
+    // no token appears in the URL. There is deliberately no `?token=` fallback:
+    // nothing in the web app builds one any more, and a token in a query string
+    // ends up in the nginx access log.
+    const token = tokenFromRequest(req);
     if (!token) {
-      throw Errors.unauthorized('Authentication required to access uploaded files');
+      throw Errors.unauthorized('Autentikasi diperlukan untuk mengakses berkas ini.');
     }
 
     const payload = verifyToken(token);
     if (payload.type !== 'access' || payload.isTemp) {
-      throw Errors.unauthorized('Invalid token');
+      throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
     next();

@@ -48,7 +48,7 @@ test.afterAll(async () => {
   if (!secret) return;
   const login = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Client": "bearer" },
     body: JSON.stringify({ email: account.email, password: account.password }),
   }).then((r) => r.json());
   const temp = login?.data?.tempToken;
@@ -57,6 +57,7 @@ test.afterAll(async () => {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "X-Client": "bearer",
       Authorization: `Bearer ${temp}`,
     },
     body: JSON.stringify({ token: await generate({ secret }) }),

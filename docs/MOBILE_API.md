@@ -6,6 +6,15 @@ sudah tersedia dan teruji di API; aplikasi Flutter tinggal mengonsumsinya.
 Base URL: `https://<host>/api` — autentikasi Bearer JWT (login → access +
 refresh token). Semua respons berbentuk `{ success, data, ... }`.
 
+**Aplikasi mobile harus menandai dirinya sebagai klien bearer.** Portal web
+tidak lagi menerima token di badan respons: API menaruh sesinya di cookie
+`HttpOnly` yang tak bisa dibaca JavaScript, dan mengembalikan `{ user }` saja.
+Klien yang tidak memegang cookie (Flutter) mengirim header `X-Client: bearer`
+pada `POST /auth/login`, `POST /auth/2fa/login`, dan `POST /auth/refresh`, lalu
+menerima `accessToken`/`refreshToken` di badan respons seperti sebelumnya —
+termasuk `tempToken` pada langkah 2FA. Tanpa header itu, `tempToken` tidak
+dikirim dan aplikasi tidak dapat menyelesaikan tantangan 2FA.
+
 ## 1. Autentikasi
 
 | Endpoint | Keterangan |

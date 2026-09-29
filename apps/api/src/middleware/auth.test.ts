@@ -20,6 +20,7 @@ import {
   isTeacherOrAbove,
   sameUnit,
   deriveLegacyRole,
+  tokenLegacyRole,
   isAdminRoleCode,
   isGovernanceRoleCode,
   requireUser,
@@ -47,6 +48,17 @@ describe('middleware/auth RBAC', () => {
       expect(deriveLegacyRole(RoleCode.SDIT_ADMIN)).toBe('UNIT_ADMIN');
       expect(deriveLegacyRole(RoleCode.SDIT_GURU)).toBe('TEACHER');
       expect(deriveLegacyRole(RoleCode.SUPER_ADMIN)).toBe('SUPER_ADMIN');
+    });
+
+    it("tokenLegacyRole uses the role code's bucket, and the legacy column only where there is none", () => {
+      // The column never overrides a mapped code: a switched role routes by itself.
+      expect(tokenLegacyRole(RoleCode.YAYASAN_KETUA, 'STAFF')).toBe('UNIT_ADMIN');
+      expect(tokenLegacyRole(RoleCode.SDIT_GURU, 'PARENT')).toBe('TEACHER');
+      // Komite and alumni codes have no bucket on purpose; the column decides.
+      expect(tokenLegacyRole(RoleCode.SMPIT_KOMITE, 'STAFF')).toBe('STAFF');
+      expect(tokenLegacyRole(RoleCode.SMPIT_ALUMNI, 'STUDENT')).toBe('STUDENT');
+      // No column either: the code itself, as deriveLegacyRole did.
+      expect(tokenLegacyRole(RoleCode.SMPIT_KOMITE, null)).toBe('SMPIT_KOMITE');
     });
 
     it('deriveLegacyRole maps the expanded hierarchy roles (rebuilt #319)', () => {

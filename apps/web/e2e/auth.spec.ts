@@ -95,12 +95,16 @@ test.describe("Authentication", () => {
     // Verify we're on dashboard
     await expect(page).toHaveURL(/dashboard/);
 
-    // Verify token is stored
-    const token = await page.evaluate(() =>
-      localStorage.getItem("accessToken"),
-    );
-    expect(token).toBeTruthy();
-    expect(token?.length).toBeGreaterThan(20);
+    // The session is an HttpOnly cookie; it must NOT be readable from JS.
+    const stored = await page.evaluate(() => ({
+      accessToken: localStorage.getItem("accessToken"),
+      refreshToken: localStorage.getItem("refreshToken"),
+      cookie: document.cookie,
+    }));
+    expect(stored.accessToken).toBeNull();
+    expect(stored.refreshToken).toBeNull();
+    expect(stored.cookie).not.toContain("accessToken");
+    expect(stored.cookie).not.toContain("refreshToken");
   });
 
   test("should persist session after page reload", async ({ page }) => {
@@ -140,11 +144,16 @@ test.describe("Authentication", () => {
     // Should redirect to login
     await expect(page).toHaveURL(/login/, { timeout: 10000 });
 
-    // Verify token is cleared
-    const token = await page.evaluate(() =>
-      localStorage.getItem("accessToken"),
-    );
-    expect(token).toBeNull();
+    // The session cookie is cleared and no token lingers in JS-reachable storage.
+    const stored = await page.evaluate(() => ({
+      accessToken: localStorage.getItem("accessToken"),
+      refreshToken: localStorage.getItem("refreshToken"),
+      cookie: document.cookie,
+    }));
+    expect(stored.accessToken).toBeNull();
+    expect(stored.refreshToken).toBeNull();
+    expect(stored.cookie).not.toContain("accessToken");
+    expect(stored.cookie).not.toContain("refreshToken");
   });
 
   test("should prevent access to protected routes when not authenticated", async ({

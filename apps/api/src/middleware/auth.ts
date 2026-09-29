@@ -13,6 +13,7 @@ import {
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
 import { prisma } from '@/lib/prisma';
+import { accessTokenFromCookie } from '@/modules/auth/auth.cookies';
 import { Errors } from './error';
 
 // RoleCodes that are considered "admin" across the system.
@@ -107,6 +108,22 @@ export function deriveLegacyRole(roleCode: string): string {
 }
 
 /**
+ * The legacy bucket a newly minted token carries in its `role` claim — and so
+ * the routing cookie the web middleware reads, which is built from it.
+ *
+ * The active role code's bucket when it has one. The komite and alumni codes
+ * intentionally have none; for them the user's legacy `role` column decides,
+ * as it did when the web computed this itself (`getEffectiveRole` in
+ * `apps/web/src/lib/rbac.ts`). Every mint — login, 2FA, refresh, role switch —
+ * goes through here, so a switched role routes by its own bucket, not by the
+ * column. `req.user.role` is unaffected: `buildReqUser` derives it from the
+ * role code alone.
+ */
+export function tokenLegacyRole(roleCode: string, legacyColumn?: string | null): string {
+  return ROLE_CODE_TO_LEGACY_ROLE[roleCode] || legacyColumn || roleCode;
+}
+
+/**
  * Build a safe `req.user` object from a decoded JWT payload. Tokens always
  * carry `roleCode` + `permissions`; `req.user.role` is derived from the
  * roleCode for the modules that still branch on the coarse UserRole buckets.
@@ -175,31 +192,42 @@ export async function findTeacherIdForUser(userId: string): Promise<string | nul
 }
 
 /**
+ * The access token for a request, from the `Authorization: Bearer` header when
+ * a client presents one (the mobile app, the e2e API helpers) or from the
+ * `cipansor_at` HttpOnly session cookie otherwise (every browser request).
+ *
+ * Header first on purpose: an explicit bearer is the caller's stated intent,
+ * and the cookie is the fallback the browser attaches silently.
+ */
+export function tokenFromRequest(req: Request): string | undefined {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const headerToken = authHeader.slice('Bearer '.length);
+    if (headerToken) return headerToken;
+  }
+  return accessTokenFromCookie(req);
+}
+
+/**
  * Authentication middleware - verifies JWT token
  * Rejects temporary 2FA tokens
  */
 export function authenticate(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = tokenFromRequest(req);
 
-    if (!authHeader) {
-      throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
+    if (!token) {
+      throw Errors.unauthorized('Sesi tidak ditemukan. Silakan masuk kembali.');
     }
 
     const payload = verifyToken(token);
 
     if (payload.type !== 'access') {
-      throw Errors.unauthorized('Invalid token type');
+      throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
     if (payload.isTemp) {
-      throw Errors.unauthorized('2FA Verification Required');
+      throw Errors.unauthorized('Verifikasi dua langkah diperlukan.');
     }
 
     req.user = buildReqUser(payload);
@@ -215,22 +243,16 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
  */
 export function authenticate2FA(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
+    const token = tokenFromRequest(req);
 
-    if (!authHeader) {
-      throw Errors.unauthorized('No authorization header');
-    }
-
-    const [type, token] = authHeader.split(' ');
-
-    if (type !== 'Bearer' || !token) {
-      throw Errors.unauthorized('Invalid authorization format');
+    if (!token) {
+      throw Errors.unauthorized('Sesi tidak ditemukan. Silakan masuk kembali.');
     }
 
     const payload = verifyToken(token);
 
     if (payload.type !== 'access') {
-      throw Errors.unauthorized('Invalid token type');
+      throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
     req.user = buildReqUser(payload);
@@ -245,19 +267,14 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
  */
 export function optionalAuth(req: Request, res: Response, next: NextFunction) {
   try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
+    const token = tokenFromRequest(req);
+    if (!token) {
       return next();
     }
 
-    const [type, token] = authHeader.split(' ');
-
-    if (type === 'Bearer' && token) {
-      const payload = verifyToken(token);
-      if (payload.type === 'access' && !payload.isTemp) {
-        req.user = buildReqUser(payload);
-      }
+    const payload = verifyToken(token);
+    if (payload.type === 'access' && !payload.isTemp) {
+      req.user = buildReqUser(payload);
     }
 
     next();

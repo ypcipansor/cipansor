@@ -70,85 +70,23 @@ export interface ConfirmResetPasswordInput {
  */
 export const authService = {
   /**
-   * Login with email and password
+   * Register new user (admin only).
+   *
+   * No token handling: the API sets the session in HttpOnly cookies.
    */
-  async login(credentials: LoginCredentials): Promise<{
-    user: UserProfile;
-    tokens: AuthTokens;
-  }> {
-    const response = await api.post<
-      ApiResponse<{
-        user: UserProfile;
-        tokens: AuthTokens;
-      }>
-    >("/auth/login", credentials);
-
-    const { tokens } = response.data.data;
-
-    // Store tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
+  async register(input: RegisterInput): Promise<{ user: UserProfile }> {
+    const response = await api.post<ApiResponse<{ user: UserProfile }>>(
+      "/auth/register",
+      input,
+    );
     return response.data.data;
   },
 
   /**
-   * Register new user
-   */
-  async register(input: RegisterInput): Promise<{
-    user: UserProfile;
-    tokens: AuthTokens;
-  }> {
-    const response = await api.post<
-      ApiResponse<{
-        user: UserProfile;
-        tokens: AuthTokens;
-      }>
-    >("/auth/register", input);
-
-    const { tokens } = response.data.data;
-
-    // Store tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
-    return response.data.data;
-  },
-
-  /**
-   * Logout current user
+   * Logout current user. The API clears the session cookies.
    */
   async logout(): Promise<void> {
-    try {
-      await api.post("/auth/logout");
-    } finally {
-      // Always clear tokens
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
-    }
-  },
-
-  /**
-   * Refresh access token
-   */
-  async refreshToken(): Promise<AuthTokens> {
-    const refreshToken = localStorage.getItem("refreshToken");
-
-    if (!refreshToken) {
-      throw new Error("No refresh token available");
-    }
-
-    const response = await api.post<ApiResponse<AuthTokens>>("/auth/refresh", {
-      refreshToken,
-    });
-
-    const tokens = response.data.data;
-
-    // Update stored tokens
-    localStorage.setItem("accessToken", tokens.accessToken);
-    localStorage.setItem("refreshToken", tokens.refreshToken);
-
-    return tokens;
+    await api.post("/auth/logout");
   },
 
   /**
@@ -210,19 +148,5 @@ export const authService = {
    */
   async resendVerificationEmail(): Promise<void> {
     await api.post("/auth/resend-verification");
-  },
-
-  /**
-   * Check if user is authenticated
-   */
-  isAuthenticated(): boolean {
-    return !!localStorage.getItem("accessToken");
-  },
-
-  /**
-   * Get stored access token
-   */
-  getAccessToken(): string | null {
-    return localStorage.getItem("accessToken");
   },
 };

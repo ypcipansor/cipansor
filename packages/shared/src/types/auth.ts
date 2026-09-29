@@ -64,10 +64,23 @@ export interface LoginRequest {
   turnstileToken?: string;
 }
 
+/**
+ * The result of POST /auth/login (and /auth/2fa/login).
+ *
+ * The browser gets `{ user }` only: the session tokens are issued as HttpOnly
+ * cookies the page's JavaScript cannot read, so they are deliberately absent
+ * from this body. A bearer-only client (the mobile app, the e2e API helpers)
+ * asks for them with `X-Client: bearer` and receives `accessToken`/
+ * `refreshToken` as before. The 2FA branches carry only their flow flag; the
+ * short-lived 2FA token now rides the same HttpOnly cookie.
+ */
 export interface LoginResponse {
   user: User;
-  accessToken: string;
-  refreshToken: string;
+  accessToken?: string;
+  refreshToken?: string;
+  requiresTwoFactor?: boolean;
+  requiresTwoFactorSetup?: boolean;
+  tempToken?: string;
 }
 
 export interface JwtPayload {
@@ -112,8 +125,9 @@ export interface RoleAssignment {
 export interface SwitchRoleResponse {
   message: string;
   activeRole: UserRoleAssignment;
-  accessToken: string;
-  refreshToken: string;
+  /** Bearer-only clients only; the browser receives the session in cookies. */
+  accessToken?: string;
+  refreshToken?: string;
 }
 
 export interface AssignRoleRequest {
