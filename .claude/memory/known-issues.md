@@ -32,6 +32,16 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
   Types entries below are part of this. Phase 1 of the audit plan fixes it area
   by area; the guard (#563) stops new ones.
+- **The wali's home page shows figures nobody produced.** Seen with the TK
+  Qur'an wali (parent portal home, `apps/web/src/app/parent/page.tsx`).
+  - Attendance falls back to `0%` in red when the summary carries none
+    (`?? 0`), so "no records" reads as "never came".
+  - A child who lives in no asrama gets a "Harmony Asrama" tile (an English
+    label), with "—%".
+  - "Skor Holistik" shows for a TK child too.
+
+  Show a figure only when a query produced it, and an asrama tile only for a
+  santri with a placement (`lessons/teacher-dashboard-fake-stats.md`).
 - **The profile names a kepala sekolah "Guru/Ustadz".** The badge under the
   name on *avatar → Profile* labels the legacy bucket (`getEffectiveRole`),
   so every kepala and the Pimpinan Pesantren read as teachers, and organs as

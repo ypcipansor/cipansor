@@ -142,4 +142,10 @@ export interface TwoFactorStatus {
   isEnabled: boolean;
   /** One of the account's active roles makes 2FA mandatory: it cannot be turned off. */
   isRequired: boolean;
+  /**
+   * 2FA is off, not mandatory, and one of the account's active roles is
+   * invited to turn it on (`SECOND_FACTOR_INVITE_ROLE_CODES`): the web offers
+   * it right after sign-in.
+   */
+  isInvited: boolean;
 }

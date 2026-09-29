@@ -8,6 +8,7 @@ import {
   LEGACY_ROLE_EXPANSION as SHARED_LEGACY_ROLE_EXPANSION,
   PARENT_ROLE_CODES,
   SECOND_FACTOR_ROLE_CODES,
+  SECOND_FACTOR_INVITE_ROLE_CODES,
   STUDENT_ROLE_CODES,
 } from '@cipansor/shared';
 import { verifyToken, JwtPayload } from '@/lib/jwt';
@@ -529,4 +530,16 @@ export function isGovernanceRoleCode(roleCode: string): boolean {
  */
 export function requiresSecondFactor(roleCodes: Array<string | null | undefined>): boolean {
   return roleCodes.some((c) => !!c && SECOND_FACTOR_ROLE_CODES.includes(c));
+}
+
+/**
+ * Accounts the web invites to turn 2FA on after signing in: one active role is
+ * in `SECOND_FACTOR_INVITE_ROLE_CODES` and none makes it mandatory (those are
+ * sent to set it up instead). Whether 2FA is already on is the caller's check.
+ */
+export function invitesSecondFactor(roleCodes: Array<string | null | undefined>): boolean {
+  return (
+    !requiresSecondFactor(roleCodes) &&
+    roleCodes.some((c) => !!c && SECOND_FACTOR_INVITE_ROLE_CODES.includes(c))
+  );
 }
