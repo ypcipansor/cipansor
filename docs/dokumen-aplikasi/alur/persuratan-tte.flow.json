@@ -1,0 +1,301 @@
+{
+  "name": "persuratan-tte",
+  "title": "Persuratan dinas: konsep → paraf atasan → tanda tangan elektronik → verifikasi publik",
+  "setup": [
+    {
+      "as": "sdit.kepala@cipansor.or.id",
+      "method": "PUT",
+      "path": "/esign/me/identity",
+      "body": {
+        "legalName": "H. Dadan Ali Ridwan, S.Ag",
+        "nik": "3204010202020002",
+        "birthPlace": "Cianjur",
+        "birthDate": "1978-05-12"
+      },
+      "optional": true
+    },
+    {
+      "as": "sdit.kepala@cipansor.or.id",
+      "method": "POST",
+      "path": "/esign/me/identity/ktp",
+      "file": "apps/web/public/logo.png",
+      "body": "ktp-contoh.png",
+      "optional": true
+    },
+    {
+      "as": "sdit.kepala@cipansor.or.id",
+      "method": "POST",
+      "path": "/esign/me/request",
+      "body": {
+        "reason": "Menandatangani naskah dinas SD IT (alur contoh {{stamp}})."
+      },
+      "save": {
+        "reqId": "data.id"
+      },
+      "optional": true
+    },
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "POST",
+      "path": "/esign/requests/{{reqId}}/decide",
+      "body": {
+        "approve": true,
+        "grantedDays": 365,
+        "note": "Identitas dan foto KTP sudah dicocokkan.",
+        "identityVerification": {
+          "note": "Data sesuai kartu."
+        }
+      },
+      "optional": true
+    },
+    {
+      "as": "sdit.kepala@cipansor.or.id",
+      "method": "POST",
+      "path": "/esign/me/activate",
+      "body": {
+        "passphrase": "CipansorTte2026!"
+      },
+      "optional": true
+    }
+  ],
+  "steps": [
+    {
+      "id": "01-papan-e-office",
+      "as": "sdit.tu@cipansor.or.id",
+      "goto": "/e-office",
+      "see": [
+        "E-Office",
+        "Buat Surat Baru"
+      ],
+      "highlight": {
+        "role": "button",
+        "name": "Buat Surat Baru",
+        "exact": true
+      },
+      "caption": "Papan E-Office. Tombol Buat Surat Baru memulai naskah keluar."
+    },
+    {
+      "id": "02-isi-perihal",
+      "click": {
+        "role": "button",
+        "name": "Buat Surat Baru",
+        "exact": true
+      },
+      "see": [
+        "Buat Surat Baru",
+        "Perihal",
+        "Pemeriksa / Peninjau Pertama"
+      ],
+      "fill": {
+        "target": {
+          "label": "Perihal",
+          "exact": true
+        },
+        "value": "Undangan Rapat Evaluasi Semester {{stamp}}"
+      },
+      "caption": "Formulir surat keluar: isi Perihal, lalu pilih pemeriksa pertama."
+    },
+    {
+      "id": "03-cari-pemeriksa",
+      "fill": {
+        "target": {
+          "placeholder": "Cari pejabat/staf..."
+        },
+        "value": "Dadan"
+      },
+      "shot": false
+    },
+    {
+      "id": "03-pilih-pemeriksa",
+      "click": {
+        "role": "combobox",
+        "name": "Pemeriksa / Peninjau Pertama"
+      },
+      "see": [
+        "H. Dadan Ali Ridwan, S.Ag"
+      ],
+      "caption": "Pemeriksa/peninjau pertama dipilih dari pejabat dan staf unit."
+    },
+    {
+      "id": "04-tetapkan-pemeriksa",
+      "click": {
+        "role": "option",
+        "name": "H. Dadan Ali Ridwan, S.Ag"
+      },
+      "shot": false
+    },
+    {
+      "id": "05-simpan-draft",
+      "click": {
+        "role": "button",
+        "name": "Simpan Draft",
+        "exact": true
+      },
+      "see": [
+        "Draft surat berhasil disimpan"
+      ],
+      "caption": "Draft tersimpan; nomor naskah belum terbit sampai diajukan."
+    },
+    {
+      "id": "06-buku-agenda-keluar",
+      "goto": "/e-office/outbox",
+      "see": [
+        "Surat Keluar",
+        "Undangan Rapat Evaluasi Semester {{stamp}}"
+      ],
+      "highlight": {
+        "text": "Undangan Rapat Evaluasi Semester {{stamp}}",
+        "exact": true
+      },
+      "caption": "Naskah muncul di Buku Agenda Surat Keluar dengan statusnya."
+    },
+    {
+      "id": "07-ajukan-dari-detail",
+      "click": {
+        "text": "Undangan Rapat Evaluasi Semester {{stamp}}",
+        "exact": true
+      },
+      "see": [
+        "Ajukan Review"
+      ],
+      "highlight": {
+        "role": "button",
+        "name": "Ajukan Review",
+        "exact": true
+      },
+      "caption": "Wakasek membuka naskah dan mengajukan konsep untuk ditinjau."
+    },
+    {
+      "id": "08-ajukan-review",
+      "click": {
+        "role": "button",
+        "name": "Ajukan Review",
+        "exact": true
+      },
+      "see": [
+        "Draft surat berhasil diajukan untuk ditinjau"
+      ],
+      "caption": "Pesan \"Draft surat berhasil diajukan untuk ditinjau\"."
+    },
+    {
+      "id": "09-paraf-atasan",
+      "as": "sdit.kepala@cipansor.or.id",
+      "goto": "/e-office/outbox",
+      "click": {
+        "text": "Undangan Rapat Evaluasi Semester {{stamp}}",
+        "exact": true
+      },
+      "see": [
+        "Paraf / Persetujuan",
+        "Setuju & Teruskan"
+      ],
+      "highlight": {
+        "role": "button",
+        "name": "Setuju & Teruskan",
+        "exact": true
+      },
+      "caption": "Pemeriksa pertama memaraf dan meneruskan ke penanda tangan."
+    },
+    {
+      "id": "10-tetapkan-penanda-tangan",
+      "click": {
+        "role": "button",
+        "name": "Setuju & Teruskan",
+        "exact": true
+      },
+      "see": [
+        "Setujui & Teruskan Konsep Surat"
+      ],
+      "caption": "Kotak paraf: pemeriksa menetapkan penerus atau penanda tangan akhir."
+    },
+    {
+      "id": "11-tandai-penanda-tangan-akhir",
+      "click": {
+        "css": "#isFinalSigner"
+      },
+      "shot": false
+    },
+    {
+      "id": "12-proses-teruskan",
+      "click": {
+        "role": "button",
+        "name": "Proses & Teruskan",
+        "exact": true
+      },
+      "see": [
+        "Surat berhasil disetujui"
+      ],
+      "caption": "Konsep diteruskan; naskah siap ditandatangani."
+    },
+    {
+      "id": "13-buka-siap-tanda-tangan",
+      "goto": "/e-office/outbox",
+      "click": {
+        "text": "Undangan Rapat Evaluasi Semester {{stamp}}",
+        "exact": true
+      },
+      "see": [
+        "Tandatangani Dokumen"
+      ],
+      "highlight": {
+        "role": "button",
+        "name": "Tandatangani Dokumen",
+        "exact": true
+      },
+      "caption": "Setelah paraf lengkap, penanda tangan menandatangani naskah."
+    },
+    {
+      "id": "14-tanda-tangan-elektronik",
+      "click": {
+        "role": "button",
+        "name": "Tandatangani Dokumen",
+        "exact": true
+      },
+      "see": [
+        "Tanda Tangan Elektronik",
+        "Passphrase tanda tangan"
+      ],
+      "fill": {
+        "target": {
+          "label": "Passphrase tanda tangan",
+          "exact": true
+        },
+        "value": "CipansorTte2026!"
+      },
+      "area": {
+        "role": "dialog"
+      },
+      "caption": "Kotak tanda tangan meminta passphrase — berbeda dari password akun."
+    },
+    {
+      "id": "15-tandatangani-surat",
+      "click": {
+        "role": "button",
+        "name": "Tandatangani Surat",
+        "exact": true
+      },
+      "see": [
+        "Surat telah ditandatangani"
+      ],
+      "area": {
+        "role": "dialog"
+      },
+      "caption": "Surat ditandatangani; QR dan tautan verifikasi tampil."
+    },
+    {
+      "id": "16-verifikasi-publik",
+      "as": "publik",
+      "goto": "/public/verify-letter",
+      "see": [
+        "Verifikasi Tanda Tangan Elektronik (TTE)",
+        "Verifikasi Dokumen"
+      ],
+      "highlight": {
+        "role": "button",
+        "name": "Verifikasi Dokumen",
+        "exact": true
+      },
+      "caption": "Publik memverifikasi keaslian naskah dengan mengunggah PDF-nya."
+    }
+  ]
+}

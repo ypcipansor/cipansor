@@ -1,0 +1,107 @@
+{
+  "name": "spmb-seleksi-sampai-onboarding",
+  "title": "SPMB: panitia memverifikasi berkas, menilai, menerima, dan meng-onboard calon santri",
+  "setup": [
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "GET",
+      "path": "/admissions/public/active-period",
+      "save": { "periode": "data.id", "unit": "data.unit.id" }
+    },
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "POST",
+      "path": "/admissions/public/registrants",
+      "body": {
+        "admissionPeriodId": "{{periode}}",
+        "fullName": "Nabila Zahra {{stamp}}",
+        "gender": "FEMALE",
+        "birthPlace": "Ciamis",
+        "birthDate": "2012-03-04T00:00:00.000Z",
+        "address": "Jalan Pesantren No. 2",
+        "fatherName": "Hendra Gunawan {{stamp}}",
+        "motherName": "Rina Marlina",
+        "fatherPhone": "081200000002"
+      },
+      "save": { "pendaftar": "data.id", "token": "data.registrationToken" }
+    },
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "POST",
+      "path": "/admissions/public/registrants/{{pendaftar}}/documents",
+      "body": {
+        "type": "PHOTO",
+        "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+        "fileName": "pas-foto.png",
+        "registrationToken": "{{token}}"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "01-pusat-spmb",
+      "as": "super.admin@cipansor.or.id",
+      "goto": "/spmb",
+      "see": ["SPMB - Sistem Penerimaan Murid Baru"],
+      "caption": "Pusat kendali SPMB: pendaftaran online, proses seleksi, dan laporan dalam satu halaman."
+    },
+    {
+      "id": "02-daftar-pendaftar",
+      "goto": "/spmb/registrations",
+      "see": ["Pendaftar", "Nabila Zahra {{stamp}}"],
+      "caption": "Daftar pendaftar memuat setiap calon santri yang masuk dari formulir publik."
+    },
+    {
+      "id": "03-buka-pendaftar",
+      "goto": "/spmb/registrations/{{pendaftar}}",
+      "see": ["Nabila Zahra {{stamp}}", "Dokumen Persyaratan SPMB"],
+      "highlight": "Verifikasi",
+      "caption": "Halaman pendaftar: data calon santri, berkas persyaratan, penilaian seleksi, dan keputusan status."
+    },
+    {
+      "id": "04-verifikasi-berkas",
+      "click": "Verifikasi",
+      "see": ["Terverifikasi"],
+      "caption": "Panitia menandai berkas persyaratan terverifikasi satu per satu."
+    },
+    {
+      "id": "05-nilai-seleksi",
+      "fill": { "target": { "placeholder": "0-100", "nth": 0 }, "value": "85" },
+      "shot": false
+    },
+    {
+      "id": "06-nilai-wawancara",
+      "fill": { "target": { "placeholder": "0-100", "nth": 1 }, "value": "80" },
+      "shot": false
+    },
+    {
+      "id": "07-nilai-tahfidz",
+      "fill": { "target": { "placeholder": "0-100", "nth": 2 }, "value": "90" },
+      "shot": false
+    },
+    {
+      "id": "08-simpan-nilai",
+      "click": "Simpan Nilai Seleksi",
+      "see": ["Nilai seleksi berhasil disimpan."],
+      "caption": "Nilai tes akademik, wawancara, dan tahfidz disimpan sebagai dasar keputusan."
+    },
+    {
+      "id": "09-terima",
+      "click": "Terima (ACCEPTED)",
+      "see": ["Status berhasil diubah ke Diterima."],
+      "caption": "Pendaftar diterima; keputusan status tercatat pada riwayat pendaftaran."
+    },
+    {
+      "id": "10-catat-pelunasan",
+      "click": "Catat Pelunasan Daftar Ulang",
+      "see": ["Pelunasan daftar ulang tercatat."],
+      "caption": "Pelunasan biaya daftar ulang dicatat sebelum onboarding dibuka."
+    },
+    {
+      "id": "11-onboarding",
+      "click": "Jalankan Onboarding Terpadu",
+      "see": ["Siswa berhasil di-Onboard secara terpadu!"],
+      "caption": "Onboarding terpadu membuat data siswa, tagihan SPP, rekam medis, dan akun wali sekaligus."
+    }
+  ]
+}

@@ -1,0 +1,255 @@
+{
+  "name": "spmb-pendaftaran-publik",
+  "title": "SPMB: calon santri mendaftar sendiri dari halaman publik",
+  "steps": [
+    {
+      "id": "01-halaman-spmb",
+      "as": "publik",
+      "goto": "/public/spmb",
+      "see": [
+        "Pendaftaran SPMB",
+        "Informasi & Pendaftaran",
+        "Cek Status"
+      ],
+      "highlight": {
+        "role": "tab",
+        "name": "Informasi & Pendaftaran"
+      },
+      "caption": "Halaman publik SPMB: satu tab untuk mendaftar dan satu tab untuk mengecek status."
+    },
+    {
+      "id": "02-pilih-unit",
+      "click": {
+        "css": "button:has-text(\"Pilih unit tujuan\")"
+      },
+      "shot": false
+    },
+    {
+      "id": "03-isi-unit",
+      "click": {
+        "role": "option",
+        "name": "SMP IT Cipansor (SMP_IT)",
+        "exact": true
+      },
+      "shot": false
+    },
+    {
+      "id": "04-isi-nama",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Nama Lengkap\") + input"
+        },
+        "value": "Ahmad Fauzan {{stamp}}"
+      },
+      "shot": false
+    },
+    {
+      "id": "05-isi-tempat-lahir",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Tempat Lahir\") + input"
+        },
+        "value": "Ciamis"
+      },
+      "shot": false
+    },
+    {
+      "id": "06-isi-tanggal-lahir",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Tanggal Lahir\") + input"
+        },
+        "value": "2013-05-10"
+      },
+      "shot": false
+    },
+    {
+      "id": "07-pilih-jenis-kelamin",
+      "click": {
+        "css": "button:has-text(\"Pilih jenis kelamin\")"
+      },
+      "shot": false
+    },
+    {
+      "id": "08-isi-jenis-kelamin",
+      "click": {
+        "role": "option",
+        "name": "Laki-laki",
+        "exact": true
+      },
+      "shot": false
+    },
+    {
+      "id": "09-data-calon-santri",
+      "click": {
+        "role": "button",
+        "name": "Selanjutnya",
+        "exact": true
+      },
+      "see": [
+        "Data Orang Tua",
+        "Nama Ayah",
+        "Nama Ibu"
+      ],
+      "area": "main",
+      "caption": "Data calon santri tersimpan; formulir lanjut ke data orang tua."
+    },
+    {
+      "id": "10-isi-nama-ayah",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Nama Ayah\") + input"
+        },
+        "value": "Budi Santoso {{stamp}}"
+      },
+      "shot": false
+    },
+    {
+      "id": "11-isi-wa-ayah",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"No. WhatsApp\") + input",
+          "nth": 0
+        },
+        "value": "081200000001"
+      },
+      "shot": false
+    },
+    {
+      "id": "12-isi-nama-ibu",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Nama Ibu\") + input"
+        },
+        "value": "Siti Aminah"
+      },
+      "shot": false
+    },
+    {
+      "id": "13-data-orang-tua",
+      "click": {
+        "role": "button",
+        "name": "Selanjutnya",
+        "exact": true
+      },
+      "see": [
+        "Alamat Lengkap (Jalan, RT/RW)",
+        "Kota/Kabupaten",
+        "Provinsi"
+      ],
+      "area": "main",
+      "caption": "Data orang tua tersimpan; formulir lanjut ke alamat."
+    },
+    {
+      "id": "14-isi-alamat",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Alamat Lengkap (Jalan, RT/RW)\") + textarea"
+        },
+        "value": "Jalan Pesantren No. 1"
+      },
+      "shot": false
+    },
+    {
+      "id": "15-isi-kota",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Kota/Kabupaten\") + input"
+        },
+        "value": "Ciamis"
+      },
+      "shot": false
+    },
+    {
+      "id": "16-isi-provinsi",
+      "fill": {
+        "target": {
+          "css": "label:text-is(\"Provinsi\") + input"
+        },
+        "value": "Jawa Barat"
+      },
+      "shot": false
+    },
+    {
+      "id": "17-ke-quran",
+      "click": {
+        "role": "button",
+        "name": "Selanjutnya",
+        "exact": true
+      },
+      "see": [
+        "Kemampuan Quran"
+      ],
+      "shot": false
+    },
+    {
+      "id": "18-ke-dokumen",
+      "click": {
+        "role": "button",
+        "name": "Selanjutnya",
+        "exact": true
+      },
+      "see": [
+        "Dokumen"
+      ],
+      "shot": false
+    },
+    {
+      "id": "19-konfirmasi",
+      "click": {
+        "role": "button",
+        "name": "Selanjutnya",
+        "exact": true
+      },
+      "see": [
+        "Konfirmasi",
+        "Kirim Pendaftaran"
+      ],
+      "area": "main",
+      "caption": "Langkah Konfirmasi memeriksa kembali isian sebelum dikirim; unggahan dokumen bersifat opsional."
+    },
+    {
+      "id": "20-berhasil",
+      "click": {
+        "role": "button",
+        "name": "Kirim Pendaftaran",
+        "exact": true
+      },
+      "see": [
+        "Pendaftaran Berhasil!"
+      ],
+      "area": {
+        "role": "dialog"
+      },
+      "caption": "Pendaftaran tersimpan; sistem menerbitkan Nomor Pendaftaran untuk mengecek status."
+    }
+  ],
+  "setup": [
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "GET",
+      "path": "/admissions/public/active-period",
+      "save": {
+        "periode": "data.id"
+      }
+    },
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "GET",
+      "path": "/admissions/waves?periodId={{periode}}&limit=1",
+      "save": {
+        "gelombang": "data.0.id"
+      }
+    },
+    {
+      "as": "super.admin@cipansor.or.id",
+      "method": "PUT",
+      "path": "/admissions/waves/{{gelombang}}",
+      "body": {
+        "status": "OPEN",
+        "startDate": "2020-01-01T00:00:00.000Z",
+        "endDate": "{{year}}-12-31T00:00:00.000Z"
+      }
+    }
+  ]
+}

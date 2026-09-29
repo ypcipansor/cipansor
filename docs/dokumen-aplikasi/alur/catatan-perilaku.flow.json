@@ -1,0 +1,66 @@
+{
+  "name": "catatan-perilaku",
+  "title": "Menulis catatan perilaku santri oleh wali kelas",
+  "setup": [
+    {
+      "as": "sdit.walikelas@cipansor.or.id",
+      "method": "GET",
+      "path": "/attendance/me/classes",
+      "save": { "kelas": "data.classes.0.name" }
+    }
+  ],
+  "steps": [
+    {
+      "id": "01-daftar-catatan",
+      "as": "sdit.walikelas@cipansor.or.id",
+      "goto": "/homeroom/behavior",
+      "see": ["Catatan Perilaku Siswa", "Tambah Catatan"],
+      "highlight": "Tambah Catatan",
+      "caption": "Halaman Catatan Perilaku Siswa kelas perwalian, dengan tombol Tambah Catatan di kanan atas."
+    },
+    {
+      "id": "02-kotak-tambah-catatan",
+      "click": "Tambah Catatan",
+      "see": ["Tambah Catatan Perilaku", "Pilih siswa", "Simpan"],
+      "area": { "role": "dialog" },
+      "caption": "Kotak Tambah Catatan Perilaku: pilih siswa, jenis catatan, kategori, lalu tulis catatannya."
+    },
+    {
+      "id": "03-pilih-siswa",
+      "click": { "label": "Siswa", "exact": true },
+      "see": ["Pilih siswa"],
+      "shot": false
+    },
+    {
+      "id": "04-isi-siswa",
+      "click": { "role": "option", "nth": 0 },
+      "shot": false
+    },
+    {
+      "id": "05-pilih-kategori",
+      "click": { "label": "Kategori", "exact": true },
+      "see": ["Akademik", "Tahfidz", "Akhlak"],
+      "caption": "Pilihan Kategori catatan; contohnya Akademik, Tahfidz, atau Akhlak."
+    },
+    {
+      "id": "06-isi-kategori",
+      "click": { "role": "option", "name": "Akademik", "exact": true },
+      "shot": false
+    },
+    {
+      "id": "07-tulis-catatan",
+      "fill": {
+        "target": { "placeholder": "Apa yang terjadi?", "exact": true },
+        "value": "Membantu teman yang kesulitan membaca ayat tanpa diminta."
+      },
+      "shot": false
+    },
+    {
+      "id": "08-simpan",
+      "click": { "role": "button", "name": "Simpan", "exact": true },
+      "see": ["Catatan perilaku berhasil ditambahkan"],
+      "area": "main",
+      "caption": "Catatan tersimpan; muncul pesan \"Catatan perilaku berhasil ditambahkan\"."
+    }
+  ]
+}
