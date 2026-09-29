@@ -139,4 +139,3 @@ apps/api/private/
 # Bytecode dari helper hook — dibuat saat hook mengimpornya, bukan sumber.
 __pycache__/
 *.pyc
-__pycache__/
