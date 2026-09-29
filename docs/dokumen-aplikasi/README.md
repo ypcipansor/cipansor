@@ -13,29 +13,36 @@ pengguna ([Diátaxis](https://diataxis.fr)).
 | `panduan-pengguna-guru.docx` / `.pdf` / `.md` | Panduan pengguna buklet peran Guru |
 | `evaluasi-dokumen.docx` / `.pdf` / `.md` | Evaluasi terhadap standar (arc42, Diátaxis, ISO 26514, docs-as-code) |
 | `diagrams/` | Diagram Mermaid (`.mmd`) dan gambar (`.png`) |
-| `scripts/` | Skrip pembangun (`build_docs.py`, `update_toc.py`, `scan_sensitive.py`) |
+| `fakta/` | `facts.json` + `facts.md` terukur pada commit `aefc719`, dasar angka di dokumen |
 
 ## Membangun ulang
 
-Markdown adalah sumbernya; `.docx` dan `.pdf` dihasilkan darinya. Prasyarat:
-`pandoc`, `python-docx`, `lxml`, `mermaid-cli` (mmdc) dengan Chromium, dan
-LibreOffice (untuk mengisi daftar isi dan mengubah ke PDF).
+Markdown adalah sumbernya; `.docx` dan `.pdf` dihasilkan darinya. Alat
+pembangunnya ada di skill `.claude/skills/dokumen-aplikasi-cipansor/scripts/`.
+Prasyarat: `pandoc`, `python-docx`, `lxml`, `mermaid-cli` (mmdc) dengan Chromium,
+dan LibreOffice (untuk mengisi daftar isi dan mengubah ke PDF).
 
 ```bash
+S=.claude/skills/dokumen-aplikasi-cipansor/scripts
 pip install python-docx lxml
 npm install -g @mermaid-js/mermaid-cli
 # pandoc dan libreoffice dari manajer paket sistem
 
 export PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-python3 scripts/build_docs.py dokumen-teknis-cipansor.md --out . --format docx \
-  --name dokumen-teknis-cipansor --title "Dokumen Teknis Aplikasi" \
-  --subtitle "Sistem Informasi Cipansor" --version 0.1 --status Draf \
-  --commit <hash> --author "Agen OpenHands"
+python3 $S/build_docs.py docs/dokumen-aplikasi/dokumen-teknis-cipansor.md --out . \
+  --format docx --title "Dokumen Teknis Aplikasi" --subtitle "Sistem Informasi Cipansor" \
+  --version 0.1 --status Draf --commit aefc719 --author "Agen OpenHands" \
+  --logo apps/web/public/logo.png
 
-/usr/bin/python3 scripts/update_toc.py dokumen-teknis-cipansor.docx   # isi daftar isi
+# isi daftar isi (dipanggil otomatis oleh build_docs.py bila LibreOffice ada)
+python3 $S/update_toc.py dokumen-teknis-cipansor.docx
 soffice --headless --convert-to pdf --outdir . dokumen-teknis-cipansor.docx
-python3 scripts/scan_sensitive.py *.md                                 # periksa data sensitif
+python3 $S/scan_sensitive.py *.md   # periksa data sensitif; kode keluar 1 = ada temuan
 ```
+
+Angka diukur ulang dengan `python3 $S/collect_facts.py <folder-repo>` — hasilnya
+`fakta/facts.json`; jalankan dengan `--compare fakta/facts.json` saat memperbarui
+dokumen.
 
 ## Menjaga dokumen tetap akurat
 
