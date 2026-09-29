@@ -141,6 +141,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // access token from `cipansor_at` when no Authorization header is present, so
 // every browser request is authenticated without any JavaScript-visible token.
 app.use(cookieParser());
+app.use(csrfProtection);
 
 // Express 5 leaves `req.body` **undefined** when a request carries no body (or
 // no matching Content-Type); Express 4 defaulted it to {}. Forty-two
