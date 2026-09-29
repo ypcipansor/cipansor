@@ -122,36 +122,3 @@ export function DashboardLoadingError({
     </div>
   );
 }
-
-// Connection error (for WebSocket)
-export function ConnectionError({
-  reconnect,
-  attemptNumber = 0,
-}: {
-  reconnect?: () => void;
-  attemptNumber?: number;
-}) {
-  return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
-      <div className="flex items-center gap-2">
-        <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
-        <span className="text-sm text-amber-800">
-          {attemptNumber > 0
-            ? `Mencoba menghubungkan kembali... (Percobaan ${attemptNumber})`
-            : "Koneksi terputus"}
-        </span>
-        {reconnect && (
-          <Button
-            onClick={reconnect}
-            size="sm"
-            variant="ghost"
-            className="ml-auto h-7 text-xs"
-          >
-            <RefreshCw className="mr-1 h-3 w-3" />
-            Hubungkan
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}

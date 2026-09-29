@@ -10,6 +10,8 @@ import {
   changePasswordSchema,
   sendPasswordResetSchema,
   resetPasswordSchema,
+  twoFactorCodeSchema,
+  disableTwoFactorSchema,
 } from './auth.schema';
 import rateLimit from 'express-rate-limit';
 
@@ -20,7 +22,13 @@ const router = Router();
 const twoFactorLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: Number(process.env.TWO_FACTOR_RATE_LIMIT_MAX) || 10,
-  message: 'Too many 2FA attempts, please try again later',
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Terlalu banyak percobaan kode. Coba lagi dalam 15 menit.',
+    },
+  },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -176,7 +184,13 @@ router.post('/2fa/generate', authenticate2FA, controller.generateTwoFactorSecret
  *       200:
  *         description: 2FA enabled successfully
  */
-router.post('/2fa/enable', authenticate2FA, twoFactorLimiter, controller.enableTwoFactor);
+router.post(
+  '/2fa/enable',
+  authenticate2FA,
+  twoFactorLimiter,
+  validate(twoFactorCodeSchema),
+  controller.enableTwoFactor
+);
 
 /**
  * @swagger
@@ -200,7 +214,13 @@ router.post('/2fa/enable', authenticate2FA, twoFactorLimiter, controller.enableT
  *       200:
  *         description: 2FA verified, returns tokens
  */
-router.post('/2fa/login', authenticate2FA, twoFactorLimiter, controller.verifyTwoFactorLogin);
+router.post(
+  '/2fa/login',
+  authenticate2FA,
+  twoFactorLimiter,
+  validate(twoFactorCodeSchema),
+  controller.verifyTwoFactorLogin
+);
 
 // Protected routes (Requires Full Access Token)
 router.use(authenticate);
@@ -381,7 +401,12 @@ router.post('/register', isAdmin, validate(registerSchema), controller.register)
  *       200:
  *         description: 2FA disabled successfully
  */
-router.post('/2fa/disable', twoFactorLimiter, controller.disableTwoFactor);
+router.post(
+  '/2fa/disable',
+  twoFactorLimiter,
+  validate(disableTwoFactorSchema),
+  controller.disableTwoFactor
+);
 
 /**
  * @swagger

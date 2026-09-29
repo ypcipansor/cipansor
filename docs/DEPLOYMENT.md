@@ -330,7 +330,7 @@ psql -U postgres cipansor < backup_20240101.sql
 
 ### Recommended Monitoring Tools
 
-1. **Application Monitoring**: Sentry, New Relic
+1. **Application Monitoring**: none connected yet — Azure Application Insights is the planned choice (data stays in the yayasan's own Azure tenant)
 2. **Infrastructure**: Prometheus + Grafana
 3. **Logging**: ELK Stack, Loki
 

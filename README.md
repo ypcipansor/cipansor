@@ -84,7 +84,7 @@ Angka-angka berikut diambil langsung dari basis kode (per September 2026):
 
 ```
 apps/
-  api/        Express 5 + Prisma 7 REST API (+ Socket.IO realtime, cron jobs)
+  api/        Express 5 + Prisma 7 REST API (+ cron jobs)
   web/        Next.js 16 (App Router) + React 19 + React Query
 packages/
   shared/     @cipansor/shared — DTO & skema Zod untuk kedua aplikasi
@@ -3237,7 +3237,7 @@ Dokumentasi API interaktif tersedia di `/api/docs` ketika service API berjalan.
 
 - Express 5, TypeScript 5, Zod
 - PostgreSQL 17 via Prisma 7 (`@prisma/adapter-pg`)
-- Socket.IO + Redis (realtime), ioredis
+- Redis (cache dashboard & chatbot), ioredis
 - JWT (access/refresh) + 2FA (otplib)
 - Vitest (unit) + suite integrasi DB opt-in
 
@@ -3263,7 +3263,7 @@ Dokumentasi API interaktif tersedia di `/api/docs` ketika service API berjalan.
 - Node.js 20+ (dikembangkan pada Node 22)
 - pnpm 9 (lewat Corepack)
 - PostgreSQL 15+ (17 direkomendasikan) — atau Docker
-- Redis 7+ (opsional; hanya untuk fitur realtime)
+- Redis 7+ (opsional; cache dashboard & chatbot)
 
 ### Langkah
 

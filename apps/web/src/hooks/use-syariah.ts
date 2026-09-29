@@ -2,9 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 
+/** `unitId` narrows the yayasan's organs to one unit; the API ignores it for anyone else. */
 export const useCompliances = (params?: {
   category?: string;
   status?: string;
+  unitId?: string;
 }) => {
   return useQuery({
     queryKey: ["syariah", params],
@@ -26,11 +28,13 @@ export const useCompliance = (id: string) => {
   });
 };
 
-export const useSyariahSummary = () => {
+export const useSyariahSummary = (unitId?: string) => {
   return useQuery({
-    queryKey: ["syariah", "summary"],
+    queryKey: ["syariah", "summary", unitId],
     queryFn: async () => {
-      const res = await api.get("/syariah/summary");
+      const res = await api.get("/syariah/summary", {
+        params: unitId ? { unitId } : undefined,
+      });
       return res.data.data;
     },
   });

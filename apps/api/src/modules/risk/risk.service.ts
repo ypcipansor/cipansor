@@ -114,13 +114,12 @@ export class RiskService {
     }
   }
 
+  /** `unitId` undefined = every unit (the yayasan's organs). */
   async getRisks(
-    unitId: string,
+    unitId: string | undefined,
     query: { category?: any; riskLevel?: any; strategicPlanId?: string }
   ): Promise<Risk[]> {
-    const where: Prisma.RiskWhereInput = {
-      unitId,
-    };
+    const where: Prisma.RiskWhereInput = unitId ? { unitId } : {};
 
     if (query.category) where.category = query.category;
     if (query.riskLevel) where.riskLevel = query.riskLevel;
@@ -129,6 +128,7 @@ export class RiskService {
     return prisma.risk.findMany({
       where,
       include: {
+        unit: { select: { id: true, name: true } },
         mitigations: true,
         createdBy: {
           select: { id: true, name: true },

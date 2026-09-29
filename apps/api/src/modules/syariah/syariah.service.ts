@@ -11,6 +11,7 @@ export class SyariahService {
         ...(query.category && { category: query.category as any }),
         ...(query.status && { status: query.status as any }),
       },
+      include: { unit: { select: { id: true, name: true } } },
       orderBy: { createdAt: 'desc' },
     });
   }

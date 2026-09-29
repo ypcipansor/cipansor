@@ -107,6 +107,31 @@ export class PengawasanService {
     return prisma.internalAudit.delete({ where: { id } });
   }
 
+  /** The unit of an audit, a finding or a follow-up — null when there is no such row. */
+  async auditUnitId(id: string): Promise<string | null> {
+    const audit = await prisma.internalAudit.findUnique({
+      where: { id },
+      select: { unitId: true },
+    });
+    return audit?.unitId ?? null;
+  }
+
+  async findingUnitId(id: string): Promise<string | null> {
+    const finding = await prisma.auditFinding.findUnique({
+      where: { id },
+      select: { audit: { select: { unitId: true } } },
+    });
+    return finding?.audit.unitId ?? null;
+  }
+
+  async followUpUnitId(id: string): Promise<string | null> {
+    const followUp = await prisma.auditFollowUp.findUnique({
+      where: { id },
+      select: { finding: { select: { audit: { select: { unitId: true } } } } },
+    });
+    return followUp?.finding.audit.unitId ?? null;
+  }
+
   // ==================== FINDINGS ====================
 
   async createFinding(data: {
@@ -129,15 +154,28 @@ export class PengawasanService {
       // friendly 404 instead of a raw Prisma P2025 from the `connect` call.
       // We also read consequence/status here to use in the side-effect below,
       // avoiding a redundant second query.
-      let existingRisk: { consequence: string | null; status: string; impact: string } | null =
-        null;
+      let existingRisk: {
+        consequence: string | null;
+        status: string;
+        impact: string;
+        unitId: string;
+      } | null = null;
       if (data.linkToRiskId) {
         existingRisk = await tx.risk.findUnique({
           where: { id: data.linkToRiskId },
-          select: { consequence: true, status: true, impact: true },
+          select: { consequence: true, status: true, impact: true, unitId: true },
         });
         if (!existingRisk) {
           throw Errors.notFound(`Risk with id ${data.linkToRiskId}`);
+        }
+        // A finding escalates the risk it names, so the risk must be the
+        // audited unit's own — not another unit's, reached by its id.
+        const audit = await tx.internalAudit.findUnique({
+          where: { id: data.auditId },
+          select: { unitId: true },
+        });
+        if (audit && audit.unitId !== existingRisk.unitId) {
+          throw Errors.badRequest('Risiko yang ditautkan milik unit lain');
         }
       }
 

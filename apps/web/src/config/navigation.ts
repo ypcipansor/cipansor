@@ -823,6 +823,19 @@ const yayasanNavigation: NavGroup[] = [
         href: "/risk-management",
         icon: Shield,
       },
+      // Oversight across every unit. Until 2026-09-28 these two were only in
+      // the unit admins' menu, and answered the yayasan's organs with "Unit ID
+      // required" when opened by URL.
+      {
+        title: "Pengawasan Internal",
+        href: "/pengawasan",
+        icon: ClipboardCheck,
+      },
+      {
+        title: "Kepatuhan Syariah",
+        href: "/syariah",
+        icon: BookCheck,
+      },
     ],
   },
   {

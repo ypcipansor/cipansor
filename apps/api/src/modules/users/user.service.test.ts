@@ -131,6 +131,16 @@ describe('user.service unit scoping (one admin per unit)', () => {
     });
     expect(mock.user.findMany.mock.calls[0][0].where.unitId).toBeUndefined();
   });
+
+  it('lists whether each user has 2FA on, so an admin can turn it off for them', async () => {
+    mock.user.findMany.mockResolvedValue([]);
+    mock.user.count.mockResolvedValue(0);
+    await userService.findAll({ page: 1, limit: 10 } as Parameters<typeof userService.findAll>[0], {
+      roleCode: 'SUPER_ADMIN',
+      unitId: null,
+    });
+    expect(mock.user.findMany.mock.calls[0][0].select.isTwoFactorEnabled).toBe(true);
+  });
 });
 
 // keep the linter satisfied about the imported ApiError type usage

@@ -1,22 +1,10 @@
-import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  integrations: [nodeProfilingIntegration()],
-  // Tracing
-  tracesSampleRate: 1.0, //  Capture 100% of the transactions
-  // Set sampling rate for profiling - this is relative to tracesSampleRate
-  profilesSampleRate: 1.0,
-});
-
 import { app } from './app';
 import { config } from '@/config';
 import { assertProductionSecrets } from '@/config/assert-secrets';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
 import { initializeScheduler, stopScheduler } from '@/jobs';
-import { initializeSocketIO, closeRealtimeConnections } from '@/lib/realtime';
+import { redis } from '@/lib/redis';
 import { initializeEventBus } from '@/lib/event-bus';
 import { createServer } from 'http';
 
@@ -36,10 +24,6 @@ async function bootstrap() {
     // Create HTTP server
     const httpServer = createServer(app);
 
-    // Initialize Socket.IO
-    initializeSocketIO(httpServer);
-    logger.info('Real-time server initialized');
-
     // Initialize cross-module event bus
     initializeEventBus();
     logger.info('Event bus initialized');
@@ -50,7 +34,6 @@ async function bootstrap() {
       logger.info(`📚 Environment: ${config.env}`);
       logger.info(`🔗 API URL: http://localhost:${PORT}/api`);
       logger.info(`❤️  Health: http://localhost:${PORT}/health`);
-      logger.info(`🔌 WebSocket: ws://localhost:${PORT}`);
     });
 
     // Initialize scheduled jobs — unless this copy is a staging environment that
@@ -72,8 +55,8 @@ async function bootstrap() {
       // Stop scheduled jobs
       stopScheduler();
 
-      // Close real-time connections
-      await closeRealtimeConnections();
+      // Close the Redis connection (dashboard, chatbot and permission caches)
+      await redis.quit().catch(() => undefined);
 
       httpServer.close(async () => {
         logger.info('HTTP server closed');

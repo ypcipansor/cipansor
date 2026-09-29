@@ -11,7 +11,7 @@ vi.mock('@/lib/prisma', () => ({
     academicYear: { findFirst: vi.fn() },
   },
 }));
-vi.mock('@/lib/realtime', () => ({
+vi.mock('@/lib/dashboard-metrics', () => ({
   getCurrentDashboardMetrics: vi.fn(),
 }));
 

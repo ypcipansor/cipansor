@@ -33,7 +33,7 @@ const scheduledTasks: ScheduledTask[] = [];
 export function initializeScheduler(): void {
   logger.info('[Scheduler] Initializing scheduled jobs...');
 
-  // Real-time dashboard metrics - Run every minute
+  // Dashboard metrics history (the dashboard's trend) - every minute
   const metricsTask = cron.schedule(
     '* * * * *',
     async () => {

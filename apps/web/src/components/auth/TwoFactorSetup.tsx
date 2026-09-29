@@ -12,7 +12,10 @@ import { authApi } from "@/lib/api";
 import { toast } from "sonner";
 
 const setupSchema = z.object({
-  token: z.string().min(6, "Token must be 6 digits"),
+  token: z
+    .string()
+    .trim()
+    .min(1, "Masukkan 6 digit dari aplikasi autentikator"),
 });
 
 type SetupForm = z.infer<typeof setupSchema>;
@@ -43,7 +46,7 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
         setSecret(res.data.data.secret);
         setQrCode(res.data.data.qrCodeUrl);
       } catch (error) {
-        toast.error("Failed to generate 2FA secret");
+        toast.error("Gagal menyiapkan verifikasi dua langkah. Coba lagi.");
       }
     };
     fetchSecret();
@@ -57,7 +60,7 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
       });
       setRecoveryCodes(res.data.data.recoveryCodes);
       setStep("recovery");
-      toast.success("2FA Enabled Successfully");
+      toast.success("Verifikasi dua langkah aktif");
     } catch (error) {
       // Error handled by interceptor or store usually, but here we call api directly
       // Interceptor handles toast
@@ -68,7 +71,7 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
 
   const copyRecoveryCodes = () => {
     navigator.clipboard.writeText(recoveryCodes.join("\n"));
-    toast.success("Recovery codes copied to clipboard");
+    toast.success("Kode pemulihan disalin");
   };
 
   if (!qrCode && step === "scan") {
@@ -81,28 +84,28 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
 
   return (
     <div className="space-y-6">
-      <div className="text-center">
-        <h3 className="text-lg font-semibold">
-          Setup Two-Factor Authentication
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          {step === "scan" || step === "verify"
-            ? "Scan the QR code with your authenticator app."
-            : "Save your recovery codes."}
-        </p>
-      </div>
-
       {step !== "recovery" && (
         <div className="flex flex-col items-center space-y-4">
+          <ol className="w-full list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+            <li>
+              Pasang aplikasi autentikator di ponsel Anda (Google Authenticator,
+              Microsoft Authenticator, atau yang sejenis).
+            </li>
+            <li>Pindai kode QR ini, atau ketik kode manual di bawahnya.</li>
+            <li>Masukkan 6 digit yang tampil di aplikasi.</li>
+          </ol>
+
           <div className="bg-white p-2 rounded-lg border">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrCode} alt="2FA QR Code" className="w-48 h-48" />
+            <img
+              src={qrCode}
+              alt="Kode QR verifikasi dua langkah"
+              className="w-48 h-48"
+            />
           </div>
 
           <div className="w-full text-center">
-            <p className="text-xs text-muted-foreground mb-1">
-              Manual Entry Code:
-            </p>
+            <p className="text-xs text-muted-foreground mb-1">Kode manual:</p>
             <code className="bg-muted p-2 rounded text-sm font-mono break-all block">
               {secret}
             </code>
@@ -110,11 +113,13 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
 
           <form onSubmit={handleSubmit(onVerify)} className="w-full space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="token">Verification Code</Label>
+              <Label htmlFor="token">Kode verifikasi</Label>
               <Input
                 id="token"
                 placeholder="123456"
                 autoComplete="one-time-code"
+                inputMode="numeric"
+                maxLength={12}
                 {...register("token")}
               />
               {errors.token && (
@@ -126,7 +131,7 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Verify & Enable
+              Verifikasi & aktifkan
             </Button>
           </form>
         </div>
@@ -138,10 +143,14 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
             <div className="flex items-start gap-3">
               <CheckCircle2 className="h-5 w-5 text-amber-600 dark:text-amber-500 mt-0.5" />
               <div className="text-sm text-amber-800 dark:text-amber-200">
-                <p className="font-medium mb-1">Important!</p>
+                <p className="font-medium mb-1">
+                  Simpan kode pemulihan ini sekarang
+                </p>
                 <p>
-                  Save these recovery codes in a safe place. You will need them
-                  if you lose access to your authenticator app.
+                  Cetak atau simpan di tempat yang aman. Jika ponsel Anda hilang
+                  atau aplikasinya terhapus, masukkan salah satu kode ini di
+                  langkah verifikasi saat masuk. Setiap kode hanya berlaku
+                  sekali, dan daftar ini tidak akan ditampilkan lagi.
                 </p>
               </div>
             </div>
@@ -162,11 +171,11 @@ export function TwoFactorSetup({ onComplete }: TwoFactorSetupProps) {
             onClick={copyRecoveryCodes}
           >
             <Copy className="mr-2 h-4 w-4" />
-            Copy Codes
+            Salin kode
           </Button>
 
           <Button onClick={onComplete} className="w-full">
-            Done
+            Selesai
           </Button>
         </div>
       )}

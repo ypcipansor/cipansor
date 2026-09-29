@@ -16,7 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { captureError } from "@/lib/sentry";
+import { captureError } from "@/lib/report-error";
 
 interface Props {
   children: React.ReactNode;

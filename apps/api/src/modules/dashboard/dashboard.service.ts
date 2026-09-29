@@ -9,7 +9,7 @@
 
 import { prisma } from '@/lib/prisma';
 import { logger } from '@/lib/logger';
-import { getCurrentDashboardMetrics } from '@/lib/realtime';
+import { getCurrentDashboardMetrics } from '@/lib/dashboard-metrics';
 import type {
   DashboardStats,
   AttendanceStats,

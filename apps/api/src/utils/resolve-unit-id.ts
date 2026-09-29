@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import { RoleCode } from '@prisma/client';
+import { Errors } from '@/middleware/error';
 
 /**
  * Resolve the effective unitId for the current request.
@@ -78,6 +79,62 @@ export const FOUNDATION_SCOPE_ROLES: readonly string[] = [
  */
 export function isFoundationScopedRole(roleCode?: string | null): boolean {
   return !!roleCode && FOUNDATION_SCOPE_ROLES.includes(roleCode);
+}
+
+/**
+ * The unit a unit-scoped list is narrowed to, for the oversight modules
+ * (internal audit, risk, sharia compliance): `undefined` means every unit.
+ *
+ * A foundation role oversees every unit and belongs to none, so it sees them
+ * all and may narrow to one with `?unitId=`. Everyone else sees their own
+ * unit, whatever the query says, and a unit-bound role without one is refused.
+ *
+ * These modules used to decide it on the legacy `role`, where
+ * deriveLegacyRole() files every YAYASAN_* code under UNIT_ADMIN: the
+ * Pengawas — the organ whose job this is — was turned away with "Unit ID
+ * required", while a unit's admin could read another unit by naming it in
+ * the query.
+ */
+export function listUnitScope(req: Request): string | undefined {
+  if (isFoundationScopedRole(req.user?.roleCode)) {
+    const asked = req.query.unitId;
+    return typeof asked === 'string' && asked && asked !== 'all' ? asked : undefined;
+  }
+  if (!req.user?.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
+  return req.user.unitId;
+}
+
+/** Whether the request may see, or act on, a row of `unitId` — the per-row half of listUnitScope. */
+export function mayReachUnit(req: Request, unitId: string | null | undefined): boolean {
+  if (isFoundationScopedRole(req.user?.roleCode)) return true;
+  return !!req.user?.unitId && unitId === req.user.unitId;
+}
+
+/**
+ * Refuses a row out of the request's reach — or missing — with 404, as if it
+ * did not exist: an id guessed from another unit says nothing about that unit.
+ */
+export function assertReachesUnit(
+  req: Request,
+  unitId: string | null | undefined,
+  resource: string
+): void {
+  if (!unitId || !mayReachUnit(req, unitId)) throw Errors.notFound(resource);
+}
+
+/**
+ * The unit a new row is written to. A foundation role names it (a unit it
+ * carries on its token is the default); everyone else writes to their own,
+ * whatever the body says.
+ */
+export function writeUnitScope(req: Request, named: string | null | undefined): string {
+  if (isFoundationScopedRole(req.user?.roleCode)) {
+    const unitId = named || req.user?.unitId;
+    if (!unitId) throw Errors.badRequest('Pilih unit');
+    return unitId;
+  }
+  if (!req.user?.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
+  return req.user.unitId;
 }
 
 /**

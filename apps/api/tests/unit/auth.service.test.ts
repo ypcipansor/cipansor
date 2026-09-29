@@ -441,6 +441,8 @@ describe('AuthService', () => {
           role: UserRole.SUPER_ADMIN,
           unitId: 'unit-1',
           isActive: true,
+          // A Super Admin session is renewed only with 2FA on.
+          isTwoFactorEnabled: true,
           // refreshToken() reads the primary role assignment to mint new tokens.
           userRoles: [
             {
@@ -501,7 +503,7 @@ describe('AuthService', () => {
       mockPrisma.refreshToken.delete.mockResolvedValue({});
 
       await expect(authService.refreshToken('pt-refresh-token')).rejects.toThrow(
-        'No active role assignment found'
+        'tidak lagi memiliki peran aktif'
       );
       // The token is consumed, but no new one is minted.
       expect(mockPrisma.refreshToken.create).not.toHaveBeenCalled();
@@ -636,7 +638,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.generateTwoFactorSecret('user-1')).rejects.toThrow(
-        '2FA is already enabled'
+        'Verifikasi dua langkah sudah aktif'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -676,7 +678,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.enableTwoFactor('user-1', '123456')).rejects.toThrow(
-        'No pending 2FA setup found'
+        'Belum ada pengaturan yang dimulai'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -690,7 +692,7 @@ describe('AuthService', () => {
       mockVerifyOtp.mockResolvedValue({ valid: false });
 
       await expect(authService.enableTwoFactor('user-1', '000000')).rejects.toThrow(
-        'Invalid OTP code'
+        'Kode tidak cocok'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -703,7 +705,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.enableTwoFactor('user-1', '123456')).rejects.toThrow(
-        '2FA is already enabled'
+        'Verifikasi dua langkah sudah aktif'
       );
     });
   });
@@ -764,7 +766,7 @@ describe('AuthService', () => {
       });
 
       await expect(authService.disableTwoFactor('admin-1', '123456')).rejects.toThrow(
-        '2FA cannot be disabled for Admin accounts'
+        'Verifikasi dua langkah wajib untuk peran Anda'
       );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
@@ -780,18 +782,20 @@ describe('AuthService', () => {
       });
       mockVerifyOtp.mockResolvedValue({ valid: false });
 
-      await expect(authService.disableTwoFactor('user-1', '000000')).rejects.toThrow('Invalid OTP');
+      await expect(authService.disableTwoFactor('user-1', '000000')).rejects.toThrow(
+        'Kode tidak cocok'
+      );
       expect(mockPrisma.user.update).not.toHaveBeenCalled();
     });
   });
 
   describe('getTwoFactorStatus', () => {
     it('reports the enabled flag', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue({ isTwoFactorEnabled: true });
+      mockPrisma.user.findUnique.mockResolvedValue({ isTwoFactorEnabled: true, userRoles: [] });
 
       const result = await authService.getTwoFactorStatus('user-1');
 
-      expect(result).toEqual({ isEnabled: true });
+      expect(result).toEqual({ isEnabled: true, isRequired: false });
     });
 
     it('throws for a non-existent user', async () => {

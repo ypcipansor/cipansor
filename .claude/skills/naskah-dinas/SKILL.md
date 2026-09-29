@@ -161,7 +161,11 @@ dicatat ─disposisi─► DISPOSED ─► ARCHIVED
 Dari `docs/EOFFICE_ESIGN_PLAN.md` §6:
 - naskah mana yang harus terverifikasi di luar pesantren (menentukan perlu
   tidaknya PSrE);
-- kewenangan menandatangani a.n., u.b., Plt., dan Plh. (PR-6);
+- kewenangan menandatangani a.n., u.b., Plt., dan Plh. (PR-6). Anggaran Dasar
+  Pasal 18: Pengurus mewakili yayasan oleh **Ketua Umum bersama satu anggota
+  Pengurus lain**, dengan urutan pengganti bila berhalangan, dan kuasa tertulis
+  untuk perbuatan tertentu (`tata-kelola-yayasan/anggaran-dasar.md`) — naskah
+  yang mewakili yayasan ke luar dengan satu tanda tangan belum memenuhinya;
 - berapa lama naskah bertanda tangan dan arsip PDF-nya disimpan;
 - huruf Arab di badan naskah (PR-7, atau jalur DOCX);
 - berapa lama naskah yang dicabut masih bisa diunduh;

@@ -273,7 +273,9 @@ export class LoginPage {
       process.env.E2E_2FA_SECRET || "NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE";
     const token = await generate({ secret });
     await otpInput.fill(token);
-    await this.page.getByRole("button", { name: /verify/i }).click();
+    await this.page
+      .getByRole("button", { name: "Verifikasi", exact: true })
+      .click();
   }
 
   /**

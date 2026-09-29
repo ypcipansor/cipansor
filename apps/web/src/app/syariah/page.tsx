@@ -14,6 +14,11 @@ import {
 } from "@/hooks/use-syariah";
 import { PageHeader } from "@/components/shared/page-header";
 import {
+  UnitScopeFilter,
+  UnitSelect,
+  useOverseesAllUnits,
+} from "@/components/shared/unit-scope";
+import {
   Card,
   CardContent,
   CardDescription,
@@ -57,6 +62,8 @@ const complianceFormSchema = z.object({
   category: z.enum(["MUAMALAH", "TARBIYAH", "IBADAH", "AKHLAQ", "GOVERNANCE"]),
   description: z.string().optional(),
   standard: z.string().optional(),
+  // Asked only of the yayasan's organs, who belong to no unit.
+  unitId: z.string().optional(),
 });
 
 const auditFormSchema = z.object({
@@ -103,6 +110,7 @@ const categories = [
 // ─── Create Compliance Dialog ───────────────────────
 function ComplianceFormDialog({ onClose }: { onClose: () => void }) {
   const createCompliance = useCreateCompliance();
+  const asksUnit = useOverseesAllUnits();
   const form = useForm<z.infer<typeof complianceFormSchema>>({
     resolver: zodResolver(complianceFormSchema),
     defaultValues: {
@@ -110,11 +118,22 @@ function ComplianceFormDialog({ onClose }: { onClose: () => void }) {
       category: "MUAMALAH",
       description: "",
       standard: "",
+      unitId: "",
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof complianceFormSchema>) => {
-    await createCompliance.mutateAsync(values);
+  const onSubmit = async ({
+    unitId,
+    ...values
+  }: z.infer<typeof complianceFormSchema>) => {
+    if (asksUnit && !unitId) {
+      form.setError("unitId", { message: "Unit wajib dipilih" });
+      return;
+    }
+    await createCompliance.mutateAsync({
+      ...values,
+      ...(asksUnit && { unitId }),
+    });
     onClose();
   };
 
@@ -128,6 +147,23 @@ function ComplianceFormDialog({ onClose }: { onClose: () => void }) {
       </DialogHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          {asksUnit && (
+            <FormField
+              control={form.control}
+              name="unitId"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel htmlFor="compliance-unit">Unit</FormLabel>
+                  <UnitSelect
+                    id="compliance-unit"
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
           <FormField
             control={form.control}
             name="title"
@@ -352,10 +388,14 @@ function SyariahPageContent() {
     null,
   );
 
-  const { data: compliances, isLoading } = useCompliances(
-    filterCategory ? { category: filterCategory } : undefined,
-  );
-  const { data: summary } = useSyariahSummary();
+  const overseesAll = useOverseesAllUnits();
+  const [unitId, setUnitId] = useState<string | undefined>();
+
+  const { data: compliances, isLoading } = useCompliances({
+    ...(filterCategory && { category: filterCategory }),
+    ...(unitId && { unitId }),
+  });
+  const { data: summary } = useSyariahSummary(unitId);
 
   return (
     <div className="container mx-auto py-6 space-y-8">
@@ -466,6 +506,7 @@ function SyariahPageContent() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
         <Filter className="h-4 w-4 text-muted-foreground" />
+        {overseesAll && <UnitScopeFilter value={unitId} onChange={setUnitId} />}
         <Select
           value={filterCategory || "ALL"}
           onValueChange={(v) => setFilterCategory(v === "ALL" ? undefined : v)}
@@ -523,6 +564,9 @@ function SyariahPageContent() {
                   <div>
                     <CardTitle className="text-lg">{item.title}</CardTitle>
                     <CardDescription>
+                      {overseesAll && item.unit?.name && (
+                        <>{item.unit.name} • </>
+                      )}
                       {categoryLabel[item.category] || item.category}
                     </CardDescription>
                     {item.standard && (
