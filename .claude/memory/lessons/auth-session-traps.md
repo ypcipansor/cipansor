@@ -1,6 +1,6 @@
 # auth-session-traps
 
-> Why signed-in users were bounced off the page they asked for — a refresh-token stampede, zustand's pre-rehydration state, a spinner that ate the shell — and a cookie the browser silently dropped.
+> Why signed-in users were bounced off the page they asked for — a refresh-token stampede, zustand's pre-rehydration state, a spinner that ate the shell, a cookie the browser silently dropped — and, with HttpOnly sessions, a routing cookie that outlived its session.
 
 Found 2026-07-21 by driving the site with Playwright. All of it was first
 misread as RBAC or as timing noise. **Capture the document redirect chain
@@ -23,14 +23,32 @@ named the cause at once.
   fetched the user on every mount — so the sidebar and header vanished on
   every navigation. Gate the spinner on `isLoading && !user`; `fetchUser` is
   single-flight too.
-- **A cookie over ~4 KB is dropped without a word.** `customStorage`
-  (`apps/web/src/stores/auth.ts`) wrote the whole user object, with every
-  permission, into the `auth-storage` cookie; for a kepala sekolah that was
-  4.3 KB, and with fuller data 5.7 KB. The browser refused it silently and
-  `middleware.ts` fell back to the token-only branch — signed in, **no role**.
-  Since #531 the cookie carries only the role and the primary assignment
-  (~300 B); localStorage keeps the full object. In Playwright the symptom is
+- **A cookie over ~4 KB is dropped without a word.** The client once wrote
+  the whole user object, with every permission, into a cookie the middleware
+  read; for a kepala sekolah that was 4.3 KB. The browser refused it silently
+  and the middleware saw someone signed in with **no role**. Keep a cookie the
+  middleware needs to a few hundred bytes. In Playwright the symptom is
   `addCookies` → "Invalid cookie fields".
+- **A cookie only the server can clear must be cleared on every refusal.**
+  Since #620 the session is HttpOnly and the middleware routes by an HttpOnly
+  `cipansor_principal` cookie. When a refresh was refused and that cookie
+  survived, the middleware kept sending `/login` back to the dashboard, the
+  dashboard's first call failed to refresh again, and the browser looped with
+  no way to sign in. Any refusal path — refresh, and anything else that
+  decides a session is over — clears every session cookie in its response.
+  The commonest trigger is ordinary: changing your own password revokes every
+  refresh token, the current one included.
+- **Read "was there a session" before the call that may end it.** A refused
+  refresh clears the cookies in its own response, so a check made afterwards
+  sees an anonymous visitor and skips the redirect to `/login`. An anonymous
+  visitor must never be redirected (a public page calling a protected
+  endpoint is normal); a signed-in one must be.
+- **The routing cookie's bucket is minted, not derived by the client.** Every
+  place that mints a token (login, 2FA, refresh, role switch) must compute
+  the bucket the same way (`tokenLegacyRole`): a switch that wrote the legacy
+  `users.role` column routed the user by the column again, and role codes with
+  no bucket (komite, alumni) were refused every page. Test it by signing in
+  through the form, not with a helper that builds the cookie itself.
 
 **Health route:** a reverse proxy's `location /health` is a *prefix* match and
 once swallowed the whole Kesehatan module (`/health/records`, …). The health
