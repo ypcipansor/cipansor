@@ -80,6 +80,19 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
+- **Application documents (`docs/dokumen-aplikasi/`), branch
+  `docs/dokumen-aplikasi-cipansor`, no PR yet.** A technical document (arc42 +
+  C4-1/2/3) and the user manuals (general part + Guru booklet, all T2: written
+  from code, never run, every card ⚠), built by the `dokumen-aplikasi-cipansor`
+  skill. The first run (2026-09-29, another agent) shipped broken tables,
+  invented routes and a wrong job count; the audit is
+  `docs/dokumen-aplikasi/evaluasi-dokumen.md`, and the skill now carries machine
+  checks (`check_docs.py`, `check_env.py`, a self-verifying `build_docs.py`).
+  The fix commit (`0b6c189`) was made locally but the push was refused with
+  403 (no GitHub access to the repository from that session) — it is not on
+  the remote until someone reconnects the Claude GitHub App and pushes.
+  Open: T1 verification with screenshots, the other role booklets, and whether
+  the `.docx`/`.pdf` stay in git or become a CI artifact (user's call).
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
