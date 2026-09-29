@@ -338,12 +338,25 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const target = (event.notification.data && event.notification.data.url) || "/";
+  // The payload URL comes from a push message, so treat it as untrusted. Resolve
+  // it against our own origin and refuse to act on anything off-origin — a push
+  // must not be able to open (or match) a foreign URL. Matching a client by
+  // exact pathname, not `includes`, also stops `/dash` from claiming a click
+  // meant for `/dashboard`.
+  const resolved = new URL(target, self.location.origin);
+  const safe =
+    resolved.origin === self.location.origin
+      ? resolved
+      : new URL("/", self.location.origin);
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {
-        if (client.url.includes(target) && "focus" in client) return client.focus();
+        if (!client.url.startsWith(self.location.origin)) continue;
+        if (new URL(client.url).pathname === safe.pathname && "focus" in client) {
+          return client.focus();
+        }
       }
-      return self.clients.openWindow(target);
+      return self.clients.openWindow(safe.href);
     }),
   );
 });

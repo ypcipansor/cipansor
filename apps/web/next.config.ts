@@ -168,6 +168,18 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
+        // The service worker script must not be HTTP-cached. The browser's own
+        // update check compares the fetched bytes against the installed worker
+        // (Chrome ignores cache headers for this), but a shared/intermediary
+        // cache in front of the app can still serve a stale `sw.js`, which
+        // pins every client to the old worker until that cache expires. A short
+        // max-age plus revalidation keeps a deploy discoverable.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
+        ],
+      },
+      {
         source: "/:path*",
         headers: [
           {

@@ -111,6 +111,8 @@ function loadWorker() {
   const enableNavigationPreload = vi.fn().mockResolvedValue(undefined);
   const pushSubscribe = vi.fn().mockResolvedValue({ endpoint: "https://new" });
   const showNotification = vi.fn();
+  const openWindow = vi.fn().mockResolvedValue(undefined);
+  const matchAll = vi.fn().mockResolvedValue([]);
 
   const self = {
     location: { origin: ORIGIN },
@@ -120,7 +122,8 @@ function loadWorker() {
     skipWaiting,
     clients: {
       claim: () => Promise.resolve(clientsClaim()),
-      matchAll: async () => [],
+      matchAll,
+      openWindow,
     },
     registration: {
       showNotification,
@@ -153,6 +156,8 @@ function loadWorker() {
     enableNavigationPreload,
     pushSubscribe,
     showNotification,
+    openWindow,
+    matchAll,
   };
 }
 
@@ -491,6 +496,57 @@ describe("sw.js push notification rendering", () => {
 
     const [, options] = worker.showNotification.mock.calls[0];
     expect(options.body).toBe("Pesan biasa");
+  });
+});
+
+describe("sw.js notification click routing", () => {
+  /** Fire notificationclick and return the work it handed to waitUntil. */
+  function dispatchClick(
+    worker: ReturnType<typeof loadWorker>,
+    data: { url?: string },
+  ) {
+    let work!: Promise<unknown>;
+    worker.listeners.get("notificationclick")?.({
+      notification: { close: vi.fn(), data },
+      waitUntil: (p: Promise<unknown>) => {
+        work = p;
+      },
+    });
+    return work;
+  }
+
+  it("focuses an already-open tab on the exact target path", async () => {
+    const worker = loadWorker();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    worker.matchAll.mockResolvedValue([{ url: `${ORIGIN}/dashboard`, focus }]);
+
+    await dispatchClick(worker, { url: "/dashboard" });
+
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(worker.openWindow).not.toHaveBeenCalled();
+  });
+
+  it("does not match a longer path that merely starts with the target", async () => {
+    const worker = loadWorker();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    // `/dashboard-extra` must not satisfy a click aimed at `/dashboard`.
+    worker.matchAll.mockResolvedValue([
+      { url: `${ORIGIN}/dashboard-extra`, focus },
+    ]);
+
+    await dispatchClick(worker, { url: "/dashboard" });
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(worker.openWindow).toHaveBeenCalledWith(`${ORIGIN}/dashboard`);
+  });
+
+  it("refuses to open an off-origin target from a push payload", async () => {
+    const worker = loadWorker();
+
+    await dispatchClick(worker, { url: "https://evil.example.com/phish" });
+
+    // Falls back to the app root rather than opening a foreign origin.
+    expect(worker.openWindow).toHaveBeenCalledWith(`${ORIGIN}/`);
   });
 });
 

@@ -89,6 +89,10 @@ test.describe("PWA assets", () => {
     const sw = await request.get("/sw.js");
     expect(sw.status()).toBe(200);
     expect(await sw.text()).toContain("addEventListener");
+    // The worker script must not be HTTP-cached: a stale copy in an
+    // intermediary cache pins every client to the old worker until it expires.
+    // The browser's own update check revalidates, so `max-age=0` is correct.
+    expect(sw.headers()["cache-control"]).toContain("max-age=0");
 
     const offline = await request.get("/offline.html");
     expect(offline.status()).toBe(200);
