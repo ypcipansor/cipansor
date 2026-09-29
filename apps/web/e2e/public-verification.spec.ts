@@ -134,6 +134,12 @@ test("a revoked key shows its reason and whether old letters are affected", asyn
 
   await expect(page.getByText(/kunci dicabut/i)).toBeVisible();
   // The distinction that matters: a key compromise, unlike an office change,
-  // puts letters already signed in doubt.
-  await expect(page.getByText(/kebocoran kunci/i)).toBeVisible();
+  // puts letters already signed in doubt. Assert the compromise-specific
+  // sentence — "kebocoran kunci" alone also appears in the standing note that
+  // is shown for every revocation, so matching it would not prove the point.
+  await expect(
+    page.getByText(
+      /keaslian naskah yang ditandatangani dengan kunci ini perlu diverifikasi ulang/i,
+    ),
+  ).toBeVisible();
 });
