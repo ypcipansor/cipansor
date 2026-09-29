@@ -61,6 +61,14 @@ python scripts/collect_facts.py <repo> --out fakta
 Baca `fakta/facts.md`. Lalu baca (ringkas, jangan salin): `docs/ARCHITECTURE.md`, `.claude/memory/progress.md`,
 `known-issues.md`, `INDEX.md`, `decisions/*.md`; skill repo `panduan-peran`, `stack`, `screenshot-roles` bila ada.
 
+### 2b. Tangkap layar (bila dokumen atau alur harus bergambar)
+
+Panduan T1 dan "Alur proses" memerlukan gambar dari aplikasi yang berjalan. Baca `references/tangkapan-layar.md` (lapisan gambar, format
+alur JSON, perintah, aturan menyemat) dan `references/katalog-proses.md` (proses, akun, spec untuk ditiru). Ringkas: nyalakan aplikasi
+(skill `stack`) → tulis `docs/dokumen-aplikasi/alur/<nama>.flow.json` → jalankan `screenshot-flow.ts flow` (skill `screenshot-roles`) →
+`screens_manifest.py select` (hanya gambar yang tersemat masuk git) → `check_docs.py`. Atlas Layar (semua halaman per akun) adalah
+artefak hasil bangun, tidak di-commit.
+
 ### 3. Susun, satu bab (atau satu kartu) per putaran — gerbang: `check_docs.py` 0 ERROR
 
 Salin templat ke `naskah/`. Pecah per bab bila nyaman (`00-…md`, `01-…md`), gabung dengan `cat naskah/*.md > naskah.md`.
@@ -158,6 +166,10 @@ bagian yang menyebut hal-hal itu, jalankan langkah 3–5, naikkan versi, isi Riw
 | `scripts/update_toc.py` | Mengisi daftar isi `.docx` lewat LibreOffice (dipanggil `build_docs.py`) |
 | `references/dokumen-teknis.md` | Kontrak tiap bab arc42, resep bab 6/9/10/11, aturan angka, kepekaan, diagram |
 | `references/panduan-pengguna.md` | T1/T2/T3 + uji kemampuan, resep T2 dan perangkapnya, kartu tugas, memilih tugas, audiens, tangkapan layar |
+| `references/tangkapan-layar.md` | Tiga lapis gambar, alur JSON (DSL), menerjemahkan spec e2e, menyemat, storyboard, atlas |
+| `references/katalog-proses.md` | Proses bisnis: akun demo, halaman, spec e2e; mana yang sudah diuji |
+| `scripts/screens_manifest.py` | `select` (hanya gambar tersemat), `storyboard`, `atlas-md` |
+| `assets/contoh-alur/` | Dua alur JSON yang sudah lolos pada aplikasi berjalan |
 | `references/kesalahan-yang-sudah-terjadi.md` | Katalog kesalahan nyata + kode pemeriksa + cara yang benar |
 | `references/standar-dan-alasan.md` | Riset standar, alasan, yang sengaja tidak dipakai |
 | `assets/template-*.md` | Kerangka siap isi (teknis, panduan, kartu tugas) |

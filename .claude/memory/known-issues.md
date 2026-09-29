@@ -18,6 +18,11 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **The per-role screenshot sweep cannot log in** (found 2026-09-29). `apps/web/scripts/screenshot-roles.ts` posts `/auth/login`
+  without `X-Client: bearer`, so since the HttpOnly-cookie session (#620) the body carries no token and every role fails
+  "Unexpected login response". Its menu walk also skips nested items. `.claude/skills/screenshot-roles/scripts/screenshot-flow.ts`
+  (`atlas`) replaces it; the old script and `scripts/dev-up.sh` (builds the web with a leaked `NODE_ENV=development`, see the `stack`
+  skill) still need fixing.
 - **The password screens contradict each other and the decision** (found
   2026-09-29 while checking a manual against the screens).
   `Profile → Keamanan` still advises changing the password "at least every 3
