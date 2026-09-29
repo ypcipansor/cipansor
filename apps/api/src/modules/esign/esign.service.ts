@@ -6,6 +6,7 @@ import {
   SigningKeyRequestStatus,
 } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import type { Db } from '@/lib/prisma';
 import { comparePassword } from '@/lib/password';
 import { Errors } from '@/middleware/error';
 import { eventBus } from '@/lib/event-bus';
@@ -118,6 +119,53 @@ async function clearFailedAttempts(keyId: string) {
     where: { id: keyId },
     data: { failedAttempts: 0, lockedUntil: null, lastUsedAt: new Date() },
   });
+}
+
+/**
+ * Arsipkan status kunci aktif sebelum dihapus, lalu hapus.
+ *
+ * Penerbitan ulang kunci menghapus baris `UserSigningKey` (satu kunci aktif per
+ * pengguna). Tanpa langkah ini, sidik jari yang tercetak pada surat-surat lama
+ * kehilangan sumbernya: layanan status publik (AATL ICA7) menjawab "tidak
+ * dikenal", padahal suratnya masih dapat diverifikasi karena tanda tangannya
+ * menyimpan salinan kunci publiknya sendiri. Yang seharusnya terbaca adalah
+ * EXPIRED (atau REVOKED beserta sebabnya), bukan UNKNOWN.
+ *
+ * Yang disalin hanya metadata publik — tanpa kunci privat, salt, iv, atau tag.
+ * `upsert` menjaga pemanggilan berulang (dan jalur persetujuan yang berjalan
+ * dua kali) tidak menggandakan sidik jari yang sama.
+ */
+async function archiveActiveKey(client: Db, userId: string): Promise<void> {
+  const key = await client.userSigningKey.findUnique({ where: { userId } });
+  if (!key || !key.fingerprint) {
+    await client.userSigningKey.deleteMany({ where: { userId } });
+    return;
+  }
+
+  await client.signingKeyStatusRecord.upsert({
+    where: { fingerprint: key.fingerprint },
+    create: {
+      userId: key.userId,
+      fingerprint: key.fingerprint,
+      algorithm: key.algorithm,
+      approvedAt: key.approvedAt,
+      expiresAt: key.expiresAt,
+      revokedAt: key.revokedAt,
+      revokedReason: key.revokedReason,
+      revocationCode: key.revocationCode,
+    },
+    update: {
+      // Kunci yang sama tidak berubah; perbarui metadata kalau ada pencabutan
+      // atau perpanjangan terakhir yang belum sempat tercatat.
+      approvedAt: key.approvedAt,
+      expiresAt: key.expiresAt,
+      revokedAt: key.revokedAt,
+      revokedReason: key.revokedReason,
+      revocationCode: key.revocationCode,
+    },
+  });
+
+  await client.userSigningKey.deleteMany({ where: { userId } });
 }
 
 /**
@@ -733,10 +781,10 @@ export const EsignService = {
           });
         }
       } else {
-        // Penerbitan: hapus sisa kunci lama (kedaluwarsa/dicabut) supaya
-        // pemiliknya bisa menetapkan passphrase baru. Tanda tangan lama tidak
-        // terpengaruh — masing-masing menyimpan salinan kunci publiknya.
-        await tx.userSigningKey.deleteMany({ where: { userId: request.userId } });
+        // Penerbitan: arsipkan status kunci lama lalu hapus (kedaluwarsa/dicabut)
+        // supaya pemiliknya bisa menetapkan passphrase baru. Tanda tangan lama
+        // tidak terpengaruh — masing-masing menyimpan salinan kunci publiknya.
+        await archiveActiveKey(tx, request.userId);
       }
 
       return approved;
@@ -773,7 +821,7 @@ export const EsignService = {
     const days = approved.grantedDays ?? DEFAULT_VALIDITY_DAYS;
     const now = new Date();
 
-    await prisma.userSigningKey.deleteMany({ where: { userId } });
+    await archiveActiveKey(prisma, userId);
     const key = await prisma.userSigningKey.create({
       data: {
         userId,
@@ -1788,21 +1836,35 @@ export const EsignService = {
    * Karena masukannya 32 byte acak, oracle "kunci ini terdaftar atau tidak"
    * tidak dapat disisir; yang membocorkan sesuatu hanyalah sidik jari yang
    * sudah diketahui pemanggil.
+   *
+   * **Kunci yang sudah digantikan tetap dijawab.** Penerbitan ulang kunci
+   * menghapus baris `UserSigningKey`-nya, tetapi surat yang ditandatangani
+   * dengannya masih menyimpan salinan kunci publik itu dan masih dapat
+   * diverifikasi. Karena itu riwayatnya dibaca dari `signingKeyStatusRecords`
+   * — tanpa itu, pemegang arsip melihat UNKNOWN untuk kunci yang sebenarnya
+   * sekadar kedaluwarsa.
    */
   async publicKeyStatus(fingerprintInput: string, now = new Date()) {
     const fingerprint = normaliseFingerprint(fingerprintInput);
 
-    const key = await prisma.userSigningKey.findUnique({
+    const select = {
+      algorithm: true,
+      approvedAt: true,
+      expiresAt: true,
+      revokedAt: true,
+      revokedReason: true,
+      revocationCode: true,
+    } as const;
+
+    // Kunci aktif lebih dulu — ia yang menjawab status terkini bagi pemilik
+    // yang masih memegang kuncinya. Bila tidak ada, jatuh ke riwayat.
+    const active = await prisma.userSigningKey.findUnique({
       where: { fingerprint },
-      select: {
-        algorithm: true,
-        approvedAt: true,
-        expiresAt: true,
-        revokedAt: true,
-        revokedReason: true,
-        revocationCode: true,
-      },
+      select,
     });
+    const key =
+      active ??
+      (await prisma.signingKeyStatusRecord.findUnique({ where: { fingerprint }, select }));
 
     if (!key) {
       return { found: false as const, status: 'UNKNOWN' as const };
@@ -1824,11 +1886,16 @@ export const EsignService = {
      * belum dapat menandatangani apa pun, sehingga tidak akan pernah muncul di
      * surat — membeberkan bahwa ada pengajuan yang tertunda hanya membocorkan
      * urusan internal.
+     *
+     * Kunci yang sudah digantikan (`active` null) tidak pernah dilaporkan
+     * `ACTIVE`: kunci privatnya sudah dihapus, jadi ia tidak dapat
+     * menandatangani naskah baru. Surat yang ditandatangani selama masa
+     * berlakunya tetap sah — dan itu yang dijawab `EXPIRED`, bukan UNKNOWN.
      */
     const status =
       state === SigningKeyState.REVOKED
         ? ('REVOKED' as const)
-        : state === SigningKeyState.EXPIRED
+        : state === SigningKeyState.EXPIRED || !active
           ? ('EXPIRED' as const)
           : ('ACTIVE' as const);
 

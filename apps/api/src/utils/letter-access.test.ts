@@ -234,6 +234,27 @@ describe('classified letters restrict access (ANRI SKKAAD)', () => {
     ).resolves.toBeTruthy();
   });
 
+  // A primary addressee of a Rahasia letter is inside its chain by design: the
+  // chain is what authorises the people who must act on the naskah, and the
+  // addressee is the first of them. This test pins that so the behaviour is a
+  // decision on the record, not an accident (see the design note in
+  // letter-access.ts: `isPrimaryRecipient` excludes tembusan, not the addressee).
+  it('admits the primary recipient of a Rahasia letter (in-chain by design)', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({
+        nature: LetterNature.CONFIDENTIAL,
+        recipients: [{ userId: 'kepsek-smp', isCC: false }],
+      }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'kepsek-smp', roleCode: RoleCode.SMPIT_KEPALA_SEKOLAH, unitId: SMP },
+        'letter-1'
+      )
+    ).resolves.toBeTruthy();
+  });
+
   it('refuses a tembusan recipient of a Rahasia letter', async () => {
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(
       bareLetter({

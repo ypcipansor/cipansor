@@ -26,8 +26,16 @@ import { logger } from '@/lib/logger';
  * penjadwal mencatatnya lewat `logger`.
  */
 
-/** Status naskah yang retensinya bermakna dihitung. */
-const RETENTION_STATUSES = ['SIGNED', 'SENT', 'ARCHIVED'] as const;
+/**
+ * Status naskah yang retensinya bermakna dihitung.
+ *
+ * `DISPOSED` ikut serta: disposisi surat masuk menetapkan status itu *sebelum*
+ * pengarsipan, jadi sebuah surat yang sudah ditindaklanjuti dan tetap
+ * `DISPOSED` adalah justru yang paling mungkin melewati masa retensinya.
+ * Mengeluarkannya dari sini membuat surat masuk yang telah didisposisikan
+ * luput dari peninjauan selamanya.
+ */
+const RETENTION_STATUSES = ['SIGNED', 'SENT', 'ARCHIVED', 'DISPOSED'] as const;
 
 /** Satu naskah yang masa retensinya sudah lewat. */
 export interface RetentionDueLetter {

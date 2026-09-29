@@ -43,6 +43,8 @@ export function useCorrespondenceParticipants(
 export async function fetchAgendaCsv(params: {
   direction: LetterDirection;
   status?: LetterStatus;
+  search?: string;
+  scope?: "ALL" | "PERSONAL";
 }): Promise<Blob> {
   const response = await api.get<Blob>("/correspondence/agenda/export", {
     params,

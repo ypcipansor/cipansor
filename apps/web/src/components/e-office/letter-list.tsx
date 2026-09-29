@@ -225,6 +225,8 @@ export function LetterList({
       const blob = await fetchAgendaCsv({
         direction,
         status: effectiveStatus,
+        search: search || undefined,
+        scope,
       });
       const url = objectUrlForBlob(blob);
       const a = document.createElement("a");

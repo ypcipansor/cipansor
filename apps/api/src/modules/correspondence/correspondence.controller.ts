@@ -79,6 +79,8 @@ export const CorrespondenceController = {
     const csv = await CorrespondenceService.exportAgendaCsv(actorOf(req), {
       direction: filters.direction,
       status: filters.status,
+      search: filters.search,
+      scope: filters.scope,
       from: filters.from,
       to: filters.to,
     });

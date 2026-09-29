@@ -8,10 +8,14 @@ vi.mock('@/lib/prisma', () => ({
     userSigningKey: {
       findUnique: vi.fn(),
     },
+    signingKeyStatusRecord: {
+      findUnique: vi.fn(),
+    },
   },
 }));
 
 const findUnique = vi.mocked(prisma.userSigningKey.findUnique);
+const findHistory = vi.mocked(prisma.signingKeyStatusRecord.findUnique);
 
 const PUBLIC_KEY = createKeyMaterial('passphrase-status-kunci-2026').publicKey;
 const FP = publicKeyFingerprint(PUBLIC_KEY);
@@ -146,6 +150,7 @@ describe('EsignService.publicKeyStatus', () => {
 
   it('menormalkan masukan kosong menjadi UNKNOWN', async () => {
     findUnique.mockResolvedValue(null);
+    findHistory.mockResolvedValue(null);
 
     const result = await EsignService.publicKeyStatus('   ');
 
@@ -153,6 +158,81 @@ describe('EsignService.publicKeyStatus', () => {
     expect(findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { fingerprint: '' } })
     );
+  });
+
+  /**
+   * Penerbitan ulang menghapus baris `UserSigningKey`-nya, tetapi surat yang
+   * ditandatangani dengannya masih menyimpan kunci publik itu. Tanpa riwayat,
+   * pemegang arsip mendapat UNKNOWN untuk kunci yang sekadar kedaluwarsa — dan
+   * kehilangan sebab serta tanggal pencabutannya.
+   */
+  it('menjawab dari riwayat saat kunci sudah digantikan (bukan UNKNOWN)', async () => {
+    findUnique.mockResolvedValue(null);
+    findHistory.mockResolvedValue({
+      algorithm: 'Ed25519',
+      approvedAt: new Date(Date.now() - 500 * DAY),
+      expiresAt: new Date(Date.now() - 100 * DAY),
+      revokedAt: null,
+      revokedReason: null,
+      revocationCode: null,
+    } as never);
+
+    const result = await EsignService.publicKeyStatus(FP);
+
+    expect(result.found).toBe(true);
+    expect(result.status).toBe('EXPIRED');
+  });
+
+  it('menjaga sebab pencabutan pada kunci yang sudah digantikan', async () => {
+    findUnique.mockResolvedValue(null);
+    findHistory.mockResolvedValue({
+      algorithm: 'Ed25519',
+      approvedAt: new Date(Date.now() - 500 * DAY),
+      expiresAt: new Date(Date.now() - 100 * DAY),
+      revokedAt: new Date(Date.now() - 200 * DAY),
+      revokedReason: 'Kunci diduga bocor dari komputer bersama.',
+      revocationCode: 'KEY_COMPROMISE',
+    } as never);
+
+    const result = await EsignService.publicKeyStatus(FP);
+
+    expect(result.status).toBe('REVOKED');
+    expect(result.revocationCode).toBe('KEY_COMPROMISE');
+    expect(result.revokedReason).toBe('Kunci diduga bocor dari komputer bersama.');
+  });
+
+  it('tidak pernah melaporkan ACTIVE untuk kunci yang sudah digantikan', async () => {
+    // Riwayat dengan masa berlaku yang masih panjang, tetapi kunci privatnya
+    // sudah dihapus — karena itu tidak boleh tampak aktif.
+    findUnique.mockResolvedValue(null);
+    findHistory.mockResolvedValue({
+      algorithm: 'Ed25519',
+      approvedAt: new Date(Date.now() - 10 * DAY),
+      expiresAt: new Date(Date.now() + 300 * DAY),
+      revokedAt: null,
+      revokedReason: null,
+      revocationCode: null,
+    } as never);
+
+    const result = await EsignService.publicKeyStatus(FP);
+
+    expect(result.status).toBe('EXPIRED');
+  });
+
+  it('mendahulukan kunci aktif atas riwayat', async () => {
+    findUnique.mockResolvedValue({
+      algorithm: 'Ed25519',
+      approvedAt: new Date(Date.now() - DAY),
+      expiresAt: new Date(Date.now() + 100 * DAY),
+      revokedAt: null,
+      revokedReason: null,
+      revocationCode: null,
+    } as never);
+
+    const result = await EsignService.publicKeyStatus(FP);
+
+    expect(result.status).toBe('ACTIVE');
+    expect(findHistory).not.toHaveBeenCalled();
   });
 });
 

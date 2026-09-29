@@ -234,23 +234,32 @@ export function digestOf(payload: string): string {
 /**
  * Sidik jari kunci publik — yang membuat kunci "dapat disebut namanya".
  *
- * RFC 5280 §4.2.1.2 mendefinisikan `keyIdentifier` sebagai hash SHA-1 atas
- * `subjectPublicKey`, dan setiap sertifikat X.509 memperlihatkan sidik jarinya
- * supaya orang dapat membandingkan kunci secara lisan atau tercetak tanpa
- * menyalin blok base64 sepanjang beberapa baris. SBOM, kunci SSH, dan kunci
- * GPG semua melakukan hal yang sama.
+ * Bentuknya mengikuti sidik jari sertifikat X.509 supaya orang dapat
+ * membandingkan kunci secara lisan atau tercetak tanpa menyalin blok base64
+ * sepanjang beberapa baris. SBOM, kunci SSH, dan kunci GPG semua melakukan hal
+ * yang sama.
  *
- * Dipakai di halaman verifikasi publik: pembaca yang memegang surat mencatat
- * sidik jarinya sekali, lalu setiap dokumen berikutnya yang mengaku
- * ditandatangani orang itu harus memperlihatkan angka yang sama. Tanpa itu,
- * halaman verifikasi hanya mengatakan "ini tanda tangan Cipansor" — dan
- * pertanyaan yang sebenarnya diajukan pembaca adalah "apakah ini *orang* yang
- * saya kira".
+ * **Yang di-hash adalah SPKI DER utuh, dengan SHA-256.** Ini disengaja dan
+ * berbeda dari dua konstruksi yang mirip namanya, agar tidak disalahpahami:
  *
- * Formatnya pasangan heksadesimal berhuruf besar dipisah titik dua, seperti
- * sidik jari sertifikat. Hash-nya SHA-256 (bukan SHA-1 yang kini dianggap
- * lemah), tetapi bentuk tampilannya tetap yang dikenali orang.
+ *   - RFC 5280 §4.2.1.2 `keyIdentifier` adalah hash **SHA-1 atas
+ *     subjectPublicKey** (bit string kunci mentah), bukan atas seluruh SPKI.
+ *   - Sidik jari sertifikat umumnya adalah hash atas **seluruh sertifikat**.
+ *
+ * Kita memakai SHA-256 (SHA-1 kini dianggap lemah untuk keperluan baru), dan
+ * menampilkannya dalam bentuk pasangan heksadesimal berhuruf besar dipisah
+ * titik dua yang sudah dikenali orang. Karena itu jangan menghitung ulang
+ * angka ini dengan alat yang menghasilkan keyIdentifier SHA-1 — hasilnya akan
+ * berbeda. Format kanonik yang tersimpan dan dicari adalah bentuk di sini.
+ *
+ * CodeQL menandai fungsi ini `js/insufficient-password-hash` karena melihat
+ * `createHash('sha256')` atas nilai yang berasal dari bahan kunci. Peringatan
+ * itu **keliru**: yang di-hash adalah SPKI **publik** — data yang memang
+ * dibagikan, bahkan dicetak pada surat — bukan sandi atau kunci privat.
+ * Passphrase tidak pernah di-hash; ia melalui scrypt (`SCRYPT_PARAMS`,
+ * N=2^15) di `deriveKey`, dan hasilnya yang mengenkripsi kunci privat.
  */
+// codeql[js/insufficient-password-hash]
 export function publicKeyFingerprint(publicKey: string): string {
   const der = Buffer.from(publicKey, 'base64');
   const digest = crypto.createHash('sha256').update(der).digest('hex');

@@ -2203,7 +2203,56 @@ describe('CorrespondenceService', () => {
       expect(JSON.stringify(where)).toContain('CONFIDENTIAL');
     });
 
-    it('passes the date range through', async () => {
+    it('neutralises spreadsheet formulas (CWE-1236)', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([
+        row({ subject: '=HYPERLINK("http://jahat.example","Klik")' }),
+        row({ id: 'l-2', subject: '+1+1' }),
+        row({ id: 'l-3', subject: '@SUM(A1:A9)' }),
+      ] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      // Every dangerous lead character is prefixed with an apostrophe, which
+      // spreadsheet software reads as literal text and hides.
+      expect(csv).toContain("'=HYPERLINK");
+      expect(csv).toContain("'+1+1");
+      expect(csv).toContain("'@SUM");
+      // …and no cell is left beginning a line with a bare formula.
+      expect(csv).not.toMatch(/\n=[A-Z]/);
+      expect(csv).not.toMatch(/\n@[A-Z]/);
+    });
+
+    it('still quotes a comma-bearing subject after neutralising', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([
+        row({ subject: '=cmd, penting' }),
+      ] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      expect(csv).toContain('"\'=cmd, penting"');
+    });
+
+    it('confines a personal scope to the actor’s own dispositions', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([] as any);
+
+      await CorrespondenceService.exportAgendaCsv(actor as any, { scope: 'PERSONAL' });
+
+      const where = vi.mocked(prisma.letter.findMany).mock.calls[0][0]?.where as any;
+      const json = JSON.stringify(where);
+      expect(json).toContain('tu-1');
+      expect(json).toContain('dispositions');
+    });
+
+    it('passes a search term into the export predicates', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([] as any);
+
+      await CorrespondenceService.exportAgendaCsv(actor as any, { search: 'Undangan' });
+
+      const where = vi.mocked(prisma.letter.findMany).mock.calls[0][0]?.where as any;
+      expect(JSON.stringify(where)).toContain('Undangan');
+    });
+
+    it('closes the date range at the start of the following day', async () => {
       vi.mocked(prisma.letter.findMany).mockResolvedValue([] as any);
 
       await CorrespondenceService.exportAgendaCsv(actor as any, {
@@ -2212,9 +2261,12 @@ describe('CorrespondenceService', () => {
       });
 
       const where = vi.mocked(prisma.letter.findMany).mock.calls[0][0]?.where as any;
-      const json = JSON.stringify(where);
-      expect(json).toContain('2026-01-01');
-      expect(json).toContain('2026-12-31');
+      // `to` is exclusive at midnight of 2027-01-01, so a letter timestamped
+      // 2026-12-31T11:00 is inside the range rather than dropped.
+      const date = (where.AND as any[]).find((term) => term.date)?.date;
+      expect(date.gte.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+      expect(date.lt.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+      expect(date.lte).toBeUndefined();
     });
   });
 });

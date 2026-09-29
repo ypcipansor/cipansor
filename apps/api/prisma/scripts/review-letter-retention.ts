@@ -15,9 +15,25 @@
  * bukan keputusan sebuah skrip. Keluarannya adalah daftar usul.
  */
 import { createPrismaClient } from '../client';
+import { LetterNature } from '@prisma/client';
 import { reviewLetterRetention } from '../../src/jobs/letter-retention.job';
+import { isRestrictedNature } from '../../src/utils/letter-access';
 
 const dryRun = process.argv.includes('--dry-run');
+
+/**
+ * Perihal untuk dicetak, disunting menurut klasifikasi.
+ *
+ * Perintah ini dijalankan di terminal, dan keluarannya sering berakhir di log
+ * agen/pengumpul log yang dibaca lebih banyak orang daripada daftar surat.
+ * Karena itu perihal naskah **Rahasia / Sangat Rahasia** tidak dicetak: nomor
+ * surat dan tanggalnya sudah cukup untuk membuka berkasnya oleh yang berhak,
+ * sedangkan perihalnya justru bagian yang paling sensitif. Sama dengan alasan
+ * baris audit hanya mencatat jumlah, bukan perihal.
+ */
+function printableSubject(row: { nature: string; subject: string }): string {
+  return isRestrictedNature(row.nature as LetterNature) ? '(perihal dirahasiakan)' : row.subject;
+}
 
 async function main() {
   const prisma = createPrismaClient();
@@ -33,7 +49,7 @@ async function main() {
       const number = row.letterNumber || row.agendaNumber || '(belum bernomor)';
       const code = row.classificationCode ?? '-';
       console.log(
-        `  [${code}] ${number} — ${row.subject}\n` +
+        `  [${code}] ${number} — ${printableSubject(row)}\n` +
           `      surat ${row.letterDate.toISOString().slice(0, 10)}, ` +
           `retensi ${row.retentionYears} tahun, jatuh tempo ` +
           `${row.dueAt.toISOString().slice(0, 10)}`

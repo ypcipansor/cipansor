@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { EsignService } from './esign.service';
 import {
   createKeyMaterial,
+  publicKeyFingerprint,
   signPayload,
   signPdfHash,
   verifyRevocation,
@@ -23,6 +24,10 @@ vi.mock('../../lib/prisma', () => ({
       create: vi.fn(),
       update: vi.fn(),
       deleteMany: vi.fn(),
+    },
+    signingKeyStatusRecord: {
+      findUnique: vi.fn(),
+      upsert: vi.fn(),
     },
     signingKeyRequest: {
       findFirst: vi.fn(),
@@ -480,6 +485,44 @@ describe('putusan Super Admin', () => {
       where: { id: key.id },
       data: expect.objectContaining({ expiresAt: expect.any(Date) }),
     });
+  });
+
+  /**
+   * Penerbitan ulang menghapus baris kunci aktifnya, sehingga sidik jari pada
+   * surat-surat lama kehilangan sumbernya. Statusnya harus diarsipkan lebih
+   * dahulu, kalau tidak layanan status publik menjawab UNKNOWN untuk kunci yang
+   * sebenarnya sekadar kedaluwarsa.
+   */
+  it('menerbitkan ulang mengarsipkan status kunci lama sebelum menghapusnya', async () => {
+    const base = activeKey({
+      revokedAt: new Date(Date.now() - 5 * DAY),
+      revocationCode: 'SUPERSEDED',
+    });
+    const key = { ...base, fingerprint: publicKeyFingerprint(base.publicKey) };
+    vi.mocked(prisma.signingKeyRequest.findUnique).mockResolvedValue({
+      id: 'r1',
+      userId: 'ketua',
+      kind: 'ENROLLMENT',
+      status: 'PENDING',
+    } as any);
+    vi.mocked(prisma.signingKeyRequest.update).mockResolvedValue({ id: 'r1' } as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(key as any);
+    vi.mocked(prisma.signingKeyStatusRecord.upsert).mockResolvedValue({} as any);
+    vi.mocked(prisma.userSigningKey.deleteMany).mockResolvedValue({ count: 1 } as any);
+
+    await EsignService.decideRequest('r1', 'admin', true, 365);
+
+    const upsert = vi.mocked(prisma.signingKeyStatusRecord.upsert).mock.calls.at(-1)![0] as any;
+    expect(upsert.where).toEqual({ fingerprint: publicKeyFingerprint(key.publicKey) });
+    expect(upsert.create).toMatchObject({
+      userId: 'ketua',
+      revocationCode: 'SUPERSEDED',
+      // Metadata publik saja — bahan kunci privat tidak boleh ikut tersalin.
+    });
+    expect(JSON.stringify(upsert.create)).not.toContain(key.encryptedPrivateKey);
+    // Arsip ditulis dahulu, baru baris aktifnya dihapus.
+    expect(prisma.signingKeyStatusRecord.upsert).toHaveBeenCalled();
+    expect(prisma.userSigningKey.deleteMany).toHaveBeenCalledTimes(1);
   });
 
   it('tidak memutus pengajuan yang sudah diputus', async () => {

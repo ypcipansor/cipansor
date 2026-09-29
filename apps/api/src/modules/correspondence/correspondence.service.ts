@@ -948,16 +948,47 @@ export const CorrespondenceService = {
     filters: {
       direction?: LetterDirection;
       status?: LetterStatus;
+      search?: string;
+      scope?: 'ALL' | 'PERSONAL';
       from?: string;
       to?: string;
     }
   ): Promise<string> {
     const and: Prisma.LetterWhereInput[] = [letterScopeWhere(actor)];
 
+    /**
+     * Batas atas rentang bersifat eksklusif pada awal hari berikutnya.
+     *
+     * `Letter.date` adalah tanggal, tetapi disimpan sebagai `timestamp`; bila
+     * kelak ada baris dengan jam selain tengah malam, `lte tengah malam` akan
+     * menjatuhkan surat yang bertanggal sama. Menutup rentangnya dengan
+     * `< awal hari berikutnya` membuat "sampai dengan 31 Desember" benar
+     * terlepas dari jam yang tersimpan.
+     */
     const date: Prisma.DateTimeFilter = {};
-    if (filters.from) date.gte = new Date(filters.from);
-    if (filters.to) date.lte = new Date(filters.to);
+    if (filters.from) date.gte = startOfDay(new Date(filters.from));
+    if (filters.to) date.lt = startOfNextDay(new Date(filters.to));
     if (filters.from || filters.to) and.push({ date });
+
+    // Penyaring yang sama persis dengan daftar surat: buku agenda yang
+    // diserahkan harus memuat baris yang tampak di layar, bukan lebih.
+    if (filters.search) {
+      and.push({
+        OR: [
+          { subject: { contains: filters.search, mode: 'insensitive' } },
+          { letterNumber: { contains: filters.search, mode: 'insensitive' } },
+          { senderName: { contains: filters.search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (filters.scope === 'PERSONAL') {
+      and.push({
+        OR: [
+          { recipients: { some: { userId: actor.id } } },
+          { dispositions: { some: { recipientId: actor.id } } },
+        ],
+      });
+    }
 
     const letters = await prisma.letter.findMany({
       where: {
@@ -2326,16 +2357,45 @@ export const CorrespondenceService = {
 };
 
 /**
- * Satu nilai CSV, dikutip bila perlu.
+ * Satu nilai CSV, dikutip bila perlu dan dineutralkan dari rumus.
  *
  * Kutip ganda di dalam nilai digandakan, sesuai RFC 4180 — tanpa itu sebuah
  * perihal yang mengandung tanda kutip menghasilkan kolom yang bergeser dan
  * berkasnya rusak di pembaca mana pun.
+ *
+ * Netralkan sel CSV terhadap injeksi rumus (CWE-1236).
+ *
+ * Sebuah perihal surat diketik oleh manusia dan dapat dimulai dengan `=`, `+`,
+ * `-`, `@`, TAB, atau CR. Bila berkasnya dibuka di Excel/LibreOffice, sel
+ * semacam itu **dijalankan sebagai rumus** — `=HYPERLINK(...)`, `=cmd|'...'`,
+ * atau `+1+1` yang mengacaukan buku agenda. Karena buku agenda memang dibuat
+ * untuk dibuka di aplikasi lembar kerja, jalur inilah yang paling mungkin
+ * dipakai menyerang, bukan jalur yang tidak ada.
+ *
+ * Obatnya menurut OWASP: awali nilai yang berbahaya dengan petik tunggal, yang
+ * di lembar kerja menandai teks dan tidak ikut tampil. Nilai juga tetap
+ * dikutip bila mengandung koma/baris baru, sebab tanda `"` saja tidak
+ * menetralkan rumus.
  */
 function csvCell(value: string): string {
-  const needsQuotes = /[",\r\n]/.test(value);
-  const escaped = value.replace(/"/g, '""');
+  const neutralised = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  const needsQuotes = /[",\r\n]/.test(neutralised);
+  const escaped = neutralised.replace(/"/g, '""');
   return needsQuotes ? `"${escaped}"` : escaped;
+}
+
+/** Tengah malam UTC dari sebuah tanggal, dasar perbandingan rentang. */
+function startOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Awal hari UTC berikutnya — batas atas eksklusif rentang ekspor. */
+function startOfNextDay(date: Date): Date {
+  const d = startOfDay(date);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d;
 }
 
 /**

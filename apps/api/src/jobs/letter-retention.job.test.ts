@@ -147,4 +147,18 @@ describe('reviewLetterRetention', () => {
       reviewLetterRetention(prisma, { now: new Date('2026-01-01') })
     ).resolves.toBeTruthy();
   });
+
+  it('query includes DISPOSED, so a disposed incoming letter is reviewed', async () => {
+    const { prisma } = fakePrisma([letter()]);
+
+    await reviewLetterRetention(prisma, { dryRun: true, now: new Date('2026-01-01') });
+
+    const where = (prisma.letter.findMany as any).mock.calls[0][0].where;
+    // Disposition sets DISPOSED before archival, so excluding it would leave
+    // every acted-on incoming letter out of the review for good.
+    expect(where.status.in).toContain('DISPOSED');
+    expect(where.status.in).toEqual(
+      expect.arrayContaining(['SIGNED', 'SENT', 'ARCHIVED', 'DISPOSED'])
+    );
+  });
 });

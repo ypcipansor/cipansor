@@ -59,6 +59,16 @@ export const PUBLIC_PATH_PREFIXES = [
    * and so the two canonical lists stay in step (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Where the public key-status page lives (AATL ICA7). Also a `/public/*`
+   * page, so the middleware matcher already exempts it from the session wall —
+   * but it must be classified here too, or `hostSplitActionFor` answers 404 on
+   * `cipansor.or.id` (the host the verification pages are printed with) and the
+   * page is served only behind the portal login. Flagged by review: the
+   * anonymous Playwright test runs on localhost, which bypasses the host split,
+   * so nothing else would have caught it.
+   */
+  "/public/verify-key",
 ];
 
 /** True when the request arrived on the portal, ignoring case and port. */
