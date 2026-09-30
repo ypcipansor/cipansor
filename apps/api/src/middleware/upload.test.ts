@@ -218,6 +218,26 @@ describe('recordUploadOwnership', () => {
     expect(ok).toBe(false);
     expect(fs.existsSync(p)).toBe(false);
   });
+
+  /**
+   * Penghapusan terbatas pada direktori unggahan.
+   *
+   * `path` datang bersama permintaan; menghapusnya apa adanya adalah jalur
+   * penghapusan berkas sembarang (CodeQL js/path-injection). `recordUploadOwnership`
+   * karena itu menyusun ulang path dari `path.basename`, sehingga sebuah path
+   * yang menunjuk ke luar `public/uploads` tidak pernah tersentuh.
+   */
+  it('tidak menghapus berkas di luar direktori unggahan', async () => {
+    vi.mocked(prisma.letterUpload.upsert).mockRejectedValue(new Error('db down'));
+    const outside = path.join(os.tmpdir(), `upload-owner-outside-${Date.now()}`);
+    fs.writeFileSync(outside, pdf);
+
+    const ok = await recordUploadOwnership({ filename: 'abc.pdf', path: outside }, 'user-1');
+
+    expect(ok).toBe(false);
+    expect(fs.existsSync(outside)).toBe(true);
+    fs.unlinkSync(outside);
+  });
 });
 
 describe('uploadsAuth', () => {

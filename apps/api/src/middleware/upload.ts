@@ -202,7 +202,14 @@ export async function recordUploadOwnership(
     return true;
   } catch (e) {
     console.error('[upload] gagal mencatat kepemilikan berkas:', e);
-    await fs.promises.unlink(file.path).catch(() => undefined);
+    // Hapus hanya berkas di dalam direktori unggahan. `path.basename` membuang
+    // setiap komponen direktori dari path yang datang bersama permintaan dan
+    // `path.join` menempelkannya kembali ke direktori unggahan yang tetap, jadi
+    // `unlink` di sini tidak dapat menyentuh berkas di luar `public/uploads`.
+    // Tanpa itu, menghapus path yang dibentuk pemanggil adalah jalur penghapusan
+    // berkas sembarang (CodeQL js/path-injection).
+    const safePath = path.join(uploadDir, path.basename(file.path));
+    await fs.promises.unlink(safePath).catch(() => undefined);
     return false;
   }
 }
