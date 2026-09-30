@@ -198,6 +198,41 @@ The flow is otherwise strong (ยง3.2). These are the gaps:
 **Minor:** urgency has three levels (`NORMAL`/`IMMEDIATE`/`URGENT`); the common
 ANRI set is four, adding **Kilat**.
 
+### 2.8 Access control ั a cross-unit service role read the whole letter book
+
+Found on the round-2 follow-up, after the Devin findings F1ะF12 were closed. It
+is not one of them.
+
+`letterScopeWhere`, `assertLetterAccess` and `choosesUnit` keyed their "sees
+everything" branch on `seesAllUnits`. That helper exists for the shared services
+ั the asrama houses santri from three schools, and the klinik, perpustakaan,
+keamanan and laboratorium serve the whole campus, so their staff must see across
+units. That is right for *student* data and wrong for *correspondence*: the rule
+is a property of the data, not of the person.
+
+The consequence was that every cross-unit service account ั pustakawan,
+perawat, keamanan, musyrif, ustadz, laboran, and the Pesantren office
+(`PESANTREN_PENGASUH`, `PESANTREN_TATA_USAHA`) ั was handed the entire yayasan's
+letter book, unclassified letters included, and could pass `?unitId=` to read
+another school's agenda. The retention review list came with it, because it
+applies the same clause. These are the very roles the letter-creation guard
+already refuses (`service.test.ts`), so the read side contradicted the write
+side.
+
+The three now key on `isFoundationScopedRole` (the board plus super admin) ั the
+same line `admissions.access.ts` draws for SPMB: the foundation board reads
+across units, service staff do not. Those roles keep their legitimate access
+through the chain (addressee, reviewer, disposition recipient, non-classified
+tembusan). Regression tests pin the list clause, the direct read, and
+`choosesUnit`.
+
+The standard this restores is Perka ANRI 7/2016, Pasal 5(d): *setiap pegawai
+hanya dapat mengakses arsip yang berada pada tanggung jawab tugas dan
+kewenangannya* ั access follows the task, not the org chart. It is also why the
+`RESTRICTED_NATURES` exclusion exists at all; without the unit boundary, the
+exclusion only stopped the classification a role had no business seeing, not the
+letter book itself.
+
 ---
 
 ## 3. What is already good โ€” do not rebuild these
