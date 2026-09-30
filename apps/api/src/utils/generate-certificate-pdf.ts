@@ -99,20 +99,27 @@ function asMetadata(value: unknown): Record<string, unknown> | null {
  * nothing — the render then degrades to today's generic certificate, which is
  * exactly the previous behaviour.
  */
-function certificateDetails(input: CertificatePdfInput): Array<[string, string]> {
+function certificateDetails(input: CertificatePdfInput): Array<{ label: string; value: string }> {
   const m = asMetadata(input.metadata);
   if (!m) return [];
   const type = input.certificateType ?? '';
   const details: Array<[string, string | undefined]> = [];
 
+  // The printed syahadah shows the *number* of completed juz ("5 Juz"), not the
+  // list of juz numbers. The list is long enough to run past the page anyway,
+  // so the download reports the count the paper reports.
+  const juzList = Array.isArray(m['completedJuz']) ? (m['completedJuz'] as unknown[]) : null;
+  const juzCount = juzList?.length;
+
   if (type === 'SANAD') {
-    details.push(['Juz', metaString(m, 'juz')]);
+    // The paper prints the juz's name beside its number (`Al-Maidah (Juz 5)`);
+    // the download shows the same, not just the number.
+    const juz = metaString(m, 'juz');
+    const juzName = metaString(m, 'juzName');
+    details.push(['Juz', juz ? (juzName ? `${juzName} (Juz ${juz})` : juz) : undefined]);
     details.push(['Pengajar', metaString(m, 'teacherName')]);
-  } else if (type === 'TAHFIDZ') {
-    details.push(['Qira’ah', metaString(m, 'qiraahType')]);
-    details.push(['Jumlah Juz', metaString(m, 'completedJuz')]);
-    details.push(['Musyrif', metaString(m, 'musyrifName')]);
   } else if (
+    type === 'TAHFIDZ' ||
     type === 'TAHFIDZ_30_JUZ' ||
     type === 'TAHFIDZ_5_JUZ' ||
     type === 'TAHFIDZ_10_JUZ' ||
@@ -120,7 +127,7 @@ function certificateDetails(input: CertificatePdfInput): Array<[string, string]>
     type === 'SANAD_QIRAAH'
   ) {
     details.push(['Qira’ah', metaString(m, 'qiraahType')]);
-    details.push(['Jumlah Juz', metaString(m, 'completedJuz')]);
+    details.push(['Jumlah Juz', juzCount !== undefined ? `${juzCount} Juz` : undefined]);
     details.push(['Musyrif', metaString(m, 'musyrifName')]);
   }
 
@@ -129,7 +136,9 @@ function certificateDetails(input: CertificatePdfInput): Array<[string, string]>
   // caller.
   details.push(['Silsilah Sanad', metaString(m, 'sanadChain')]);
 
-  return details.filter((entry): entry is [string, string] => Boolean(entry[1]));
+  return details
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([label, value]) => ({ label, value }));
 }
 
 /**
@@ -227,12 +236,16 @@ export async function generateCertificatePdfBuffer(input: CertificatePdfInput): 
   // The details the printed sanad/syahadah carries and the generic layout
   // cannot derive — juz, qira'ah, teacher, silsilah. Rendered from the mint
   // metadata so the downloaded file matches the document the issuer handed
-  // over, not just the holder's name and grade.
-  for (const [label, value] of certificateDetails(input)) {
+  // over, not just the holder's name and grade. Values wrap to the content
+  // width: a 30-juz list or a multi-generation chain is wider than A4, and a
+  // single unwrapped line would run off both page edges.
+  for (const { label, value } of certificateDetails(input)) {
     y -= 10;
-    ensureSpace(16);
-    centered(`${label}: ${value}`, y, 11, helv, muted);
-    y -= 16;
+    for (const line of wrap(winAnsiSafe(`${label}: ${value}`), helv, 11, maxWidth)) {
+      ensureSpace(16);
+      centered(line, y, 11, helv, muted);
+      y -= 16;
+    }
   }
 
   // Signature block, lower right of the last page's content column.

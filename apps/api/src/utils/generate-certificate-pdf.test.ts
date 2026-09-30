@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, StandardFonts } from 'pdf-lib';
 import zlib from 'node:zlib';
 import { generateCertificatePdfBuffer, CertificatePdfInput } from './generate-certificate-pdf';
 
@@ -33,9 +33,23 @@ async function pageCount(buffer: Buffer): Promise<number> {
  * reproduces the printed details instead of the generic layout.
  */
 function pdfText(buffer: Buffer): string {
+  return pdfLines(buffer)
+    .map((l) => l.text)
+    .join('\n');
+}
+
+const A4_WIDTH = 595.28;
+
+/**
+ * Every text run in the content streams with the x it was drawn at. pdf-lib
+ * positions each `drawText` with `1 0 0 1 <x> <y> Tm` and encodes the text as
+ * `<hex> Tj`, so this reads both back — which is how a test can prove a long
+ * detail did not run off the page rather than merely that it was drawn.
+ */
+function pdfLines(buffer: Buffer): Array<{ x: number; y: number; size: number; text: string }> {
   const raw = buffer.toString('latin1');
   const streams = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-  const lines: string[] = [];
+  const out: Array<{ x: number; y: number; size: number; text: string }> = [];
   let stream: RegExpExecArray | null;
   while ((stream = streams.exec(raw))) {
     let content: string;
@@ -44,13 +58,41 @@ function pdfText(buffer: Buffer): string {
     } catch {
       continue;
     }
-    const hexes = /<([0-9A-Fa-f]+)>\s*Tj/g;
-    let hex: RegExpExecArray | null;
-    while ((hex = hexes.exec(content))) {
-      lines.push(Buffer.from(hex[1], 'hex').toString('latin1'));
+    if (!content.includes('Tj')) continue;
+    // pdf-lib emits `/Helvetica-xxx <size> Tf` then `1 0 0 1 <x> <y> Tm` then
+    // `<hex> Tj` for every drawText call; track the size as we walk the stream.
+    const tokens =
+      /\/[A-Za-z-]+-?\d* ([\d.]+) Tf|1 0 0 1 ([\d.]+) ([\d.]+) Tm\s*<([0-9A-Fa-f]+)>\s*Tj/g;
+    let size = 12;
+    let token: RegExpExecArray | null;
+    while ((token = tokens.exec(content))) {
+      if (token[1] !== undefined) {
+        size = Number(token[1]);
+      } else {
+        out.push({
+          x: Number(token[2]),
+          y: Number(token[3]),
+          size,
+          text: Buffer.from(token[4], 'hex').toString('latin1'),
+        });
+      }
     }
   }
-  return lines.join('\n');
+  return out;
+}
+
+/** Every drawn run must sit inside the page's left and right edges. */
+async function assertLinesWithinContentWidth(buffer: Buffer): Promise<void> {
+  const doc = await PDFDocument.load(buffer);
+  const helv = await doc.embedFont(StandardFonts.Helvetica);
+  for (const line of pdfLines(buffer)) {
+    const width = helv.widthOfTextAtSize(line.text, line.size);
+    expect(line.x, `"${line.text}" starts left of the page`).toBeGreaterThanOrEqual(0);
+    expect(
+      line.x + width,
+      `"${line.text}" runs past the right page edge (${line.x} + ${width})`
+    ).toBeLessThanOrEqual(A4_WIDTH);
+  }
 }
 
 describe('generateCertificatePdfBuffer', () => {
@@ -90,11 +132,12 @@ describe('generateCertificatePdfBuffer', () => {
       })
     );
     const text = pdfText(buffer);
-    expect(text).toContain('Juz: 5');
+    // The paper prints the juz's name beside its number.
+    expect(text).toContain('Juz: Al-Maidah (Juz 5)');
     expect(text).toContain('Pengajar: Ust. Ahmad');
   });
 
-  it('prints a tahfidz syahadah’s qira’ah, juz and silsilah from the metadata', async () => {
+  it('prints a tahfidz syahadah’s qira’ah, juz count and silsilah from the metadata', async () => {
     const buffer = await generateCertificatePdfBuffer(
       base({
         certificateType: 'TAHFIDZ',
@@ -109,9 +152,35 @@ describe('generateCertificatePdfBuffer', () => {
     const text = pdfText(buffer);
     // `winAnsiSafe` folds the smart quotes and the arrow to their ASCII forms.
     expect(text).toContain("Qira'ah: Hafs 'an 'Asim");
-    expect(text).toContain('Jumlah Juz: 1, 2, 3, 4, 5');
+    // The paper shows the *number* of juz ("5 Juz"), never the list.
+    expect(text).toContain('Jumlah Juz: 5 Juz');
+    expect(text).not.toContain('Jumlah Juz: 1, 2, 3');
     expect(text).toContain('Musyrif: Ust. Ahmad');
     expect(text).toContain('Silsilah Sanad: Rasulullah ? Jibril ? ...');
+  });
+
+  it('reports a 30-juz list as a count, not a line that overflows the page', async () => {
+    const completedJuz = Array.from({ length: 30 }, (_, i) => i + 1);
+    const buffer = await generateCertificatePdfBuffer(
+      base({ certificateType: 'TAHFIDZ_30_JUZ', metadata: { completedJuz } })
+    );
+    const text = pdfText(buffer);
+    expect(text).toContain('Jumlah Juz: 30 Juz');
+    expect(text).not.toContain('Jumlah Juz: 1, 2, 3');
+    await assertLinesWithinContentWidth(buffer);
+  });
+
+  it('wraps a long silsilah so it stays inside the page edges', async () => {
+    const sanadChain = Array.from({ length: 60 }, (_, i) => `Guru Ke-${i + 1}`).join(' > ');
+    const buffer = await generateCertificatePdfBuffer(
+      base({ certificateType: 'TAHFIDZ', metadata: { sanadChain } })
+    );
+    const text = pdfText(buffer);
+    // The chain is wider than A4; a single unwrapped line would run off both
+    // edges. It must be broken into more than one drawn line, all within width.
+    const chainLines = text.split('\n').filter((l) => l.includes('Guru Ke-'));
+    expect(chainLines.length).toBeGreaterThan(1);
+    await assertLinesWithinContentWidth(buffer);
   });
 
   it('renders the generic layout when a row has no mint metadata', async () => {

@@ -226,10 +226,14 @@ test.describe("Sertifikat — daftar dan detail mengunduh PDF", () => {
     await gotoAuthedPage(page, "/certificates", /Sertifikat Digital/i);
 
     // The per-row action trigger is an icon-only button; open it, then choose
-    // Download PDF from the menu.
+    // Download PDF from the menu. The menu is a Radix popover that animates in,
+    // so wait for the item to be visible before clicking — a bare click right
+    // after opening it races the mount under CI load ("element not stable").
     await page.locator("table tbody tr").first().getByRole("button").click();
+    const downloadItem = page.getByRole("menuitem", { name: "Download PDF" });
+    await expect(downloadItem).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("menuitem", { name: "Download PDF" }).click();
+    await downloadItem.click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^sertifikat-.*\.pdf$/i);
   });
@@ -245,11 +249,46 @@ test.describe("Sertifikat — daftar dan detail mengunduh PDF", () => {
     const id = list.data[0]?.id;
     expect(id, "seed should provide a certificate").toBeTruthy();
 
-    await gotoAuthedPage(page, `/certificates/${id}`, /Detail Sertifikat/i);
+    // A larger timeout: under CI load `next dev` compiles this route on its
+    // first hit, and 15s is not always enough for the cold compile + fetch.
+    await gotoAuthedPage(
+      page,
+      `/certificates/${id}`,
+      /Detail Sertifikat/i,
+      30000,
+    );
 
     const downloadPromise = page.waitForEvent("download");
     await page.getByRole("button", { name: "Download PDF" }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
+  });
+});
+
+/**
+ * The printed sanad/syahadah QR opens `/public/verify-sanad` on the apex
+ * (`cipansor.or.id`), and the recipient holds no session — so the page has to
+ * be served there rather than 404'd by the host split. The other e2e specs run
+ * on localhost, where the split is deliberately disabled, so nothing else
+ * covers this. `hostSplitActionFor` reads the request's Host header, which a
+ * fetch can set directly.
+ */
+test.describe("Halaman verifikasi sanad publik — terjangkau di host publik", () => {
+  test("apex melayani /public/verify-sanad, bukan 404", async ({ request }) => {
+    const webUrl = process.env.WEB_URL || "http://localhost:3000";
+    const response = await request.get(
+      `${webUrl}/public/verify-sanad?code=${encodeURIComponent(PUBLIC_NUMBER)}`,
+      { headers: { host: "cipansor.or.id" } },
+    );
+    // Not 404 (the host-split rejection) and not a redirect to the portal
+    // login (the session wall): the printed address must resolve here.
+    expect(response.status()).toBe(200);
+
+    // Control: the same host does refuse an application path, so a 200 above is
+    // the public-page exemption at work, not the split being off.
+    const appPath = await request.get(`${webUrl}/dashboard`, {
+      headers: { host: "cipansor.or.id" },
+    });
+    expect(appPath.status()).toBe(404);
   });
 });

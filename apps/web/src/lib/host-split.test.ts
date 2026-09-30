@@ -91,6 +91,14 @@ describe("hostSplitActionFor", () => {
       expect(target(PORTAL_HOST, "/public/verify-card")).toBe(PUBLIC_HOST);
     });
 
+    // Where a printed sanad/syahadah's QR points. The recipient holds only the
+    // number on the paper, so the page — and the download button on it — must
+    // answer on the apex without a session.
+    it("keeps the public verify-sanad page", () => {
+      expect(target(PUBLIC_HOST, "/public/verify-sanad")).toBeNull();
+      expect(target(PORTAL_HOST, "/public/verify-sanad")).toBe(PUBLIC_HOST);
+    });
+
     // 404, not a redirect to the portal. A redirect would imply the
     // application also lives at cipansor.or.id — the assumption the split
     // exists to remove — and nothing has ever linked here to be rescued.

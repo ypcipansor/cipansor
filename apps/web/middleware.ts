@@ -74,6 +74,13 @@ const publicPrefixes = [
    * lists in agreement (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Where a printed sanad/syahadah's QR points (`certificateVerificationUrl`).
+   * Kept in step with `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the sync
+   * test enforces it) so a recipient who scans the printed certificate reaches
+   * the verification page — and the download button on it — without a session.
+   */
+  "/public/verify-sanad",
 ];
 
 /**
