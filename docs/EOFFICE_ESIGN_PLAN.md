@@ -190,36 +190,36 @@ The flow is otherwise strong (§3.2). These are the gaps:
 |---|---|---|
 | a | ✅ *Fixed in PR-4.* **`SENT` is never used for outgoing letters** | `correspondence.service.ts:755` sets `SENT` only for **INCOMING** letters whose review finished with no disposition recipients — semantically inverted. Outgoing runs `DRAFT → PENDING_REVIEW → READY_TO_SIGN → SIGNED → ARCHIVED`, skipping it. There is no `sentAt` field and no dispatch record (date, channel, tanda terima), which is exactly what a buku agenda surat keluar records. Any "surat terkirim" statistic is therefore wrong. |
 | b | ✅ *Fixed in PR-4.* **Tembusan is modelled but dead** | `isCC` exists on the recipient model and is written exactly once in the codebase: a hardcoded `isCC: false` at `correspondence.service.ts:350`. Nothing sets it true; no UI offers it. Tembusan is a standard element of naskah dinas. |
-| c | **Signing authority is unstructured** | `senderTitle` is free text. Naskah dinas distinguishes **a.n.**, **u.b.**, **Plt.**, **Plh.**, and that determines both who may sign and how the signature block prints. Today it is a typist's convention, not a rule the system can enforce. |
+| c | ✅ *Fixed in `1513317`.* **Signing authority is unstructured** | `senderTitle` is free text. Naskah dinas distinguishes **a.n.**, **u.b.**, **Plt.**, **Plh.**, and that determines both who may sign and how the signature block prints. Today it is a typist's convention, not a rule the system can enforce. |
 | d | ✅ *Fixed in PR-4.* **No attachment list for outgoing letters** | `fileUrl` is a single field for the scanned original. There is no list of lampiran and no "Lampiran: N berkas" line. |
 
-| e | **A letter cannot be edited after it is created** | Found while building PR-4, not fixed by it. There is no `PATCH /letters/:id` — the only `router.patch` in the module is `/dispositions/:id/status`, and `UpdateLetterInput` is a DTO with no endpoint behind it. So the flow PR-2 completed has no middle step: a reviewer returns a draft, the page says *"Surat dikembalikan untuk diperbaiki"*, and the author's only available move is to resubmit the identical text. It also means lampiran and tembusan can only be attached at creation. Fixing it is a surface of its own — an edit form, a rule for which statuses and which fields are editable by whom, and re-clearing every paraf on save, since a paraf approves a specific text. |
+| e | ✅ *Fixed after PR-4.* **A letter cannot be edited after it is created** | Found while building PR-4, not fixed by it. There is no `PATCH /letters/:id` — the only `router.patch` in the module is `/dispositions/:id/status`, and `UpdateLetterInput` is a DTO with no endpoint behind it. So the flow PR-2 completed has no middle step: a reviewer returns a draft, the page says *"Surat dikembalikan untuk diperbaiki"*, and the author's only available move is to resubmit the identical text. It also means lampiran and tembusan can only be attached at creation. Fixing it is a surface of its own — an edit form, a rule for which statuses and which fields are editable by whom, and re-clearing every paraf on save, since a paraf approves a specific text. |
 
 **Minor:** urgency has three levels (`NORMAL`/`IMMEDIATE`/`URGENT`); the common
 ANRI set is four, adding **Kilat**.
 
-### 2.8 Access control � a cross-unit service role read the whole letter book
+### 2.8 Access control — a cross-unit service role read the whole letter book
 
-Found on the round-2 follow-up, after the Devin findings F1�F12 were closed. It
+Found on the round-2 follow-up, after the Devin findings F1–F12 were closed. It
 is not one of them.
 
 `letterScopeWhere`, `assertLetterAccess` and `choosesUnit` keyed their "sees
 everything" branch on `seesAllUnits`. That helper exists for the shared services
-� the asrama houses santri from three schools, and the klinik, perpustakaan,
+— the asrama houses santri from three schools, and the klinik, perpustakaan,
 keamanan and laboratorium serve the whole campus, so their staff must see across
 units. That is right for *student* data and wrong for *correspondence*: the rule
 is a property of the data, not of the person.
 
-The consequence was that every cross-unit service account � pustakawan,
+The consequence was that every cross-unit service account — pustakawan,
 perawat, keamanan, musyrif, ustadz, laboran, and the Pesantren office
-(`PESANTREN_PENGASUH`, `PESANTREN_TATA_USAHA`) � was handed the entire yayasan's
+(`PESANTREN_PENGASUH`, `PESANTREN_TATA_USAHA`) — was handed the entire yayasan's
 letter book, unclassified letters included, and could pass `?unitId=` to read
 another school's agenda. The retention review list came with it, because it
 applies the same clause. These are the very roles the letter-creation guard
 already refuses (`service.test.ts`), so the read side contradicted the write
 side.
 
-The three now key on `isFoundationScopedRole` (the board plus super admin) � the
+The three now key on `isFoundationScopedRole` (the board plus super admin) — the
 same line `admissions.access.ts` draws for SPMB: the foundation board reads
 across units, service staff do not. Those roles keep their legitimate access
 through the chain (addressee, reviewer, disposition recipient, non-classified
@@ -228,7 +228,7 @@ tembusan). Regression tests pin the list clause, the direct read, and
 
 The standard this restores is Perka ANRI 7/2016, Pasal 5(d): *setiap pegawai
 hanya dapat mengakses arsip yang berada pada tanggung jawab tugas dan
-kewenangannya* � access follows the task, not the org chart. It is also why the
+kewenangannya* — access follows the task, not the org chart. It is also why the
 `RESTRICTED_NATURES` exclusion exists at all; without the unit boundary, the
 exclusion only stopped the classification a role had no business seeing, not the
 letter book itself.
@@ -592,7 +592,18 @@ is ever labelled "Terkirim", and a letter signed before the change still
 verifies. ✅
 
 ### PR-5 — PAdES B-B + RFC 3161 (§4.3 Tier 1)
-Embed the signature in the PDF. Requires the RSA/ECDSA change.
+
+**Still open — the one substantial item left.** Embed the signature in the PDF
+(PAdES B-B, ETSI EN 319 142-1) and bind a trusted time (RFC 3161). Requires a
+CMS/PKCS#7 SignedData container over the byte range and a TSA client; it does
+**not** require the RSA/ECDSA switch (ETSI TS 119 312 V2.1.1 Table A.1 lists
+EdDSA as *shall support* — see the correction in `decisions/esign-standards-ceiling.md`).
+
+> **Scoped, not built.** `pdf-lib` can embed a signature dictionary, but it does
+> not build CMS, and the repo has no PKCS#7 or ASN.1 library. A real B-B needs
+> that dependency, the byte-range digest plumbing, and a TSA endpoint the
+> yayasan must obtain. The RSA/ECDSA switch is an *interoperability* choice
+> (Acrobat validation), not a PAdES requirement.
 
 ### Also fixed while walking the flow (PR #436)
 
