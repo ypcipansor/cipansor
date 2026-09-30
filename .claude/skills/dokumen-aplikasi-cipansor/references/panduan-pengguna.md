@@ -98,9 +98,21 @@ Untuk tiap tugas, baca berurutan:
   tombol tanggal. Tebalkan hanya teks yang benar-benar tampil.
 - **Jalur yang salah ke layar yang benar.** Ubah kata sandi ada di **Profile → tab Keamanan → Ubah Password**, bukan
   Settings. Sebelum menulis "di menu X", `grep -rn "<judul kartu>" apps/web/src` untuk menemukan halaman yang sebenarnya.
+- **Dua gambar, satu layar.** Dua kartu dalam **satu** buklet yang gambarnya berasal dari halaman yang sama hampir selalu
+  berarti salah satu langkahnya menunjuk halaman keliru — inilah gejala yang membuat kartu "Papan Peringkat" dan "Kelola
+  Target" sama-sama menampilkan Jurnal Ibadah (`/ibadah` alih-alih `/ibadah/leaderboard` dan `/ibadah/targets`). Pembaca
+  menemukannya lebih cepat daripada pemeriksa, jadi **buka gambarnya sebelum menyerahkan**; `see` yang cocok hanya
+  membuktikan teksnya ada di layar, bukan bahwa layarnya benar. Pemeriksa menandainya sebagai WARN
+  `gambar-halaman-kembar` (dari `url` di manifes).
 - **Label menu bahasa Inggris dari menu.** Menu avatar berbunyi **Profile**, **Settings**, **Logout** (bukan "Keluar").
   Tulis apa adanya; jangan menerjemahkan.
 - **Nama enum di teks pengguna** (`Menunggu (PENDING)`). Pengguna tidak melihat enum; cari label di `hooks/use-*.ts`.
+
+**Gambar yang sama di dua buklet berbeda tidak apa-apa.** Wali kelas dan musyrif sama-sama melihat Kehadiran → Tindak
+Lanjut; bendahara, kepala unit, dan TU sama-sama memakai halaman Pengumuman. Tiap buklet berdiri sendiri, dan pembacanya
+tidak membuka buklet peran lain — jadi mengulang gambarnya benar. Yang salah adalah dua kartu dalam **satu** buklet
+menampilkan layar yang sama, karena itu berarti salah satu kartunya salah alamat, bukan sekadar berbagi halaman.
+`check_docs.py` memeriksa **per berkas**, jadi ia hanya menandai kasus yang kedua.
 
 `check_docs.py --kind pengguna --trace jejak.md` menangkap sebagian besar ini secara mekanis (`label-layar`, `pesan-karangan`,
 `nama-enum`, `halaman-tak-ada`, `backtick-lolos`) dan menulis jejak berkas:baris tiap label. **Batasnya:** label yang
