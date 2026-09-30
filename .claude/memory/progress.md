@@ -80,8 +80,8 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
-- **Application documents (`docs/`), branch
-  `docs/dokumen-aplikasi-cipansor`, no PR yet.** A technical document (arc42 +
+- **Application documents (`docs/`), now folded into PR #512
+  (`docs/readme-overhaul-visual-qa`).** A technical document (arc42 +
   C4-1/2/3) and the user manuals (general part + Guru booklet, all T2: written
   from code, never run, every card ⚠), built by the `dokumen-aplikasi-cipansor`
   skill. The first run (2026-09-29, another agent) shipped broken tables,
@@ -98,6 +98,21 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   The fix commits (`0b6c189`, `0f993b3`) are on the branch (the first push
   attempts were refused with 403 until the Claude GitHub App access was
   restored).
+  **Folded into #512 (2026-09-30, user's call).** #627 (this branch) was closed
+  and its content moved onto `docs/readme-overhaul-visual-qa`: #512 already
+  rewrote the README with a full screenshot gallery and had fixed the *same*
+  seven dynamic detail pages for the Next 16 `params` Promise, so the two were
+  the "individually green, red when merged" pair of golden rule #9. The merge
+  kept #512's page implementation and brought over only the guard test that
+  pins it (`next-dynamic-params.guard.test.ts`, 127/127 against `use(params)`).
+  #512 also had two stale conflicts with `main` (`role-switcher.tsx`,
+  `sidebar.tsx` — its `realmColorClass` is the correct side) that were resolved
+  and it is `MERGEABLE` again. Its figures were re-measured after the merge:
+  94 API modules (was 93), 67 four-file / 25 five-part, ~1412 handlers, and the
+  new `certificates` module was added to the document. Gate on the merged tree:
+  API build + build:strict, API 3352, web build, web 640, lint 0 errors,
+  format, `check-doc-refs` 1744/1744. `screenshot-flow.ts` was Prettier-formatted
+  (CI Lint rejects unformatted `.ts`).
   Open: T1 verification with screenshots and the other role booklets (the
   `.docx`/`.pdf`-in-git question is settled: they are untracked).
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
