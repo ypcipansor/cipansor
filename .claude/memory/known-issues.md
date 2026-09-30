@@ -373,7 +373,7 @@ decision.
   endpoint validation in `@cipansor/shared` is written for the sender to rely
   on, and a DNS-resolving check belongs at send time (the edge schema only
   refuses literal private IPs and localhost names).
-- **A deliberate push-off is coordinated across tabs** (fixed 2026-09-30). The
+- **A deliberate push-off is coordinated across tabs** (fixed 2026-09-29). The
   marker that stops the shell's `useWebPush` from re-registering an endpoint the
   user just turned off lives in a module-level set (`lib/push-cache.ts`) and is
   mirrored to the other tabs on a `BroadcastChannel`; a tab that hears `push-off`
