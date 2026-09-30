@@ -1622,4 +1622,33 @@ describe('mencabut naskah dinas', () => {
     ).rejects.toThrow(/Alasan pencabutan/i);
     expect(prisma.letterSignature.update).not.toHaveBeenCalled();
   });
+
+  /**
+   * Nama pencabut dibekukan bersama hash salinan bercap.
+   *
+   * Cap DICABUT mencetak nama pencabut, dan hash salinan dihitung atas nama
+   * itu. Selama nama dibaca dari akun pada setiap unduhan, satu penggantian
+   * nama mengubah byte salinan sehingga hashnya tak lagi cocok. Karena itu
+   * pencabutan menyimpan nama **saat mencabut** dan hash yang diturunkan
+   * darinya pada baris tanda tangan yang sama.
+   */
+  it('membekukan nama pencabut dan hash salinan bercap pada baris tanda tangan', async () => {
+    const archived = await tinyPdf();
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(signedLetter() as any);
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(revokerKey('ketua') as any);
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({ name: 'Ani' } as any);
+    vi.mocked(prisma.letterSignedDocument.findUnique).mockResolvedValue({
+      bytes: new Uint8Array(archived),
+      sha256: crypto.createHash('sha256').update(archived).digest('hex'),
+    } as any);
+
+    await EsignService.revokeLetterSignature('letter-1', SIGNER, REASON, PASS);
+
+    const stampWrite = vi
+      .mocked(prisma.letterSignature.update)
+      .mock.calls.map((c) => c[0] as any)
+      .find((c) => c.data?.revokedSha256);
+    expect(stampWrite?.data.revokedByName).toBe('Ani');
+    expect(stampWrite?.data.revokedSha256).toMatch(/^[0-9a-f]{64}$/);
+  });
 });

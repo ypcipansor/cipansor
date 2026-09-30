@@ -36,6 +36,12 @@ interface SignatureRow {
   id?: string | null;
   pdfHash?: string | null;
   revokedReason?: string | null;
+  /**
+   * Nama pencabut **saat mencabut**, bukan `revokedBy.name` hari ini. Cap
+   * DICABUT mencetak nama ini, jadi membacanya dari akun yang bisa berganti
+   * nama akan mengubah byte salinan bercap dan memutus hashnya.
+   */
+  revokedByName?: string | null;
   revokedBy?: { name?: string | null } | null;
 }
 
@@ -158,7 +164,13 @@ export async function resolveLetterPdf(letter: LetterWithSignatures): Promise<Le
     buffer = await stampRevoked(buffer, {
       reason: revoked.revokedReason ?? 'Dicabut oleh pejabat yang berwenang.',
       revokedAt: new Date(revoked.revokedAt as unknown as string),
-      revokedByName: revoked.revokedBy?.name ?? null,
+      /**
+       * Nama yang membeku di baris tanda tangan lebih dulu; `revokedBy.name`
+       * hanya untuk pencabutan yang tercatat sebelum kolom nama ada. Membaca
+       * dari akun hari ini akan mengubah byte salinan setiap kali nama
+       * pencabutnya disunting, dan hash yang tersimpan tak lagi cocok.
+       */
+      revokedByName: revoked.revokedByName ?? revoked.revokedBy?.name ?? null,
     });
   }
 

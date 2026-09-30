@@ -209,6 +209,21 @@ export function initializeScheduler(): void {
    * Ia **tidak memusnahkan** apa pun; yang dilakukannya adalah menghitung dan
    * mencatat (lihat `letter-retention.job.ts` untuk alasannya). Kegagalan
    * dicatat dan tidak menjatuhkan penjadwal.
+   *
+   * **Di mana petugas arsip menemukan hasilnya.** Baris log di bawah ini
+   * hanyalah jumlah, dan `summary.due` sengaja tidak dicetak ke log: perihal
+   * naskah Rahasia tidak boleh berakhir di pengumpul log. Daftar usulnya
+   * tersedia di tiga permukaan, yang satu-satunya berisi perihal adalah
+   * halaman:
+   *   - `/e-office/retention` — daftar lengkap dan ekspor CSV, dibatasi
+   *     cakupan jabatan pemanggilnya;
+   *   - `pnpm --filter api db:retention-review` — daftar untuk terminal, tanpa
+   *     perihal naskah rahasia;
+   *   - `audit_logs` dengan `action = 'REVIEW_LETTER_RETENTION'` — jejak bahwa
+   *     peninjauan benar-benar berjalan, beserta jumlahnya.
+   * Jadi "hasil mingguan" bukan sesuatu yang menunggu dikirim: ia adalah daftar
+   * yang dapat dibuka kapan saja, dan baris log yang menandai bahwa minggu itu
+   * sudah diperiksa.
    */
   const retentionReviewTask = cron.schedule(
     '0 5 * * 1',

@@ -314,11 +314,18 @@ raw `$executeRaw`/`$queryRaw` carrying `DELETE FROM` / `DROP TABLE` / `TRUNCATE`
 or a `DISPOSED`/`destroyed` write. It also walks the whole API source and fails
 if any non-test module deletes a `Letter` or `LetterSignature` — so "the system
 never destroys a naskah" is checked across the tree, not only in the retention
-job. The job already only reads and proposes, but a future edit that "cleans up"
-past-retention rows would silently turn a review tool into a shredder — and the
-deletion would be of archive records, which **UU 43/2009 Pasal 51–52** and its
-implementing **PP 28/2012** require a lawful procedure and a berita acara for.
-The guard makes that an error rather than a review comment.
+job. The tree scan matches the delete by the **receiver's absence**, not the
+literal name `prisma`: `tx.letter.deleteMany(` (a transaction client) and
+`prisma.letter.delete(` both match, and a raw
+`$executeRaw\`DELETE FROM letters …\`` matches too. The patterns are themselves
+asserted against positive examples — including a read-only
+`['SIGNED', 'SENT', 'ARCHIVED', 'DISPOSED']` list that must *not* be flagged — so
+the guard cannot quietly narrow again. The job already only reads and proposes,
+but a future edit that "cleans up" past-retention rows would silently turn a
+review tool into a shredder — and the deletion would be of archive records, which
+**UU 43/2009 Pasal 51–52** and its implementing **PP 28/2012** require a lawful
+procedure and a berita acara for. The guard makes that an error rather than a
+review comment.
 
 ### 2.13 Why retention stops at a list — what the regulations actually require
 
@@ -1497,9 +1504,22 @@ docker compose exec api node -e "
 
 1. **Which letters must verify outside the pesantren?** That answer sets whether
    Tier 2 (BSrE) is required or merely desirable, and by when.
-2. ~~**Signing authority (PR-6):** who may sign a.n. whom, and when u.b./Plt./Plh.
-   apply.~~ **Shipped `1513317`** — the a.n./u.b./Plt./Plh. forms are in the
-   naskah and the signature block.
+2. **Signing authority (PR-6) — the rendering shipped, the governance is still
+   open.** `1513317` put the a.n./u.b./Plt./Plh. forms in the naskah and the
+   signature block, and that is all it settled: the *mechanism* to express a
+   delegation now exists. What it did **not** settle is who may sign a.n. whom,
+   when each form applies, and whether delegation is even required —
+   `SELECTABLE_SIGNING_AUTHORITY_FORMS` (`packages/shared/src/types/letter-signing-authority.ts`)
+   deliberately validates nothing, because the system holds no surat kuasa or
+   SK penunjukan to check against. The charter (`anggaran-dasar.md`, Pasal 18
+   ayat 1) is the reason this cannot be waved away: **Pengurus mewakili the
+   yayasan only as Ketua Umum *together with* one other Pengurus**, so a letter
+   that represents the yayasan to an outside party needs two signers, and a
+   single Ketua signature does not satisfy the article. Two questions therefore
+   remain the yayasan's: (a) may a.n./u.b./Plt./Plh. stand in for the second
+   signer at all, or does external representation require two real signatures;
+   and (b) if a form is allowed, what evidence of the delegation must exist
+   before it may be selected. Tracked, not answered — `naskah-dinas`.
 3. **Retention:** how long a signed letter and its archived PDF must be kept —
    this drives whether Tier 3 (B-LTA) is in scope.
 4. **Arabic in letter bodies (PR-7):** whether staff need to write Arabic script

@@ -7823,6 +7823,27 @@ model LetterSignature {
   revokedById       String?   @map("revoked_by_id")
   revokedByRoleCode String?   @map("revoked_by_role_code")
 
+  /// Nama pencabut **sebagaimana tercatat saat mencabut**, bukan namanya hari
+  /// ini. Cap DICABUT mencetak nama ini dan hash salinan bercap dihitung atas
+  /// nama itu — lihat `revokedSha256`. Selama nama dibaca dari `User.name`,
+  /// satu penggantian nama menisbikan setiap salinan bercap yang sudah
+  /// diunduh orang: byte-nya berubah, hashnya tak lagi cocok, dan salinan
+  /// resmi sistem sendiri dijawab "tidak terdaftar".
+  revokedByName     String?   @map("revoked_by_name")
+
+  /// Hash SHA-256 salinan **bercap DICABUT** dari byte yang diarsipkan.
+  ///
+  /// Diisi saat naskah dicabut, supaya salinan bercap yang diunduh penerimanya
+  /// dapat dikenali kembali lewat satu perbandingan tepat — tanpa membuat
+  /// ulang capnya dan tanpa batas 200 tanda tangan tercabut terbaru. Ia hidup
+  /// di sini, bukan di arsipnya (`LetterSignedDocument`), karena inilah baris
+  /// yang menjawab pertanyaan "apakah tanda tangan ini dicabut" dan di sinilah
+  /// `revokedByName` yang menjadi dasar capnya berada.
+  ///
+  /// NULL untuk pencabutan yang tercatat sebelum kolom ini ada; jalur cadangan
+  /// (membuat ulang cap, terbatas) menanganinya.
+  revokedSha256     String?   @map("revoked_sha256")
+
   /// Tanda tangan Ed25519 pencabut atas pernyataan pencabutannya.
   ///
   /// Pencabutan adalah pernyataan kriptografis, bukan sekadar kolom status —
@@ -7844,6 +7865,10 @@ model LetterSignature {
   @@unique([letterId, signerId])
   @@index([letterId])
   @@index([pdfHash])
+  /// Indeks untuk pencocokan salinan bercap DICABUT (`revokedSha256 = ?`).
+  /// Tanpa ini, setiap unggahan verifikasi publik memindai seluruh tabel tanda
+  /// tangan — dan "tanpa batas" hanya berarti "seluruh tabel", bukan murah.
+  @@index([revokedSha256])
   @@map("letter_signatures")
 }
 
@@ -7884,28 +7909,10 @@ model LetterSignedDocument {
   /// dijelaskan: build inilah yang membuatnya.
   generator String
 
-  /// Hash salinan **bercap DICABUT** dari byte di atas.
-  ///
-  /// Diisi saat naskah dicabut, supaya salinan bercap yang diunduh penerimanya
-  /// dapat dikenali kembali tanpa menghitung ulang capnya. Sebelum ini
-  /// pengenalan salinan bercap bekerja dengan membuat ulang cap pada setiap
-  /// permintaan, dibatasi 200 tanda tangan tercabut terbaru — sehingga begitu
-  /// pencabutan melewati 200, salinan resmi yang lebih tua dijawab "tidak
-  /// terdaftar". Kolom ini membuat pencarian tepat dan tanpa batas: berkas yang
-  /// diunggah dicocokkan langsung pada hash-nya.
-  ///
-  /// NULL untuk pencabutan yang tercatat sebelum kolom ini ada; jalur cadangan
-  /// (membuat ulang cap, terbatas) menanganinya.
-  revokedSha256 String? @map("revoked_sha256")
-
   archivedAt DateTime @default(now()) @map("archived_at")
 
   signature LetterSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
 
-  /// Indeks untuk pencocokan salinan bercap. Tanpa ini, `revokedSha256 = ?`
-  /// adalah pemindaian penuh tabel arsip — dan "tanpa batas" hanya berarti
-  /// seluruh tabel, bukan tepat dan murah.
-  @@index([revokedSha256])
   @@map("letter_signed_documents")
 }
 

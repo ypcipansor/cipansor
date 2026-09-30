@@ -1244,6 +1244,12 @@ export const EsignService = {
      * melewati 200, salinan resmi yang lebih tua dijawab "tidak terdaftar".
      * Menyimpan hashnya di sini membuat pencocokan tepat dan tanpa batas.
      *
+     * **Nama pencabut dibekukan di sini.** Cap mencetak namanya, dan selama
+     * nama itu dibaca dari `users.name` pada setiap unduhan, satu penggantian
+     * nama menisbikan setiap salinan bercap yang sudah beredar: byte-nya
+     * berubah, hashnya tak lagi cocok. Karena itu namanya disimpan pada baris
+     * tanda tangan bersama hashnya, dan kedua jalur cap membacanya dari sana.
+     *
      * Usaha terbaik: arsip yang hilang atau rusak tidak menggagalkan
      * pencabutan — pencabutan itu sendiri sudah tercatat dan sah. Yang
      * kehilangan hanyalah pengenalan salinan bercap untuk naskah ini, dan
@@ -1258,21 +1264,20 @@ export const EsignService = {
         const archivedBytes = Buffer.from(archived.bytes);
         // Arsip yang tidak lagi utuh tidak boleh menjadi dasar cap.
         if (crypto.createHash('sha256').update(archivedBytes).digest('hex') === archived.sha256) {
-          // Nama pencabut dibaca dari pengguna, bukan dari `actor` — ia dipakai
-          // `stampRevoked` saat mengunduh (`revoked.revokedBy.name`), dan cap
-          // harus keluar byte demi byte sama agar hash-nya cocok.
           const revoker = await prisma.user.findUnique({
             where: { id: actor.id },
             select: { name: true },
           });
+          const revokedByName = revoker?.name ?? null;
           const stamped = await stampRevoked(archivedBytes, {
             reason: trimmed,
             revokedAt,
-            revokedByName: revoker?.name ?? null,
+            revokedByName,
           });
-          await prisma.letterSignedDocument.update({
-            where: { signatureId: updated.id },
+          await prisma.letterSignature.update({
+            where: { id: updated.id },
             data: {
+              revokedByName,
               revokedSha256: crypto.createHash('sha256').update(stamped).digest('hex'),
             },
           });

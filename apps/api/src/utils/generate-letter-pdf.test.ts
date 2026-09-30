@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { PDFDocument } from 'pdf-lib';
 import {
   generateLetterPdfBuffer,
   stampRevoked,
@@ -423,6 +424,38 @@ describe('cap visualisasi TTE pada naskah unggahan', () => {
     expect(text).toContain('H. Dadan Hamdani');
     // Naskah penyusunnya tetap ada — capnya menambah, bukan mengganti.
     expect(text).toContain('Menerangkan bahwa Ahmad Fauzan aktif.');
+  });
+
+  /**
+   * Visualisasi berada pada lembar tersendiri, dan lembar penyusunnya tidak
+   * tersentuh.
+   *
+   * Sampai sekarang cap digambar ke halaman terakhir pada posisi tetap, dan
+   * satu instruksi pembayaran di sudut itu akan tertimpa kode QR — salinan yang
+   * tertimpa itulah yang ditandatangani. Menambahkan halaman membuat tumpang
+   * tindih mustahil; yang dijaga di sini adalah naskah asalnya tidak lagi
+   * menerima satu pun coretan.
+   */
+  it('menambahkan lembar visualisasi dan tidak mengubah halaman penyusunnya', async () => {
+    const original = await generateLetterPdfBuffer(letterWith({}));
+    const stamped = await stampSignatureVisualisation(original, {
+      signedAt: new Date('2026-09-01T03:00:00.000Z'),
+      signerName: 'H. Dadan Hamdani',
+    });
+
+    const before = await PDFDocument.load(original);
+    const after = await PDFDocument.load(stamped);
+
+    // Satu halaman baru, dan halaman penyusunnya identik byte demi byte.
+    expect(after.getPageCount()).toBe(before.getPageCount() + 1);
+    const contentBefore = await before.getPage(0).node.Contents();
+    const contentAfter = await after.getPage(0).node.Contents();
+    expect(contentAfter?.toString()).toBe(contentBefore?.toString());
+
+    // Keterangan cap berada di halaman baru, bukan di halaman penyusunnya.
+    const lastPageText = pdfText(stamped);
+    expect(lastPageText).toContain('LEMBAR VISUALISASI TANDA TANGAN ELEKTRONIK');
+    expect(lastPageText).toContain('Ditandatangani secara elektronik');
   });
 
   it('deterministik: cap atas byte yang sama menghasilkan hash yang sama', async () => {

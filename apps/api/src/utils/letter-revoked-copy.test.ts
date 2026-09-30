@@ -116,6 +116,35 @@ describe('matchRevokedCopy', () => {
     expect(await matchRevokedCopy(stamped, sha256(stamped))).toBeNull();
   });
 
+  /**
+   * Pencabut yang berganti nama.
+   *
+   * Cap mencetak nama pencabut, dan hash salinan bercap dihitung atas nama itu.
+   * Bila nama dibaca dari akun yang sudah diganti, salinan yang diunduh memuat
+   * nama baru sementara hash tersimpan menghitung nama lama — salinan resmi
+   * sistem sendiri dijawab "tidak terdaftar". Nama yang membeku di baris tanda
+   * tangan yang dipakai, bukan nama akun hari ini.
+   */
+  it('memakai nama pencabut yang membeku, bukan nama akun yang sudah berganti', async () => {
+    const archived = await tinyPdf();
+    const stamped = await stampRevoked(archived, {
+      reason,
+      revokedAt,
+      revokedByName: 'Ani',
+    });
+
+    vi.mocked(prisma.letterSignature.findMany).mockResolvedValue([
+      candidate(archived, {
+        revokedByName: 'Ani',
+        revokedBy: { name: 'Anisa' },
+      }),
+    ] as never);
+
+    expect(await matchRevokedCopy(stamped, sha256(stamped))).toEqual({
+      verificationToken: 'tok-tercabut',
+    });
+  });
+
   /** Tanpa pencabutan (revokedAt null) kandidat dilewati, bukan dicap. */
   it('melewati baris tanpa revokedAt', async () => {
     const archived = await tinyPdf();

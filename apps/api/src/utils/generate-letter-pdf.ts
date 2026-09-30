@@ -49,7 +49,7 @@ const DECIDING_OFFICIAL_TITLE_CASE = DECIDING_OFFICIAL.split(' ')
  * perubahan apa pun yang mengubah keluaran** — kop surat, jarak baris, urutan
  * gambar, atau kenaikan versi `pdf-lib`.
  */
-export const LETTER_PDF_GENERATOR = 'cipansor-naskah/2026-09-03c';
+export const LETTER_PDF_GENERATOR = 'cipansor-naskah/2026-09-30a';
 
 export class LetterPdfError extends Error {
   constructor(message: string) {
@@ -920,29 +920,33 @@ export async function stampRevoked(
  * Naskah dengan jalur penyusunan `UPLOADED` disusun di luar sistem — di Word,
  * di LibreOffice — lalu diunggah sebagai PDF. Yang ditandatangani, di-hash,
  * diarsipkan, dan dicocokkan pada verifikasi publik adalah **byte unggahan
- * itu**, bukan hasil render sistem. Karena itu visualisasi TTE-nya harus
- * dicap ke atas tata letak penyusun, bukan ke tata letak yang kita karang
- * sendiri: kita tidak tahu di mana tanda tangannya berdiri pada naskah orang
- * lain, dan menebaknya akan mencetak blok tanda tangan di tengah kalimat.
+ * itu**, bukan hasil render sistem.
  *
- * Yang dicap, dan mengapa:
+ * **Visualisasinya diletakkan pada lembar tersendiri di akhir naskah**, bukan
+ * dicap ke atas halaman terakhir penyusunnya. Sebelumnya cap digambar langsung
+ * ke halaman terakhir pada posisi tetap di kanan-bawah, dan tata letak naskah
+ * unggahan tidak kita ketahui: satu instruksi pembayaran atau tanda tangan
+ * basah di sudut itu tertimpa kode QR, dan salinan yang tertimpa itulah yang
+ * ditandatangani serta diarsipkan. Lembar tersendiri membuat tumpang tindih
+ * mustahil — tidak ada satu titik pun di sana yang berasal dari naskah
+ * penyusunnya.
+ *
+ * Yang dicetak pada lembar itu:
  *
  * - **Kode QR** menuju halaman verifikasi publik, sama seperti pada naskah
- *   GENERATED. Ia ditempatkan di margin kanan halaman terakhir, serendah yang
- *   masih di dalam batas cetak — tempat yang paling kecil kemungkinannya
- *   menimpa isi, dan tempat yang lazim untuk cap TTE.
- * - **Keterangan** "Ditandatangani secara elektronik" beserta nama penanda
- *   tangan. NIP tidak dicetak, dengan alasan yang sama seperti pada naskah
- *   GENERATED: pedoman visualisasi TTE menyatakan visualisasinya tidak memuat
- *   NIP/NIK.
+ *   GENERATED, dengan lambang yayasan di tengahnya.
+ * - **Keterangan** "Ditandatangani secara elektronik" beserta nama dan jabatan
+ *   penanda tangan. NIP tidak dicetak, dengan alasan yang sama seperti pada
+ *   naskah GENERATED: pedoman visualisasi TTE menyatakan visualisasinya tidak
+ *   memuat NIP/NIK.
  *
- * Yang **tidak** dicap: garis kewenangan (a.n./u.b./Plt./Plh.) dan tembusan.
- * Keduanya bagian dari tata letak naskah yang disusun penyusunnya sendiri,
- * dan mencetaknya lagi di sini akan menggandakannya. Nilainya tetap ikut
+ * Yang **tidak** dicetak: garis kewenangan (a.n./u.b./Plt./Plh.) dan tembusan.
+ * Keduanya bagian dari tata letak naskah yang disusun penyusunnya sendiri, dan
+ * mencetaknya lagi di sini akan menggandakannya. Nilainya tetap ikut
  * ditandatangani dan tetap terbaca di halaman verifikasi publik.
  *
- * Byte keluaran ini yang menjadi dasar hash dan arsip. Tidak ada penggantian
- * halaman yang dilakukan; naskah penyusun tetap utuh, hanya ditambahi cap.
+ * Byte keluaran ini yang menjadi dasar hash dan arsip. Naskah penyusunnya
+ * tidak diubah sedikit pun; yang ditambahkan hanya satu halaman di akhir.
  */
 export async function stampSignatureVisualisation(
   pdfBuffer: Buffer,
@@ -981,33 +985,76 @@ export async function stampSignatureVisualisation(
   const qrImage = await pdfDoc.embedPng(qrBuffer);
   const logo = await pdfDoc.embedPng(Buffer.from(LOGO_CIPANSOR_PNG_BASE64, 'base64'));
 
-  const qrSize = 62;
-  const margin = 36;
+  const qrSize = 132;
+  const margin = MARGIN_X;
+  const width = PAGE_WIDTH;
+  const height = PAGE_HEIGHT;
   const pages = pdfDoc.getPages();
   if (pages.length === 0) {
     throw new LetterPdfError('Berkas naskah yang diunggah tidak memuat satu halaman pun.');
   }
-  const last = pages[pages.length - 1];
-  const { width } = last.getSize();
 
-  // Kanan-bawah halaman terakhir, setinggi mungkin dari tepi bawah supaya
-  // kecil kemungkinannya menimpa nomor halaman atau catatan kaki.
-  const qrX = width - margin - qrSize;
-  const qrY = margin + 44;
+  /**
+   * Lembar tersendiri, bukan cap di atas halaman terakhir penyusun.
+   *
+   * Sampai sekarang cap TTE digambar langsung ke halaman terakhir pada posisi
+   * tetap di kanan-bawah. Naskah unggahan tata letaknya milik penyusunnya dan
+   * tidak kita ketahui: satu instruksi pembayaran, tanda tangan basah, atau
+   * catatan kaki di sudut itu akan tertimpa kode QR — dan salinan yang tertimpa
+   * itulah yang ditandatangani, diarsipkan, dan diserahkan. Memilih posisi
+   * "yang paling kecil kemungkinannya menimpa isi" tetap sebuah tebakan, dan
+   * tebakan yang salah merusak naskah resmi tanpa jejak.
+   *
+   * Menambahkan halaman membuat tumpang tindih itu mustahil: tidak ada satu pun
+   * titik pada lembar ini yang berasal dari naskah penyusunnya, jadi tidak ada
+   * yang dapat tertutup. Yang perlu dijaga tinggal bahwa halaman tambahan itu
+   * tidak menyisipkan apa pun ke tengah naskah — ia selalu di **akhir**, dan
+   * byte-nya tetap deterministik agar hash-nya dapat diverifikasi ulang.
+   */
+  const page = pdfDoc.addPage([width, height]);
 
-  last.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
+  // Bingkai tipis: menandai lembar ini sebagai terbitan sistem, bukan naskah
+  // penyusunnya.
+  page.drawRectangle({
+    x: margin / 2,
+    y: margin / 2,
+    width: width - margin,
+    height: height - margin,
+    borderColor: rgb(0.8, 0.8, 0.8),
+    borderWidth: 0.7,
+  });
+
+  const heading = sanitizeForWinAnsi('LEMBAR VISUALISASI TANDA TANGAN ELEKTRONIK');
+  const headingSize = 11;
+  page.drawText(heading, {
+    x: (width - bold.widthOfTextAtSize(heading, headingSize)) / 2,
+    y: height - 96,
+    size: headingSize,
+    font: bold,
+    color: rgb(0.15, 0.15, 0.15),
+  });
+  page.drawLine({
+    start: { x: margin, y: height - 112 },
+    end: { x: width - margin, y: height - 112 },
+    thickness: 0.7,
+    color: rgb(0.75, 0.75, 0.75),
+  });
+
+  const qrX = (width - qrSize) / 2;
+  const qrY = height - 112 - 48 - qrSize;
+  page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize });
 
   // Lambang yayasan di tengah kode, dengan alas putih, sama seperti pada naskah
   // GENERATED — bentuk yang membuat cap ini dikenali sebagai cap yayasan.
   const badge = qrSize * 0.22;
-  last.drawRectangle({
-    x: qrX + (qrSize - badge) / 2 - 1.5,
-    y: qrY + (qrSize - badge) / 2 - 1.5,
-    width: badge + 3,
-    height: badge + 3,
+  page.drawRectangle({
+    x: qrX + (qrSize - badge) / 2 - 2,
+    y: qrY + (qrSize - badge) / 2 - 2,
+    width: badge + 4,
+    height: badge + 4,
     color: rgb(1, 1, 1),
   });
-  last.drawImage(logo, {
+  page.drawImage(logo, {
     x: qrX + (qrSize - badge) / 2,
     y: qrY + (qrSize - badge) / 2,
     width: badge,
@@ -1024,29 +1071,44 @@ export async function stampSignatureVisualisation(
     timeZone: 'Asia/Jakarta',
   });
 
-  const captionSize = 7;
-  let captionY = qrY - 10;
-  const drawLine = (text: string, font: PDFFont, size: number, y: number) => {
-    // Rata kanan terhadap kode QR, dipangkas bila melebihi lebar halaman.
+  const centerLine = (text: string, font: PDFFont, size: number, y: number) => {
+    // Terpusat, dipangkas bila melebihi lebar halaman.
     let line = text;
     while (font.widthOfTextAtSize(line, size) > width - 2 * margin && line.length > 12) {
       line = `${line.slice(0, -4)}…`;
     }
-    const x = width - margin - font.widthOfTextAtSize(line, size);
-    last.drawText(line, { x, y, size, font, color: rgb(0.25, 0.25, 0.25) });
+    page.drawText(line, {
+      x: (width - font.widthOfTextAtSize(line, size)) / 2,
+      y,
+      size,
+      font,
+      color: rgb(0.25, 0.25, 0.25),
+    });
   };
 
-  drawLine(caption, italic, captionSize, captionY);
-  captionY -= 9;
+  let captionY = qrY - 26;
+  centerLine(caption, italic, 9, captionY);
+  captionY -= 18;
   if (name) {
-    drawLine(name, bold, 8, captionY);
-    captionY -= 9;
+    centerLine(name, bold, 12, captionY);
+    captionY -= 18;
   }
   if (title) {
-    drawLine(title, italic, captionSize, captionY);
-    captionY -= 9;
+    centerLine(title, italic, 9, captionY);
+    captionY -= 14;
   }
-  drawLine(signedOn, italic, captionSize, captionY);
+  centerLine(signedOn, italic, 9, captionY);
+
+  const explanation = [
+    'Lembar ini diterbitkan sistem sebagai visualisasi tanda tangan elektronik.',
+    'Pindai kode QR, atau buka halaman verifikasi lalu unggah berkas PDF ini,',
+    'untuk memeriksa keaslian naskah dan status tanda tangannya.',
+  ];
+  let explanationY = 180;
+  for (const line of explanation) {
+    centerLine(sanitizeForWinAnsi(line), italic, 8, explanationY);
+    explanationY -= 12;
+  }
 
   // Tanggal pembuatan dikosongkan supaya byte-nya tidak berubah karena waktu
   // render — sama seperti `stampRevoked`. Hash-nya dihitung atas byte ini.

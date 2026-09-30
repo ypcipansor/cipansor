@@ -46,6 +46,9 @@ vi.mock('@/lib/prisma', () => ({
     user: {
       findMany: vi.fn(),
     },
+    unit: {
+      findMany: vi.fn(),
+    },
     academicYear: {
       findFirst: vi.fn(),
     },
@@ -2256,6 +2259,40 @@ describe('CorrespondenceService', () => {
       expect(csv).not.toContain('PENDING_REVIEW');
     });
 
+    /**
+     * Surat yang pihaknya hanya sebuah instansi.
+     *
+     * Daftar di layar jatuh ke `senderInstance`/`recipientInstance` ketika nama
+     * orangnya kosong, jadi barisnya tampil sebagai "Kemenag". Ekspor yang
+     * menghitung pihaknya sendiri pernah melewatkan kedua kolom itu, sehingga
+     * buku agenda yang diserahkan ke pengawas kehilangan pengirimnya justru
+     * untuk surat yang paling sering datang dari instansi luar.
+     */
+    it('mengisi kolom pihak dari instansi bila nama orangnya kosong', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([
+        row({ senderName: null, senderInstance: 'Kemenag' }),
+      ] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      expect(csv).toContain('Kemenag');
+    });
+
+    it('mengisi penerima dari instansinya pada surat keluar', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([
+        row({
+          direction: 'OUTGOING',
+          senderName: 'Yayasan',
+          recipientName: null,
+          recipientInstance: 'Dinas Pendidikan',
+        }),
+      ] as any);
+
+      const csv = await CorrespondenceService.exportAgendaCsv(actor as any, {});
+
+      expect(csv).toContain('Dinas Pendidikan');
+    });
+
     it('quotes a field containing a comma or a quote (RFC 4180)', async () => {
       vi.mocked(prisma.letter.findMany).mockResolvedValue([
         row({ subject: 'Rapat "khusus", pagi' }),
@@ -2342,6 +2379,53 @@ describe('CorrespondenceService', () => {
       expect(date.gte.toISOString()).toBe('2026-01-01T00:00:00.000Z');
       expect(date.lt.toISOString()).toBe('2027-01-01T00:00:00.000Z');
       expect(date.lte).toBeUndefined();
+    });
+  });
+
+  describe('exportRetentionCsv', () => {
+    const actor = { id: 'tu-1', roleCode: 'SMPIT_TATA_USAHA', unitId: 'unit-1' };
+
+    function dueRow(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 'l-1',
+        letterNumber: '001/YYS/2000',
+        agendaNumber: '001',
+        subject: 'Undangan rapat',
+        unitId: 'unit-1',
+        nature: 'CONFIDENTIAL',
+        date: new Date('2000-01-01T00:00:00.000Z'),
+        classification: { code: '005', name: 'Undangan', retention: 5 },
+        ...overrides,
+      };
+    }
+
+    /**
+     * Berkas ini diserahkan kepada petugas kearsipan dan pengawas, bukan
+     * dibaca mesin. Nilai enum `nature` dan UUID unit yang tercetak apa adanya
+     * memaksa pembacanya menebak; kolomnya harus berisi kata yang dibaca orang.
+     */
+    it('mencetak sifat dan unit dalam bahasa manusia, bukan enum dan id', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([dueRow()] as any);
+      vi.mocked(prisma.unit.findMany).mockResolvedValue([
+        { id: 'unit-1', name: 'SMP IT Cipansor' },
+      ] as any);
+
+      const csv = await CorrespondenceService.exportRetentionCsv(actor as any);
+
+      expect(csv).toContain('Rahasia');
+      expect(csv).toContain('SMP IT Cipansor');
+      // Nilai enum dan UUID mentah tidak boleh sampai ke meja pengawas.
+      expect(csv).not.toContain('CONFIDENTIAL');
+      expect(csv).not.toContain('unit-1');
+    });
+
+    it('jatuh ke id unit bila namanya tidak ditemukan', async () => {
+      vi.mocked(prisma.letter.findMany).mockResolvedValue([dueRow()] as any);
+      vi.mocked(prisma.unit.findMany).mockResolvedValue([] as any);
+
+      const csv = await CorrespondenceService.exportRetentionCsv(actor as any);
+
+      expect(csv).toContain('unit-1');
     });
   });
 });

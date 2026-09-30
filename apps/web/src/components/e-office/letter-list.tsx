@@ -36,6 +36,7 @@ import {
   LetterNature,
   LetterStatus,
   LetterUrgency,
+  letterPartyName,
   type LetterDetail,
 } from "@cipansor/shared";
 import { Inbox, Plus, Search, Send, Download } from "lucide-react";
@@ -419,13 +420,7 @@ export function LetterList({
                             </span>
                           )}
                         </TableCell>
-                        <TableCell>
-                          {direction === LetterDirection.INCOMING
-                            ? letter.senderName || letter.senderInstance || "—"
-                            : letter.recipientName ||
-                              letter.recipientInstance ||
-                              "—"}
-                        </TableCell>
+                        <TableCell>{letterPartyName(letter) || "—"}</TableCell>
                         <TableCell className="whitespace-nowrap">
                           {safeFormat(new Date(letter.date), "dd MMM yyyy", {
                             locale: localeId,

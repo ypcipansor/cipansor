@@ -318,6 +318,42 @@ export function ccRecipientName(r: LetterRecipientDetail): string {
   return r.user?.name?.trim() || r.externalName?.trim() || "Tidak diketahui";
 }
 
+/** Kolom pihak pada daftar surat, buku agenda, dan ekspornya. */
+export interface LetterPartyFields {
+  /**
+   * Arah surat, dari enum mana pun.
+   *
+   * Peladen membacanya dari `@prisma/client`, web dari enum di berkas ini;
+   * keduanya bernilai string yang sama, jadi fungsi ini menerima keduanya dan
+   * membandingkan nilainya, bukan identitas tipe enum-nya. Menuntut satu enum
+   * saja berarti salah satu sisi harus dicor — dan aturan repositori melarang
+   * enum basis data diimpor ke kontrak bersama.
+   */
+  direction: LetterDirection | `${LetterDirection}`;
+  senderName?: string | null;
+  senderInstance?: string | null;
+  recipientName?: string | null;
+  recipientInstance?: string | null;
+}
+
+/**
+ * Nama pihak yang ditampilkan untuk sebuah surat — pengirim bila masuk,
+ * penerima bila keluar.
+ *
+ * Satu fungsi, dipakai daftar di layar dan ekspor CSV. Ekspor yang menghitung
+ * sendiri pernah menjatuhkan `senderInstance`/`recipientInstance`, sehingga
+ * surat yang pihaknya hanya sebuah instansi — dan karena itu tampil di layar
+ * sebagai "Kemenag" — tercetak dengan kolom Pengirim/Penerima kosong. Buku
+ * agenda yang diserahkan harus memuat baris yang tampak di layar, bukan lebih
+ * sedikit.
+ */
+export function letterPartyName(letter: LetterPartyFields): string {
+  if (letter.direction === LetterDirection.INCOMING) {
+    return letter.senderName?.trim() || letter.senderInstance?.trim() || "";
+  }
+  return letter.recipientName?.trim() || letter.recipientInstance?.trim() || "";
+}
+
 /** Satu baris buku ekspedisi: kapan naskah keluar, lewat apa, dan buktinya. */
 export interface LetterDispatchDetail {
   id: string;

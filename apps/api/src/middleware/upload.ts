@@ -174,6 +174,39 @@ export async function verifyStoredFile(file: Express.Multer.File): Promise<boole
   return false;
 }
 
+/**
+ * Catat pemilik berkas unggahan, dan hapus berkasnya bila pencatatannya gagal.
+ *
+ * `Letter.fileUrl` dapat menunjuk URL unggahan siapa pun, jadi penandatanganan
+ * memeriksa `LetterUpload` (`assertLetterUploadOwnedBy`). Baris tanpa catatan
+ * pasti ditolak di sana — sehingga unggahan yang pencatatannya gagal adalah
+ * unggahan yang tidak dapat ditandatangani. Mengembalikan sukses untuk berkas
+ * seperti itu berarti pengguna menyimpan surat yang baru ketahuan tak dapat
+ * ditandatangani di langkah terakhir.
+ *
+ * Karena itu kegagalannya disampaikan, dan berkasnya dihapus supaya tidak ada
+ * unggahan yatim yang menempati ruang tanpa pernah dapat dipakai.
+ *
+ * @returns `true` bila tercatat; `false` bila gagal — berkasnya sudah dihapus.
+ */
+export async function recordUploadOwnership(
+  file: { filename: string; path: string },
+  userId: string
+): Promise<boolean> {
+  try {
+    await prisma.letterUpload.upsert({
+      where: { filename: file.filename },
+      create: { filename: file.filename, userId },
+      update: {},
+    });
+    return true;
+  } catch (e) {
+    console.error('[upload] gagal mencatat kepemilikan berkas:', e);
+    await fs.promises.unlink(file.path).catch(() => undefined);
+    return false;
+  }
+}
+
 // Middleware to map uploaded file to body.fileUrl
 export const handleSingleUpload = (fieldName: string) => {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -222,19 +255,26 @@ export const handleSingleUpload = (fieldName: string) => {
            * Tanpa `req.user` (mis. unggahan anonim) tidak ada yang dicatat —
            * dan berkas tanpa catatan akan ditolak saat ditandatangani, bukan
            * diterima diam-diam.
+           *
+           * Bila pencatatannya gagal, unggahan itu gagal: berkasnya dihapus
+           * dan galatnya dikembalikan, bukan URL yang pasti ditolak saat
+           * ditandatangani. Lihat `recordUploadOwnership`.
            */
           if (req.user?.id) {
-            try {
-              await prisma.letterUpload.upsert({
-                where: { filename: req.file.filename },
-                create: { filename: req.file.filename, userId: req.user.id },
-                update: {},
+            const recorded = await recordUploadOwnership(
+              { filename: req.file.filename, path: req.file.path },
+              req.user.id
+            );
+            if (!recorded) {
+              return res.status(500).json({
+                success: false,
+                error: {
+                  code: 'UPLOAD_ERROR',
+                  message:
+                    'Berkas berhasil diunggah tetapi kepemilikannya gagal dicatat. ' +
+                    'Coba unggah lagi sebentar lagi.',
+                },
               });
-            } catch (e) {
-              // Pencatatan gagal bukan alasan menolak unggahan; berkasnya tetap
-              // berguna. Yang penting adalah berkas tanpa catatan kelak ditolak
-              // saat hendak ditandatangani, bukan diterima tanpa pemeriksaan.
-              console.error('[upload] gagal mencatat kepemilikan berkas:', e);
             }
           }
 

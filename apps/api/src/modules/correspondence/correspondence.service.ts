@@ -19,6 +19,7 @@ import {
   LetterStatus,
   UpdateLetterInput,
   EXCLUDED_CORRESPONDENCE_ROLES,
+  letterPartyName,
 } from '@cipansor/shared';
 import { eventBus } from '@/lib/event-bus';
 import { verifyLetterByToken } from '@/utils/letter-verification';
@@ -1041,7 +1042,9 @@ export const CorrespondenceService = {
       letter.direction === LetterDirection.INCOMING ? 'Masuk' : 'Keluar',
       letter.date instanceof Date ? letter.date.toISOString().slice(0, 10) : String(letter.date),
       letter.subject,
-      letter.senderName ?? letter.recipientName ?? '',
+      // Cadangan instansi ikut, dan sisi yang dipakai mengikuti arah surat —
+      // sama persis dengan yang tampak di daftar. Lihat `letterPartyName`.
+      letterPartyName(letter),
       letter.classification?.code ?? '',
       letter.classification?.name ?? '',
       LETTER_NATURE_LABELS[letter.nature as keyof typeof LETTER_NATURE_LABELS] ?? letter.nature,
@@ -1089,9 +1092,24 @@ export const CorrespondenceService = {
    * Ekspor CSV daftar retensi — kolom yang sama dengan buku agenda, ditambah
    * klasifikasi dan masa retensi, supaya petugas dapat menyerahkan usulnya
    * dalam bentuk yang dapat dibuka di Excel.
+   *
+   * Kolomnya dicetak dalam bahasa Indonesia dan nama unit, bukan nilai enum
+   * `nature` dan id unit: berkas ini diserahkan kepada petugas kearsipan dan
+   * pengawas, yang tidak menghafal kode enum maupun UUID unit. Nama unit
+   * diambil dari tabel unit, dan satu kueri mengumpulkannya sekaligus supaya
+   * jumlah baris tidak menambah jumlah kueri.
    */
   async exportRetentionCsv(actor: LetterActor): Promise<string> {
     const summary = await reviewLetterRetentionForActor(prisma, actor);
+
+    const unitIds = [...new Set(summary.due.map((letter) => letter.unitId))];
+    const units = unitIds.length
+      ? await prisma.unit.findMany({
+          where: { id: { in: unitIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const unitName = new Map(units.map((unit) => [unit.id, unit.name]));
 
     const rows = summary.due.map((letter) => [
       letter.agendaNumber ?? '',
@@ -1102,8 +1120,8 @@ export const CorrespondenceService = {
       letter.classificationName ?? '',
       `${letter.retentionYears} tahun`,
       toDateOnly(letter.dueAt),
-      letter.nature,
-      letter.unitId,
+      LETTER_NATURE_LABELS[letter.nature as keyof typeof LETTER_NATURE_LABELS] ?? letter.nature,
+      unitName.get(letter.unitId) ?? letter.unitId,
     ]);
 
     return toCsv(
@@ -1236,6 +1254,16 @@ export const CorrespondenceService = {
             revokedAt: true,
             revokedReason: true,
             revokedByRoleCode: true,
+            /**
+             * Nama pencabut **saat mencabut**, bukan dari akunnya hari ini.
+             *
+             * Cap DICABUT mencetak nama ini, dan hash salinan bercap dihitung
+             * atas nama itu. Membacanya dari `revokedBy.name` membuat satu
+             * penggantian nama mengubah byte salinan yang diunduh, sehingga
+             * hashnya tak lagi cocok dan salinan resmi sistem sendiri dijawab
+             * "tidak terdaftar" oleh verifikasi publik.
+             */
+            revokedByName: true,
             revokedBy: { select: { name: true } },
             // Dipakai pencetakan salinan bercap: naskah yang dihasilkan ulang
             // harus terbukti masih sama persis dengan yang di-hash saat

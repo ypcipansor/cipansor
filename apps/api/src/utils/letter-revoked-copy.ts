@@ -14,11 +14,18 @@ import { stampRevoked } from '@/utils/generate-letter-pdf';
  * yang dihindari di seluruh halaman verifikasi.
  *
  * **Yang dipercaya bukan teksnya, melainkan hashnya.** Hash salinan bercap
- * disimpan pada arsipnya (`LetterSignedDocument.revokedSha256`) saat pencabutan
- * dicatat, lalu hasilnya dibandingkan sebagai hash. Menempelkan tulisan
- * "DICABUT" ke PDF karangan karena itu tidak menolong pemalsu: sistem tetap
- * membandingkan hash, cap karangan itu tidak akan sama dengan cap yang
+ * disimpan pada baris tanda tangannya (`LetterSignature.revokedSha256`) saat
+ * pencabutan dicatat, lalu hasilnya dibandingkan sebagai hash. Menempelkan
+ * tulisan "DICABUT" ke PDF karangan karena itu tidak menolong pemalsu: sistem
+ * tetap membandingkan hash, cap karangan itu tidak akan sama dengan cap yang
  * dihasilkan dari arsip, dan jawabannya tetap "tidak terdaftar".
+ *
+ * **Nama pencabut ikut membeku.** Cap mencetak nama pencabutnya, jadi hashnya
+ * bergantung pada nama itu. Bila nama dibaca dari `User.name` pada setiap
+ * unduhan, satu penggantian nama menisbikan setiap salinan bercap yang sudah
+ * beredar — salinan resmi sistem sendiri dijawab "tidak terdaftar". Karena itu
+ * `LetterSignature.revokedByName` menyimpan nama **saat mencabut**, dan kedua
+ * jalur di bawah membacanya dari sana, bukan dari akun hari ini.
  *
  * **Kenapa disimpan, bukan dibuat ulang.** Versi sebelumnya membuat ulang cap
  * pada setiap permintaan, dibatasi 200 tanda tangan tercabut terbaru. Dua
@@ -53,6 +60,7 @@ type RevokedCopyClient = {
         verificationToken: string;
         revokedAt: Date | null;
         revokedReason: string | null;
+        revokedByName: string | null;
         revokedBy: { name: string | null } | null;
         document: { bytes: Uint8Array; sha256: string } | null;
       }>
@@ -71,7 +79,7 @@ export async function matchRevokedCopy(
 ): Promise<RevokedCopyMatch | null> {
   // Jalur cepat: hash salinan bercap sudah tersimpan saat pencabutan dicatat.
   const exact = await client.letterSignature.findFirst({
-    where: { revokedAt: { not: null }, document: { revokedSha256: uploadedHash } },
+    where: { revokedAt: { not: null }, revokedSha256: uploadedHash },
     select: { verificationToken: true },
   });
   if (exact) return { verificationToken: exact.verificationToken };
@@ -80,7 +88,8 @@ export async function matchRevokedCopy(
   const candidates = await client.letterSignature.findMany({
     where: {
       revokedAt: { not: null },
-      document: { isNot: null, revokedSha256: null },
+      revokedSha256: null,
+      document: { isNot: null },
     },
     orderBy: { revokedAt: 'desc' },
     take: MAX_CANDIDATES,
@@ -88,6 +97,7 @@ export async function matchRevokedCopy(
       verificationToken: true,
       revokedAt: true,
       revokedReason: true,
+      revokedByName: true,
       revokedBy: { select: { name: true } },
       document: { select: { bytes: true, sha256: true } },
     },
@@ -109,7 +119,9 @@ export async function matchRevokedCopy(
     const stamped = await stampRevoked(archived, {
       reason: candidate.revokedReason ?? 'Dicabut oleh pejabat yang berwenang.',
       revokedAt: candidate.revokedAt,
-      revokedByName: candidate.revokedBy?.name ?? null,
+      // Nama yang membeku lebih dulu; `revokedBy.name` hanya untuk pencabutan
+      // yang tercatat sebelum kolom nama ada.
+      revokedByName: candidate.revokedByName ?? candidate.revokedBy?.name ?? null,
     });
 
     if (sha256(stamped) === uploadedHash) {

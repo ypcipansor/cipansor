@@ -192,6 +192,20 @@ pada payload berarti menaikkan `CURRENT_CANONICAL_VERSION`, bukan menyunting
 
 ## Batas standar — jangan menjanjikan lebih
 
+- **Garis kewenangan (a.n./u.b./Plt./Plh.) tercetak, tetapi tata kelolanya
+  belum diputuskan.** Bentuknya ada di `SELECTABLE_SIGNING_AUTHORITY_FORMS`
+  dan dapat dipilih penanda tangan yang sudah ditunjuk; sistem **tidak**
+  memvalidasi surat kuasa atau SK penunjukan apa pun, karena memang tidak
+  menyimpannya. Yang belum dijawab yayasan: siapa boleh menandatangani a.n.
+  siapa, kapan tiap bentuk berlaku, dan — pertanyaan yang paling tajam —
+  apakah pelimpahan itu cukup. **Anggaran Dasar Pasal 18 ayat 1** menyatakan
+  Pengurus mewakili yayasan hanya sebagai **Ketua Umum bersama satu anggota
+  Pengurus lain**, sehingga naskah yang mewakili yayasan ke pihak luar
+  menuntut **dua** tanda tangan; satu tanda tangan Ketua belum memenuhi
+  pasal itu. Karena itu a.n./u.b./Plt./Plh. **tidak boleh** diperlakukan
+  sebagai pengganti penanda tangan kedua sampai yayasan memutuskannya.
+  Keputusan ini terbuka di `docs/EOFFICE_ESIGN_PLAN.md` §6 butir 2 —
+  **jangan ditutup tanpa keputusan yayasan.**
 - TTE ini **tidak tersertifikasi** menurut PP 71/2019. Keputusan yayasan
   2026-09-03: **tetap memakai kunci sendiri, tanpa PSrE**. Keputusan itu
   sekaligus menunda segel elektronik dan kalimat kaki baku BSrE. Kalimat BSrE
@@ -210,6 +224,10 @@ pada payload berarti menaikkan `CURRENT_CANONICAL_VERSION`, bukan menyunting
 ## Masih terbuka untuk yayasan
 
 Dari `docs/EOFFICE_ESIGN_PLAN.md` §6:
+- **kewenangan tanda tangan dan tanda tangan bersama:** siapa boleh
+  menandatangani a.n. siapa, kapan u.b./Plt./Plh. berlaku, dan apakah naskah
+  yang mewakili yayasan ke luar menuntut dua tanda tangan (Anggaran Dasar
+  Pasal 18 ayat 1) — bentuknya sudah tercetak, tata kelolanya belum diputuskan;
 - naskah mana yang harus terverifikasi di luar pesantren (menentukan perlu
   tidaknya PSrE, dan kapan PAdES B-B dibuka kembali);
 - berapa lama naskah bertanda tangan dan arsip PDF-nya disimpan;

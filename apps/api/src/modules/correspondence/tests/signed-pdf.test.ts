@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import crypto from 'crypto';
 import { prisma } from '@/lib/prisma';
 import { resolveLetterPdf } from '../signed-pdf';
-import { generateLetterPdfBuffer, type LetterPdfInput } from '@/utils/generate-letter-pdf';
+import {
+  generateLetterPdfBuffer,
+  stampRevoked,
+  type LetterPdfInput,
+} from '@/utils/generate-letter-pdf';
 import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
 
 vi.mock('@/lib/prisma', () => ({
@@ -161,6 +165,40 @@ describe('salinan bercap DICABUT', () => {
     expect(out.source).toBe('archive');
     expect(sha256(out.buffer)).not.toBe(pdfHash);
     expect(sha256(signed)).toBe(pdfHash);
+  });
+
+  /**
+   * Nama pencabut yang membeku dipakai, bukan nama akunnya hari ini.
+   *
+   * Cap mencetak nama itu, dan hash salinan bercap dihitung atasnya. Bila nama
+   * akun yang sudah berganti yang dipakai, salinan yang diunduh tidak lagi
+   * cocok dengan hash yang tersimpan pada pencabutan — dan verifikasi publik
+   * menolak salinan resmi sistem sendiri sebagai "tidak terdaftar".
+   */
+  it('mencap dengan nama pencabut saat mencabut, bukan nama akun yang sudah berganti', async () => {
+    const signed = await generateLetterPdfBuffer(letter({ signatures: [signature()] }));
+    const pdfHash = sha256(signed);
+    vi.mocked(prisma.letterSignedDocument.findUnique).mockResolvedValue({
+      bytes: signed,
+      sha256: pdfHash,
+    } as any);
+
+    const revoked = {
+      pdfHash,
+      revokedAt: new Date('2026-09-02T07:30:00.000Z'),
+      revokedReason: 'Nomor surat ganda dengan 433/Sket/Y-CPS/IX/2026.',
+      revokedByName: 'Ani',
+      revokedBy: { name: 'Anisa' },
+    };
+
+    const out = await resolveLetterPdf(letter({ signatures: [signature(revoked)] }));
+    const expected = await stampRevoked(signed, {
+      reason: revoked.revokedReason,
+      revokedAt: revoked.revokedAt,
+      revokedByName: 'Ani',
+    });
+
+    expect(sha256(out.buffer)).toBe(sha256(expected));
   });
 });
 

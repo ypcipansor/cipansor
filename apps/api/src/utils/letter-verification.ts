@@ -19,6 +19,12 @@ export async function verifyLetterByToken(token: string) {
       revokedReason: true,
       revokedById: true,
       revokedByRoleCode: true,
+      /**
+       * Nama pencabut saat mencabut, supaya halaman ini menyebut nama yang sama
+       * dengan yang tercetak pada salinan bercap DICABUT — bukan nama akun
+       * pencabut hari ini, yang bisa sudah berganti.
+       */
+      revokedByName: true,
       revocationSignature: true,
       revocationPublicKey: true,
       signature: true,
@@ -152,7 +158,7 @@ export async function verifyLetterByToken(token: string) {
     isRevoked: !!signature.revokedAt,
     revokedAt: signature.revokedAt,
     revokedReason: signature.revokedReason,
-    revokedByName: signature.revokedBy?.name ?? null,
+    revokedByName: signature.revokedByName ?? signature.revokedBy?.name ?? null,
     revocationVerified,
     letterNumber: l.letterNumber || l.agendaNumber || '-',
     letterType: l.type,

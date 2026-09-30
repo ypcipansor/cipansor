@@ -4,10 +4,13 @@ import os from 'os';
 import path from 'path';
 import type { Request, Response, NextFunction } from 'express';
 
-vi.mock('@/lib/prisma', () => ({ prisma: {} }));
+vi.mock('@/lib/prisma', () => ({
+  prisma: { letterUpload: { upsert: vi.fn() } },
+}));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import { matchesMagicBytes, verifyStoredFile, uploadsAuth } from './upload';
+import { matchesMagicBytes, verifyStoredFile, uploadsAuth, recordUploadOwnership } from './upload';
+import { prisma } from '@/lib/prisma';
 import { generateAccessToken } from '@/lib/jwt';
 import { ApiError } from './error';
 
@@ -176,6 +179,44 @@ describe('verifyStoredFile', () => {
       fs.rmSync(link, { force: true });
       fs.unlinkSync(outside);
     }
+  });
+});
+
+describe('recordUploadOwnership', () => {
+  const uploadDir = path.join(process.cwd(), 'public/uploads');
+  const ownerFile = () => path.join(uploadDir, `upload-owner-${Date.now()}-${Math.random()}`);
+
+  it('mencatat pemilik dan mempertahankan berkasnya', async () => {
+    vi.mocked(prisma.letterUpload.upsert).mockResolvedValue({} as never);
+    const p = ownerFile();
+    fs.writeFileSync(p, pdf);
+
+    const ok = await recordUploadOwnership({ filename: 'abc.pdf', path: p }, 'user-1');
+
+    expect(ok).toBe(true);
+    expect(prisma.letterUpload.upsert).toHaveBeenCalledWith({
+      where: { filename: 'abc.pdf' },
+      create: { filename: 'abc.pdf', userId: 'user-1' },
+      update: {},
+    });
+    expect(fs.existsSync(p)).toBe(true);
+    fs.unlinkSync(p);
+  });
+
+  /**
+   * Bila pencatatan gagal, unggahan itu gagal — bukan sukses dengan URL yang
+   * pasti ditolak saat suratnya ditandatangani. Berkasnya ikut dihapus supaya
+   * tidak menempati ruang tanpa pernah dapat dipakai.
+   */
+  it('mengembalikan false dan menghapus berkas bila pencatatan gagal', async () => {
+    vi.mocked(prisma.letterUpload.upsert).mockRejectedValue(new Error('db down'));
+    const p = ownerFile();
+    fs.writeFileSync(p, pdf);
+
+    const ok = await recordUploadOwnership({ filename: 'abc.pdf', path: p }, 'user-1');
+
+    expect(ok).toBe(false);
+    expect(fs.existsSync(p)).toBe(false);
   });
 });
 
