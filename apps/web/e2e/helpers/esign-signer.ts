@@ -104,10 +104,14 @@ export async function ensureSigner(
     // The same Super Admin account approves its own request. `identityVerification`
     // is required because the identity has never been verified, and it is the
     // act that records the KTP was opened and matched.
-    const requests = await apiRequest<
-      Array<{ id: string; status: string; user: { id: string } }>
-    >(session, "GET", "/esign/requests?status=PENDING");
-    const pending = requests.find(
+    //
+    // `apiRequest` resolves the whole `{ success, data }` envelope, not the
+    // array inside it — reading `requests.find` here failed on CI the moment a
+    // fresh database reached this branch.
+    const requests = await apiRequest<{
+      data: Array<{ id: string; status: string; user: { id: string } }>;
+    }>(session, "GET", "/esign/requests?status=PENDING");
+    const pending = requests.data.find(
       (r) => r.user?.id === userId && r.status === "PENDING",
     );
     if (!pending) {
