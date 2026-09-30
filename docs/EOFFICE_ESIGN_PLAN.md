@@ -321,7 +321,8 @@ themselves. Adobe shows nothing. They must trust us and visit cipansor.or.id.
 ### 4.3 The tiers, and the recommendation
 
 - **Tier 1 — make the PDF prove itself.** Fix §2.2–§2.4, then embed the
-  signature as **PAdES B-B** plus an **RFC 3161** timestamp. This requires one
+  signature as **PAdES B-B** plus an **RFC 3161** timestamp. *Deferred
+  2026-09-29 (option b) pending a TSA provider — see PR-5.* This requires one
   crypto change: **Ed25519 must give way to RSA-3072 or ECDSA P-256** for the
   PDF layer, because EdDSA in CMS (RFC 8419) is effectively unsupported by
   Acrobat. A self-signed certificate is fine at this tier.
@@ -476,7 +477,7 @@ deployment looks like:
 | AATL | Here | Verdict |
 |---|---|---|
 | **EE1/EE2** X.509 v3 per RFC 5280, KeyUsage + EKU | no certificate at all, just a raw public key | Needed before any PAdES signature Acrobat will trust |
-| **EE4(b)** RSA ≥ 2048 or EC ≥ 256 | **Ed25519** | ⚠️ **Ed25519 is not on AATL's list.** Independent confirmation of §4.3: the algorithm choice is what blocks PAdES, and RFC 8419 EdDSA-in-CMS support in Acrobat is thin. A migration, not a patch. |
+| **EE4(b)** RSA ≥ 2048 or EC ≥ 256 | **Ed25519** | ⚠️ **Ed25519 is not on AATL's list** (AATL is a CA programme, not PAdES). It *is* a conformant PAdES algorithm — ETSI TS 119 312 V2.1.1 Table A.1 lists EdDSA as *shall support*; what is thin is RFC 8419 EdDSA-in-CMS support in *Acrobat*, a validator gap. A migration only for Acrobat/AATL interoperability, not a PAdES requirement. See §4.3 correction. |
 | **EE3** RFC 3161 timestamp; embedded revocation info for LTV | none | **The highest-value single item.** Without a timestamp there is no answer to "was the key valid *at the time of signing*", which is exactly what revocation semantics need. Already PR-5. |
 | **EE4(c)** private key in FIPS 140-2 L2 hardware | scrypt + AES-GCM in the application database | Out of reach; state it plainly rather than imply otherwise |
 | **ICA5(a)** identity proofing before issuance | Super Admin approves a request in the app | **Cheap and worth doing**: record *how* identity was verified at approval. It is the difference between "an admin clicked approve" and "the Ketua checked the KTP in person on this date" — and that difference is what PP 71/2019 weighs when distinguishing *tersertifikasi* from *tidak tersertifikasi*. |
@@ -590,7 +591,21 @@ verifies. ✅
 
 ### PR-5 — PAdES B-B + RFC 3161 (§4.3 Tier 1)
 
-**Still open — the one substantial item left.** Embed the signature in the PDF
+**Deferred 2026-09-29 (option b).** The yayasan weighed doing it now (a),
+deferring (b), and a local-timestamp PAdES B-T (c), and chose **(b)**. Without
+an **RFC 3161 TSA endpoint** — which the yayasan must procure — embedding the
+signature adds dependencies (a CMS/PKCS#7 builder, an X.509 certificate, the
+byte-range plumbing) but no evidential value, because it is the timestamp that
+answers "was the key valid *at the time of signing*", the whole point of
+revocation semantics. The current form (detached Ed25519 over the PDF byte
+hash, signed bytes archived, verification by upload) is valid under UU 43/2009
+and proven end to end. Revisit when the yayasan picks a TSA provider
+(BSrE/Privy/VIDA/Peruri/Digisign) or decides on PSrE certification — and then
+Ed25519 may stay, since the algorithm swap is an Acrobat interoperability
+choice, not a PAdES requirement. See
+`decisions/esign-standards-ceiling.md`.
+
+**What it would take (for the record).** Embed the signature in the PDF
 (PAdES B-B, ETSI EN 319 142-1) and bind a trusted time (RFC 3161). Requires a
 CMS/PKCS#7 SignedData container over the byte range and a TSA client; it does
 **not** require the RSA/ECDSA switch (ETSI TS 119 312 V2.1.1 Table A.1 lists

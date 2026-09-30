@@ -37,6 +37,21 @@ Yang paling bernilai berikutnya: **stempel waktu RFC 3161** (EE3) — tanpanya
 tidak ada jawaban atas "apakah kuncinya masih berlaku *saat* ditandatangani",
 yang justru inti semantik pencabutan. Masih PR-5, belum dikerjakan.
 
+**Keputusan 2026-09-29 — PR-5 (PAdES B-B + RFC 3161) ditunda, opsi (b).**
+Setelah menimbang tiga jalan — (a) kerjakan sekarang, (b) tunda, (c) PAdES B-T
+dengan stempel lokal — yayasan memilih **(b) tunda**. Alasannya: tanpa
+**endpoint TSA RFC 3161** yang harus diadakan yayasan, PAdES hanya menambah
+ketergantungan (pembangun CMS/PKCS#7, sertifikat X.509, plumbing byte-range)
+tanpa menambah nilai bukti — justru TSA itu yang menjawab "apakah kunci masih
+berlaku *saat* ditandatangani", inti semantik pencabutan. Bentuk yang berjalan
+sekarang (Ed25519 *detached* atas hash byte PDF, byte tertandatangan diarsipkan,
+verifikasi lewat unggah) sudah sah menurut UU 43/2009 dan sudah terverifikasi.
+Pemicu untuk membuka kembali: yayasan menetapkan penyedia TSA (BSrE/Privy/VIDA/
+Peruri/Digisign) atau memutuskan sertifikasi PSrE; kapan pun itu terjadi,
+Ed25519 boleh tetap dipakai untuk PAdES — penggantian algoritma adalah pilihan
+interoperabilitas Acrobat, bukan syarat PAdES. Jangan mengusulkannya ulang
+tanpa pemicu itu.
+
 ~~Yang murah: mencatat cara identitas diverifikasi (ICA5a)~~ — **sudah dibangun
 dan terbukti jalan di produksi, 2026-09-03 (#445, #447, #448, #449).** `UserIdentity` menyimpan nama sesuai KTP, NIK,
 tempat/tanggal lahir; pengajuan kunci ditolak otomatis bila belum lengkap atau

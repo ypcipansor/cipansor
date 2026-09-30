@@ -100,11 +100,12 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   premise — **Ed25519 does not block PAdES**; ETSI TS 119 312 V2.1.1 Table A.1
   lists EdDSA as *shall support*, and it is **AATL** that omits it. The
   a.n./u.b./Plt./Plh. signing-authority forms and signing uploaded DOCX/PDF
-  bytes were built in `1513317`; the only substantial item still open is
-  **PAdES B-B + RFC 3161**, which needs a CMS/PKCS#7 builder and an X.509
-  certificate (today the signer identity is a raw public key) plus a TSA
-  endpoint — the Ed25519→RSA/ECDSA switch is an *interoperability* choice, not a
-  PAdES requirement.
+  bytes were built in `1513317`; the one remaining item, **PAdES B-B + RFC
+  3161**, was **deferred (option b, 2026-09-29)** until the yayasan procures a
+  TSA endpoint — without a trusted timestamp it adds a CMS/PKCS#7 builder and an
+  X.509 certificate (today the signer identity is a raw public key) but no
+  evidential value. The Ed25519→RSA/ECDSA switch stays an *interoperability*
+  choice, not a PAdES requirement. See `decisions/esign-standards-ceiling.md`.
 
   **Round-2 follow-up, found by this agent (not in F1–F12): cross-unit service
   roles read the whole letter book.** `letterScopeWhere`, `assertLetterAccess`
