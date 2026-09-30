@@ -41,9 +41,9 @@ const SEVERITY_RANK = { low: 0, moderate: 1, high: 2, critical: 3 };
 const BACKPORTED_FIXES = [
   {
     name: "brace-expansion",
-    version: "1.1.18",
+    version: "1.1.21",
     range: "<=5.0.7",
-    note: "Unbounded expansion (CVE-2026-14257) is fixed on the 1.x line in 1.1.18, which adds the EXPANSION_MAX_LENGTH cap. 1.x cannot move to 5.x: brace-expansion 5's CommonJS build exports a named `expand`, while minimatch@3 calls the module itself.",
+    note: "Unbounded expansion (CVE-2026-14257) is fixed on the 1.x line from 1.1.18, which adds the EXPANSION_MAX_LENGTH cap; 1.1.21 carries it along with the later 1.x backports. 1.x cannot move to 5.x: brace-expansion 5's CommonJS build exports a named `expand`, while minimatch@3 calls the module itself.",
   },
 ];
 
