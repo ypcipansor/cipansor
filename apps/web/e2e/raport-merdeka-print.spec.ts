@@ -20,20 +20,40 @@ test.describe("Raport Merdeka — tampilan cetak", () => {
     const session = await apiLogin(SEED_USERS.superAdmin);
     await injectSession(page, session);
 
-    const students = await apiRequest<{ data: Array<{ id: string }> }>(
-      session,
-      "GET",
-      "/students?limit=1",
-    );
-    const studentId = students.data[0]?.id;
-    expect(studentId, "seed should provide a student").toBeTruthy();
-
     const years = await apiRequest<{
       data: Array<{ id: string; isActive: boolean }>;
     }>(session, "GET", "/academic-years");
     const academicYearId = (years.data.find((y) => y.isActive) ?? years.data[0])
       ?.id;
     expect(academicYearId, "seed should provide an academic year").toBeTruthy();
+
+    // Pick a student who is actually enrolled this year. `/students?limit=1`
+    // returns the newest student, and the seed leaves a few without a class
+    // (Zahra, Abdullah, Siti) — the API answers 404 "Data enrollment tidak
+    // ditemukan" for those, so the page shows its error branch and this test
+    // fails for a reason that has nothing to do with the async-params or P5
+    // regressions it exists to guard. Start from a class in the year and read
+    // its roster instead.
+    const classes = await apiRequest<{ data: Array<{ id: string }> }>(
+      session,
+      "GET",
+      `/classes?academicYearId=${academicYearId}&limit=100`,
+    );
+    let studentId: string | undefined;
+    for (const cls of classes.data) {
+      const roster = await apiRequest<{
+        data: Array<{ id: string; enrollments?: unknown[] }>;
+      }>(session, "GET", `/students?classId=${cls.id}&limit=1`);
+      const candidate = roster.data[0];
+      if (candidate && (candidate.enrollments?.length ?? 0) > 0) {
+        studentId = candidate.id;
+        break;
+      }
+    }
+    expect(
+      studentId,
+      "seed should provide a student enrolled in the active academic year",
+    ).toBeTruthy();
 
     await page.goto(
       `/assessment/raport-merdeka/${studentId}/${academicYearId}/1`,
