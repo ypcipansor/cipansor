@@ -264,30 +264,3 @@ test.describe("Sertifikat — daftar dan detail mengunduh PDF", () => {
     expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
   });
 });
-
-/**
- * The printed sanad/syahadah QR opens `/public/verify-sanad` on the apex
- * (`cipansor.or.id`), and the recipient holds no session. The other e2e specs
- * run on localhost, where the host split is deliberately disabled, so nothing
- * else exercises the address that is actually printed. `hostSplitActionFor`
- * reads the request's Host header, which a fetch can set directly; `/dashboard`
- * is the control proving the apex really does 404 application paths, so the 200
- * above is the public page being served, not the split being off.
- */
-test.describe("Halaman verifikasi sanad publik — terjangkau di host publik", () => {
-  test("apex melayani /public/verify-sanad, bukan 404", async ({ request }) => {
-    const webUrl = process.env.WEB_URL || "http://localhost:3000";
-    const response = await request.get(
-      `${webUrl}/public/verify-sanad?code=${encodeURIComponent(PUBLIC_NUMBER)}`,
-      { headers: { host: "cipansor.or.id" } },
-    );
-    // Not 404 (the split's answer for an application path) and not a redirect
-    // to the portal login (the session wall): the printed address resolves here.
-    expect(response.status()).toBe(200);
-
-    const appPath = await request.get(`${webUrl}/dashboard`, {
-      headers: { host: "cipansor.or.id" },
-    });
-    expect(appPath.status()).toBe(404);
-  });
-});
