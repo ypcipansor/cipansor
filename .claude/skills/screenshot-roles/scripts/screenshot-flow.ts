@@ -158,13 +158,23 @@ async function settle(page: any) {
  * `.first()` can land on an invisible node and declare a visible screen absent.
  * The loop polls every match until one is visible.
  */
-async function anyVisible(page: any, text: string, timeout = 0): Promise<boolean> {
+async function anyVisible(
+  page: any,
+  text: string,
+  timeout = 0,
+): Promise<boolean> {
   const deadline = Date.now() + timeout;
   do {
     const all = page.getByText(text);
     const n = await all.count().catch(() => 0);
     for (let i = 0; i < n; i++) {
-      if (await all.nth(i).isVisible().catch(() => false)) return true;
+      if (
+        await all
+          .nth(i)
+          .isVisible()
+          .catch(() => false)
+      )
+        return true;
     }
     if (Date.now() >= deadline) return false;
     await page.waitForTimeout(150);
@@ -188,7 +198,12 @@ async function outline(el: any, on: boolean) {
 async function dump(page: any): Promise<string> {
   // What is on screen, in words — for a reader who cannot look at the picture.
   const grab = async (sel: string, n: number) =>
-    (await page.locator(sel).allInnerTexts().catch(() => []))
+    (
+      await page
+        .locator(sel)
+        .allInnerTexts()
+        .catch(() => [])
+    )
       .map((t: string) => t.replace(/\s+/g, " ").trim())
       .filter(Boolean)
       .slice(0, n);
@@ -210,7 +225,9 @@ async function dump(page: any): Promise<string> {
  * sdit.wakasek are all SDIT_GURU) and only the wali kelas has a class of their own.
  */
 function accountFor(key: string) {
-  const acc = DEMO_ACCOUNTS.find((a: any) => a.email === key || a.roleCode === key);
+  const acc = DEMO_ACCOUNTS.find(
+    (a: any) => a.email === key || a.roleCode === key,
+  );
   if (!acc)
     throw new Error(
       `no demo account for "${key}" — use an e-mail or role code from packages/shared/src/types/demo-accounts.ts`,
@@ -314,14 +331,30 @@ async function runFlow(browser: any, file: string, outRoot: string) {
       .map((m) => m[1])
       .filter((k) => !(k in vars));
     if (missing.length && st.optional) {
-      console.warn(`  ~ setup ${st.method} ${st.path}: skipped ({{${missing[0]}}} not set)`);
+      console.warn(
+        `  ~ setup ${st.method} ${st.path}: skipped ({{${missing[0]}}} not set)`,
+      );
       continue;
     }
     const acc = accountFor(st.as);
-    const sess = await auth.apiLogin({ email: acc.email, password: acc.password });
+    const sess = await auth.apiLogin({
+      email: acc.email,
+      password: acc.password,
+    });
     const sub = (s: string) =>
-      s.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? `{{${k}}}`);
-    const body = st.body === undefined ? undefined : JSON.parse(JSON.stringify(st.body).replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => vars[k] ?? `{{${k}}}`));
+      s.replace(
+        /\{\{(\w+)\}\}/g,
+        (_: string, k: string) => vars[k] ?? `{{${k}}}`,
+      );
+    const body =
+      st.body === undefined
+        ? undefined
+        : JSON.parse(
+            JSON.stringify(st.body).replace(
+              /\{\{(\w+)\}\}/g,
+              (_: string, k: string) => vars[k] ?? `{{${k}}}`,
+            ),
+          );
     // A step with `file` is a multipart upload (e.g. the KTP photo); the API
     // helpers only speak JSON, so the form is built here from the session token.
     // An `optional` step is one a re-run may find already done — a 4xx is not
@@ -333,7 +366,9 @@ async function runFlow(browser: any, file: string, outRoot: string) {
         : await auth.apiRequest(sess, st.method, sub(st.path), body);
     } catch (e: any) {
       if (!st.optional) throw e;
-      console.warn(`  ~ setup ${st.method} ${st.path}: skipped (${String(e?.message).slice(0, 90)})`);
+      console.warn(
+        `  ~ setup ${st.method} ${st.path}: skipped (${String(e?.message).slice(0, 90)})`,
+      );
       ans = {};
     }
     for (const [name, where] of Object.entries(st.save ?? {})) {
@@ -342,10 +377,14 @@ async function runFlow(browser: any, file: string, outRoot: string) {
         // On an `optional` step (one a re-run finds already done) the answer is
         // empty, so a variable it would have saved is simply left unset.
         if (st.optional) {
-          console.warn(`  ~ setup ${st.method} ${st.path}: no "${where}" to save`);
+          console.warn(
+            `  ~ setup ${st.method} ${st.path}: no "${where}" to save`,
+          );
           continue;
         }
-        throw new Error(`setup ${st.method} ${st.path}: "${where}" not found in the answer`);
+        throw new Error(
+          `setup ${st.method} ${st.path}: "${where}" not found in the answer`,
+        );
       }
       vars[name] = String(v);
     }
@@ -355,7 +394,9 @@ async function runFlow(browser: any, file: string, outRoot: string) {
   // they would have produced abort the whole flow. The flow's own steps do not
   // reference these — only later setup steps do.
   const usedVars = new Set(
-    [...JSON.stringify(raw.steps ?? []).matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]),
+    [...JSON.stringify(raw.steps ?? []).matchAll(/\{\{(\w+)\}\}/g)].map(
+      (m) => m[1],
+    ),
   );
   const keptSetup = (raw.setup ?? []).filter((st) => {
     const missing = [...st.path.matchAll(/\{\{(\w+)\}\}/g)]
@@ -398,10 +439,15 @@ async function runFlow(browser: any, file: string, outRoot: string) {
       const snap = async (name: string) => {
         if (step.area && step.area !== "page") {
           const el =
-            step.area === "main" ? page.locator("main").first() : locate(page, step.area);
+            step.area === "main"
+              ? page.locator("main").first()
+              : locate(page, step.area);
           await el.screenshot({ path: name });
         } else {
-          await page.screenshot({ path: name, fullPage: step.full_page ?? false });
+          await page.screenshot({
+            path: name,
+            fullPage: step.full_page ?? false,
+          });
         }
       };
       const takeShot = async (name: string) => {
@@ -495,7 +541,11 @@ async function runFlow(browser: any, file: string, outRoot: string) {
   if (ctx) await ctx.context.close();
   fs.writeFileSync(
     path.join(dir, "flow-report.json"),
-    JSON.stringify({ flow: flow.name, title: flow.title ?? "", ok, steps: report }, null, 2),
+    JSON.stringify(
+      { flow: flow.name, title: flow.title ?? "", ok, steps: report },
+      null,
+      2,
+    ),
   );
   return ok;
 }
@@ -518,7 +568,12 @@ function pagesFor(roleCode: string): AtlasPage[] {
     roleCode,
   );
   out.push({ group: "Ringkasan", title: "Dasbor", href: dash });
-  const walk = (group: string, duty: string | undefined, items: any[], prefix: string) => {
+  const walk = (
+    group: string,
+    duty: string | undefined,
+    items: any[],
+    prefix: string,
+  ) => {
     for (const it of items ?? []) {
       if (it.href)
         out.push({ group, duty, title: prefix + it.title, href: it.href });
@@ -549,7 +604,13 @@ async function runAtlas(browser: any, keys: string[], outRoot: string) {
       ctx = await newSession(browser, acc.email);
     } catch (e) {
       console.log(`✗ LOGIN ${label}: ${(e as Error).message.split("\n")[0]}`);
-      results.push({ account: label, role: roleCode, href: "(login)", ok: false, problems: [(e as Error).message.split("\n")[0]] });
+      results.push({
+        account: label,
+        role: roleCode,
+        href: "(login)",
+        ok: false,
+        problems: [(e as Error).message.split("\n")[0]],
+      });
       continue;
     }
     const isWali = label.includes("walikelas");
@@ -557,7 +618,8 @@ async function runAtlas(browser: any, keys: string[], outRoot: string) {
       if (p.duty && !isWali) continue; // needs the duty; the walikelas account covers it
       const problems: string[] = [];
       const errors: string[] = [];
-      const onConsole = (m: any) => m.type() === "error" && errors.push(m.text());
+      const onConsole = (m: any) =>
+        m.type() === "error" && errors.push(m.text());
       ctx.page.on("console", onConsole);
       try {
         await ctx.page.goto(`${BASE_URL}${p.href}`, {
@@ -566,18 +628,33 @@ async function runAtlas(browser: any, keys: string[], outRoot: string) {
         });
         await settle(ctx.page);
       } catch (e) {
-        problems.push(`navigation failed: ${(e as Error).message.split("\n")[0]}`);
+        problems.push(
+          `navigation failed: ${(e as Error).message.split("\n")[0]}`,
+        );
       }
       ctx.page.off("console", onConsole);
       const finalPath = new URL(ctx.page.url()).pathname;
       if (finalPath !== p.href && !finalPath.startsWith(`${p.href}/`))
         problems.push(`bounced to ${finalPath}`);
-      const text = (await ctx.page.locator("body").innerText().catch(() => "")).slice(0, 4000);
-      for (const m of ["Application error", "This page could not be found", "Internal Server Error", "Unhandled Runtime Error"])
+      const text = (
+        await ctx.page
+          .locator("body")
+          .innerText()
+          .catch(() => "")
+      ).slice(0, 4000);
+      for (const m of [
+        "Application error",
+        "This page could not be found",
+        "Internal Server Error",
+        "Unhandled Runtime Error",
+      ])
         if (text.includes(m)) problems.push(`error text: ${m}`);
       const real = errors.filter((t) => !t.includes("Failed to load resource"));
       if (real.length) problems.push(`console: ${real[0].slice(0, 160)}`);
-      const file = path.join(dir, `${p.href === "/" ? "root" : p.href.slice(1).replace(/\//g, "__")}.png`);
+      const file = path.join(
+        dir,
+        `${p.href === "/" ? "root" : p.href.slice(1).replace(/\//g, "__")}.png`,
+      );
       await ctx.page.screenshot({ path: file }).catch(() => {});
       results.push({
         account: label,
@@ -590,12 +667,17 @@ async function runAtlas(browser: any, keys: string[], outRoot: string) {
         problems,
         file: path.relative(outRoot, file),
       });
-      console.log(`${problems.length ? "✗" : "✓"} [${label}] ${p.href}${problems.length ? " — " + problems.join("; ") : ""}`);
+      console.log(
+        `${problems.length ? "✗" : "✓"} [${label}] ${p.href}${problems.length ? " — " + problems.join("; ") : ""}`,
+      );
     }
     await ctx.context.close();
   }
   fs.mkdirSync(path.join(outRoot, "atlas"), { recursive: true });
-  fs.writeFileSync(path.join(outRoot, "atlas", "atlas-report.json"), JSON.stringify(results, null, 2));
+  fs.writeFileSync(
+    path.join(outRoot, "atlas", "atlas-report.json"),
+    JSON.stringify(results, null, 2),
+  );
   const bad = results.filter((r) => !r.ok);
   console.log(`\n${results.length} pages, ${bad.length} problems.`);
   return bad.length === 0;
@@ -605,8 +687,12 @@ async function runAtlas(browser: any, keys: string[], outRoot: string) {
 
 async function main() {
   const [mode, ...rest] = process.argv.slice(2);
-  const outRoot = path.resolve(arg("--out", path.join(os.tmpdir(), "cipansor-capture")));
-  const positional = rest.filter((a, i) => !a.startsWith("--") && rest[i - 1] !== "--out");
+  const outRoot = path.resolve(
+    arg("--out", path.join(os.tmpdir(), "cipansor-capture")),
+  );
+  const positional = rest.filter(
+    (a, i) => !a.startsWith("--") && rest[i - 1] !== "--out",
+  );
 
   if (mode === "plan") {
     const roles = positional.length
@@ -619,7 +705,9 @@ async function main() {
     return;
   }
   if (mode !== "flow" && mode !== "atlas") {
-    console.error("usage: screenshot-flow.ts flow <file.flow.json...> | atlas <email|ROLE_CODE...|all> | plan [email|ROLE_CODE...]  [--out DIR]");
+    console.error(
+      "usage: screenshot-flow.ts flow <file.flow.json...> | atlas <email|ROLE_CODE...|all> | plan [email|ROLE_CODE...]  [--out DIR]",
+    );
     process.exit(2);
   }
   fs.mkdirSync(outRoot, { recursive: true });
@@ -628,9 +716,11 @@ async function main() {
   try {
     if (mode === "flow") {
       if (!positional.length) throw new Error("give at least one *.flow.json");
-      for (const f of positional) ok = (await runFlow(browser, path.resolve(f), outRoot)) && ok;
+      for (const f of positional)
+        ok = (await runFlow(browser, path.resolve(f), outRoot)) && ok;
     } else {
-      if (!positional.length) throw new Error("give demo e-mails / role codes, or: all");
+      if (!positional.length)
+        throw new Error("give demo e-mails / role codes, or: all");
       ok = await runAtlas(browser, positional, outRoot);
     }
   } finally {
