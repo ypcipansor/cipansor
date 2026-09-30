@@ -8,7 +8,9 @@ import { notificationsService } from "@/services/notifications.service";
 import { useAuthStore } from "@/stores/auth";
 import {
   isPushDeliberatelyOff,
+  listenForPushChanges,
   markPushDeliberatelyOff,
+  onPushDeliberateChange,
   pushStatusQueryKey,
   unmarkPushDeliberatelyOff,
 } from "@/lib/push-cache";
@@ -165,6 +167,28 @@ export function useWebPush() {
       cancelled = true;
     };
   }, [supported]);
+
+  // Hear about a deliberate push change made in another tab, so this tab's
+  // reconciliation does not re-register an endpoint the user just turned off
+  // elsewhere. Idempotent, so the settings page and the shell may both call it.
+  useEffect(() => {
+    listenForPushChanges();
+  }, []);
+
+  // Drop the subscription this tab still holds when a deliberate change happens
+  // anywhere — the settings page turning push off in *this* tab, or another tab
+  // doing it. Without this the retained `PushSubscription` keeps `state` at
+  // "subscribed" and leaves the repair effect a live subscription to work from.
+  useEffect(
+    () =>
+      onPushDeliberateChange((changedEndpoint, off) => {
+        if (!off) return;
+        setBrowserSubscription((current) =>
+          current?.endpoint === changedEndpoint ? null : current,
+        );
+      }),
+    [],
+  );
 
   const endpoint = browserSubscription?.endpoint ?? null;
 

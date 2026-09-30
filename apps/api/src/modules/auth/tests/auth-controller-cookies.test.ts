@@ -269,4 +269,28 @@ describe('auth controller: cookies, not body tokens', () => {
       'https://push.example.com/abc'
     );
   });
+
+  it('clears the cookies even when the service fails after revoking the token', async () => {
+    // The refresh token is revoked first; a later failure (the session check
+    // hitting a dropped connection) must not leave the browser presenting a
+    // session cookie for a token that is already gone.
+    authServiceMock.logout.mockRejectedValueOnce(new Error('connection lost'));
+
+    const { res, cleared } = mockRes();
+    const next = vi.fn();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+      }),
+      res,
+      next
+    );
+
+    expect(cleared).toEqual(
+      expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
+    // The failure is still surfaced to the caller.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+  });
 });

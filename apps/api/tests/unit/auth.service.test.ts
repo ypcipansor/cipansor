@@ -580,6 +580,25 @@ describe('AuthService', () => {
         where: { userId: 'user-1' },
       });
     });
+
+    it('still emits the cleanup and resolves when the session check fails', async () => {
+      // The token is revoked, then the follow-up read drops its connection. The
+      // logout must not reject — the controller clears the cookies in a
+      // `finally`, but the push cleanup must still be asked for, conservatively
+      // (no session known to remain → clear every device).
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        authService.logout('user-1', 'specific-token', 'https://push.example.com/this')
+      ).resolves.toBeUndefined();
+
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: 'https://push.example.com/this',
+        hasActiveSession: false,
+      });
+    });
   });
 
   describe('hasActiveSession', () => {
@@ -595,6 +614,13 @@ describe('AuthService', () => {
 
     it('is false when no unexpired token remains', async () => {
       mockPrisma.refreshToken.findFirst.mockResolvedValue(null);
+
+      await expect(authService.hasActiveSession('user-1')).resolves.toBe(false);
+    });
+
+    it('is false, not a rejection, when the lookup fails', async () => {
+      // Asked after the token is revoked; a failure must not block logout.
+      mockPrisma.refreshToken.findFirst.mockRejectedValue(new Error('db down'));
 
       await expect(authService.hasActiveSession('user-1')).resolves.toBe(false);
     });

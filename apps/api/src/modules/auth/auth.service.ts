@@ -595,16 +595,28 @@ export class AuthService {
    * account is really gone: if another device is still signed in, only the
    * endpoint this browser named may be cleared; if none remains, every push row
    * the user owns must be.
+   *
+   * Never rejects. It is asked *after* the refresh tokens are already revoked,
+   * and `logout()` only clears the session cookies once it resolves — so a
+   * database failure answering this question used to leave the browser holding
+   * session cookies for a refresh token that no longer exists, and skip the
+   * push cleanup entirely. A failure to tell resolves to `false`, the
+   * conservative answer: the listener then clears every device the user owns
+   * rather than leaving the signed-out device reachable (CWE-200).
    */
   async hasActiveSession(userId: string): Promise<boolean> {
-    const row = await prisma.refreshToken.findFirst({
-      where: {
-        userId,
-        expiresAt: { gt: new Date() },
-      },
-      select: { id: true },
-    });
-    return row !== null;
+    try {
+      const row = await prisma.refreshToken.findFirst({
+        where: {
+          userId,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      return row !== null;
+    } catch {
+      return false;
+    }
   }
 
   /**

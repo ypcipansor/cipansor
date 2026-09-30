@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  clearDeliberatePushOff,
   clearPrivateServiceWorkerCaches,
   forgetPushStatus,
   isPushDeliberatelyOff,
+  listenForPushChanges,
   markPushDeliberatelyOff,
+  onPushDeliberateChange,
   pushStatusQueryKey,
   unmarkPushDeliberatelyOff,
 } from "./push-cache";
@@ -96,5 +99,69 @@ describe("push cache keys", () => {
     });
     // The next session must not inherit this one's "turned off" endpoints.
     expect(isPushDeliberatelyOff("https://push.example.com/a")).toBe(false);
+  });
+});
+
+describe("cross-tab deliberate push changes", () => {
+  const CHANNEL = "cipansor-push";
+
+  afterEach(() => {
+    clearDeliberatePushOff();
+    vi.restoreAllMocks();
+  });
+
+  it("broadcasts a deliberate off and announces it to local listeners", () => {
+    const seen: Array<[string, boolean]> = [];
+    const stop = onPushDeliberateChange((endpoint, off) =>
+      seen.push([endpoint, off]),
+    );
+
+    markPushDeliberatelyOff("https://push.example.com/a");
+
+    // The instance that acted must learn about it too: the marker is what the
+    // repair effect reads.
+    expect(seen).toEqual([["https://push.example.com/a", true]]);
+    expect(isPushDeliberatelyOff("https://push.example.com/a")).toBe(true);
+    stop();
+  });
+
+  it("adopts a deliberate off announced by another tab", async () => {
+    // The other tab broadcasts on the same channel; this tab's listener must
+    // record the endpoint as deliberately off, so its reconcile refuses to
+    // restore the row the user just removed.
+    listenForPushChanges();
+    const seen: Array<[string, boolean]> = [];
+    const stop = onPushDeliberateChange((endpoint, off) =>
+      seen.push([endpoint, off]),
+    );
+
+    const otherTab = new BroadcastChannel(CHANNEL);
+    otherTab.postMessage({
+      type: "push-off",
+      endpoint: "https://push.example.com/shared",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    otherTab.close();
+
+    expect(isPushDeliberatelyOff("https://push.example.com/shared")).toBe(true);
+    expect(seen).toEqual([["https://push.example.com/shared", true]]);
+    stop();
+  });
+
+  it("clears the marker when another tab subscribes again", async () => {
+    listenForPushChanges();
+    markPushDeliberatelyOff("https://push.example.com/shared");
+
+    const otherTab = new BroadcastChannel(CHANNEL);
+    otherTab.postMessage({
+      type: "push-on",
+      endpoint: "https://push.example.com/shared",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    otherTab.close();
+
+    expect(isPushDeliberatelyOff("https://push.example.com/shared")).toBe(
+      false,
+    );
   });
 });

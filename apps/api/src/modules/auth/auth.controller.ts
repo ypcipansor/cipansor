@@ -168,9 +168,17 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // signed-in devices keep receiving push; the client sends it when it can read
   // its subscription. Absent, the service clears every device (the safe
   // direction, and what an older client does).
-  await authService.logout(userId, token, typeof pushEndpoint === 'string' ? pushEndpoint : null);
-
-  clearAuthCookies(res);
+  //
+  // The cookies are cleared in a `finally`, not after the `await`: the user
+  // asked to sign out, so the browser must never be left presenting a session
+  // because a database write or the session check failed. An error still
+  // propagates (the client reports it and clears its own state), but the
+  // Set-Cookie headers are already queued when it does.
+  try {
+    await authService.logout(userId, token, typeof pushEndpoint === 'string' ? pushEndpoint : null);
+  } finally {
+    clearAuthCookies(res);
+  }
 
   res.json({
     success: true,

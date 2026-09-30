@@ -373,13 +373,14 @@ decision.
   endpoint validation in `@cipansor/shared` is written for the sender to rely
   on, and a DNS-resolving check belongs at send time (the edge schema only
   refuses literal private IPs and localhost names).
-- **A deliberate push-off is per tab.** The marker that stops the shell's
-  `useWebPush` from re-registering an endpoint the user just turned off lives in
-  a module-level set (`lib/push-cache.ts`), so a second open tab on the same
-  origin still holds the old `PushSubscription` and its reconcile re-registers
-  the endpoint. Self-healing rather than harmful — the device keeps receiving
-  push it asked to stop until the second tab is reloaded — but a cross-tab
-  marker (BroadcastChannel) is what would close it.
+- **A deliberate push-off is coordinated across tabs** (fixed 2026-09-30). The
+  marker that stops the shell's `useWebPush` from re-registering an endpoint the
+  user just turned off lives in a module-level set (`lib/push-cache.ts`) and is
+  mirrored to the other tabs on a `BroadcastChannel`; a tab that hears `push-off`
+  marks the endpoint and drops the `PushSubscription` it still holds, so its
+  reconcile cannot re-create the row. The marker itself is still per tab (a tab
+  that was closed and reopened starts clean, which is correct — the server row
+  is gone), only the *change* is broadcast.
 
 ## Deliberate — do not "fix"
 

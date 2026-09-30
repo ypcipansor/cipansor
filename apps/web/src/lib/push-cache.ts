@@ -48,7 +48,7 @@ export async function currentPushEndpoint(): Promise<string | null> {
 }
 
 /**
- * Endpoints this tab deliberately turned off.
+ * Endpoints this browser deliberately turned off.
  *
  * The settings page and the authenticated shell each run a `useWebPush`
  * instance. When the user clicks "Matikan", the settings instance deletes the
@@ -57,12 +57,110 @@ export async function currentPushEndpoint(): Promise<string | null> {
  * and the shell re-registers the endpoint. A module-level set is what makes the
  * two agree — it is shared by every instance in the tab and survives the
  * settings page unmounting. `logout()` clears it.
+ *
+ * A module-level set is per *tab*, though, and the same device can have the
+ * portal open twice: the other tab still holds the subscription, sees a `false`
+ * status and would re-register the endpoint the user just removed. So every
+ * change is also broadcast on a `BroadcastChannel` (see `notifyDeliberate`), and
+ * a tab that hears about one stops reconciling that endpoint too.
  */
 const deliberatelyOff = new Set<string>();
 
-/** Record an endpoint the user turned off on purpose. */
+/**
+ * Channel carrying deliberate push changes between tabs of this origin.
+ *
+ * Feature-detected because `BroadcastChannel` is not universal — an older
+ * browser, or a test environment without it, must still get a working (if
+ * tab-local) marker rather than a crash.
+ */
+const PUSH_CHANNEL = "cipansor-push";
+
+type PushBroadcast =
+  | { type: "push-off"; endpoint: string }
+  | { type: "push-on"; endpoint: string };
+
+function broadcastChannel(): BroadcastChannel | null {
+  if (typeof BroadcastChannel === "undefined") return null;
+  try {
+    return new BroadcastChannel(PUSH_CHANNEL);
+  } catch {
+    return null;
+  }
+}
+
+/** Tell the other tabs this endpoint changed, then release the channel. */
+function notifyDeliberate(message: PushBroadcast): void {
+  const channel = broadcastChannel();
+  if (!channel) return;
+  try {
+    channel.postMessage(message);
+  } finally {
+    channel.close();
+  }
+}
+
+/**
+ * Apply a deliberate change announced by another tab.
+ *
+ * Only the marker is touched: the browser `PushSubscription` is shared across
+ * tabs, so the tab that did not act must still stop its reconciliation, and
+ * that is exactly what the marker decides.
+ */
+function applyRemoteDeliberate(message: PushBroadcast): void {
+  if (message.type === "push-off") deliberatelyOff.add(message.endpoint);
+  else deliberatelyOff.delete(message.endpoint);
+  emitDeliberate(message.endpoint, message.type === "push-off");
+}
+
+/**
+ * Notified whenever an endpoint's deliberate-off state changes, in this tab or
+ * another. `useWebPush` uses it to drop the `PushSubscription` it still holds,
+ * so a repair cannot run from state the user already turned off.
+ */
+type DeliberateListener = (endpoint: string, off: boolean) => void;
+
+const deliberateListeners = new Set<DeliberateListener>();
+
+/** Subscribe to deliberate push changes. Returns the unsubscribe function. */
+export function onPushDeliberateChange(
+  listener: DeliberateListener,
+): () => void {
+  deliberateListeners.add(listener);
+  return () => {
+    deliberateListeners.delete(listener);
+  };
+}
+
+function emitDeliberate(endpoint: string, off: boolean): void {
+  for (const listener of deliberateListeners) listener(endpoint, off);
+}
+
+let listening = false;
+
+/**
+ * Start listening for deliberate push changes from other tabs, once per tab.
+ *
+ * Kept open for the page's lifetime: the settings page mounts and unmounts,
+ * while the shell stays mounted, and the point is to be listening whichever of
+ * them is currently up. Idempotent, so both may call it.
+ */
+export function listenForPushChanges(): void {
+  if (listening) return;
+  const channel = broadcastChannel();
+  if (!channel) return;
+  channel.onmessage = (event: MessageEvent<PushBroadcast>) => {
+    if (event.data && typeof event.data.endpoint === "string") {
+      applyRemoteDeliberate(event.data);
+    }
+  };
+  listening = true;
+}
+
+/** Record an endpoint the user turned off on purpose, in every tab. */
 export function markPushDeliberatelyOff(endpoint: string): void {
   deliberatelyOff.add(endpoint);
+  emitDeliberate(endpoint, true);
+  notifyDeliberate({ type: "push-off", endpoint });
 }
 
 /** Whether the user turned this endpoint off on purpose in this tab. */
@@ -73,6 +171,8 @@ export function isPushDeliberatelyOff(endpoint: string): boolean {
 /** Forget one endpoint's deliberate-off marker — the user subscribed again. */
 export function unmarkPushDeliberatelyOff(endpoint: string): void {
   deliberatelyOff.delete(endpoint);
+  emitDeliberate(endpoint, false);
+  notifyDeliberate({ type: "push-on", endpoint });
 }
 
 /** Forget every deliberate-off marker — the session ended. */

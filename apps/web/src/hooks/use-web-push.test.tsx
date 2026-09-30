@@ -19,7 +19,7 @@ vi.hoisted(() => {
 
 import { useWebPush } from "./use-web-push";
 import { useAuthStore } from "@/stores/auth";
-import { clearDeliberatePushOff } from "@/lib/push-cache";
+import { clearDeliberatePushOff, listenForPushChanges } from "@/lib/push-cache";
 
 // Server calls now go through React Query, so every render needs a client. The
 // settings page and the shell share one client in the app, so the tests do too
@@ -272,6 +272,35 @@ describe("useWebPush", () => {
 
     expect(subscribePush).not.toHaveBeenCalled();
     expect(shell.result.current.state).toBe("unsubscribed");
+  });
+
+  it("does not re-register when another tab already turned push off", async () => {
+    // The deliberate-off marker is per tab. Tab B's shell is already mounted
+    // when the user clicks "Matikan" in tab A; tab B still holds the shared
+    // subscription and its status probe returns `false`, so without the
+    // cross-tab signal it re-creates the row the user just deleted.
+    installPushEnv({ existing: subscription });
+    pushStatus.mockResolvedValue(false);
+    // Tab B's listener is live before tab A acts.
+    listenForPushChanges();
+
+    await act(async () => {
+      const otherTab = new BroadcastChannel("cipansor-push");
+      otherTab.postMessage({
+        type: "push-off",
+        endpoint: "https://push.example.com/abc",
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      otherTab.close();
+    });
+
+    const { result } = renderWebPush();
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    expect(subscribePush).not.toHaveBeenCalled();
+    expect(result.current.state).toBe("unsubscribed");
   });
 
   it("stops retrying a failed repair instead of looping", async () => {
