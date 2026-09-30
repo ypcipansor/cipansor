@@ -104,7 +104,13 @@ export default async function RootLayout({
 
   // The application's host, and only it, gets the PWA. Same value the head
   // metadata is built from, read again here because the two run separately.
-  const pwa = pwaEnabledForHost((await headers()).get("host"));
+  const requestHeaders = await headers();
+  const pwa = pwaEnabledForHost(requestHeaders.get("host"));
+
+  // The CSP nonce the middleware generated for this request. Next stamps it on
+  // the inline bootstrap scripts it emits; this is what the app's own executable
+  // inline script presents (see the `beforeinstallprompt` capture below).
+  const nonce = requestHeaders.get("x-nonce") ?? "";
 
   return (
     <html lang={locale} dir={dirFor(locale)} suppressHydrationWarning>
@@ -130,6 +136,13 @@ export default async function RootLayout({
         */}
         {pwa && (
           <script
+            // The middleware's `script-src` carries a nonce and no
+            // `'unsafe-inline'`, so this executable inline script must present
+            // it. It is the request's own CSP nonce, read back off the request
+            // headers the middleware set (`middleware.ts` → `pass()`). React
+            // strips the attribute when the value is empty, so a host without
+            // middleware keeps working.
+            nonce={nonce || undefined}
             dangerouslySetInnerHTML={{
               __html: `(function(){window.__installPromptEvent=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__installPromptEvent=e;window.dispatchEvent(new Event('installpromptready'));});})();`,
             }}

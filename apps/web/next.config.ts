@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { STATIC_SECURITY_HEADERS } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Enable React Compiler (experimental - only in development for safety)
@@ -181,32 +182,7 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/:path*",
-        headers: [
-          {
-            key: "X-DNS-Prefetch-Control",
-            value: "on",
-          },
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "SAMEORIGIN",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=()",
-          },
-        ],
+        headers: STATIC_SECURITY_HEADERS,
       },
     ];
   },
