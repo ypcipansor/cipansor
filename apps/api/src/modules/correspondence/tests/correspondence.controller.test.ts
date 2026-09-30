@@ -54,7 +54,7 @@ describe('CorrespondenceController.update', () => {
 
     const req = mockRequest();
     const res = mockResponse();
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     // asyncHandler fire-and-forgets the wrapped promise, so await the async
     // effect via waitFor rather than trusting the wrapper's return value.
@@ -120,7 +120,7 @@ describe('CorrespondenceController.exportAgenda', () => {
     } as unknown as Request;
     const res = mockRes();
     (res.locals as any).validatedQuery = { direction: 'INCOMING', status: 'SIGNED' };
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     CorrespondenceController.exportAgenda(req, res, next);
 
@@ -162,7 +162,7 @@ describe('CorrespondenceController.reviewRetention', () => {
       } as any,
     });
     const res = mockResponse();
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     CorrespondenceController.reviewRetention(req, res, next);
     await vi.waitFor(() => expect(res.json).toHaveBeenCalled());
@@ -189,7 +189,7 @@ describe('CorrespondenceController.reviewRetention', () => {
       } as any,
     });
     const res = mockResponse();
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     CorrespondenceController.reviewRetention(req, res, next);
     await vi.waitFor(() => expect(next).toHaveBeenCalled());
@@ -223,7 +223,7 @@ describe('CorrespondenceController.exportRetention', () => {
       } as any,
     });
     const res = mockStreamRes();
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     CorrespondenceController.exportRetention(req, res, next);
     await vi.waitFor(() => expect(res.send).toHaveBeenCalled());
@@ -246,7 +246,7 @@ describe('CorrespondenceController.exportRetention', () => {
       } as any,
     });
     const res = mockStreamRes();
-    const next = vi.fn() as unknown as NextFunction;
+    const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
 
     CorrespondenceController.exportRetention(req, res, next);
     await vi.waitFor(() => expect(next).toHaveBeenCalled());
