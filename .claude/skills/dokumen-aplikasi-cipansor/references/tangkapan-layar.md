@@ -54,7 +54,7 @@ Daftar akun: `packages/shared/src/types/demo-accounts.ts`. Kata sandi tidak pern
 Contoh yang sudah diuji dan berhasil: `assets/contoh-alur/absensi-harian.flow.json` (satu akun, 6 langkah) dan
 `assets/contoh-alur/pengesahan-rka-yayasan.flow.json` (empat akun bergantian, setup lewat API, 12 langkah). **Salin lalu ubah.**
 
-Bidang langkah (semua opsional kecuali `id`; urutan pelaksanaan: `as` → `goto` → `click` → `fill` → `press` → `wait` → `see` → foto):
+Bidang langkah (semua opsional kecuali `id`; urutan pelaksanaan: `as` → `goto` → `click` → `fill` → `press` → `actions` → `wait` → `see` → foto):
 
 | Bidang | Arti |
 |---|---|
@@ -64,6 +64,7 @@ Bidang langkah (semua opsional kecuali `id`; urutan pelaksanaan: `as` → `goto`
 | `click` | yang diklik. Teks polos = tombol/tautan/tab/menu/kotak centang/teks dengan nama itu. Objek: `{"role":"button","name":"Simpan","exact":true,"nth":0}`, `{"label":"…"}`, `{"placeholder":"…"}`, `{"text":"…"}`, `{"testid":"…"}`, `{"css":"…"}` |
 | `fill` | `{"target": <penunjuk>, "value": "…"}` |
 | `press`, `wait` | tombol papan ketik; jeda milidetik (jarang perlu) |
+| `actions` | daftar aksi **berurutan**, bila urutannya penting: `[{"fill": …}, {"click": …}]` mengisi dulu lalu mengklik. Bidang datar `click`/`fill`/`press` selalu berurutan klik → isi → tombol, jadi langkah yang harus **mengisi di dalam kotak lalu mengklik tombolnya** memakai `actions` (contoh: `03-kirim-ke-pengawas` pada `pengesahan-rka-yayasan.flow.json`) |
 | `see` | **teks yang harus terlihat** sebelum foto. Bila tidak ada, langkah **gagal**. Ini bukti bahwa layar berkata seperti yang ditulis manual |
 | `not_see` | teks yang tidak boleh terlihat |
 | `shot` | `"after"` (bawaan, sesudah aksi) · `"before"` (sebelum aksi, sasaran dikotaki) · `false` (tanpa foto) |

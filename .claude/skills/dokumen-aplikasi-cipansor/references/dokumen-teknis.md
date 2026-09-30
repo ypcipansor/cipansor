@@ -56,7 +56,7 @@ Tiap baris = apa yang **wajib** ada, dari mana sumbernya, dan pemeriksa mana yan
 | **10 Kualitas** | tabel `Mutu · Skenario (pemicu → respons) · Ukuran/ambang · Bukti · Status`; bukti = berkas nyata | `.github/workflows/`, `*.guard.test.ts`, `docs/deploy-azure.md` | `mutu-skenario`, `mutu-tanpa-angka` |
 | **11 Risiko** | tabel `Kategori · Ringkasan · Dampak · Arah`; **kategori dan dampak saja** | `known-issues.md`, `roadmap.md` | `risiko-topik-peka`, `risiko-rinci`, `produksi-tertinggal` |
 | **12 Glosarium** | hanya istilah yang benar-benar dipakai dokumen | `istilah-dan-penamaan.md` | — |
-| **Lampiran A** | tabel modul dari `facts.md`; jumlah baris = jumlah modul | `facts.json → api.modules` | `lampiran-a-jumlah` |
+| **Lampiran A** | tabel modul dari `facts.md`; **tiap baris** dicocokkan dengan kode: jumlah baris = jumlah modul, jumlah handler = hitungan `router.*` di `*.routes.ts`, alamat mount = `app.ts`, penandaan Prisma di route/controller = kode | `facts.json → api.modules` | `lampiran-a-jumlah`, `lampiran-a-handler`, `lampiran-a-mount`, `lampiran-a-layering` |
 | **Lampiran B** | ERD 10–20 entitas, **nama = nama model Prisma**, relasi dari `@relation` | `apps/api/prisma/schema.prisma` | `erd-model-fiktif` |
 | **Lampiran C** | env: nama + fungsi, tanpa nilai | `facts.md → env` | `sensitif-*` |
 | **Lampiran D** | prosedur ringkas + tautan `docs/DEPLOYMENT.md` | — | — |

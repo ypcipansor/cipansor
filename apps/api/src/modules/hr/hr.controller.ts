@@ -11,8 +11,16 @@ import {
   approveLeaveSchema,
 } from './hr.schema';
 import { Errors } from '../../middleware/error';
+import { requireUser } from '../../middleware/auth';
 import { z } from 'zod';
 import { UserRole } from '@prisma/client';
+import type { HrActor } from './hr.service';
+
+/** The verified token, reduced to what decides an employee's reach. */
+function actor(req: Request): HrActor {
+  const user = requireUser(req);
+  return { sub: user.sub, roleCode: user.roleCode, unitId: user.unitId };
+}
 
 // =====================================
 // STAFF ATTENDANCE CONTROLLERS
@@ -306,7 +314,7 @@ export async function getStaffById(req: Request, res: Response, next: NextFuncti
 export async function getEmployees(req: Request, res: Response, next: NextFunction) {
   try {
     const query = res.locals.validatedQuery;
-    const result = await service.getEmployees(query);
+    const result = await service.getEmployees(query, actor(req));
     res.json({ success: true, ...result });
   } catch (error) {
     next(error);
@@ -315,7 +323,7 @@ export async function getEmployees(req: Request, res: Response, next: NextFuncti
 
 export async function getEmployeeById(req: Request, res: Response, next: NextFunction) {
   try {
-    const employee = await service.getEmployeeById(req.params.id);
+    const employee = await service.getEmployeeById(req.params.id, actor(req));
     if (!employee) {
       throw Errors.notFound('Employee not found');
     }
@@ -327,7 +335,7 @@ export async function getEmployeeById(req: Request, res: Response, next: NextFun
 
 export async function createEmployee(req: Request, res: Response, next: NextFunction) {
   try {
-    const employee = await service.createEmployee(req.body);
+    const employee = await service.createEmployee(req.body, actor(req));
     res.status(201).json({ success: true, data: employee });
   } catch (error) {
     next(error);
@@ -336,7 +344,7 @@ export async function createEmployee(req: Request, res: Response, next: NextFunc
 
 export async function updateEmployee(req: Request, res: Response, next: NextFunction) {
   try {
-    const employee = await service.updateEmployee(req.params.id, req.body);
+    const employee = await service.updateEmployee(req.params.id, req.body, actor(req));
     res.json({ success: true, data: employee });
   } catch (error) {
     next(error);
@@ -345,7 +353,7 @@ export async function updateEmployee(req: Request, res: Response, next: NextFunc
 
 export async function deleteEmployee(req: Request, res: Response, next: NextFunction) {
   try {
-    await service.deleteEmployee(req.params.id);
+    await service.deleteEmployee(req.params.id, actor(req));
     res.json({ success: true, data: { id: req.params.id } });
   } catch (error) {
     next(error);

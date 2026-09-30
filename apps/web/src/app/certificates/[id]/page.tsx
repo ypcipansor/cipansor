@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import {
   useCertificate,
   useDeleteCertificate,
+  useDownloadCertificate,
   useGenerateCertificatePDF,
 } from "@/hooks/use-certificate";
 import { useCreateSanad } from "@/hooks/use-takhosus";
@@ -83,6 +84,7 @@ export default function CertificateDetailPage({
   } = useCertificate(resolvedParams.id);
   const deleteMutation = useDeleteCertificate();
   const generatePDFMutation = useGenerateCertificatePDF();
+  const downloadMutation = useDownloadCertificate();
 
   const handleDelete = async () => {
     try {
@@ -98,11 +100,34 @@ export default function CertificateDetailPage({
     try {
       const result = await generatePDFMutation.mutateAsync(resolvedParams.id);
       toast.success("PDF sertifikat berhasil dibuat");
-      if (result.pdfUrl) {
-        window.open(result.pdfUrl, "_blank");
+      if (result?.pdfUrl) {
+        await handleDownloadPDF();
       }
     } catch {
       toast.error("Gagal membuat PDF sertifikat");
+    }
+  };
+
+  /**
+   * Download the rendered PDF as a file. The API answers with the bytes (not a
+   * URL), so they are turned into a blob URL here and revoked once the click
+   * has happened; leaving it alive would pin the file in memory for the
+   * document's lifetime.
+   */
+  const handleDownloadPDF = async () => {
+    try {
+      const blob = await downloadMutation.mutateAsync(resolvedParams.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sertifikat-${certificate?.certificateNumber?.replace(/[^A-Za-z0-9]+/g, "-") ?? resolvedParams.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Sertifikat berhasil diunduh");
+    } catch {
+      toast.error("Gagal mengunduh PDF sertifikat");
     }
   };
 
@@ -401,15 +426,17 @@ export default function CertificateDetailPage({
               </CardHeader>
               <CardContent className="space-y-3">
                 {certificate.pdfUrl ? (
-                  <Button className="w-full" asChild>
-                    <a
-                      href={certificate.pdfUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                  <Button
+                    className="w-full"
+                    onClick={handleDownloadPDF}
+                    disabled={downloadMutation.isPending}
+                  >
+                    {downloadMutation.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
                       <Download className="mr-2 h-4 w-4" />
-                      Download PDF
-                    </a>
+                    )}
+                    Download PDF
                   </Button>
                 ) : (
                   <Button

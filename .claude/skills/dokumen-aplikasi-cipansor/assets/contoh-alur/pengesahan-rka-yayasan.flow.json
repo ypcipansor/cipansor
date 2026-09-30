@@ -32,8 +32,10 @@
     },
     {
       "id": "03-kirim-ke-pengawas",
-      "fill": { "target": { "label": "Catatan pengantar (opsional)", "exact": true }, "value": "Rancangan hasil rapat pengurus." },
-      "click": { "role": "button", "name": "Ajukan ke Pengawas", "exact": true },
+      "actions": [
+        { "fill": { "target": { "label": "Catatan pengantar (opsional)", "exact": true }, "value": "Rancangan hasil rapat pengurus." } },
+        { "click": { "role": "button", "name": "Ajukan ke Pengawas", "exact": true } }
+      ],
       "see": ["Menunggu hasil reviu Pengawas."], "area": "main",
       "caption": "Status berpindah: Menunggu hasil reviu Pengawas."
     },
@@ -44,8 +46,11 @@
       "caption": "Pengawas membuka dokumen yang sama; giliran Pengawas mereviu."
     },
     {
-      "id": "05-tulis-reviu", "click": { "role": "button", "name": "Kirim ke Pengurus", "exact": true },
-      "fill": { "target": { "label": "Hasil reviu", "exact": true }, "value": "Pagu belanja pegawai naik tanpa kenaikan jumlah santri; mohon dasarnya." },
+      "id": "05-tulis-reviu",
+      "actions": [
+        { "fill": { "target": { "label": "Hasil reviu", "exact": true }, "value": "Pagu belanja pegawai naik tanpa kenaikan jumlah santri; mohon dasarnya." } },
+        { "click": { "role": "button", "name": "Kirim ke Pengurus", "exact": true } }
+      ],
       "see": ["Hasil reviu"], "area": { "role": "dialog" },
       "caption": "Pengawas menulis hasil reviu; tombol kirim baru aktif setelah hasil reviu terisi."
     },
@@ -61,8 +66,11 @@
       "caption": "Ketua Pengurus melihat hasil reviu dan memilih: direvisi atau tidak direvisi."
     },
     {
-      "id": "08-ajukan-ke-pembina", "click": { "role": "radio", "name": "Tidak direvisi" },
-      "fill": { "target": { "label": "Alasan tidak merevisi", "exact": true }, "value": "Kenaikan mengikuti penyesuaian gaji guru hasil rapat pleno pengurus." },
+      "id": "08-ajukan-ke-pembina",
+      "actions": [
+        { "click": { "role": "radio", "name": "Tidak direvisi" } },
+        { "fill": { "target": { "label": "Alasan tidak merevisi", "exact": true }, "value": "Kenaikan mengikuti penyesuaian gaji guru hasil rapat pleno pengurus." } }
+      ],
       "shot": false
     },
     {

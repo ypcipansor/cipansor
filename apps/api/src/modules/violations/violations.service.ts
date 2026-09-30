@@ -1,7 +1,30 @@
 import { prisma } from '../../lib/prisma';
+import { ViolationType } from '@prisma/client';
 import { CreateViolationDto, UpdateViolationDto, QueryViolationDto } from './violations.schema';
+import {
+  assertStudentInScope,
+  onlyScopedStudents,
+  studentScope,
+  type ScopeActor,
+} from '../../utils/student-scope';
 
-export async function createViolation(data: CreateViolationDto, reportedById: string) {
+/**
+ * `studentScope` returns the santri the caller may see; folding it into the
+ * `where` keeps one violation row from another unit out of every read — a
+ * list, a detail, a per-santri summary or a category aggregate. `studentId`
+ * from the request is a filter, never a grant: it is intersected with the
+ * scope, so naming another unit's santri yields nothing.
+ */
+function scopedWhere(actor: ScopeActor, extra: Record<string, unknown> = {}) {
+  return { ...onlyScopedStudents(studentScope(actor)), ...extra };
+}
+
+export async function createViolation(
+  data: CreateViolationDto,
+  reportedById: string,
+  actor: ScopeActor
+) {
+  await assertStudentInScope(data.studentId, actor);
   return prisma.violation.create({
     data: {
       ...data,
@@ -19,14 +42,20 @@ export async function createViolation(data: CreateViolationDto, reportedById: st
   });
 }
 
-export async function getViolations(query: QueryViolationDto) {
-  const { studentId, type, category, startDate, endDate, page, limit } = query;
+export async function getViolations(query: QueryViolationDto, actor: ScopeActor) {
+  const { studentId, type, category, categoryId, startDate, endDate, page, limit } = query;
   const skip = (page - 1) * limit;
 
-  const where = {
+  const where = scopedWhere(actor, {
     ...(studentId && { studentId }),
     ...(type && { type }),
-    ...(category && { category: { contains: category, mode: 'insensitive' as const } }),
+    // `categoryId` is the exact category the type-edit page addresses; `category`
+    // stays a free-text contains for the list search box.
+    ...(categoryId
+      ? { category: { equals: categoryId, mode: 'insensitive' as const } }
+      : category
+        ? { category: { contains: category, mode: 'insensitive' as const } }
+        : {}),
     ...(startDate || endDate
       ? {
           occurredAt: {
@@ -35,7 +64,7 @@ export async function getViolations(query: QueryViolationDto) {
           },
         }
       : {}),
-  };
+  });
 
   const [data, total] = await Promise.all([
     prisma.violation.findMany({
@@ -67,9 +96,9 @@ export async function getViolations(query: QueryViolationDto) {
   };
 }
 
-export async function getViolationById(id: string) {
-  return prisma.violation.findUnique({
-    where: { id },
+export async function getViolationById(id: string, actor: ScopeActor) {
+  return prisma.violation.findFirst({
+    where: { AND: [{ id }, { student: studentScope(actor) }] },
     include: {
       student: {
         include: {
@@ -82,7 +111,9 @@ export async function getViolationById(id: string) {
   });
 }
 
-export async function updateViolation(id: string, data: UpdateViolationDto) {
+export async function updateViolation(id: string, data: UpdateViolationDto, actor: ScopeActor) {
+  const existing = await getViolationById(id, actor);
+  if (!existing) return null;
   return prisma.violation.update({
     where: { id },
     data: {
@@ -100,8 +131,11 @@ export async function updateViolation(id: string, data: UpdateViolationDto) {
   });
 }
 
-export async function deleteViolation(id: string) {
-  return prisma.violation.delete({ where: { id } });
+export async function deleteViolation(id: string, actor: ScopeActor) {
+  const existing = await getViolationById(id, actor);
+  if (!existing) return false;
+  await prisma.violation.delete({ where: { id } });
+  return true;
 }
 
 export async function getStudentViolationPoints(studentId: string) {
@@ -112,7 +146,9 @@ export async function getStudentViolationPoints(studentId: string) {
   return result._sum.points || 0;
 }
 
-export async function getStudentViolationSummary(studentId: string) {
+export async function getStudentViolationSummary(studentId: string, actor: ScopeActor) {
+  await assertStudentInScope(studentId, actor);
+
   const violations = await prisma.violation.findMany({
     where: { studentId },
     orderBy: { occurredAt: 'desc' },
@@ -143,13 +179,61 @@ export async function getStudentViolationSummary(studentId: string) {
   };
 }
 
-export async function getViolationCategories() {
+/**
+ * The violation categories in the caller's scope, each with the points and the
+ * severity its rows actually carry.
+ *
+ * A "violation type" is the free-text `category` column on Violation; severity
+ * lives in `type` (MINOR/MODERATE/MAJOR). The list used to return bare category
+ * strings, so the web picker invented `points: 0` and `type: MINOR`; every new
+ * violation was then recorded as a zero-point minor one whatever the category's
+ * existing rows showed. Returning the points and the most common severity keeps
+ * the form's default honest, and the API stays the authority: the create route
+ * records exactly the `points` and `type` it is sent.
+ */
+export async function getViolationCategories(actor: ScopeActor) {
   const categories = await prisma.violation.groupBy({
-    by: ['category'],
+    by: ['category', 'points', 'type'],
+    where: onlyScopedStudents(studentScope(actor)),
     _count: true,
     orderBy: { _count: { category: 'desc' } },
   });
-  return categories.map((c) => c.category);
+
+  const byCategory = new Map<
+    string,
+    { id: string; points: number; type: ViolationType; count: number }
+  >();
+  for (const row of categories) {
+    const current = byCategory.get(row.category);
+    const count = row._count ?? 0;
+    if (!current) {
+      byCategory.set(row.category, {
+        id: row.category,
+        points: row.points,
+        type: row.type,
+        count,
+      });
+    } else {
+      current.count += count;
+      // The majority (category, points, type) combination wins; the groupBy
+      // order is by descending count, so the first row of a category is it.
+      if (count > 0) {
+        current.points = row.points;
+        current.type = row.type;
+      }
+    }
+  }
+
+  return [...byCategory.values()]
+    .sort((a, b) => b.count - a.count)
+    .map(({ id, points, type }) => ({
+      id,
+      name: id.charAt(0).toUpperCase() + id.slice(1),
+      category: id.toUpperCase(),
+      points,
+      type,
+      isActive: true,
+    }));
 }
 
 /**
@@ -158,9 +242,12 @@ export async function getViolationCategories() {
  * addresses it by that string. Aggregate the matching rows into the shape the
  * edit form reads; null (→ 404) when the category is unused.
  */
-export async function getViolationCategoryById(category: string) {
+export async function getViolationCategoryById(category: string, actor: ScopeActor) {
   const agg = await prisma.violation.aggregate({
-    where: { category: { equals: category, mode: 'insensitive' } },
+    where: {
+      ...onlyScopedStudents(studentScope(actor)),
+      category: { equals: category, mode: 'insensitive' },
+    },
     _count: true,
     _sum: { points: true },
     _max: { points: true },

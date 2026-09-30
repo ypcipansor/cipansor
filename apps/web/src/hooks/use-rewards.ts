@@ -89,20 +89,21 @@ export const REWARD_CATEGORIES: {
 
 // Reward Types Hooks
 //
-// `/rewards/categories` returns bare category strings ("tahfidz", ...), not
-// objects. The picker UI needs `{id, name, points}`; shape them here so the
-// select renders labels instead of blanks.
-function categoryToRewardType(raw: unknown): RewardType {
-  const name = String(raw);
-  const label = name.charAt(0).toUpperCase() + name.slice(1);
+// `/rewards/categories` now returns one `{id, name, category, points}` per
+// category, with the points its existing rows carry — the shape the picker and
+// the create form need. Fall back to a zero-point entry only for a row the API
+// somehow sends without one, so the select still renders a label.
+function categoryToRewardType(raw: any): RewardType {
+  const name = String(raw?.id ?? raw);
+  const label = raw?.name ?? name.charAt(0).toUpperCase() + name.slice(1);
   return {
     id: name,
     name: label,
-    category: name.toUpperCase() as RewardCategory,
-    points: 0,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    category: (raw?.category ?? name.toUpperCase()) as RewardCategory,
+    points: typeof raw?.points === "number" ? raw.points : 0,
+    isActive: raw?.isActive ?? true,
+    createdAt: raw?.createdAt ?? new Date().toISOString(),
+    updatedAt: raw?.updatedAt ?? new Date().toISOString(),
   };
 }
 
@@ -213,8 +214,12 @@ export function useRewards(params?: {
   return useQuery({
     queryKey: ["rewards", params],
     queryFn: async () => {
+      // The API filters the free-text `category` exactly via `categoryId`; the
+      // UI names it `rewardTypeId`. Translate so the filter reaches the API
+      // instead of being dropped as an unknown param.
+      const { rewardTypeId, ...rest } = params ?? {};
       const response = await api.get<PaginatedResponse<Reward>>("/rewards", {
-        params,
+        params: { ...rest, ...(rewardTypeId && { categoryId: rewardTypeId }) },
       });
       return {
         ...response.data,

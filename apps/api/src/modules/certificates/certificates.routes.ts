@@ -39,6 +39,11 @@ router.get(
   controller.downloadCertificate
 );
 router.post(
+  '/:id/generate-pdf',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
+  controller.generateCertificatePdf
+);
+router.post(
   '/',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
   validate(createCertificateSchema),

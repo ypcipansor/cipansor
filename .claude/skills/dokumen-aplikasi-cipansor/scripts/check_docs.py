@@ -437,7 +437,7 @@ def check_teknis(text: str, lines: list[str], repo: Path, facts: dict, r: Report
             r.add("WARN", text[: sec53.start()].count("\n") + 1, "modul-tak-tercantum",
                   f"{len(missing)} modul tak disebut di tabel ranah 5.3: {', '.join(missing[:12])}")
 
-    # Lampiran A: jumlah baris = jumlah modul
+    # Lampiran A: jumlah baris = jumlah modul, dan tiap baris cocok dengan kode
     for t, a, b in secs:
         if re.match(r"^lampiran a\b", t.lower()):
             ts = [x for x in find_tables(lines) if a <= x["start"] <= b]
@@ -446,6 +446,38 @@ def check_teknis(text: str, lines: list[str], repo: Path, facts: dict, r: Report
                 if rows != facts["api"]["module_count"]:
                     r.add("ERROR", a, "lampiran-a-jumlah",
                           f"{rows} baris, facts.json memuat {facts['api']['module_count']} modul")
+                by_name = {m["name"]: m for m in facts["api"]["modules"]}
+                for lineno, cells in ts[0]["rows"]:
+                    if len(cells) < 3:
+                        continue
+                    name = cells[0].strip("` ")
+                    mod = by_name.get(name)
+                    if not mod:
+                        r.add("ERROR", lineno, "lampiran-a-modul",
+                              f"modul '{name}' tidak ada di facts.json (modul tak dikenal / salah nama)")
+                        continue
+                    # handler: angka di dokumen harus sama dengan hitungan kode
+                    try:
+                        got = int(cells[2].strip())
+                    except ValueError:
+                        continue
+                    if got != mod["handlers"]:
+                        r.add("ERROR", lineno, "lampiran-a-handler",
+                              f"modul '{name}': {got} handler, kode memuat {mod['handlers']} "
+                              f"(hitung router.get/post/put/patch/delete di *.routes.ts)")
+                    # mount: alamat yang dicetak harus alamat yang dipasang di app.ts
+                    doc_mount = cells[1].strip()
+                    real = ", ".join(mod["mount"]) if mod["mount"] else "tidak ter-mount"
+                    if doc_mount.replace("`", "") != real:
+                        r.add("ERROR", lineno, "lampiran-a-mount",
+                              f"modul '{name}': mount '{doc_mount}', app.ts memasang '{real}'")
+                    # layering: kolom Prisma harus mencerminkan kode
+                    doc_lay = cells[4].strip() if len(cells) > 4 else ""
+                    is_bad = doc_lay.lower().startswith("prisma")
+                    if is_bad != mod["prisma_in_route_or_controller"]:
+                        want = "Prisma di route/controller" if mod["prisma_in_route_or_controller"] else "ok"
+                        r.add("ERROR", lineno, "lampiran-a-layering",
+                              f"modul '{name}': layering '{doc_lay}', kode menandai '{want}'")
 
     # jumlah bahasa / kalimat janggal
     for n, l in enumerate(lines, 1):

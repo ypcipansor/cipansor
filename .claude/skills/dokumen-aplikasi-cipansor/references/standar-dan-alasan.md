@@ -227,6 +227,60 @@ d2lang.com/blog/c4; iso.org (42010:2022, 26514:2022); adr.github.io/madr +
 changelog; diataxis.fr; errata-ai/vale, lycheeverse/lychee, markdownlint,
 streetsidesoftware/cspell, textlint.org.
 
+## Pemeriksaan ulang 2026-09-30 (ketiga) — edisi masih berlaku, pemeriksa baris Lampiran A
+
+Riset diulang lewat web untuk memastikan tidak ada edisi standar yang berganti
+sejak pemeriksaan pagi hari, dan untuk menimbang satu kelas cacat yang baru
+terjadi. Hasilnya **tidak mengubah kerangka**; yang bertambah adalah satu
+pemeriksa dan satu catatan.
+
+- **arc42 — v9 (Juli 2025) masih versi terbit**; arc42.org/download menyebut v9
+  menambah terjemahan (ZH, HU Mei 2026) tanpa menomori ulang 12 bab. Situs arc42
+  kini menonjolkan **docs-as-code** sebagai cara pakai yang disarankan ("treat
+  your architecture documentation like source code", template AsciiDoc/Markdown,
+  direview lewat pull request, dibangun dengan docToolchain) — persis cara skill
+  ini bekerja. Tidak ada bab baru yang perlu ditambah.
+- **C4 — tak ada edisi bernomor**, tetapi pesan pembuatnya tetap: mulailah dari
+  dua tingkat teratas karena tingkat 3–4 paling cepat basi (Simon Brown, *The C4
+  model: misconceptions, misuses and mistakes*, DDD Europe 2025). Terapan kita
+  tidak berubah: tingkat 3 dipertahankan sebagai satu diagram lapisan modul,
+  tingkat 4 tidak digambar.
+- **Diátaxis — tetap empat mode** (tutorial · how-to · reference · explanation)
+  dan tetap dirawat Daniele Procida; tidak ada mode baru. Yang baru adalah
+  relevansinya untuk agen/RAG: dokumen yang terpisah per jenis lebih mudah
+  dipotong dan diambil ulang — memperkuat pilihan "satu halaman, satu jenis".
+- **ISO/IEC/IEEE 26514:2022 tetap edisi berlaku** (diterbitkan Maret/Agustus
+  2022; tidak ada edisi lebih baru). Tiga pilar yang ditekankannya — analisis
+  audiens & tugasnya, penurunan konsep informasi, lalu validasi lewat uji
+  kegunaan — tetap menjadi daftar periksa mutu panduan. Acuan normatifnya
+  IEC/IEEE 82079-1:2019 tetap dipakai sebagai pemeriksa kelengkapan.
+- **MADR 4.0.0 (September 2024) masih versi terkini** template ADR; ekosistem
+  2026 bergerak ke lapisan di atasnya (ADR sebagai lapisan keputusan yang
+  di-query, varian ITD "Important Technical Decisions"), bukan ke format baru.
+  Terapan kita tetap: `.claude/memory/decisions/` sebagai sumber, dokumen
+  merangkum dan menautkan.
+- **Docs-as-code 2026 — gerbang mutu di CI adalah kelaziman, bukan kemewahan.**
+  Praktik yang dilaporkan konsisten: periksa tautan (lychee), struktur
+  Markdown (markdownlint), gaya prosa (Vale) dan ejaan (cspell) di pipeline,
+  dengan ambang yang **dimulai dari WARN lalu naik ke ERROR** agar tidak
+  memblokir tim karena ribuan peringatan lama. Terapan kita: `check_docs.py`
+  (kecocokan klaim↔kode), `scan_sensitive.py`, `build_docs.py`,
+  `scripts/check-doc-refs.py` sudah memverifikasi; yang belum, dan tetap
+  belum, adalah menjalankannya di CI — dicatat sebagai utang, bukan dikerjakan
+  di sini karena perubahan CI adalah perubahan kode dengan tesnya sendiri
+  (aturan emas #7/#8).
+
+**Kelas cacat baru yang memicu satu pemeriksa.** Lampiran A (katalog modul)
+punya **jumlah baris yang benar** — 94 baris = 94 modul — tetapi **lima barisnya
+basi**: `certificates`, `rewards`, `violations`, `hr`, dan `organisasi` masih
+mencetak jumlah handler lama setelah modulnya bertambah rute. Pemeriksa lama
+hanya membandingkan **jumlah baris**, sehingga baris yang isinya salah lolos.
+Ditambahkan pemeriksa per baris (`lampiran-a-handler`, `lampiran-a-mount`,
+`lampiran-a-layering`) yang membandingkan tiap sel dengan `facts.json`. Ini
+contoh umum yang layak diingat: **jumlah yang cocok bukan bukti isi yang
+cocok** — sama kelasnya dengan C5 (`akreditasi-unit.md` dua kali, 23 = 23
+kebetulan).
+
 ## Prinsip yang menyatukan semuanya
 
 1. **Angka dari kode, bukan ingatan** — `collect_facts.py`; sebut commit dan

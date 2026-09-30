@@ -1,53 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+import type { CertificateType, DigitalCertificate } from "@cipansor/shared";
 
-// Types
-export type CertificateType =
-  | "IJAZAH"
-  | "STTB"
-  | "TAHFIDZ"
-  | "SANAD"
-  | "ACHIEVEMENT"
-  | "GRADUATION"
-  | "PARTICIPATION"
-  | "COURSE_COMPLETION"
-  | "APPRECIATION"
-  | "OTHER";
-
-export interface DigitalCertificate {
-  id: string;
-  studentId: string;
-  student?: {
-    id: string;
-    name: string;
-    nis: string;
-    photoUrl?: string;
-    user?: { name: string };
-    class?: { id: string; name: string };
-    unit?: { id: string; name: string; type?: string };
-  };
-  certificateType: CertificateType;
-  title: string;
-  description?: string;
-  certificateNumber: string;
-  qrCode: string;
-  verificationUrl: string;
-  grade?: string;
-  rank?: number;
-  issueDate: string;
-  signatoryName: string;
-  signatoryTitle: string;
-  signatureUrl?: string;
-  pdfUrl?: string;
-  thumbnailUrl?: string;
-  isPublic: boolean;
-  downloadCount: number;
-  createdById: string;
-  createdBy?: { id: string; name: string };
-  createdAt: string;
-  updatedAt: string;
-}
+// Types — the DTO and its type union live once, in `@cipansor/shared`, so the
+// web picker can no longer offer a certificate type the API rejects.
+export type { CertificateType, DigitalCertificate };
 
 export interface CertificateTemplate {
   type: CertificateType;
@@ -356,23 +314,34 @@ export function useDeleteCertificate() {
 }
 
 export function useGenerateCertificatePDF() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async (id: string) => {
-      const response = await api.post<{ pdfUrl: string }>(
+      const response = await api.post<ApiResponse<DigitalCertificate>>(
         `/certificates/${id}/generate-pdf`,
       );
-      return response.data;
+      return response.data.data;
+    },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: certificateKeys.detail(id) });
     },
   });
 }
 
+/**
+ * Download the certificate PDF. The route answers with the file itself, so the
+ * caller gets a Blob; the page turns it into an object URL and revokes it after
+ * the click (see the download handler). Requesting a JSON body here would put
+ * the PDF bytes through the JSON parser and fail.
+ */
 export function useDownloadCertificate() {
   return useMutation({
     mutationFn: async (id: string) => {
       const response = await api.get(`/certificates/${id}/download`, {
         responseType: "blob",
       });
-      return response.data;
+      return response.data as Blob;
     },
   });
 }

@@ -9,6 +9,7 @@
 | 0.5 | 30 September 2026 | commit `a4735001` (kode `apps/` dan `packages/` identik dengan `40780b26`) | Diperiksa ulang dengan pemeriksa skill terbaru: seluruh bab, Lampiran A, dan bab 9–11 lolos `check_docs.py --final` 0 ERROR. Angka diukur ulang, tidak berubah | Agen OpenHands |
 | 0.6 | 30 September 2026 | commit `a4735001` (kode tidak berubah) | Lampiran B: versi arc42 disebut tegas (v9, Juli 2025 — 12 bab tetap) setelah pemeriksaan ulang standar; pemeriksa `check_docs.py --final` tetap 0 ERROR/0 WARN | Agen OpenHands |
 | 0.7 | 30 September 2026 | commit `18f853f2` (termasuk rute `POST /api/certificates/:id/generate-pdf` yang belum dikomit) | Pemeriksaan ulang standar 2026 (arc42 v9, C4, Diátaxis, MADR 4.0, ISO/IEC/IEEE 26514:2022, 42010:2022, IEC/IEEE 82079-1:2019) tanpa perubahan kerangka; angka diukur ulang: ~1.413 hulu rute API (dari ~1.412). Pemeriksa `check_docs.py` kini juga mencocokkan angka hulu rute terhadap `facts.json` | Agen OpenHands |
+| 0.8 | 30 September 2026 | commit `9b0efdc5` + pohon kerja (perbaikan modul `certificates`, `rewards`, `violations`, `hr` belum dikomit) | Lampiran A diukur ulang baris demi baris terhadap kode: `certificates` 9→10, `rewards` 9→10, `violations` 7→8, `hr` 37→42, `organisasi` 11→12 handler. Pemeriksa `check_docs.py` kini memeriksa **tiap baris** Lampiran A (jumlah handler, alamat mount, penandaan Prisma di route/controller), bukan hanya jumlah barisnya — jumlah baris yang cocok pernah menyembunyikan lima baris yang basi | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -622,7 +623,7 @@ ditinjau ulang setiap kuartal.
 
 # Lampiran A — Katalog Modul API
 
-Diukur pada commit `40780b26` (30 September 2026). "Handler" adalah perkiraan
+Diukur pada commit `9b0efdc5` (30 September 2026). "Handler" adalah perkiraan
 jumlah `router.get/post/put/patch/delete`. "Layering" menandai modul yang
 memanggil Prisma dari rute/controller.
 
@@ -640,7 +641,7 @@ memanggil Prisma dari rute/controller.
 | business-unit | /api/business-units | 7 | - | ok |
 | calendar | /api/calendar | 12 | - | ok |
 | canteen | /api/canteen | 19 | - | ok |
-| certificates | /api/certificates | 9 | - | ok |
+| certificates | /api/certificates | 10 | - | ok |
 | cbt | /api/cbt | 20 | - | Prisma di route/controller |
 | chatbot | /api/chatbot | 9 | - | Prisma di route/controller |
 | classes | /api/classes | 9 | ya | ok |
@@ -664,7 +665,7 @@ memanggil Prisma dari rute/controller.
 | foundation | /api/foundation | 26 | ya | ok |
 | health | /api/health | 25 | ya | ok |
 | homeroom | /api/homeroom | 14 | - | ok |
-| hr | /api/hr | 37 | ya | Prisma di route/controller |
+| hr | /api/hr | 42 | ya | Prisma di route/controller |
 | ibadah | /api/ibadah | 25 | - | ok |
 | inventory | /api/inventory | 34 | - | ok |
 | kitab-progress | /api/kitab-progress | 16 | - | ok |
@@ -681,7 +682,7 @@ memanggil Prisma dari rute/controller.
 | murojaah | /api/murojaah | 15 | - | ok |
 | non-formal | /api/non-formal | 5 | - | ok |
 | notifications | /api/notifications | 29 | ya | Prisma di route/controller |
-| organisasi | /api/organisasi | 11 | - | ok |
+| organisasi | /api/organisasi | 12 | - | ok |
 | parent | /api/parent | 17 | ya | ok |
 | paud-assessment | /api/paud-assessment | 22 | ya | ok |
 | paud-report | /api/paud-report | 13 | - | ok |
@@ -699,7 +700,7 @@ memanggil Prisma dari rute/controller.
 | reception | /api/reception | 10 | - | ok |
 | reporting | /api/reports | 7 | ya | ok |
 | research | /api/research | 8 | - | Prisma di route/controller |
-| rewards | /api/rewards | 9 | ya | ok |
+| rewards | /api/rewards | 10 | ya | ok |
 | risk | /api/risk | 8 | - | ok |
 | roles | /api/roles | 10 | - | Prisma di route/controller |
 | sanad-certificate | /api/sanad | 11 | - | ok |
@@ -719,7 +720,7 @@ memanggil Prisma dari rute/controller.
 | units | /api/units | 13 | ya | ok |
 | upload | /api/upload | 1 | - | ok |
 | users | /api/users | 5 | ya | ok |
-| violations | /api/violations | 7 | ya | ok |
+| violations | /api/violations | 8 | ya | ok |
 | wallet | /api/wallet | 10 | - | ok |
 | wilayah | /api/wilayah | 12 | - | ok |
 

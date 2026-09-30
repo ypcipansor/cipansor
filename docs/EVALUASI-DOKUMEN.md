@@ -260,3 +260,67 @@ kedua basis, atau perlakukan `screens/` seperti `images/`), bukan milik dokumen.
 belum berjalan di CI; `uno` tak tersedia di lingkungan ini sehingga daftar isi
 `.docx` terisi saat dibuka (F9), bukan saat dibangun; `check-doc-refs.py` perlu
 diperbaiki agar mengenali jalur gambar relatif dokumen.
+
+# 12. Tindak lanjut 2026-09-30 (keempat) — satu kelas cacat baru: jumlah cocok, isi basi
+
+Sesi ini menjalankan alur skill atas pohon kerja saat ini (perbaikan modul
+`certificates`, `rewards`, `violations`, `hr` belum dikomit), mengukur ulang,
+mencari tahu standar terkini lewat web, lalu memperbarui.
+
+**Kelas cacat yang ditemukan: pemeriksa Lampiran A hanya menghitung baris.**
+`collect_facts.py` melaporkan pohon kerja berbeda dari pengukuran sebelumnya:
+**~1.413 hulu rute API** (dari ~1.412) dan `has_tests_dir` yang kini `true` untuk
+tiga modul. Yang lebih penting, **Lampiran A punya jumlah baris yang benar (94 =
+94) tetapi lima barisnya basi**: modul `certificates`, `rewards`, `violations`,
+`hr`, dan `organisasi` masih mencetak jumlah handler lama setelah modulnya
+bertambah rute.
+
+| Modul | Dokumen | Kode |
+|---|---|---|
+| certificates | 9 | 10 |
+| rewards | 9 | 10 |
+| violations | 7 | 8 |
+| hr | 37 | 42 |
+| organisasi | 11 | 12 |
+
+Ini kelas yang sama dengan C5 (`akreditasi-unit.md` dua kali sehingga "23 = 23"
+cocok secara kebetulan): **jumlah yang cocok bukan bukti isi yang cocok.**
+Pemeriksa lama (`lampiran-a-jumlah`) hanya membandingkan panjang tabel, jadi
+baris yang isinya salah lolos. Pemeriksa per baris ditambahkan
+(`lampiran-a-handler`, `lampiran-a-mount`, `lampiran-a-layering`) yang
+membandingkan tiap sel dengan `facts.json`; ia langsung menandai kelima baris,
+yang lalu diukur ulang dari kode.
+
+**Cacat format yang ikut tertangkap (buatan sesi ini, bukan bawaan).** Saat
+menulis ulang tabel Lampiran A dengan skrip, potongan naskah disambung tanpa
+baris kosong sehingga judul `# Lampiran B` menempel pada kalimat sebelumnya
+(`… \`scholarship\`.# Lampiran B …`) dan `check_docs.py` langsung melaporkan
+"Lampiran B tidak ada". Diperbaiki. Dicatat apa adanya: yang menangkapnya adalah
+pemeriksa mesin, dan yang membuatnya adalah penyuntingan angka — bukan
+`DOKUMEN-TEKNIS.md` di `main`.
+
+**Pemeriksa mesin (30 September 2026, keempat).**
+
+| Pemeriksa | Hasil |
+|---|---|
+| `check_docs.py --final` (sepuluh berkas) | 0 ERROR, 0 WARN |
+| `scan_sensitive.py` (DOKUMEN-TEKNIS, README) | bersih |
+| `scripts/check-doc-refs.py` | 1.821 rujukan = 1.821 berkas di disk; 0 menggantung, 0 yatim |
+
+**Riset standar (keempat, lewat web).** Tidak ada edisi yang berganti dalam
+sehari: arc42 tetap **v9 (Juli 2025)** — situsnya kini menonjolkan docs-as-code
+sebagai cara pakai yang disarankan; C4 tetap tanpa edisi bernomor dengan
+peringatan pembuatnya agar tingkat 3–4 tidak dirawat berlebihan (DDD Europe
+2025); Diátaxis tetap empat mode, kini disorot relevansinya untuk agen/RAG;
+ISO/IEC/IEEE 26514:2022 tetap edisi berlaku; MADR 4.0.0 masih template terkini;
+docs-as-code 2026 menuntut gerbang di CI (lychee, markdownlint, Vale, cspell),
+dengan ambang dimulai dari WARN. Rinciannya di
+`references/standar-dan-alasan.md` bagian "Pemeriksaan ulang 2026-09-30
+(ketiga)".
+
+**Belum selesai (diperbarui).** Bab konsep/rujukan Panduan Umum masih T2;
+pemeriksa dokumen belum berjalan di CI; `uno` tak tersedia sehingga daftar isi
+`.docx` terisi saat dibuka (F9); `scripts/check-doc-refs.py` sudah diperbaiki di
+pohon kerja (mencoba dua basis: relatif dokumen dan relatif akar) tetapi
+perubahannya belum dikomit; `.docx`/`.pdf` belum dibangun ulang pada sesi ini
+(hanya `.md` yang berubah, dan biner tidak dilacak git).

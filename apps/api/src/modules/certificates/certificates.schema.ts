@@ -1,42 +1,39 @@
 import { z } from 'zod';
 import { partialUpdateSchema } from '@/lib/partial';
+import {
+  CERTIFICATE_TYPE_VALUES,
+  createCertificateSchema as sharedCreateCertificateSchema,
+  queryCertificateSchema as sharedQueryCertificateSchema,
+} from '@cipansor/shared';
+import { isAllowedSignatureUrl } from '@/utils/signature-url';
 
-export const CERTIFICATE_TYPES = [
-  'IJAZAH',
-  'STTB',
-  'TAHFIDZ',
-  'SANAD',
-  'ACHIEVEMENT',
-  'GRADUATION',
-  'PARTICIPATION',
-  'OTHER',
-] as const;
+/**
+ * Certificate request contracts live in `@cipansor/shared` so the web client
+ * and the API cannot drift (they did: the web offered a `COURSE_COMPLETION`
+ * type the API's own enum rejected). This file keeps the two things only the
+ * API decides — the partial-update shape and the signature-host rule — and
+ * re-exports the shared names so existing importers are unchanged.
+ */
+export const CERTIFICATE_TYPES = CERTIFICATE_TYPE_VALUES;
 
-export const createCertificateSchema = z.object({
-  studentId: z.string().uuid(),
-  certificateType: z.enum(CERTIFICATE_TYPES),
-  title: z.string().min(3).max(200),
-  description: z.string().optional(),
-  grade: z.string().optional(),
-  rank: z.number().int().positive().optional(),
-  issueDate: z.string().datetime(),
-  signatoryName: z.string().min(2).max(120),
-  signatoryTitle: z.string().min(2).max(120),
-  signatureUrl: z.string().url().optional(),
-  isPublic: z.boolean().default(false),
+/**
+ * `signatureUrl` is rendered as `<img src>` by the detail page; refuse a host
+ * that is not one of the yayasan's own (see `utils/signature-url.ts`).
+ */
+const guardedSignatureUrl = z
+  .url('URL tanda tangan tidak valid')
+  .refine(isAllowedSignatureUrl, 'URL tanda tangan harus menunjuk ke domain yayasan')
+  .optional();
+
+export const createCertificateSchema = sharedCreateCertificateSchema.extend({
+  signatureUrl: guardedSignatureUrl,
 });
 
 export const updateCertificateSchema = partialUpdateSchema(createCertificateSchema).omit({
   studentId: true,
 });
 
-export const queryCertificateSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  studentId: z.string().uuid().optional(),
-  certificateType: z.enum(CERTIFICATE_TYPES).optional(),
-  search: z.string().optional(),
-});
+export const queryCertificateSchema = sharedQueryCertificateSchema;
 
 export type CreateCertificateDto = z.infer<typeof createCertificateSchema>;
 export type UpdateCertificateDto = z.infer<typeof updateCertificateSchema>;

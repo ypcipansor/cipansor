@@ -83,19 +83,36 @@ export const VIOLATION_CATEGORIES: {
 
 // Violation Types Hooks
 //
-// `/violations/categories` returns bare category strings ("ibadah", ...).
-// Shape them into the picker's `{id, name, points}` so the select renders.
-function categoryToViolationType(raw: unknown): ViolationType {
-  const name = String(raw);
-  const label = name.charAt(0).toUpperCase() + name.slice(1);
+// `/violations/categories` now returns one `{id, name, category, points, type}`
+// per category, with the points and severity its existing rows carry. The web
+// shape names severity `category` (LIGHT/MEDIUM/HEAVY) and carries the DB
+// `type` alongside it so the create form can submit the real severity.
+export interface ViolationTypeWithSeverity extends ViolationType {
+  /** The DB `type` the category's rows use (MINOR/MODERATE/MAJOR). */
+  type: "MINOR" | "MODERATE" | "MAJOR";
+}
+
+const SEVERITY_BY_DB_TYPE: Record<string, ViolationCategory> = {
+  MINOR: "LIGHT",
+  MODERATE: "MEDIUM",
+  MAJOR: "HEAVY",
+};
+
+function categoryToViolationType(raw: any): ViolationTypeWithSeverity {
+  const name = String(raw?.id ?? raw);
+  const label = raw?.name ?? name.charAt(0).toUpperCase() + name.slice(1);
+  const dbType = (raw?.type ?? "MINOR") as "MINOR" | "MODERATE" | "MAJOR";
   return {
     id: name,
     name: label,
-    category: "LIGHT",
-    points: 0,
-    isActive: true,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    category: (raw?.category ??
+      SEVERITY_BY_DB_TYPE[dbType] ??
+      "LIGHT") as ViolationCategory,
+    points: typeof raw?.points === "number" ? raw.points : 0,
+    type: dbType,
+    isActive: raw?.isActive ?? true,
+    createdAt: raw?.createdAt ?? new Date().toISOString(),
+    updatedAt: raw?.updatedAt ?? new Date().toISOString(),
   };
 }
 
@@ -208,9 +225,18 @@ export function useViolations(params?: {
   return useQuery({
     queryKey: ["violations", params],
     queryFn: async () => {
+      // The API filters the free-text `category` exactly via `categoryId`; the
+      // UI names it `violationTypeId`. Translate so the filter reaches the API
+      // instead of being dropped as an unknown param.
+      const { violationTypeId, ...rest } = params ?? {};
       const response = await api.get<PaginatedResponse<Violation>>(
         "/violations",
-        { params },
+        {
+          params: {
+            ...rest,
+            ...(violationTypeId && { categoryId: violationTypeId }),
+          },
+        },
       );
       return {
         ...response.data,

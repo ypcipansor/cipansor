@@ -21,6 +21,36 @@ import { randomBytes } from 'crypto';
 import { hashPassword } from '../../lib/password';
 import { assertPasswordAllowed } from '../../lib/password-policy';
 import { Errors } from '../../middleware/error';
+import {
+  actorReachesUnit,
+  isFoundationScopedRole,
+  writeUnitScopeFor,
+  type UnitActor,
+} from '../../utils/resolve-unit-id';
+import { PARENT_ROLE_CODES, STUDENT_ROLE_CODES } from '@cipansor/shared';
+
+/** The verified token, reduced to what decides an employee's reach. */
+export interface HrActor extends UnitActor {
+  sub: string;
+}
+
+/**
+ * The unit an employee list may be narrowed to, decided from the token.
+ *
+ * The `unitId` query string is a *narrowing* request, not a scope grant: a
+ * foundation role may name any unit (or none, for the whole yayasan), and
+ * everyone else is pinned to their own whatever the query says. Before this, an
+ * HR admin could read another unit's roster by adding `?unitId=` — the finding
+ * at `hr.routes.ts:683`.
+ */
+function employeeListUnit(actor: HrActor, asked?: string): string | undefined {
+  if (isFoundationScopedRole(actor.roleCode)) return asked || actor.unitId || undefined;
+  if (!actor.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
+  return actor.unitId;
+}
+
+/** Roles whose own HR record is all they may read — never a colleague's. */
+const SELF_ONLY_EMPLOYEE_ROLES: readonly string[] = [...STUDENT_ROLE_CODES, ...PARENT_ROLE_CODES];
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -49,22 +79,31 @@ const SAFE_USER_SELECT = {
 
 export type SafeUser = Prisma.UserGetPayload<{ select: typeof SAFE_USER_SELECT }>;
 
-export async function getEmployees(params: {
-  page: number;
-  limit: number;
-  unitId?: string;
-  role?: 'TEACHER' | 'STAFF';
-  search?: string;
-}) {
+export async function getEmployees(
+  params: {
+    page: number;
+    limit: number;
+    unitId?: string;
+    role?: 'TEACHER' | 'STAFF';
+    search?: string;
+  },
+  actor: HrActor
+) {
   const { page, limit, unitId, role, search } = params;
   const skip = (page - 1) * limit;
+  // A student or parent who reaches this list sees only their own record; staff
+  // and admins see their unit (the foundation board, every unit).
+  if (SELF_ONLY_EMPLOYEE_ROLES.includes(actor.roleCode ?? '')) {
+    return getSelfEmployee(actor, page, limit, role, search);
+  }
+  const scopedUnit = employeeListUnit(actor, unitId);
 
   const where: Prisma.UserWhereInput = {
     deletedAt: null,
     role: role ? (role as UserRole) : { in: [UserRole.TEACHER, UserRole.STAFF] },
   };
 
-  if (unitId) where.unitId = unitId;
+  if (scopedUnit) where.unitId = scopedUnit;
 
   if (search) {
     where.OR = [
@@ -95,6 +134,39 @@ export async function getEmployees(params: {
     data,
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
+}
+
+/** A student's or parent's own row, as a one-item page. */
+async function getSelfEmployee(
+  actor: HrActor,
+  page: number,
+  limit: number,
+  role: 'TEACHER' | 'STAFF' | undefined,
+  search?: string
+) {
+  const where: Prisma.UserWhereInput = {
+    id: actor.sub,
+    deletedAt: null,
+    ...(role ? { role: role as UserRole } : {}),
+    ...(search
+      ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { email: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
+  };
+  const data = await prisma.user.findMany({
+    where,
+    select: {
+      ...SAFE_USER_SELECT,
+      unit: { select: { id: true, name: true } },
+      teacher: true,
+      staff: true,
+    },
+  });
+  return { data, meta: { page, limit, total: data.length, totalPages: 1 } };
 }
 
 /**
@@ -145,8 +217,13 @@ export async function getTeachers(params: {
   };
 }
 
-export async function getEmployeeById(id: string) {
-  return prisma.user.findUnique({
+export async function getEmployeeById(id: string, actor: HrActor) {
+  // A student or parent may read only their own record, and then only if they
+  // hold one — a colleague's id answers 404, not their profile.
+  if (SELF_ONLY_EMPLOYEE_ROLES.includes(actor.roleCode ?? '') && id !== actor.sub) {
+    throw Errors.notFound('Employee not found');
+  }
+  const employee = await prisma.user.findUnique({
     where: { id },
     select: {
       ...SAFE_USER_SELECT,
@@ -155,6 +232,13 @@ export async function getEmployeeById(id: string) {
       staff: true,
     },
   });
+  if (!employee) throw Errors.notFound('Employee not found');
+  // 404 rather than 403 for another unit's employee, so an id guessed from
+  // another unit says nothing about that unit.
+  if (!actorReachesUnit(actor, employee.unitId)) {
+    throw Errors.notFound('Employee not found');
+  }
+  return employee;
 }
 
 /**
@@ -259,7 +343,11 @@ export async function getRetentionRiskAnalytics(unitId?: string) {
     .sort((a, b) => b.riskScore - a.riskScore);
 }
 
-export async function createEmployee(data: CreateEmployeeInput) {
+export async function createEmployee(data: CreateEmployeeInput, actor: HrActor) {
+  // The body's `unitId` is a request, not a grant: a unit admin can only ever
+  // create an employee in their own unit, whatever the body says.
+  const unitId = writeUnitScopeFor(actor, data.unitId);
+
   // Validate unique email
   const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
   if (existingUser) {
@@ -286,7 +374,7 @@ export async function createEmployee(data: CreateEmployeeInput) {
         email: data.email,
         passwordHash,
         role: data.role as UserRole,
-        unitId: data.unitId,
+        unitId,
         phone: data.phone,
       },
     });
@@ -296,7 +384,7 @@ export async function createEmployee(data: CreateEmployeeInput) {
       await tx.teacher.create({
         data: {
           userId: user.id,
-          unitId: data.unitId,
+          unitId,
           nip: data.nip,
           nuptk: data.nuptk,
           gender: data.gender,
@@ -319,7 +407,7 @@ export async function createEmployee(data: CreateEmployeeInput) {
       await tx.staff.create({
         data: {
           userId: user.id,
-          unitId: data.unitId,
+          unitId,
           nip: data.nip,
           position: data.position,
           department: data.department,
@@ -332,13 +420,20 @@ export async function createEmployee(data: CreateEmployeeInput) {
   });
 }
 
-export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
+export async function updateEmployee(id: string, data: UpdateEmployeeInput, actor: HrActor) {
   const user = await prisma.user.findUnique({
     where: { id },
     include: { teacher: true, staff: true },
   });
 
   if (!user) throw Errors.notFound('Employee not found');
+  // The target must be in the caller's reach, and any unit it is moved to must
+  // be too — a unit admin cannot edit another unit's employee, nor transfer one
+  // into a unit they do not administer.
+  if (!actorReachesUnit(actor, user.unitId)) throw Errors.notFound('Employee not found');
+  const nextUnitId = data.unitId
+    ? writeUnitScopeFor(actor, data.unitId)
+    : (user.unitId ?? undefined);
 
   return prisma.$transaction(async (tx) => {
     // 1. Update User
@@ -347,7 +442,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
       data: {
         name: data.name,
         email: data.email,
-        unitId: data.unitId,
+        unitId: nextUnitId,
         phone: data.phone,
         isActive: data.isActive,
       },
@@ -371,7 +466,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
           employmentStatus: data.employmentStatus,
           specialization: data.specialization,
           certificationNumber: data.certificationNumber,
-          unitId: data.unitId, // Update unit if user moved
+          unitId: nextUnitId, // Update unit if user moved
         },
       });
     } else if (user.role === 'STAFF' && user.staff) {
@@ -382,7 +477,7 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
           position: data.position,
           department: data.department,
           joinDate: data.joinDate ? new Date(data.joinDate) : undefined,
-          unitId: data.unitId,
+          unitId: nextUnitId,
         },
       });
     }
@@ -391,7 +486,14 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput) {
   });
 }
 
-export async function deleteEmployee(id: string) {
+export async function deleteEmployee(id: string, actor: HrActor) {
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, unitId: true },
+  });
+  if (!existing) throw Errors.notFound('Employee not found');
+  if (!actorReachesUnit(actor, existing.unitId)) throw Errors.notFound('Employee not found');
+
   // Soft delete user and related profile
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.update({

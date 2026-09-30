@@ -80,6 +80,15 @@ interface Step {
   click?: Locator;
   fill?: { target: Locator; value: string };
   press?: string;
+  /**
+   * Ordered interactions, run in the order written. Use this when the order
+   * matters — filling an optional note *inside* a dialog before clicking its
+   * submit button. The flat `click`/`fill`/`press` fields are a fixed sequence
+   * (click, then fill, then press) kept for the common click-then-fill step;
+   * `actions`, when present, run after them. A step that needs fill-then-click
+   * must use `actions` — the flat fields cannot express it.
+   */
+  actions?: StepAction[];
   wait?: number; // ms
   see?: string[]; // texts that must be visible before the screenshot
   not_see?: string[];
@@ -92,6 +101,13 @@ interface Step {
   caption?: string; // carried into the report; the manual's figure caption
   full_page?: boolean;
 }
+
+/** One interaction in a step's ordered `actions` list. */
+type StepAction =
+  | { click: Locator }
+  | { fill: { target: Locator; value: string } }
+  | { press: string }
+  | { wait: number };
 /**
  * Data a flow needs before the first screen — created through the API as a real
  * user, like the e2e specs do (e.g. a draft RKA Yayasan to ratify). `save` maps a
@@ -470,6 +486,18 @@ async function runFlow(browser: any, file: string, outRoot: string) {
           timeout: 10000,
         });
       if (step.press) await page.keyboard.press(step.press);
+      // Ordered interactions, for a step whose order the flat fields cannot
+      // express (fill inside a dialog, then click its submit).
+      for (const action of step.actions ?? []) {
+        if ("click" in action)
+          await locate(page, action.click).click({ timeout: 10000 });
+        else if ("fill" in action)
+          await locate(page, action.fill.target).fill(action.fill.value, {
+            timeout: 10000,
+          });
+        else if ("press" in action) await page.keyboard.press(action.press);
+        else if ("wait" in action) await page.waitForTimeout(action.wait);
+      }
       if (step.wait) await page.waitForTimeout(step.wait);
       // With `see`, wait on the texts themselves: they are the sync point, and a
       // toast ("Kehadiran disimpan") is gone within seconds, so a network-idle

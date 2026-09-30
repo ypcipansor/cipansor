@@ -11,8 +11,25 @@ vi.mock('@/lib/prisma', () => ({
       delete: vi.fn(),
       count: vi.fn(),
     },
+    student: {
+      findFirst: vi.fn(),
+    },
   },
 }));
+
+vi.mock('@/utils/generate-certificate-pdf', () => ({
+  generateCertificatePdfBuffer: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4')),
+}));
+
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    default: { ...actual, mkdirSync: vi.fn(), writeFileSync: vi.fn() },
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+  };
+});
 
 import { prisma } from '@/lib/prisma';
 import {
@@ -20,10 +37,32 @@ import {
   getCertificateById,
   getCertificates,
   verifyCertificate,
+  generateCertificatePdf,
+  type CertificateActor,
 } from '../certificates.service';
 
 const mocked = prisma as unknown as {
   digitalCertificate: Record<string, ReturnType<typeof vi.fn>>;
+  student: Record<string, ReturnType<typeof vi.fn>>;
+};
+
+/** A teacher in SD IT — reaches only their own unit's santri. */
+const teacher: CertificateActor = {
+  sub: 'teacher-1',
+  roleCode: 'SDIT_GURU',
+  unitId: 'unit-1',
+};
+/** A santri — reaches only themselves. */
+const santri: CertificateActor = {
+  sub: 'santri-user-1',
+  roleCode: 'SDIT_SISWA',
+  unitId: 'unit-1',
+};
+/** The yayasan super admin — reaches every santri. */
+const superAdmin: CertificateActor = {
+  sub: 'root-1',
+  roleCode: 'SUPER_ADMIN',
+  unitId: null,
 };
 
 const base = {
@@ -37,12 +76,16 @@ const base = {
 };
 
 describe('certificates service', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The writer must be able to reach the santri the certificate names.
+    mocked.student.findFirst.mockResolvedValue({ id: base.studentId });
+  });
 
   it('creates a certificate with a generated number and a real verification URL', async () => {
     mocked.digitalCertificate.create.mockResolvedValue({ id: 'cert-1' });
 
-    const result = await createCertificate(base, 'user-1');
+    const result = await createCertificate(base, 'user-1', teacher);
 
     expect(result).toEqual({ id: 'cert-1' });
     const arg = mocked.digitalCertificate.create.mock.calls[0][0];
@@ -52,11 +95,19 @@ describe('certificates service', () => {
     expect(arg.data.verificationUrl).toContain(encodeURIComponent(arg.data.certificateNumber));
   });
 
+  it('refuses to issue a certificate for a santri outside the writer\u2019s reach', async () => {
+    // `assertStudentInScope` finds nothing for a santri of another unit.
+    mocked.student.findFirst.mockResolvedValue(null);
+
+    await expect(createCertificate(base, 'user-1', teacher)).rejects.toThrow(/student/i);
+    expect(mocked.digitalCertificate.create).not.toHaveBeenCalled();
+  });
+
   it('generates unguessable certificate numbers and QR blobs', async () => {
     mocked.digitalCertificate.create.mockResolvedValue({ id: 'cert-1' });
     const seen = new Set<string>();
     for (let i = 0; i < 50; i++) {
-      await createCertificate({ ...base, certificateType: 'IJAZAH' }, 'user-1');
+      await createCertificate({ ...base, certificateType: 'IJAZAH' }, 'user-1', teacher);
       const arg = mocked.digitalCertificate.create.mock.calls[i][0];
       seen.add(arg.data.certificateNumber);
       expect(arg.data.qrCode).toMatch(
@@ -67,38 +118,59 @@ describe('certificates service', () => {
     expect(seen.size).toBe(50);
   });
 
-  it('returns a certificate by id', async () => {
-    mocked.digitalCertificate.findUnique.mockResolvedValue({ id: 'cert-1' });
-    await expect(getCertificateById('cert-1')).resolves.toEqual({ id: 'cert-1' });
-    expect(mocked.digitalCertificate.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'cert-1' } })
-    );
+  it('scopes a certificate lookup to the santri the caller may see', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue({ id: 'cert-1' });
+    await expect(getCertificateById('cert-1', teacher)).resolves.toEqual({ id: 'cert-1' });
+
+    const where = mocked.digitalCertificate.findFirst.mock.calls[0][0].where;
+    // The id is ANDed with the student scope, so another unit's certificate is
+    // not found rather than returned.
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[1].student).toEqual({ unitId: 'unit-1' });
   });
 
-  it('lists certificates with pagination metadata', async () => {
+  it('scopes a santri to their own certificates', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+    await getCertificateById('cert-other', santri);
+
+    const where = mocked.digitalCertificate.findFirst.mock.calls[0][0].where;
+    expect(where.AND[1].student).toEqual({ userId: 'santri-user-1' });
+  });
+
+  it('does not narrow a foundation role to a unit', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue({ id: 'cert-1' });
+    await getCertificateById('cert-1', superAdmin);
+
+    const where = mocked.digitalCertificate.findFirst.mock.calls[0][0].where;
+    expect(where.AND[1].student).toEqual({});
+  });
+
+  it('lists certificates with pagination metadata and the caller\u2019s scope', async () => {
     mocked.digitalCertificate.findMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
     mocked.digitalCertificate.count.mockResolvedValue(11);
 
-    const result = await getCertificates({ page: 2, limit: 2 });
+    const result = await getCertificates({ page: 2, limit: 2 }, teacher);
 
     expect(result.data).toHaveLength(2);
     expect(result.meta).toEqual({ page: 2, limit: 2, total: 11, totalPages: 6 });
-    expect(mocked.digitalCertificate.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ skip: 2, take: 2 })
-    );
+    const where = mocked.digitalCertificate.findMany.mock.calls[0][0].where;
+    expect(where.student).toEqual({ unitId: 'unit-1' });
   });
 
   it('filters by student, type and search term', async () => {
     mocked.digitalCertificate.findMany.mockResolvedValue([]);
     mocked.digitalCertificate.count.mockResolvedValue(0);
 
-    await getCertificates({
-      page: 1,
-      limit: 20,
-      studentId: base.studentId,
-      certificateType: 'TAHFIDZ',
-      search: 'juz',
-    });
+    await getCertificates(
+      {
+        page: 1,
+        limit: 20,
+        studentId: base.studentId,
+        certificateType: 'TAHFIDZ',
+        search: 'juz',
+      },
+      teacher
+    );
 
     const where = mocked.digitalCertificate.findMany.mock.calls[0][0].where;
     expect(where.studentId).toBe(base.studentId);
@@ -114,7 +186,9 @@ describe('certificates service', () => {
       certificate: { id: 'cert-1' },
     });
     expect(mocked.digitalCertificate.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { certificateNumber: 'TAH/09/2026/0001' } })
+      expect.objectContaining({
+        where: { certificateNumber: 'TAH/09/2026/0001', isPublic: true },
+      })
     );
   });
 
@@ -124,5 +198,45 @@ describe('certificates service', () => {
       valid: false,
       certificate: null,
     });
+  });
+
+  it('never verifies a private certificate through the public route', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+
+    await verifyCertificate('TAH/09/2026/PRIVATE');
+
+    // The `isPublic: true` predicate is what keeps a private certificate from
+    // being read by anyone holding its number.
+    expect(mocked.digitalCertificate.findFirst.mock.calls[0][0].where.isPublic).toBe(true);
+  });
+
+  it('renders a PDF for a certificate the caller may reach', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue({
+      id: 'cert-1',
+      certificateNumber: 'TAH/09/2026/ABCDEF0123',
+      title: 'Sertifikat',
+      issueDate: new Date('2026-09-01'),
+      signatoryName: 'Ust. Ahmad',
+      signatoryTitle: 'Musyrif',
+      verificationUrl: 'https://cipansor.or.id/public/verify-sanad?code=X',
+      student: null,
+      createdBy: null,
+    });
+    mocked.digitalCertificate.update.mockResolvedValue({ id: 'cert-1', pdfUrl: '/uploads/x.pdf' });
+
+    const result = await generateCertificatePdf('cert-1', teacher);
+
+    expect(result).toMatchObject({ id: 'cert-1' });
+    expect(mocked.digitalCertificate.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ pdfUrl: expect.stringMatching(/^\/uploads\//) }),
+      })
+    );
+  });
+
+  it('404s a PDF for a certificate outside the caller\u2019s reach', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+    await expect(generateCertificatePdf('cert-other', teacher)).rejects.toThrow(/not found/i);
+    expect(mocked.digitalCertificate.update).not.toHaveBeenCalled();
   });
 });

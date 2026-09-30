@@ -1,8 +1,15 @@
 #!/usr/bin/env python3
-"""Fail if any README/docs markdown references an image that is not on disk, or
-if a committed docs image is never referenced. Dangling images render as broken
-icons in the GitHub README, which is exactly the "does not display" defect this
-repo's gallery is meant to avoid.
+"""Fail if any README/docs markdown references an image that is not on disk.
+
+A dangling image renders as a broken icon in the GitHub README, which is exactly
+the "does not display" defect this repo's gallery is meant to avoid.
+
+Image paths in Markdown resolve relative to the referring document, not to the
+repository root: a guide at `docs/PANDUAN.md` writing `screens/x.png` means
+`docs/screens/x.png`. Resolving from the root instead made every guide image
+look missing while the files sat right where the guide pointed (the finding at
+`docs/README.md:R82-85`). Both bases are tried, so a legacy root-relative link
+in `README.md` still resolves.
 
     python3 scripts/check-doc-refs.py
 """
@@ -21,6 +28,32 @@ for name in os.listdir(os.path.join(ROOT, "docs")):
 IMG_RX = re.compile(r'(?:!\[[^\]]*\]\(([^)\s]+)|<img[^>]+src="([^"]+)")')
 EXTERNAL = ("http://", "https://", "data:")
 
+# Directories whose committed images are tracked for the orphan scan. Both the
+# hand-curated `docs/images/` gallery and the captured `docs/screens/` flow
+# shots are scanned; adding a third means adding it here.
+IMAGE_DIRS = [os.path.join("docs", "images"), os.path.join("docs", "screens")]
+IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+
+
+def resolve(doc: str, target: str) -> str | None:
+    """The repo-relative path `target` points at from `doc`, or None.
+
+    Markdown resolves a relative image path against the directory of the file
+    that contains it; a leading `/` resolves against the repo root.
+    """
+    target = target.split("?")[0].split("#")[0]
+    if target.startswith("/"):
+        candidates = [os.path.join(ROOT, target.lstrip("/"))]
+    else:
+        candidates = [
+            os.path.join(ROOT, os.path.dirname(doc), target),
+            os.path.join(ROOT, target),
+        ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return os.path.normpath(os.path.relpath(candidate, ROOT))
+    return None
+
 
 def main() -> int:
     referenced: set[str] = set()
@@ -34,23 +67,28 @@ def main() -> int:
             target = m.group(1) or m.group(2)
             if not target or target.startswith(EXTERNAL):
                 continue
-            target = target.split("?")[0].split("#")[0]
-            referenced.add(os.path.normpath(target))
-            full = os.path.join(ROOT, target)
-            if not os.path.exists(full):
+            resolved = resolve(doc, target)
+            if resolved is None:
                 missing.append((doc, target))
+                continue
+            referenced.add(resolved)
 
-    on_disk = set()
-    for root, _dirs, files in os.walk(os.path.join(ROOT, "docs", "images")):
-        for f in files:
-            on_disk.add(
-                os.path.normpath(os.path.relpath(os.path.join(root, f), ROOT))
-            )
+    on_disk: set[str] = set()
+    for image_dir in IMAGE_DIRS:
+        base = os.path.join(ROOT, image_dir)
+        for root, _dirs, files in os.walk(base):
+            for f in files:
+                if f.lower().endswith(IMAGE_EXT):
+                    on_disk.add(os.path.normpath(os.path.relpath(os.path.join(root, f), ROOT)))
+
+    orphans = sorted(on_disk - referenced)
 
     print(f"referenced: {len(referenced)}  on disk: {len(on_disk)}")
     for doc, target in sorted(missing):
         print(f"  MISSING {doc} -> {target}")
-    print(f"\n{len(missing)} dangling image reference(s)")
+    for orphan in orphans:
+        print(f"  ORPHAN {orphan}")
+    print(f"\n{len(missing)} dangling image reference(s), {len(orphans)} orphaned image(s)")
     return 1 if missing else 0
 
 

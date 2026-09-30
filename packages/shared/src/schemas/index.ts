@@ -15,3 +15,4 @@ export * from "./homeroom";
 export * from "./attendance";
 export * from "./donation";
 export * from "./accreditation";
+export * from "./certificate";
