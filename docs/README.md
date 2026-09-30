@@ -39,9 +39,9 @@ kode yang sebenarnya. Tiap dokumen punya sumber Markdown **dan** terbitan
 
 | Dokumen | Pembaca | Kerangka |
 |---|---|---|
-| [`DOKUMEN-TEKNIS.md`](./DOKUMEN-TEKNIS.md) `.docx` `.pdf` | pengurus, pengelola sistem, pengembang baru, auditor/donor | arc42 (12 bab) + C4 tingkat 1–3, 11 diagram |
-| [`PANDUAN-PENGGUNA-UMUM.md`](./PANDUAN-PENGGUNA-UMUM.md) `.docx` `.pdf` | staf dan guru | Diátaxis: tutorial, konsep, rujukan |
-| [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) `.docx` `.pdf` | guru | Diátaxis: buklet peran, kartu tugas |
+| [`DOKUMEN-TEKNIS.md`](./DOKUMEN-TEKNIS.md) | pengurus, pengelola sistem, pengembang baru, auditor/donor | arc42 (12 bab) + C4 tingkat 1–3, 11 diagram |
+| [`PANDUAN-PENGGUNA-UMUM.md`](./PANDUAN-PENGGUNA-UMUM.md) | staf dan guru | Diátaxis: tutorial, konsep, rujukan |
+| [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) | guru | Diátaxis: buklet peran, kartu tugas |
 | [`PANDUAN-PENGGUNA-MUSYRIF.md`](./PANDUAN-PENGGUNA-MUSYRIF.md) | musyrif | Diátaxis: buklet peran, kartu tugas |
 | [`PANDUAN-PENGGUNA-WALI-SANTRI.md`](./PANDUAN-PENGGUNA-WALI-SANTRI.md) | wali santri | Diátaxis: buklet peran, kartu tugas |
 | [`PANDUAN-PENGGUNA-TATA-USAHA.md`](./PANDUAN-PENGGUNA-TATA-USAHA.md) | tata usaha | Diátaxis: buklet peran, kartu tugas |
@@ -145,12 +145,14 @@ mencatat commit basisnya di sampul dan riwayat revisi.
 
 Draf 0.4, basis kode PR #512 (setelah `main` `2377f5fb`). Panduan pengguna kini
 berperingkat **T1** pada bagian yang sudah dijalankan: bab "Mulai Memakai
-Aplikasi" pada Panduan Umum, dan seluruh kartu tugas buklet **Guru**, **Musyrif**,
-dan **Wali Santri** — masing-masing memuat tangkapan layar asli dari alur yang
-lolos pada aplikasi berjalan. Bab konsep dan rujukan Panduan Umum, serta buklet
-peran lain (staf TU, bendahara, kepala unit, organ yayasan, santri), masih
-berperingkat **T2** (disusun dari kode, belum diuji per peran). Yang belum
-dikerjakan ada di [`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 8.
+Aplikasi" pada Panduan Umum, dan seluruh kartu tugas **delapan buklet peran** —
+**Guru**, **Musyrif**, **Wali Santri**, **Tata Usaha**, **Bendahara**,
+**Kepala Unit**, **Pengurus Yayasan**, dan **Santri** — masing-masing memuat
+tangkapan layar asli dari alur yang lolos pada aplikasi berjalan. Bab konsep dan
+rujukan Panduan Umum masih berperingkat **T2** (disusun dari kode, belum diuji
+sebagai bacaan konsep). Yang belum dikerjakan ada di
+[`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 10.
 
 Seluruh keluaran lolos pemeriksa mesin pada 30 September 2026: `check_docs.py`
-0 ERROR, `scan_sensitive.py` bersih.
+0 ERROR/0 WARN untuk kesepuluh dokumen, `scan_sensitive.py` bersih, PDF tanpa
+halaman kosong.

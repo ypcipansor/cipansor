@@ -122,20 +122,44 @@ def cmd_select(a: argparse.Namespace) -> int:
         out_manifest.append({
             "path": rel, "source": key, "flow": info.get("flow", "atlas"),
             "step": info.get("id", info.get("href", "")), "caption": info.get("caption", info.get("title", "")),
+            "url": info.get("url", ""),
             "bytes": dst.stat().st_size, "width": dims[0] if dims else None,
         })
         print(f"OK     {rel}  ({note})")
     unused = sorted(k for k in steps if k not in used_steps)
     if unused:
         print(f"\nCatatan: {len(unused)} tangkapan alur tidak dirujuk naskah dan TIDAK disalin (mis. {unused[0]}).")
+    # Dua gambar dari HALAMAN yang sama biasanya salah satu kartu menunjuk langkah yang keliru —
+    # gejalanya "Papan Peringkat" dan "Kelola Target" sama-sama menampilkan /ibadah.
+    by_url: dict[str, list[str]] = {}
+    for e in out_manifest:
+        u = (steps.get(e["source"]) or pages.get(e["source"]) or {}).get("url", "")
+        if u:
+            by_url.setdefault(u, []).append(e["path"])
+    for url, paths in sorted(by_url.items()):
+        if len(paths) > 1:
+            print(f"PERINGATAN: {len(paths)} gambar diambil dari halaman yang sama ({url}): {', '.join(paths)} — "
+                  "periksa apakah salah satunya butuh halaman lain (mis. /ibadah/leaderboard vs /ibadah/targets).")
     mp = md.parent / "screens" / "manifest.json"
     mp.parent.mkdir(parents=True, exist_ok=True)
     # gabungkan dengan manifes lama supaya beberapa naskah berbagi satu screens/
     old = json.loads(mp.read_text(encoding="utf-8")) if mp.is_file() else []
     keep = [e for e in old if e["path"] not in {m["path"] for m in out_manifest}]
+    referenced = set()
+    for other in md.parent.glob("*.md"):
+        for _, p in IMG_RE.findall(other.read_text(encoding="utf-8")):
+            if p.startswith("screens/"):
+                referenced.add(p)
+    stale = sorted(e["path"] for e in keep if e["path"] not in referenced)
+    if a.prune and stale:
+        keep = [e for e in keep if e["path"] not in set(stale)]
     mp.write_text(json.dumps(keep + out_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     total = sum(m["bytes"] for m in out_manifest) // 1024
     print(f"\n{len(out_manifest)} gambar disalin ({total} KB). Manifes: {mp}")
+    if stale:
+        hint = "dibuang (--prune)" if a.prune else "tetap ada — jalankan ulang dengan --prune bila tidak ada naskah yang memakainya"
+        print(f"Catatan: {len(stale)} entri manifes tidak lagi dirujuk naskah mana pun dan {hint} "
+              f"(mis. {stale[0]}).")
     if total > a.budget_kb:
         print(f"PERINGATAN: {total} KB melebihi anggaran {a.budget_kb} KB untuk satu naskah — kurangi gambar (satu per layar penentu).")
     return 1 if bad else 0
@@ -204,6 +228,8 @@ def main() -> int:
     s.add_argument("--capture", required=True)
     s.add_argument("--max-width", type=int, default=1280)
     s.add_argument("--budget-kb", type=int, default=2500)
+    s.add_argument("--prune", action="store_true",
+                   help="buang entri manifes yang tidak lagi dirujuk naskah mana pun (mis. setelah gambar diganti)")
     s.set_defaults(fn=cmd_select)
     b = sub.add_parser("storyboard")
     b.add_argument("--report", required=True)

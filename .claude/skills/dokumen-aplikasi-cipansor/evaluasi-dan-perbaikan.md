@@ -82,3 +82,33 @@ Dua cacat pada `build_docs.py` diperbaiki:
    tinggi; kini paragraf tersendiri.)
 
 Catatan lingkungan: `LD_LIBRARY_PATH` yang mengarah ke `/usr/lib/libreoffice/program` membuat `soffice` gagal start.
+
+## 30 September 2026 (kedua, OpenHands)
+
+Lima buklet peran yang tersisa disusun (TU/staf, bendahara, kepala unit, organ
+yayasan, santri) dan satu **cacat mutu gambar** yang lolos semua pemeriksa
+ditemukan serta ditutup.
+
+**Cacat gambar (A13).** Di buklet santri, gambar "Papan Peringkat" dan "Kelola
+Target" sama-sama menampilkan layar Jurnal Ibadah: kedua langkah alur memakai
+`goto /ibadah`, padahal halaman sebenarnya adalah `/ibadah/leaderboard` dan
+`/ibadah/targets`. `screenshot-flow.ts` hanya memeriksa teks `see` — yang kebetulan
+juga ada di `/ibadah` — jadi alur "lolos" dengan gambar yang salah. Satu-satunya
+cara menemukannya: membuka gambarnya.
+
+**Perbaikan mekanis (agar tak terulang):**
+- `screens_manifest.py select` menulis `url` tiap gambar ke `manifest.json` dan
+  **memperingatkan** bila dua gambar berasal dari halaman yang sama; ditambah opsi
+  `--prune` untuk membuang entri manifes yang tidak lagi dirujuk naskah mana pun
+  (sebelumnya manifes menumpuk entri basi).
+- `check_docs.py` menambah pemeriksa `gambar-halaman-kembar` (WARN) yang membaca
+  `url` dari manifes — memperingatkan bila dua gambar di satu naskah berbagi halaman.
+- Batas yang jujur: gambar lama (dibuat sebelum `url` ditambahkan) belum membawa
+  `url`, jadi pemeriksa belum menjangkaunya. Aturan "buka gambar sebelum
+  menyerahkan" tetap berlaku; `see` yang cocok bukan bukti layarnya benar.
+
+**Standar diperiksa ulang (ketiga).** Ditambahkan **IEC/IEEE 82079-1:2019** —
+acuan normatif tunggal 26514:2022 ("horizontal" → "vertikal"). Ia menjelaskan
+*mengapa* buklet per peran benar (lengkap-tidak-berlebih) dan menguatkan bagian
+"Bila tidak berhasil" (pemulihan dari kesalahan di dalam prosedur). Yang tidak
+diambil: persyaratan keselamatan produk dan pelabelan.

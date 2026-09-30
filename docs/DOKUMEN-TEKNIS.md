@@ -7,6 +7,7 @@
 | 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode `apps/` dan `packages/` identik dengan `aefc719`) | Diperiksa ulang dengan pemeriksa skill terbaru: baris keputusan `dokumentasi-bergambar.md` ditambahkan ke bab 9; sebutan pekerjaan terjadwal dirapikan. Angka diukur ulang, tidak berubah | Agen OpenHands |
 | 0.4 | 30 September 2026 | commit `40780b26` (kode `apps/` dan `packages/` menyatukan cabang README/galeri visual) | Angka diukur ulang setelah modul `certificates` masuk: 94 modul API, 67 modul empat berkas, 25 lengkap lima bagian, ~1.412 handler; `certificates` ditambahkan ke tabel ranah 5.3 dan Lampiran A; perbaikan `params` Next 16 diserahkan ke implementasi cabang ini dan dikunci uji penjaga `next-dynamic-params.guard.test.ts` | Agen OpenHands |
 | 0.5 | 30 September 2026 | commit `a4735001` (kode `apps/` dan `packages/` identik dengan `40780b26`) | Diperiksa ulang dengan pemeriksa skill terbaru: seluruh bab, Lampiran A, dan bab 9–11 lolos `check_docs.py --final` 0 ERROR. Angka diukur ulang, tidak berubah | Agen OpenHands |
+| 0.6 | 30 September 2026 | commit `a4735001` (kode tidak berubah) | Lampiran B: versi arc42 disebut tegas (v9, Juli 2025 — 12 bab tetap) setelah pemeriksaan ulang standar; pemeriksa `check_docs.py --final` tetap 0 ERROR/0 WARN | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -811,4 +812,4 @@ Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure)
 | Pekerjaan terjadwal | `apps/api/src/jobs/scheduler.ts` |
 | Penempatan | `docker-compose.yml`, `.github/workflows/*`, `docs/deploy-azure.md`, `docs/DEPLOYMENT.md`, `deploy/azure/nginx/` |
 | Keputusan | `.claude/memory/decisions/*.md`, `.claude/memory/INDEX.md` |
-| Diagram & kerangka | arc42 (arc42.org), Model C4 (c4model.com) |
+| Diagram & kerangka | arc42 v9 (arc42.org, Juli 2025 — 12 bab tetap), Model C4 (c4model.com) |

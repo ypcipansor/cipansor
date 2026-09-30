@@ -154,6 +154,54 @@ DOKUMEN-TEKNIS (`--final`), PANDUAN-UMUM, -GURU, -MUSYRIF, -WALI-SANTRI;
 `scan_sensitive.py` bersih (5 berkas); `build_docs.py` menghasilkan `.docx`/`.pdf`
 untuk kelima panduan tanpa galat.
 
-**Belum selesai.** Buklet TU/staf, bendahara, kepala unit, organ yayasan, dan
-santri; bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen belum
-berjalan di CI.
+**Belum selesai.** Bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen
+belum berjalan di CI.
+
+# 10. Tindak lanjut 2026-09-30 (kedua)
+
+Sesi ini menyelesaikan lima buklet peran yang tersisa dan menutup satu cacat
+mutu gambar.
+
+**Buklet peran lengkap (8).** `PANDUAN-PENGGUNA-TATA-USAHA`, `-BENDAHARA`,
+`-KEPALA-UNIT`, `-PENGURUS-YAYASAN`, dan `-SANTRI` menyusul `-GURU`, `-MUSYRIF`,
+dan `-WALI-SANTRI`. Kelimanya T1: alur tangkapan (`layanan-tata-usaha`,
+`keuangan-bendahara`, `kepemimpinan-kepala-unit`, `tata-kelola-yayasan`,
+`keseharian-santri`) dijalankan pada aplikasi berjalan dan **semuanya lolos**;
+tiap kartu memuat tangkapan layar asli. `docs/README.md` kini memetakan peran ke
+bukletnya.
+
+**Cacat mutu gambar yang ditemukan dan diperbaiki.** Dua gambar di buklet santri
+sama-sama menampilkan layar Jurnal Ibadah: kartu **Papan Peringkat** (langkahnya
+`goto /ibadah`) dan kartu **Kelola Target** (halaman sebenarnya
+`/ibadah/targets`, bukan `/ibadah`). Kedua langkah alur diperbaiki
+(`/ibadah/leaderboard`, `/ibadah/targets`), alur ditangkap ulang (17/17 lolos),
+dan gambarnya diganti. Cacat ini **lolos semua pemeriksa** karena
+`screenshot-flow.ts` hanya memeriksa teks `see`, bukan apakah tangkapan cocok
+dengan judul kartunya — satu-satunya cara menemukannya adalah membuka gambarnya.
+Pelajaran dicatat di `references/kesalahan-yang-sudah-terjadi.md` (A13).
+
+**Pemeriksa diperkuat** (menutup kelas cacat di atas secara mekanis):
+- `screens_manifest.py select` menulis `url` tiap gambar ke manifes dan
+  memperingatkan bila dua gambar berasal dari halaman yang sama, plus opsi
+  `--prune` untuk membuang entri manifes yang tak lagi dirujuk.
+- `check_docs.py` menambah pemeriksa `gambar-halaman-kembar` (WARN) yang membaca
+  `url` dari manifes.
+- Peringatan itu **hanya menemukan kasus yang manifesnya baru** (membawa `url`);
+  gambar lama tanpa `url` tidak diperiksa. Karena itu aturan menyemat tetap:
+  **buka gambar sebelum menyerahkan**, `see` yang cocok tidak menjamin layarnya
+  benar.
+
+**Standar diperiksa ulang (ketiga).** Ditambahkan **IEC/IEEE 82079-1:2019**
+sebagai acuan normatif 26514:2022 (standar horizontal → vertikal), yang
+memperkuat *mengapa* buklet per peran dipilih: "lengkap, tidak berlebih" dan
+pemulihan dari kesalahan di dalam prosedur. Yang tidak diambil: persyaratan
+keselamatan produk dan pelabelan.
+
+**Pemeriksa mesin (30 September 2026, kedua).** `check_docs.py` 0 ERROR/0 WARN
+untuk **sepuluh** berkas (DOKUMEN-TEKNIS `--final` dan sembilan panduan);
+`scan_sensitive.py` bersih; `build_docs.py` menghasilkan `.docx`/`.pdf` untuk
+kesepuluh dokumen; PDF tanpa halaman kosong.
+
+**Belum selesai.** Bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen
+belum berjalan di CI; sebagian gambar lama di manifes belum membawa `url`
+sehingga pemeriksa halaman-kembar belum menjangkaunya.

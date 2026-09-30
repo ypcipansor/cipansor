@@ -31,6 +31,7 @@ memilih antara dua cara menyusun. Untuk *cara mengerjakan*, buka
 | Menata panduan pengguna | **Diátaxis** (tutorial · panduan tugas · rujukan · penjelasan) | pemisah jenis isi | Orang membuka panduan dengan empat niat berbeda: belajar dari nol, menyelesaikan satu tugas, mencari fakta, memahami alasan. Mencampurnya membuat panduan tebal dan sulit dipakai. Diátaxis adalah *peta dan kompas*, bukan format wajib: yang penting satu halaman satu jenis. |
 | Cara menulis tiap topik | **Penulisan berbasis topik + minimalisme (Carroll)** | disiplin menulis | Topik kecil yang berorientasi tugas mengalahkan narasi panjang yang "menjelaskan semuanya". Pembaca sibuk tidak membaca pendahuluan; mulai dari prosedur, potong basa-basi, dan jadikan kesalahan sebagai hal yang bisa dipulihkan (kartu tugas punya bagian "Bila tidak berhasil"). Ini yang membuat satu kartu tugas utuh dan pendek. |
 | Isi & mutu panduan pengguna | **ISO/IEC/IEEE 26514:2022** (rancangan & pengembangan informasi untuk pengguna) | daftar periksa | Meminta dokumentasi berangkat dari analisis pengguna dan tugasnya (bukan dari daftar menu), memuat unsur lazim (pendahuluan, prosedur, penanganan masalah, glosarium), memakai istilah yang konsisten, dan **diuji pada pembaca sungguhan** (26513 mengatur pengujiannya). |
+| Struktur informasi untuk dipakai (produk/sistem) | **IEC/IEEE 82079-1:2019** (penyusunan *information for use*) | daftar periksa pelengkap | Standar payung yang dipakai 26514:2022 sebagai acuan normatif. Ia menuntut informasi yang **lengkap tetapi tidak berlebih**, berorientasi tugas, dan menempatkan **keselamatan/pemulihan dari kesalahan** sebagai bagian prosedur — sejalan dengan "Bila tidak berhasil" di kartu tugas. Dipakai untuk menimbang *kelengkapan* isi, bukan format. |
 | Menjaga dokumen tetap ramping | **Dokumentasi ramping (agile/lean)** | sikap kerja | "Cukup, tidak berlebih": dokumentasikan konsep yang stabil, bukan gagasan spekulatif; jangan salin apa yang sudah punya satu sumber; perbarui hanya bila perlu. Selaras dengan aturan repo "angka dari kode" dan "rangkum, jangan salin". |
 | Cara mengelola berkas | **Docs-as-code** | praktik kerja | Dokumen dekat dengan kode, ditulis dalam Markdown, angka dihitung dari kode. Sesuai dengan cara repo ini bekerja dan menekan dokumen basi. |
 
@@ -84,6 +85,24 @@ ditujukan kepada pengguna. Terapannya di sini: kontrak API yang dibaca klien
 "informasi untuk pengguna" yang tunduk aturan kejelasan dan konsistensi istilah
 yang sama — bukan sekadar artefak teknis.
 
+### IEC/IEEE 82079-1:2019 → kelengkapan isi
+82079-1 adalah standar **horizontal** (semua jenis produk); 26514:2022 adalah
+standar **vertikal** untuk perangkat lunak dan secara eksplisit "based on the
+requirements applicable to all types of products in IEC/IEEE 82079-1:2019" —
+82079-1 satu-satunya acuan normatifnya. Yang diambil dari 82079-1 sebagai daftar
+periksa:
+- **Lengkap, tetapi tidak berlebih** — pengguna menemukan apa yang ia butuh untuk
+  tugasnya tanpa harus membaca yang tidak relevan. Di sini: buklet per peran,
+  bukan satu buku raksasa; satu kartu satu tugas.
+- **Pemulihan dari kesalahan masuk prosedur**, bukan lampiran terpisah. Di sini:
+  bagian "Bila tidak berhasil" pada tiap kartu.
+- **Prosedur langkah demi langkah** sebagai bentuk baku untuk tugas yang berurutan
+  (82079-1 menyebutnya *step-by-step instructions*). Di sini: "Langkah." bernomor
+  pada tiap kartu.
+Yang **tidak** diambil: persyaratan keselamatan produk, pelabelan, dan
+pernyataan kesesuaian — dokumen ini dokumentasi perangkat lunak internal, bukan
+lembar instruksi produk. Sumber: IEC/IEEE 82079-1:2019 (cancels IEC 82079-1:2012).
+
 ### Minimalisme (Carroll) + penulisan berbasis topik → cara menulis
 Bukan kerangka bab, melainkan cara menulis **di dalam** tiap bab dan kartu:
 - **Mulai dari prosedur.** Pembaca yang sibuk tidak membaca pendahuluan; bagian
@@ -129,7 +148,9 @@ yang pantas diikuti. Hasilnya:
 
 - **arc42 tetap 12 bab** (arc42.org/overview; contoh arc42-by-Example). Tidak ada
   perubahan struktur; bab 1 tetap memuat *tujuan mutu* lebih dulu, bukan daftar
-  kebutuhan.
+  kebutuhan. Versi terbit saat ini **v9 (Juli 2025)** — penomoran bab tidak
+  berubah sejak v8; yang bertambah hanya terjemahan. Dokumen menyebut versinya di
+  Lampiran B supaya pembaca tahu acuan mana yang dipakai.
 - **C4 — peringatan volatilitas, dari pembuatnya sendiri.** Simon Brown (GOTO
   2026; YOW! 2025) menyarankan memulai dari **dua tingkat teratas** (konteks dan
   kontainer) karena keduanya jarang berubah, sedangkan tingkat 3 (komponen) dan
@@ -154,6 +175,12 @@ yang pantas diikuti. Hasilnya:
   `build_docs.py` memverifikasi hasil. Yang belum: menjalankannya di CI. Selama
   biner tidak dilacak git, dokumen Markdown ditinjau seperti kode lain, dan
   pemeriksa dijalankan sebelum menyerahkan dokumen (lihat `docs/README.md`).
+- **IEC/IEEE 82079-1:2019 ditambahkan sebagai acuan pelengkap.** 26514:2022
+  menyebutnya normatif; ia menyumbang tiga tuntutan yang sudah dipegang skill ini
+  (lengkap-tidak-berlebih, pemulihan dari kesalahan di dalam prosedur, prosedur
+  langkah demi langkah) dan menjelaskan **mengapa** buklet per peran lebih benar
+  daripada satu buku untuk semua orang. Yang tidak diambil: persyaratan
+  keselamatan produk dan pelabelan — ini dokumentasi perangkat lunak internal.
 
 Sumber tambahan yang dikutip di bagian ini: Simon Brown, *The C4 Model* (GOTO
 2026, YOW! 2025); llmstxt.org dan laporan adopsi 2026; panduan docs-as-code 2026.
@@ -187,5 +214,6 @@ Sumber tambahan yang dikutip di bagian ini: Simon Brown, *The C4 Model* (GOTO
 | Diátaxis | diataxis.fr |
 | ISO/IEC/IEEE 26514:2022 (+ keluarga 2651x) | standards.ieee.org, iso.org |
 | Minimalisme | Carroll, *The Nurnberg Funnel* (1990); ringkasan teknis-komunikasi |
+| IEC/IEEE 82079-1:2019 (informasi untuk dipakai) | standards.ieee.org, iso.org (cancels IEC 82079-1:2012) |
 | Dokumentasi ramping | agilemodeling.com/essays/agiledocumentation.htm |
 

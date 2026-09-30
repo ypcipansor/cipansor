@@ -20,6 +20,7 @@ menulis; jalankan `check_docs.py` sesudah tiap bab. Kolom *Pemeriksa* menyebut k
 | A10 | Menu avatar ditulis "Keluar"; layarnya "Logout". Ubah kata sandi ditulis di "Settings"; sebenarnya Profile → Keamanan | Label diterjemahkan/ditebak dari nama menu | `label-layar` (sebagian), jejak `--trace` | Cari labelnya: `grep -rn "Logout" apps/web/src` |
 | A11 | Kartu absensi: status "Alpa" sebagai tombol (tombolnya **Tidak Hadir**, berbentuk ikon); penyebab `Simpan` nonaktif dikarang ("belum ada perubahan") | Kartu T2 disusun tanpa membaca `page.tsx` sampai selesai | `label-layar`, `pesan-karangan`; resep T2 | Baca nilai bawaan, `disabled`, label, toast dari `page.tsx` |
 | A12 | Pesan "Tidak memiliki akses" dikutip dalam tanda kutip; tak ada di kode | Pesan diparafrase lalu dikutip | `pesan-karangan` | Salin persis dari toast/Alert/pesan API |
+| A13 | Dua gambar di buklet santri sama-sama menampilkan Jurnal Ibadah: "Papan Peringkat" (langkahnya `goto /ibadah`) dan "Kelola Target" (halaman sebenarnya `/ibadah/targets`) | Langkah alur tidak menunjuk halaman yang dimaksud; tak seorang pun membuka gambarnya | tak otomatis — `screenshot-flow.ts` hanya memeriksa `see`, bukan apakah tangkapan cocok dengan judul kartu | Arahkan langkah `goto` ke halaman yang benar (`/ibadah/leaderboard`, `/ibadah/targets`) dan **buka gambarnya** sebelum menyerahkan; `see` yang cocok tidak menjamin layarnya benar |
 
 ## B. Kebocoran dan kepekaan
 

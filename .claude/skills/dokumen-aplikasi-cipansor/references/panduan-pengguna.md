@@ -1,7 +1,9 @@
 # Panduan Pengguna — cara menyusun
 
 Kerangka: Diátaxis (tutorial · panduan tugas · rujukan · penjelasan) dengan
-daftar periksa mutu ISO/IEC/IEEE 26514:2022 (edisi ketiga, berlaku 2026). Alasannya di `standar-dan-alasan.md`.
+daftar periksa mutu ISO/IEC/IEEE 26514:2022 (edisi ketiga, berlaku 2026) dan
+IEC/IEEE 82079-1:2019 (acuan normatif 26514 untuk *information for use*).
+Alasannya di `standar-dan-alasan.md`.
 Templatnya: `assets/template-panduan.md` (bagian umum + buklet peran) dan
 `assets/template-kartu-tugas.md`.
 

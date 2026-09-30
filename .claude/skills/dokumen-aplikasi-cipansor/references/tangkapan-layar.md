@@ -118,7 +118,18 @@ python scripts/screens_manifest.py select --md docs/PANDUAN-PENGGUNA-GURU.md --c
 ```
 
 `select` menyalin **hanya** gambar yang dirujuk naskah, mengecilkannya (lebar ≤ 1280 px, 256 warna; ≈ 145 → 55 KB), menolak gambar
-dari langkah yang GAGAL, dan menulis `screens/manifest.json`. Gambar yang tidak dirujuk tidak masuk git.
+dari langkah yang GAGAL, menulis `screens/manifest.json`, dan merekam `url` halaman tiap gambar. Dua peringatan yang harus
+Anda tanggapi, bukan diabaikan:
+
+- **`PERINGATAN: N gambar diambil dari halaman yang sama (…/ibadah)`** — biasanya salah satu kartu menunjuk langkah yang
+  keliru. Inilah gejala yang meloloskan "Papan Peringkat" dan "Kelola Target" sama-sama berisi layar `/ibadah` (A13 di
+  `kesalahan-yang-sudah-terjadi.md`): arahkan `goto` langkah itu ke halaman yang benar (`/ibadah/leaderboard`,
+  `/ibadah/targets`) lalu tangkap ulang. `check_docs.py` mengulang peringatan yang sama sebagai `gambar-halaman-kembar`.
+- **`Catatan: N entri manifes … tidak lagi dirujuk naskah mana pun`** — manifes menumpuk entri basi setelah gambar diganti.
+  Tambahkan `--prune` untuk membuangnya.
+
+Gambar yang tidak dirujuk tidak masuk git. **`see` yang cocok bukan bukti layarnya benar** — buka gambarnya sebelum
+menyerahkan; pemeriksa hanya melihat teks, bukan isi gambar.
 
 Bentuk di naskah (jalur relatif terhadap naskah; **baris kosong** antara gambar dan keterangan; alt = keterangan):
 

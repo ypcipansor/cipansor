@@ -620,6 +620,19 @@ def check_images(text: str, lines: list[str], md_dir: Path, kind: str, r: Report
         if rel.startswith("screens/") and not manifest:
             r.add("ERROR", n, "manifes-tak-ada", "screens/manifest.json tidak ada — jalankan screens_manifest.py select")
 
+    # Dua gambar dari halaman yang sama biasanya salah satu kartu menunjuk halaman keliru
+    # ("Papan Peringkat" dan "Kelola Target" sama-sama /ibadah). Sumber: `url` di manifes.
+    by_url: dict[str, list[int]] = {}
+    for ln, rel in imgs_by_line.items():
+        e = manifest.get(rel)
+        if e and e.get("url"):
+            by_url.setdefault(e["url"], []).append(ln)
+    for url, lns in sorted(by_url.items()):
+        if len(lns) > 1:
+            r.add("WARN", lns[0], "gambar-halaman-kembar",
+                  f"{len(lns)} gambar diambil dari halaman yang sama ({url}) — periksa apakah salah satunya "
+                  "butuh halaman lain, lalu arahkan langkah alurnya dan tangkap ulang")
+
     if kind != "pengguna":
         return
     secs = section_ranges(lines)
