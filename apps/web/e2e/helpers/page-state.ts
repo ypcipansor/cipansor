@@ -29,6 +29,12 @@ const hasEmptyBody = (html: string): boolean =>
  * throws or returns an empty document, and a page that settles on /login still
  * fails the caller's URL assertion. Nothing here weakens an assertion; it only
  * stops reading the DOM at a moment Playwright cannot serve.
+ *
+ * The **last** observation is the one reported. A successful read clears any
+ * earlier navigation error, so a page that threw once and then returned an
+ * empty document times out on the empty document (the caller sees the ~39-char
+ * placeholder) instead of re-raising a stale "page is navigating" from an
+ * iteration the retry loop already moved past.
  */
 export async function settledContent(
   page: Page,
@@ -43,6 +49,9 @@ export async function settledContent(
       const html = await page.content();
       if (html && !hasEmptyBody(html)) return html;
       lastContent = html;
+      // This read is the newest observation: drop any earlier navigation error
+      // so a timeout reports the final state, not one the loop already retried.
+      lastError = undefined;
     } catch (error) {
       lastError = error;
     }
