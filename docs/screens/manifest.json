@@ -617,7 +617,7 @@
     "flow": "keseharian-santri",
     "step": "02-hafalan",
     "caption": "Hafalan Saya: setoran dan capaian hafalan Al-Quran.",
-    "bytes": 34092,
+    "bytes": 34367,
     "width": 1024
   },
   {
@@ -626,16 +626,25 @@
     "flow": "keseharian-santri",
     "step": "03-jurnal-ibadah",
     "caption": "Jurnal Ibadah: catatan sholat, tilawah, dan target ibadah.",
-    "bytes": 38390,
+    "bytes": 38088,
     "width": 1024
   },
   {
-    "path": "screens/keseharian-santri/04-papan-peringkat.png",
-    "source": "keseharian-santri/04-papan-peringkat.png",
+    "path": "screens/keseharian-santri/16-papan-peringkat.png",
+    "source": "keseharian-santri/16-papan-peringkat.png",
     "flow": "keseharian-santri",
-    "step": "04-papan-peringkat",
-    "caption": "Papan Peringkat: peringkat ketekunan ibadah antar santri.",
-    "bytes": 38390,
+    "step": "16-papan-peringkat",
+    "caption": "Papan Peringkat ibadah: peringkat ketekunan antar santri.",
+    "bytes": 31520,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/17-target-ibadah.png",
+    "source": "keseharian-santri/17-target-ibadah.png",
+    "flow": "keseharian-santri",
+    "step": "17-target-ibadah",
+    "caption": "Kelola Target Ibadah: menetapkan target harian santri.",
+    "bytes": 33485,
     "width": 1024
   },
   {
@@ -644,7 +653,7 @@
     "flow": "keseharian-santri",
     "step": "05-muhasabah",
     "caption": "Muhasabah Harian: refleksi diri santri setiap hari.",
-    "bytes": 36003,
+    "bytes": 35707,
     "width": 1024
   },
   {
@@ -653,7 +662,7 @@
     "flow": "keseharian-santri",
     "step": "06-ujian-online",
     "caption": "Ujian Online: daftar ujian yang tersedia untuk dikerjakan.",
-    "bytes": 28555,
+    "bytes": 28337,
     "width": 1024
   },
   {
@@ -662,7 +671,7 @@
     "flow": "keseharian-santri",
     "step": "07-portofolio",
     "caption": "Portofolio Saya: kumpulan karya dan prestasi santri.",
-    "bytes": 32499,
+    "bytes": 32089,
     "width": 1024
   },
   {
@@ -671,7 +680,7 @@
     "flow": "keseharian-santri",
     "step": "11-kitab-kuning",
     "caption": "Kitab Kuning: capaian kajian kitab per santri.",
-    "bytes": 35874,
+    "bytes": 35946,
     "width": 1024
   },
   {
@@ -680,7 +689,7 @@
     "flow": "keseharian-santri",
     "step": "14-aduan",
     "caption": "Aduan & Aspirasi: menyampaikan keluhan atau saran ke unit.",
-    "bytes": 34113,
+    "bytes": 33916,
     "width": 1024
   }
 ]

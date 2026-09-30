@@ -3,6 +3,7 @@
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
 | 0.1 | 30 September 2026 | aplikasi berjalan dari kode commit `a4735001` | **T1 — terverifikasi di aplikasi berjalan** | Penyusunan awal; tiap kartu dijalankan dengan akun demo santri pada tumpukan lokal (PostgreSQL + API :3001 + web :3000) dan memuat tangkapan layar asli |
+| 0.2 | 30 September 2026 | aplikasi berjalan dari kode commit `a4735001` | **T1 — terverifikasi di aplikasi berjalan** | Gambar Papan Peringkat diambil ulang dari halaman `/ibadah/leaderboard` (tangkapan pertama keliru memakai layar Jurnal Ibadah); kartu "Menetapkan target ibadah" memakai tangkapan halaman **Kelola Target Ibadah** yang sebenarnya, bukan Jurnal Ibadah |
 
 > **Tingkat verifikasi T1.** Semua kartu tugas di bawah sudah **dijalankan pada
 > aplikasi berjalan** dengan akun demo santri, dan tiap kartu memuat tangkapan
@@ -109,7 +110,7 @@ Giliran guru tahfidz atau musyrif mencatat setoran berikutnya.
 
 *Gambar 2. Jurnal Ibadah: catatan sholat, tilawah, dan target ibadah.*
 
-![Gambar 3. Papan Peringkat: peringkat ketekunan ibadah antar santri.](screens/keseharian-santri/04-papan-peringkat.png){width=14cm}
+![Gambar 3. Papan Peringkat: peringkat ketekunan ibadah antar santri.](screens/keseharian-santri/16-papan-peringkat.png){width=14cm}
 
 *Gambar 3. Papan Peringkat: peringkat ketekunan ibadah antar santri.*
 
@@ -144,9 +145,9 @@ diperbarui. Giliran wali kelas atau musyrif memverifikasinya.
 3. Isi jenis ibadah dan targetnya, lalu klik **Simpan Target**.
    *Target baru tampil di daftar target Anda.*
 
-![Gambar 4. Jurnal Ibadah beserta tombol Kelola Target untuk menetapkan target harian.](screens/keseharian-santri/03-jurnal-ibadah.png){width=14cm}
+![Gambar 4. Kelola Target Ibadah: menetapkan target harian santri.](screens/keseharian-santri/17-target-ibadah.png){width=14cm}
 
-*Gambar 4. Jurnal Ibadah beserta tombol Kelola Target untuk menetapkan target harian.*
+*Gambar 4. Kelola Target Ibadah: menetapkan target harian santri.*
 
 **Hasilnya, dan giliran siapa berikutnya.** Target Anda tersimpan dan menjadi
 ukuran jurnal ibadah harian.
