@@ -5,8 +5,10 @@
 > kebijakan sandi (ganti karena kejadian, bukan kalender; panjang dan daftar
 > terlarang, bukan aturan campuran). KEPUTUSAN 2026-09-29: "Masuk dengan
 > Google" untuk akun @cipansor.or.id saja, dan peran wajib 2FA tetap memasukkan
-> kode Cipansor sesudah Google. Riset dan sumbernya ada di bawah; jangan
-> diulang.
+> kode Cipansor sesudah Google. KEPUTUSAN 2026-09-30: passkey Cipansor sebagai
+> jalur masuk **pertama** (Model A), sandi + TOTP + kode pemulihan tetap sebagai
+> fallback; satu passkey memenuhi kewajiban 2FA. Riset dan sumbernya ada di
+> bawah; jangan diulang.
 
 **Keputusan pengguna 2026-09-28.** Usulan awalnya: tidak ada yang wajib 2FA,
 dan semua pengguna diajak mengaktifkannya setiap selesai login. Pengguna lalu
@@ -54,6 +56,55 @@ memilih dari opsi yang disertai riset berikut.
   - aturan campuran huruf besar/kecil/angka dilepas;
   - sandi umum atau bocor ditolak lewat **daftar lokal**, tanpa mengirim apa
     pun ke layanan pihak ketiga.
+
+## Passkey (FIDO2/WebAuthn) — diputuskan 2026-09-30
+
+Pengguna memilih **Model A versi ringan**: passkey Cipansor sebagai **jalur masuk
+pertama**, bukan sebagai faktor kedua setelah sandi.
+
+- **Tampilan Masuk.** Tombol **"Masuk dengan passkey"** di atas form sandi, bukan
+  di bawahnya; form sandi tetap ada sebagai *fallback* (FIDO Alliance: passkey
+  adalah pengganti faktor pertama, bukan tambahan di belakangnya).
+- **Satu passkey memenuhi kewajiban 2FA.** Passkey adalah autentikator
+  multifaktor (memiliki perangkat + biometrik/PIN) dan memenuhi AAL2 menurut
+  NIST SP 800-63B-4 dan OWASP, jadi pengguna ber-`requiresSecondFactor` yang
+  masuk lewat passkey Cipansor **tidak** diminta kode Cipansor lagi. Kewajiban
+  tetap dipenuhi lewat `SECOND_FACTOR_ROLE_CODES` — tidak ada daftar kedua.
+  Berbeda dari SSO Google, passkey Cipansor **dapat dibuktikan** lewat flag
+  *user verification* WebAuthn; itulah alasan keduanya diperlakukan berbeda.
+- **Fallback utuh: sandi + TOTP + kode pemulihan tetap ada.** Karena itu tidak
+  ada kanal pemulihan kedua yang dibangun — kehilangan perangkat memakai kode
+  TOTP atau kode pemulihan, sama seperti sekarang. Inilah yang membedakannya
+  dari Model C (tanpa sandi) yang pemulihannya harus dirancang dari nol.
+- **TOTP tetap** untuk pengguna yang belum mendaftarkan passkey.
+- **Integritas faktor — hanya untuk akun wajib 2FA.** Bagi akun yang
+  `requiresSecondFactor`, autentikator terakhir tidak boleh dihapus: bila TOTP
+  dimatikan, minimal satu passkey harus tersisa, dan sebaliknya — akun wajib
+  tidak pernah turun di bawah AAL2. Akun yang 2FA-nya **opsional** (staf, wali,
+  santri) tetap boleh mematikan faktor terakhirnya dan kembali ke sandi saja,
+  sesuai kebijakan 2FA yang sudah berlaku (dan akun wajib hanya bisa dimatikan
+  oleh Super Admin, seperti aturan di atas). Untuk semua orang, menambah atau
+  menghapus autentikator adalah tindakan berisiko — wajib autentikasi ulang
+  dengan faktor yang sudah terdaftar, dan pemilik diberi tahu lewat surel
+  (OWASP MFA Cheat Sheet).
+- **Pendaftaran** di *Profil → Keamanan*, di sebelah daftar 2FA yang ada.
+- **Urutan:** sesudah Google SSO (butir 4.A) dan Sandi bagian B, sebagai jalur
+  multi-PR sendiri. Jangan dikerjakan paralel dengan keduanya.
+- **Opsi yang ditolak:**
+  - **Passkey sebagai faktor kedua setelah sandi (Model B):** sah sebagai
+    langkah transisi, tetapi mempertahankan sandi — faktor yang paling phishable
+    — di depan, sehingga *credential stuffing* dan phishing sandi tetap hidup.
+    FIDO menaruh penekanannya pada **menggantikan** "sandi + OTP", bukan
+    melapisinya.
+  - **Tanpa sandi penuh (Model C):** postur terbaik, tetapi pemulihan harus
+    dirancang dari nol; tidak dipilih sekarang.
+- **Catatan teknis:** `rpID = cipansor.or.id` (mencakup portal dan apex; dev
+  `localhost`); WebAuthn wajib HTTPS kecuali localhost. Pustaka
+  `@simplewebauthn/server` + `@simplewebauthn/browser`; challenge di Redis TTL
+  pendek. Model Prisma `WebAuthnCredential` (sunting `schema.prisma` secara
+  bedah). Aplikasi wali (PWA) memakai basis kode web yang sama sehingga ceremony
+  ikut jalan; klien native Bearer-JWT tidak otomatis dapat passkey. e2e Playwright
+  memakai *virtual authenticator* CDP — hanya Chromium.
 
 ## Masuk dengan Google (SSO)
 
@@ -129,3 +180,20 @@ dibangun ulang; lihat `roadmap.md` butir 4).
 - Google Developers Blog, 16 Juni 2026, klaim `auth_time` dan `amr` (opt-in,
   aplikasi terverifikasi):
   <https://developers.googleblog.com/enhance-security-and-trust-new-session-metadata-in-sign-in-with-google/>
+- FIDO Alliance, *Passkeys* — passkey adalah pengganti faktor **pertama**;
+  berdiri sendiri lebih kuat daripada "sandi + OTP" atau "sandi + push":
+  <https://fidoalliance.org/passkeys>
+- FIDO Alliance, *Displace Password + OTP Authentication with Passkeys* —
+  passkey bisa jadi faktor pertama **atau** faktor kedua; panduan migrasi dari
+  OTP: <https://fidoalliance.org/white-paper-displace-password-otp-authentication-with-passkeys>
+- OWASP, *Multifactor Authentication Cheat Sheet* — passkey sebagai bentuk MFA;
+  wajib autentikasi ulang dan pemberitahuan saat mengubah/menghapus faktor:
+  <https://cheatsheetseries.owasp.org/cheatsheets/Multifactor_Authentication_Cheat_Sheet.html>
+- NIST SP 800-63B-4, *AAL2* — satu autentikator multifaktor **atau** dua faktor;
+  passkey tersinkronisasi memenuhi AAL2, terikat perangkat untuk AAL3:
+  <https://pages.nist.gov/800-63-4/sp800-63b.html>
+- Corbado, *NIST Passkeys* — ringkasan Rev. 4: tersinkron AAL2, terikat
+  perangkat AAL3: <https://www.corbado.com/blog/nist-passkeys>
+- *Passwordless Login Enterprise 2026* — fase migrasi: passkey berdampingan →
+  sandi hanya sebagai fallback:
+  <https://credentialgovernance.avatier.com/en/blog/passwordless-login-future-enterprise-2026>
