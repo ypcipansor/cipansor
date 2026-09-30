@@ -79,13 +79,17 @@ test.describe("E-Office peninjauan retensi", () => {
     page,
   }) => {
     await loginAs(page, "adminSdit");
-    await page.goto("/e-office/retention");
 
-    await expect(page.locator("h1")).toContainText(/Peninjauan Retensi Arsip/i);
-    const response = await page.waitForResponse(
+    // Tangkap permintaan SEBELUM menavigasi, sama seperti uji pertama:
+    // jawabannya dapat tiba lebih dulu daripada pemanggilan waitForResponse,
+    // dan pendengar yang dipasang setelah `goto` kehilangan balasan itu.
+    const response = page.waitForResponse(
       (r) => r.url().includes("/correspondence/retention"),
       { timeout: 15000 },
     );
-    expect(response.status()).toBeLessThan(400);
+    await page.goto("/e-office/retention");
+
+    await expect(page.locator("h1")).toContainText(/Peninjauan Retensi Arsip/i);
+    expect((await response).status()).toBeLessThan(400);
   });
 });
