@@ -224,8 +224,9 @@ describe('recordUploadOwnership', () => {
    *
    * `path` datang bersama permintaan; menghapusnya apa adanya adalah jalur
    * penghapusan berkas sembarang (CodeQL js/path-injection). `recordUploadOwnership`
-   * karena itu menyusun ulang path dari `path.basename`, sehingga sebuah path
-   * yang menunjuk ke luar `public/uploads` tidak pernah tersentuh.
+   * karena itu menyusun ulang path dari `path.basename` **dan** memastikan
+   * hasilnya sama dengan `path` yang diberikan, sehingga sebuah path yang
+   * menunjuk ke luar `public/uploads` tidak pernah tersentuh.
    */
   it('tidak menghapus berkas di luar direktori unggahan', async () => {
     vi.mocked(prisma.letterUpload.upsert).mockRejectedValue(new Error('db down'));
@@ -237,6 +238,29 @@ describe('recordUploadOwnership', () => {
     expect(ok).toBe(false);
     expect(fs.existsSync(outside)).toBe(true);
     fs.unlinkSync(outside);
+  });
+
+  /**
+   * Berkas milik permintaan lain tidak boleh ikut terhapus.
+   *
+   * `path.basename` saja membuat sebuah path di luar direktori yang kebetulan
+   * berbagi nama dasar menunjuk unggahan milik orang lain — sehingga kegagalan
+   * pencatatan satu permintaan menghapus berkas permintaan lain (CWE-73).
+   */
+  it('tidak menghapus unggahan lain yang kebetulan senama', async () => {
+    vi.mocked(prisma.letterUpload.upsert).mockRejectedValue(new Error('db down'));
+    const sharedName = `upload-owner-collide-${Date.now()}`;
+    const otherRequestFile = path.join(uploadDir, sharedName);
+    fs.writeFileSync(otherRequestFile, pdf);
+
+    const ok = await recordUploadOwnership(
+      { filename: sharedName, path: path.join(os.tmpdir(), sharedName) },
+      'user-1'
+    );
+
+    expect(ok).toBe(false);
+    expect(fs.existsSync(otherRequestFile)).toBe(true);
+    fs.unlinkSync(otherRequestFile);
   });
 });
 

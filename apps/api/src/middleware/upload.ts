@@ -202,14 +202,28 @@ export async function recordUploadOwnership(
     return true;
   } catch (e) {
     console.error('[upload] gagal mencatat kepemilikan berkas:', e);
-    // Hapus hanya berkas di dalam direktori unggahan. `path.basename` membuang
-    // setiap komponen direktori dari path yang datang bersama permintaan dan
-    // `path.join` menempelkannya kembali ke direktori unggahan yang tetap, jadi
-    // `unlink` di sini tidak dapat menyentuh berkas di luar `public/uploads`.
-    // Tanpa itu, menghapus path yang dibentuk pemanggil adalah jalur penghapusan
-    // berkas sembarang (CodeQL js/path-injection).
+    // Hapus berkasnya, tetapi **hanya** bila ia benar-benar berada di direktori
+    // unggahan.
+    //
+    // `path.basename` saja tidak cukup, dan justru berbahaya: sebuah `path` di
+    // luar direktori (atau path buatan pemanggil) yang kebetulan berbagi nama
+    // dasar dengan unggahan milik permintaan lain akan menunjuk berkas orang
+    // lain itu, sehingga kegagalan pencatatan di sini menghapus unggahan yang
+    // tidak ada hubungannya (CWE-73). Karena itu kecocokannya diperiksa lebih
+    // dahulu, dan bila tidak cocok tidak ada yang dihapus.
+    //
+    // Pemeriksaan ini sekaligus yang memenuhi CodeQL `js/path-injection`: nilai
+    // dari permintaan tidak pernah sampai ke `unlink`, karena `safePath`
+    // disusun dari nama berkas yang sudah dipastikan berada di dalam direktori.
+    const resolved = path.resolve(file.path);
+    // Susun ulang dari nama berkas, lalu pastikan hasilnya memang berkas yang
+    // sama. Bila `path` menunjuk ke luar direktori — atau sekadar berbagi nama
+    // dasar dengan unggahan permintaan lain — keduanya tidak sama dan tidak ada
+    // yang dihapus.
     const safePath = path.join(uploadDir, path.basename(file.path));
-    await fs.promises.unlink(safePath).catch(() => undefined);
+    if (resolved === path.resolve(safePath)) {
+      await fs.promises.unlink(safePath).catch(() => undefined);
+    }
     return false;
   }
 }

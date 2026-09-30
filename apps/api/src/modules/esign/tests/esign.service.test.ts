@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prisma } from '../../lib/prisma';
-import { EsignService } from './esign.service';
+import { prisma } from '../../../lib/prisma';
+import { EsignService } from '../esign.service';
 import {
   createKeyMaterial,
   signPayload,
@@ -28,7 +28,7 @@ const { emitMock, compareMock } = vi.hoisted(() => ({
   compareMock: vi.fn(),
 }));
 
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     $executeRaw: vi.fn(),
     userSigningKey: {
@@ -66,7 +66,7 @@ vi.mock('../../lib/prisma', () => ({
     $transaction: vi.fn((cb: any) => cb(prisma)),
   },
 }));
-vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
+vi.mock('../../../lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
 vi.mock('@/utils/letter-uploaded-file', () => ({

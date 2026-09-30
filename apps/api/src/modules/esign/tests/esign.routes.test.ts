@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
-import router from './esign.routes';
+import router from '../esign.routes';
 import { isSuperAdmin } from '@/middleware/auth';
 
 interface RouteLayer {
