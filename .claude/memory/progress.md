@@ -98,10 +98,13 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   cleared by removing the tainted path (the alert's source was a test
   passphrase literal, not production code), and the audit corrected a wrong
   premise — **Ed25519 does not block PAdES**; ETSI TS 119 312 V2.1.1 Table A.1
-  lists EdDSA as *shall support*, and it is **AATL** that omits it. Still open:
-  PAdES B-B + RFC 3161 (the Ed25519→RSA/ECDSA switch is now an *interoperability*
-  choice, not a PAdES requirement), signing uploaded DOCX/PDF bytes, and
-  a.n./u.b./Plt./Plh.
+  lists EdDSA as *shall support*, and it is **AATL** that omits it. The
+  a.n./u.b./Plt./Plh. signing-authority forms and signing uploaded DOCX/PDF
+  bytes were built in `1513317`; the only substantial item still open is
+  **PAdES B-B + RFC 3161**, which needs a CMS/PKCS#7 builder and an X.509
+  certificate (today the signer identity is a raw public key) plus a TSA
+  endpoint — the Ed25519→RSA/ECDSA switch is an *interoperability* choice, not a
+  PAdES requirement.
 
   **Round-2 follow-up, found by this agent (not in F1–F12): cross-unit service
   roles read the whole letter book.** `letterScopeWhere`, `assertLetterAccess`
@@ -116,7 +119,16 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   the letters they are actually part of. Regression tests pin the list clause,
   the direct read, and `choosesUnit`. Also silenced the `/correspondence/stats`
   toast the E-Office home fired for every staff member without letter duty
-  (`skipErrorToast`).
+  (`skipErrorToast`), and hardened `verifyByPdfBuffer` to verify the *uploaded*
+  hash rather than read back the field it looked the row up by.
+
+  **Two gate defects found while closing the follow-up:** the retention
+  controller test cast `vi.fn()` to `NextFunction` and read `next.mock.calls`
+  (TS2339 under `build:strict`, fixed with `NextFunction & ReturnType<typeof
+  vi.fn>`), and `e-office-retention.spec.ts`'s unit-scope case registered its
+  `waitForResponse` after `page.goto` (the race the file's own first test warns
+  against; the listener now registers first). Both were pre-existing, neither a
+  regression from the access-control change.
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
