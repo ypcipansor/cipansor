@@ -581,6 +581,31 @@ export class AuthService {
     // the account's last session. Report that here, after the revoke above, so
     // the check reflects the state the logout actually produced.
     const hasActiveSession = await this.hasActiveSession(userId);
+
+    if (hasActiveSession === null) {
+      // The lookup failed, so we cannot tell whether another device is still
+      // signed in. Clear only the device that named itself: it is the one
+      // certain to be gone, and the one the user is looking at. Clearing every
+      // device on a guess would stop push on a phone that is still signed in —
+      // the very harm this follow-up exists to avoid. With no endpoint named
+      // there is no row attributable to this browser, so nothing is cleared and
+      // the other devices are left alone, which is the point.
+      //
+      // The asking device's row is restored by `useWebPush` on its next
+      // authenticated page, and any device left unreachable is swept by the
+      // next *confirmed* last-session logout (a password reset, or the final
+      // session ending) — the same self-healing the unknown-device case already
+      // relies on.
+      if (pushEndpoint) {
+        eventBus.emit('auth:logged_out', {
+          userId,
+          endpoint: pushEndpoint,
+          hasActiveSession: true,
+        });
+      }
+      return;
+    }
+
     eventBus.emit('auth:logged_out', {
       userId,
       endpoint: pushEndpoint ?? null,
@@ -591,20 +616,19 @@ export class AuthService {
   /**
    * Whether the user still has a usable refresh-token session.
    *
-   * Used by `logout()` to tell the `auth:logged_out` listener whether the
-   * account is really gone: if another device is still signed in, only the
-   * endpoint this browser named may be cleared; if none remains, every push row
-   * the user owns must be.
+   * `true` and `false` are answers; `null` means the lookup itself failed and
+   * the question is unanswered. `null` is deliberately distinct from `false`:
+   * the `auth:logged_out` listener clears *every* device on a confirmed
+   * `false`, so reporting a transient read error as `false` would stop push on
+   * the user's other signed-in devices for no reason.
    *
-   * Never rejects. It is asked *after* the refresh tokens are already revoked,
-   * and `logout()` only clears the session cookies once it resolves — so a
-   * database failure answering this question used to leave the browser holding
-   * session cookies for a refresh token that no longer exists, and skip the
-   * push cleanup entirely. A failure to tell resolves to `false`, the
-   * conservative answer: the listener then clears every device the user owns
-   * rather than leaving the signed-out device reachable (CWE-200).
+   * Never rejects, either way. It is asked *after* the refresh tokens are
+   * already revoked, and `logout()` clears the session cookies only once it
+   * resolves — so a database failure answering this question used to leave the
+   * browser holding session cookies for a refresh token that no longer exists,
+   * and skip the push cleanup entirely.
    */
-  async hasActiveSession(userId: string): Promise<boolean> {
+  async hasActiveSession(userId: string): Promise<boolean | null> {
     try {
       const row = await prisma.refreshToken.findFirst({
         where: {
@@ -615,7 +639,7 @@ export class AuthService {
       });
       return row !== null;
     } catch {
-      return false;
+      return null;
     }
   }
 

@@ -475,6 +475,30 @@ describe('Event bus — logout clears push subscriptions', () => {
     });
   });
 
+  it('never clears other devices when the session status is unknown', async () => {
+    // `AuthService.logout` answers `null` when its session lookup fails, and
+    // deliberately does NOT forward that as `hasActiveSession: false` — doing so
+    // reached this listener's broad sweep and stopped push on a phone that was
+    // still signed in. An unknown status must arrive as `true` (endpoint-only)
+    // or not at all; the guard below fails if a future change forwards it as
+    // `false` again.
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: true,
+    });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+  });
+
   it('swallows a cleanup failure so logout still succeeds', async () => {
     (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockRejectedValue(
       new Error('db down')

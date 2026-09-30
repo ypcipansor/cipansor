@@ -379,6 +379,10 @@ export interface AuthLoggedOutEvent {
    * `AuthService.logout` therefore checks its refresh tokens after revoking and
    * reports the answer here. `false` (or absent) means this was the last
    * session, so the listener clears every device the user owns.
+   *
+   * When that check itself fails, `logout` does not report "no session" — it
+   * would clear devices that are still signed in. It scopes the cleanup to the
+   * named endpoint instead, which arrives here as `true`.
    */
   hasActiveSession?: boolean;
 }
