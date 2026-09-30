@@ -19,6 +19,8 @@ Inggris. Keduanya sengaja hidup berdampingan di sini.
 | pengurus yayasan, auditor, atau donor — butuh gambaran sistem menyeluruh | [`DOKUMEN-TEKNIS.md`](./DOKUMEN-TEKNIS.md) |
 | guru atau staf — butuh cara memakai aplikasi sehari-hari | [`PANDUAN-PENGGUNA-UMUM.md`](./PANDUAN-PENGGUNA-UMUM.md) |
 | guru — buku panduan peran | [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) |
+| musyrif — membina santri mukim | [`PANDUAN-PENGGUNA-MUSYRIF.md`](./PANDUAN-PENGGUNA-MUSYRIF.md) |
+| wali santri — memantau anak | [`PANDUAN-PENGGUNA-WALI-SANTRI.md`](./PANDUAN-PENGGUNA-WALI-SANTRI.md) |
 | pengembang baru — butuh peta kode | [`ARCHITECTURE.md`](./ARCHITECTURE.md), lalu `AGENTS.md` akar |
 | mengelola server produksi | [`DEPLOYMENT.md`](./DEPLOYMENT.md), [`deploy-azure.md`](./deploy-azure.md) |
 | membangun aplikasi Android orang tua | [`MOBILE_API.md`](./MOBILE_API.md) |
@@ -35,6 +37,8 @@ kode yang sebenarnya. Tiap dokumen punya sumber Markdown **dan** terbitan
 | [`DOKUMEN-TEKNIS.md`](./DOKUMEN-TEKNIS.md) `.docx` `.pdf` | pengurus, pengelola sistem, pengembang baru, auditor/donor | arc42 (12 bab) + C4 tingkat 1–3, 11 diagram |
 | [`PANDUAN-PENGGUNA-UMUM.md`](./PANDUAN-PENGGUNA-UMUM.md) `.docx` `.pdf` | staf dan guru | Diátaxis: tutorial, konsep, rujukan |
 | [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) `.docx` `.pdf` | guru | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-MUSYRIF.md`](./PANDUAN-PENGGUNA-MUSYRIF.md) | musyrif | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-WALI-SANTRI.md`](./PANDUAN-PENGGUNA-WALI-SANTRI.md) | wali santri | Diátaxis: buklet peran, kartu tugas |
 | [`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md) | penulis dan pemeriksa dokumen | audit dokumen terhadap kode: temuan, akar masalah, yang belum selesai |
 
 Bacalah `EVALUASI-DOKUMEN.md` sebelum memperbarui dokumen: ia mencatat apa yang
@@ -65,9 +69,11 @@ yang sudah jadi dipindahkan ke catatan hidup di atas atau ke kode.
 ## 4. Tangkapan layar
 
 `images/` memuat 78 tangkapan layar antarmuka (PNG) yang dirujuk `README.md` akar
-dan dokumen lain. Hanya gambar yang benar-benar dirujuk naskah yang masuk git;
-atlas lengkap per peran dan tangkapan mentah adalah artefak hasil bangun, tidak
-dilacak. Cara menangkapnya ada di skill `screenshot-roles`.
+dan dokumen lain. `screens/` memuat gambar per dokumen, disalin oleh
+`screens_manifest.py` dari tangkapan alur yang **lolos** pada aplikasi berjalan;
+hanya gambar yang benar-benar dirujuk naskah yang masuk git. Atlas lengkap per
+peran dan tangkapan mentah adalah artefak hasil bangun, tidak dilacak. Cara
+menangkapnya ada di skill `screenshot-roles`.
 
 ## Konvensi folder ini
 
@@ -127,10 +133,14 @@ mencatat commit basisnya di sampul dan riwayat revisi.
 
 ## Status dokumen aplikasi
 
-Draf 0.3, basis kode `1a0e6b1e`. Panduan pengguna berperingkat **T2** (disusun
-dari kode, belum diuji pada aplikasi berjalan); setiap kartu tugasnya bertanda ⚠
-sampai seorang pengguna peran itu mencobanya. Yang belum dikerjakan ada di
-[`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 8.
+Draf 0.4, basis kode PR #512 (setelah `main` `2377f5fb`). Panduan pengguna kini
+berperingkat **T1** pada bagian yang sudah dijalankan: bab "Mulai Memakai
+Aplikasi" pada Panduan Umum, dan seluruh kartu tugas buklet **Guru**, **Musyrif**,
+dan **Wali Santri** — masing-masing memuat tangkapan layar asli dari alur yang
+lolos pada aplikasi berjalan. Bab konsep dan rujukan Panduan Umum, serta buklet
+peran lain (staf TU, bendahara, kepala unit, organ yayasan, santri), masih
+berperingkat **T2** (disusun dari kode, belum diuji per peran). Yang belum
+dikerjakan ada di [`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 8.
 
-Seluruh keluaran lolos pemeriksa mesin pada 29 September 2026: `check_docs.py`
-0 ERROR (termasuk `--final`), `scan_sensitive.py` bersih.
+Seluruh keluaran lolos pemeriksa mesin pada 30 September 2026: `check_docs.py`
+0 ERROR, `scan_sensitive.py` bersih.

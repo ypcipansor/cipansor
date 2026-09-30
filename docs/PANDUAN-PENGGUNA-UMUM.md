@@ -2,15 +2,16 @@
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
-| 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Jalur ubah kata sandi dikoreksi (Profile → Keamanan, bukan Settings); nama menu dan tombol dicocokkan ke layar (Logout); nama enum basis data diganti label layar; istilah pengembang dikeluarkan |
-| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | **T2** | Diperiksa ulang dengan pemeriksa skill terbaru; tidak ada isi yang berubah |
+| 0.1 | 29 September 2026 | commit `aefc719` | dari kode, belum dicoba di aplikasi berjalan | Penyusunan awal |
+| 0.2 | 29 September 2026 | commit `aefc719` | dari kode, belum dicoba di aplikasi berjalan | Jalur ubah kata sandi dikoreksi (Profile → Keamanan, bukan Settings); nama menu dan tombol dicocokkan ke layar (Logout); nama enum basis data diganti label layar; istilah pengembang dikeluarkan |
+| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | dari kode, belum dicoba di aplikasi berjalan | Diperiksa ulang dengan pemeriksa skill terbaru; tidak ada isi yang berubah |
+| 0.4 | 30 September 2026 | aplikasi berjalan dari kode PR #512 (setelah `main` `2377f5fb`) | **T1 — terverifikasi di aplikasi berjalan** | Bab "Mulai Memakai Aplikasi" (2.1–2.6) dijalankan dengan akun demo pada tumpukan lokal (PostgreSQL + API :3001 + web :3000). Dua koreksi dari layar sungguhan: ikon lonceng **membuka halaman Notifikasi Saya** (bukan panel), dan halaman pertama berlabel **Dashboard**. Tangkapan layar disematkan; pita ⚠ dibuka. Bab konsep dan rujukan (3–5) tetap disusun dari kode |
 
-> **Tingkat verifikasi T2.** Seluruh kartu tugas pada panduan ini disusun dengan
-> membaca kode (`navigation.ts`, halaman, hook, dan rute API) pada commit yang
-> tertera. Langkahnya **belum dijalankan pada aplikasi berjalan**, sehingga
-> setiap kartu bertanda ⚠. Hanya orang yang memakai peran itu yang dapat
-> menaikkannya ke T1 (terverifikasi).
+> **Tingkat verifikasi.** Bab **Mulai Memakai Aplikasi** (2.1–2.6) sudah
+> **dijalankan pada aplikasi berjalan** dengan akun demo dan memuat tangkapan
+> layar asli (T1). Bab **Konsep** dan **Rujukan** (3–5) disusun dengan membaca
+> kode dan aturan yayasan, belum dijalankan per peran. Hanya orang yang memakai
+> peran itu yang dapat memastikan sisanya.
 
 # 1. Tentang Panduan Ini
 
@@ -51,8 +52,6 @@ menulis nama tombol dan menu persis seperti di layar.
 
 ## 2.1 Coba pertama kali (5 menit)
 
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
-
 Ikuti urutan ini sekali untuk membiasakan diri. Anda hanya membaca; tidak ada
 perubahan data.
 
@@ -62,18 +61,28 @@ perubahan data.
    salah satu butirnya.
    *Halaman tugas itu terbuka.*
 3. Klik ikon lonceng di header.
-   *Panel notifikasi terbuka.*
+   *Halaman **Notifikasi Saya** terbuka.*
 4. Klik avatar (kanan atas), lalu **Profile**. Lihat halamannya tanpa mengubah
    apa pun.
    *Halaman profil terbuka dengan dua tab: **Profil** dan **Keamanan**.*
 5. Klik avatar lagi, lalu **Logout**.
    *Anda kembali ke halaman masuk.*
 
+![Gambar 1. Halaman masuk: isi Email dan Password, lalu klik Masuk.](screens/masuk-dan-kenal-aplikasi/01-halaman-masuk.png){width=14cm}
+
+*Gambar 1. Halaman masuk: isi Email dan Password, lalu klik Masuk.*
+
+![Gambar 2. Dasbor peran setelah masuk.](screens/masuk-dan-kenal-aplikasi/02-dasbor-peran.png){width=14cm}
+
+*Gambar 2. Dasbor peran setelah masuk.*
+
+![Gambar 3. Ikon lonceng membuka halaman Notifikasi Saya.](screens/masuk-dan-kenal-aplikasi/04-notifikasi.png){width=14cm}
+
+*Gambar 3. Ikon lonceng membuka halaman Notifikasi Saya.*
+
 Setelah mencoba, lanjutkan ke bagian tugas sesuai peran Anda (bagian 4.5).
 
 ## 2.2 Membuka aplikasi dan masuk
-
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
 1. Buka **portal.cipansor.or.id** di peramban.
 2. Isi **Email** dengan alamat surel yayasan Anda.
@@ -86,8 +95,6 @@ dari portal.
 
 ## 2.3 Verifikasi dua langkah (bila diwajibkan)
 
-> ⚠ **Belum dicoba di aplikasi berjalan.**
-
 Verifikasi dua langkah (2FA) **wajib** bagi peran admin unit, organ yayasan, dan
 kepala unit; staf dan wali santri diundang mengaktifkannya (boleh memilih "Nanti
 saja").
@@ -98,25 +105,25 @@ saja").
 2. Buka aplikasi autentikator, lalu ketik kodenya.
    *Anda masuk dan sesi berlanjut.*
 
+![Gambar 4. Layar Verifikasi Dua Langkah meminta kode dari aplikasi autentikator.](screens/masuk-verifikasi-dua-langkah/04-klik-masuk.png){width=14cm}
+
+*Gambar 4. Layar Verifikasi Dua Langkah meminta kode dari aplikasi autentikator.*
+
 Bila akun Anda wajib 2FA tetapi belum menyiapkannya, aplikasi mengarahkan Anda
 menyiapkannya setelah email dan password benar (memindai kode QR dengan aplikasi
 autentikator).
 
 ## 2.4 Mengenal dasbor, menu, dan notifikasi
 
-> ⚠ **Belum dicoba di aplikasi berjalan.**
-
-- **Dasbor** adalah halaman pertama setelah masuk; isinya berbeda per peran
+- **Dashboard** adalah halaman pertama setelah masuk; isinya berbeda per peran
   (guru di `/teacher`, staf di `/staff`, kepala unit di `/dashboard`, wali
   santri di `/parent`, dan seterusnya).
 - **Menu** ada di sisi kiri dan berkelompok. Kelompok yang muncul bergantung
   pada peran **utama** Anda.
-- **Notifikasi** ada di ikon lonceng pada header; halaman **Notifikasi Saya**
-  memuat kotak masuk pribadi setiap peran.
+- **Notifikasi** ada di ikon lonceng pada header; ikon itu **membuka halaman
+  Notifikasi Saya** yang memuat kotak masuk pribadi Anda.
 
 ## 2.5 Mengubah kata sandi dan profil
-
-> ⚠ **Belum dicoba di aplikasi berjalan.**
 
 Klik avatar (kanan atas), lalu **Profile**. Nama dan data profil ada di tab
 **Profil**; kata sandi ada di tab **Keamanan**, pada kartu **Ubah Password**:
@@ -128,9 +135,11 @@ atau memuat nama akun. (Halaman **Settings** tidak dipakai untuk kata sandi.)
 Tidak ada tombol "lupa sandi" mandiri — bila lupa kata sandi, minta admin unit
 mengirim tautan reset dari menu Pengguna.
 
-## 2.6 Keluar
+![Gambar 5. Tab Keamanan pada halaman profil memuat kartu Ubah Password.](screens/masuk-dan-kenal-aplikasi/05b-tab-keamanan.png){width=14cm}
 
-> ⚠ **Belum dicoba di aplikasi berjalan.**
+*Gambar 5. Tab Keamanan pada halaman profil memuat kartu Ubah Password.*
+
+## 2.6 Keluar
 
 Klik avatar (kanan atas), lalu **Logout**. Sesi berakhir; jangan biarkan
 aplikasi terbuka di komputer bersama.

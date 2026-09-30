@@ -181,7 +181,10 @@ def label_hits(repo: Path, label: str, limit: int = 3) -> list[str]:
                     pass
     # Cocokkan sebagai teks UTUH: literal string ("Label", 'Label', `Label`) atau teks JSX (>Label< atau
     # sebaris sendiri). Substring bebas terlalu longgar: 'Keluar' cocok dengan puluhan tempat lain.
-    rx = re.compile(r"(?:[\"'`>]|^[ \t]*)" + re.escape(label) + r"(?:[\"'`<]|[ \t]*$)", re.M)
+    # Label kolom wajib di layar memuat penanda " *" (mis. "Ayat Awal *"); terima akhiran itu.
+    rx = re.compile(
+        r"(?:[\"'`>]|^[ \t]*)" + re.escape(label) + r"\s*\*?(?:[\"'`<]|[ \t]*$)", re.M
+    )
     out = []
     for name, body in _WEB_FILES:
         m = rx.search(body)

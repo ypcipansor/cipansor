@@ -1,0 +1,236 @@
+[
+  {
+    "path": "screens/absensi-harian/02-absensi-harian.png",
+    "source": "absensi-harian/02-absensi-harian.png",
+    "flow": "absensi-harian",
+    "step": "02-absensi-harian",
+    "caption": "Halaman Absensi Harian terbuka pada kelas pertama Anda.",
+    "bytes": 84097,
+    "width": 1024
+  },
+  {
+    "path": "screens/absensi-harian/04-simpan.png",
+    "source": "absensi-harian/04-simpan.png",
+    "flow": "absensi-harian",
+    "step": "04-simpan",
+    "caption": "Pesan \"Kehadiran disimpan\" muncul setelah Simpan Kehadiran.",
+    "bytes": 142404,
+    "width": 1280
+  },
+  {
+    "path": "screens/tindak-lanjut-alpa/04-daftar-tindak-lanjut.png",
+    "source": "tindak-lanjut-alpa/04-daftar-tindak-lanjut.png",
+    "flow": "tindak-lanjut-alpa",
+    "step": "04-daftar-tindak-lanjut",
+    "caption": "Alpa tanpa keterangan dalam 7 hari terakhir menunggu di daftar ini.",
+    "bytes": 81202,
+    "width": 1024
+  },
+  {
+    "path": "screens/tindak-lanjut-alpa/05-kotak-catat-hasil.png",
+    "source": "tindak-lanjut-alpa/05-kotak-catat-hasil.png",
+    "flow": "tindak-lanjut-alpa",
+    "step": "05-kotak-catat-hasil",
+    "caption": "Kotak Catat hasil tindak lanjut: pilih cara menghubungi dan hasilnya.",
+    "bytes": 34254,
+    "width": 512
+  },
+  {
+    "path": "screens/catatan-perilaku/01-daftar-catatan.png",
+    "source": "catatan-perilaku/01-daftar-catatan.png",
+    "flow": "catatan-perilaku",
+    "step": "01-daftar-catatan",
+    "caption": "Halaman Catatan Perilaku Siswa kelas perwalian, dengan tombol Tambah Catatan di kanan atas.",
+    "bytes": 127510,
+    "width": 1280
+  },
+  {
+    "path": "screens/catatan-perilaku/02-kotak-tambah-catatan.png",
+    "source": "catatan-perilaku/02-kotak-tambah-catatan.png",
+    "flow": "catatan-perilaku",
+    "step": "02-kotak-tambah-catatan",
+    "caption": "Kotak Tambah Catatan Perilaku: pilih siswa, jenis catatan, kategori, lalu tulis catatannya.",
+    "bytes": 21404,
+    "width": 512
+  },
+  {
+    "path": "screens/izin-santri-harian/12-setujui.png",
+    "source": "izin-santri-harian/12-setujui.png",
+    "flow": "izin-santri-harian",
+    "step": "12-setujui",
+    "caption": "Kotak konfirmasi \"Setujui izin\" sebelum keputusan disimpan.",
+    "bytes": 9668,
+    "width": 512
+  },
+  {
+    "path": "screens/masuk-dan-kenal-aplikasi/01-halaman-masuk.png",
+    "source": "masuk-dan-kenal-aplikasi/01-halaman-masuk.png",
+    "flow": "masuk-dan-kenal-aplikasi",
+    "step": "01-halaman-masuk",
+    "caption": "Halaman masuk. Isi Email dan Password, lalu klik Masuk.",
+    "bytes": 224221,
+    "width": 1280
+  },
+  {
+    "path": "screens/masuk-dan-kenal-aplikasi/02-dasbor-peran.png",
+    "source": "masuk-dan-kenal-aplikasi/02-dasbor-peran.png",
+    "flow": "masuk-dan-kenal-aplikasi",
+    "step": "02-dasbor-peran",
+    "caption": "Setelah masuk, Anda tiba di dasbor peran Anda.",
+    "bytes": 91913,
+    "width": 1024
+  },
+  {
+    "path": "screens/masuk-dan-kenal-aplikasi/04-notifikasi.png",
+    "source": "masuk-dan-kenal-aplikasi/04-notifikasi.png",
+    "flow": "masuk-dan-kenal-aplikasi",
+    "step": "04-notifikasi",
+    "caption": "Ikon lonceng membuka halaman Notifikasi Saya.",
+    "bytes": 73384,
+    "width": 1024
+  },
+  {
+    "path": "screens/masuk-verifikasi-dua-langkah/04-klik-masuk.png",
+    "source": "masuk-verifikasi-dua-langkah/04-klik-masuk.png",
+    "flow": "masuk-verifikasi-dua-langkah",
+    "step": "04-klik-masuk",
+    "caption": "Bagi peran yang diwajibkan, aplikasi meminta kode dari aplikasi autentikator.",
+    "bytes": 33523,
+    "width": 1280
+  },
+  {
+    "path": "screens/masuk-dan-kenal-aplikasi/05b-tab-keamanan.png",
+    "source": "masuk-dan-kenal-aplikasi/05b-tab-keamanan.png",
+    "flow": "masuk-dan-kenal-aplikasi",
+    "step": "05b-tab-keamanan",
+    "caption": "Tab Keamanan memuat kartu Ubah Password; di sinilah kata sandi diubah, bukan di Settings.",
+    "bytes": 84787,
+    "width": 1024
+  },
+  {
+    "path": "screens/pantau-anak-wali/02-data-anak.png",
+    "source": "pantau-anak-wali/02-data-anak.png",
+    "flow": "pantau-anak-wali",
+    "step": "02-data-anak",
+    "caption": "Data Anak memuat identitas, hafalan terakhir, dan keadaan anak.",
+    "bytes": 87028,
+    "width": 1024
+  },
+  {
+    "path": "screens/pantau-anak-wali/03-rapor.png",
+    "source": "pantau-anak-wali/03-rapor.png",
+    "flow": "pantau-anak-wali",
+    "step": "03-rapor",
+    "caption": "Riwayat Rapor menampilkan rapor anak per semester.",
+    "bytes": 80129,
+    "width": 1024
+  },
+  {
+    "path": "screens/pantau-anak-wali/05-buku-penghubung.png",
+    "source": "pantau-anak-wali/05-buku-penghubung.png",
+    "flow": "pantau-anak-wali",
+    "step": "05-buku-penghubung",
+    "caption": "Buku Penghubung Digital memuat laporan harian dari guru.",
+    "bytes": 70756,
+    "width": 1024
+  },
+  {
+    "path": "screens/izin-santri-harian/02-kotak-ajukan.png",
+    "source": "izin-santri-harian/02-kotak-ajukan.png",
+    "flow": "izin-santri-harian",
+    "step": "02-kotak-ajukan",
+    "caption": "Kotak Ajukan Izin: jenis izin, waktu berangkat dan kembali, serta alasan.",
+    "bytes": 28299,
+    "width": 512
+  },
+  {
+    "path": "screens/izin-santri-harian/09-status-di-wali.png",
+    "source": "izin-santri-harian/09-status-di-wali.png",
+    "flow": "izin-santri-harian",
+    "step": "09-status-di-wali",
+    "caption": "Izin tampil pada daftar wali dengan status Menunggu, beserta siapa yang akan memutuskannya.",
+    "bytes": 130229,
+    "width": 1280
+  },
+  {
+    "path": "screens/pantau-anak-wali/04-tagihan.png",
+    "source": "pantau-anak-wali/04-tagihan.png",
+    "flow": "pantau-anak-wali",
+    "step": "04-tagihan",
+    "caption": "Keuangan menampilkan tagihan dan pembayaran anak.",
+    "bytes": 75221,
+    "width": 1024
+  },
+  {
+    "path": "screens/catatan-tahfidz-dan-pengasuhan-musyrif/04-form-tahfidz.png",
+    "source": "catatan-tahfidz-dan-pengasuhan-musyrif/04-form-tahfidz.png",
+    "flow": "catatan-tahfidz-dan-pengasuhan-musyrif",
+    "step": "04-form-tahfidz",
+    "caption": "Formulir Tambah Catatan Tahfidz: pilih santri, tanggal, tipe, nilai, surah, dan ayat.",
+    "bytes": 74280,
+    "width": 1024
+  },
+  {
+    "path": "screens/catatan-tahfidz-dan-pengasuhan-musyrif/15-simpan-tahfidz.png",
+    "source": "catatan-tahfidz-dan-pengasuhan-musyrif/15-simpan-tahfidz.png",
+    "flow": "catatan-tahfidz-dan-pengasuhan-musyrif",
+    "step": "15-simpan-tahfidz",
+    "caption": "Setoran tersimpan; muncul pesan \"Catatan tahfidz berhasil disimpan\".",
+    "bytes": 92630,
+    "width": 1024
+  },
+  {
+    "path": "screens/catatan-tahfidz-dan-pengasuhan-musyrif/01-dasbor-musyrif.png",
+    "source": "catatan-tahfidz-dan-pengasuhan-musyrif/01-dasbor-musyrif.png",
+    "flow": "catatan-tahfidz-dan-pengasuhan-musyrif",
+    "step": "01-dasbor-musyrif",
+    "caption": "Dashboard Musyrif: ringkasan santri binaan, kehadiran, dan pekerjaan pengasuhan.",
+    "bytes": 104612,
+    "width": 1024
+  },
+  {
+    "path": "screens/catatan-tahfidz-dan-pengasuhan-musyrif/16-tindak-lanjut.png",
+    "source": "catatan-tahfidz-dan-pengasuhan-musyrif/16-tindak-lanjut.png",
+    "flow": "catatan-tahfidz-dan-pengasuhan-musyrif",
+    "step": "16-tindak-lanjut",
+    "caption": "Tindak Lanjut Absensi: Alpa tanpa keterangan santri binaan menunggu ditindaklanjuti.",
+    "bytes": 67879,
+    "width": 1024
+  },
+  {
+    "path": "screens/catatan-tahfidz-dan-pengasuhan-musyrif/17-asrama.png",
+    "source": "catatan-tahfidz-dan-pengasuhan-musyrif/17-asrama.png",
+    "flow": "catatan-tahfidz-dan-pengasuhan-musyrif",
+    "step": "17-asrama",
+    "caption": "Asrama: kamar dan penghuni yang Anda urus.",
+    "bytes": 72459,
+    "width": 1024
+  },
+  {
+    "path": "screens/izin-santri-mukim/02-antrean-musyrif.png",
+    "source": "izin-santri-mukim/02-antrean-musyrif.png",
+    "flow": "izin-santri-mukim",
+    "step": "02-antrean-musyrif",
+    "caption": "Bagi musyrif, izin santri binaannya menunggu di Perizinan.",
+    "bytes": 96445,
+    "width": 1024
+  },
+  {
+    "path": "screens/izin-santri-mukim/04-setujui.png",
+    "source": "izin-santri-mukim/04-setujui.png",
+    "flow": "izin-santri-mukim",
+    "step": "04-setujui",
+    "caption": "Kotak konfirmasi \"Setujui izin\" sebelum keputusan disimpan.",
+    "bytes": 9668,
+    "width": 512
+  },
+  {
+    "path": "screens/izin-santri-mukim/05-konfirmasi.png",
+    "source": "izin-santri-mukim/05-konfirmasi.png",
+    "flow": "izin-santri-mukim",
+    "step": "05-konfirmasi",
+    "caption": "Keputusan tersimpan; muncul pesan \"Izin disetujui\".",
+    "bytes": 81533,
+    "width": 1024
+  }
+]

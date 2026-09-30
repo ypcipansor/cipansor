@@ -2,14 +2,16 @@
 
 | Versi | Tanggal | Basis aplikasi | Tingkat verifikasi | Perubahan |
 |---|---|---|---|---|
-| 0.1 | 29 September 2026 | commit `aefc719` | **T2 — dari kode, belum dicoba di aplikasi berjalan** | Penyusunan awal |
-| 0.2 | 29 September 2026 | commit `aefc719` | **T2** | Langkah dan nama tombol diperiksa ulang satu per satu ke kode layar; pesan yang dikutip disalin dari kode; istilah pengembang dan nomor PR dikeluarkan; kartu izin dipersempit ke wali kelas |
-| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | **T2** | Nama butir menu **Mengajar** ditulis persis seperti layar ("Siswa") supaya tidak terbaca sebagai prosa. Isi kartu tidak berubah |
+| 0.1 | 29 September 2026 | commit `aefc719` | dari kode, belum dicoba di aplikasi berjalan | Penyusunan awal |
+| 0.2 | 29 September 2026 | commit `aefc719` | dari kode, belum dicoba di aplikasi berjalan | Langkah dan nama tombol diperiksa ulang satu per satu ke kode layar; pesan yang dikutip disalin dari kode; istilah pengembang dan nomor PR dikeluarkan; kartu izin dipersempit ke wali kelas |
+| 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode identik dengan `aefc719`) | dari kode, belum dicoba di aplikasi berjalan | Nama butir menu **Mengajar** ditulis persis seperti layar ("Siswa") supaya tidak terbaca sebagai prosa. Isi kartu tidak berubah |
+| 0.4 | 30 September 2026 | aplikasi berjalan dari kode PR #512 (setelah `main` `2377f5fb`) | **T1 — terverifikasi di aplikasi berjalan** | Keempat kartu dijalankan dengan akun demo `sdit.walikelas@` pada tumpukan lokal (PostgreSQL + API :3001 + web :3000); langkah, nama tombol, dan pesan dicocokkan ulang dengan layar sungguhan dan tangkapan layar disematkan. Pita ⚠ dibuka; Riwayat Revisi mencatat tingkat T1 |
 
-> **Tingkat verifikasi T2.** Semua kartu tugas di bawah disusun dengan membaca
-> kode layar pada commit yang tertera; belum dijalankan pada aplikasi berjalan.
-> Setiap kartu bertanda ⚠ dan perlu dicoba oleh seorang guru sungguhan sebelum
-> dinaikkan ke T1.
+> **Tingkat verifikasi T1.** Semua kartu tugas di bawah sudah **dijalankan pada
+> aplikasi berjalan** dengan akun demo wali kelas SD IT (absensi harian, tindak
+> lanjut Alpa, catatan perilaku, dan memutuskan izin). Tiap langkah diverifikasi
+> terhadap layar sungguhan dan tiap kartu memuat tangkapan layar asli. Bila Anda
+> menemukan layar yang berbeda dari gambar di sini, laporkan kepada admin unit.
 
 # 1. Tentang Buklet Ini
 
@@ -55,8 +57,6 @@ kelompok itu bisa muncul dan hilang sesuai penugasan Anda.
 
 ## Mencatat absensi harian
 
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
-
 **Tujuan.** Mencatat kehadiran santri satu kelas untuk satu tanggal.
 
 **Siapa.** Wali kelas dari kelas itu, guru yang mengajar di kelas itu, dan operator
@@ -90,6 +90,14 @@ itu.
 7. Klik **Simpan Kehadiran**.
    *Muncul pesan "Kehadiran disimpan:" diikuti jumlah data baru dan yang diperbarui. Menyimpan ulang pada tanggal yang sama memperbarui register itu.*
 
+![Gambar 1. Halaman Absensi Harian dengan daftar santri dan tombol status.](screens/absensi-harian/02-absensi-harian.png){width=14cm}
+
+*Gambar 1. Halaman Absensi Harian dengan daftar santri dan tombol status.*
+
+![Gambar 2. Pesan "Kehadiran disimpan" setelah Simpan Kehadiran.](screens/absensi-harian/04-simpan.png){width=14cm}
+
+*Gambar 2. Pesan "Kehadiran disimpan" setelah Simpan Kehadiran.*
+
 **Hasilnya, dan giliran siapa berikutnya.** Register tersimpan. Santri yang
 tercatat **Tidak Hadir** tanpa keterangan muncul di daftar tindak lanjut
 pemiliknya (wali kelas untuk santri harian, musyrif untuk santri mukim) dengan
@@ -106,8 +114,6 @@ sebutan Alpa; lihat kartu berikutnya.
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 ## Menindaklanjuti Alpa
-
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
 **Tujuan.** Menghubungi wali santri yang anaknya Alpa tanpa keterangan dan
 mencatat hasilnya.
@@ -130,6 +136,14 @@ mencatat hasilnya.
 6. Bila perlu, isi **Catatan (opsional)**.
 7. Klik **Simpan**.
 
+![Gambar 3. Daftar Alpa tanpa keterangan di Tindak Lanjut Absensi.](screens/tindak-lanjut-alpa/04-daftar-tindak-lanjut.png){width=14cm}
+
+*Gambar 3. Daftar Alpa tanpa keterangan di Tindak Lanjut Absensi.*
+
+![Gambar 4. Kotak Catat hasil tindak lanjut: cara menghubungi dan hasilnya.](screens/tindak-lanjut-alpa/05-kotak-catat-hasil.png){width=14cm}
+
+*Gambar 4. Kotak Catat hasil tindak lanjut: cara menghubungi dan hasilnya.*
+
 **Hasilnya, dan giliran siapa berikutnya.** Pilihan **Sakit** atau **Izin**
 mengubah absensi santri itu menjadi Sakit atau Izin. **Tanpa keterangan**
 membiarkannya tetap Alpa dan menyelesaikan tindak lanjut. **Wali tidak
@@ -145,8 +159,6 @@ terhubungi** membiarkannya di daftar agar dicoba lagi.
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 ## Menulis catatan perilaku
-
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
 **Tujuan.** Mencatat perilaku santri, positif maupun yang perlu perhatian.
 
@@ -167,6 +179,14 @@ terhubungi** membiarkannya di daftar agar dicoba lagi.
 7. Klik **Simpan**.
    *Catatan tersimpan dan tampil di daftar.*
 
+![Gambar 5. Daftar Catatan Perilaku kelas perwalian dengan tombol Tambah Catatan.](screens/catatan-perilaku/01-daftar-catatan.png){width=14cm}
+
+*Gambar 5. Daftar Catatan Perilaku kelas perwalian dengan tombol Tambah Catatan.*
+
+![Gambar 6. Kotak Tambah Catatan Perilaku: pilih santri, kategori, dan isi catatan.](screens/catatan-perilaku/02-kotak-tambah-catatan.png){width=14cm}
+
+*Gambar 6. Kotak Tambah Catatan Perilaku: pilih santri, kategori, dan isi catatan.*
+
 **Hasilnya, dan giliran siapa berikutnya.** Catatan tersimpan pada santri itu.
 Catatan yang perlu perhatian dihitung pada ringkasan halaman ini.
 
@@ -179,8 +199,6 @@ Catatan yang perlu perhatian dihitung pada ringkasan halaman ini.
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
 ## Memutuskan izin santri harian
-
-> ⚠ **Belum dicoba di aplikasi berjalan.** Langkah disusun dari kode pada commit `aefc719`.
 
 **Tujuan.** Menyetujui atau menolak permohonan izin santri harian di kelas
 Anda.
@@ -202,6 +220,10 @@ dikumpulkan lewat penyaring **Perlu keputusan saya**.
 3. Untuk menolak, klik **Tolak** pada baris izinnya, tuliskan alasannya di
    kotak "Tolak izin", lalu klik **Tolak**.
    *Muncul pesan "Izin ditolak".*
+
+![Gambar 7. Kotak konfirmasi "Setujui izin" sebelum keputusan disimpan.](screens/izin-santri-harian/12-setujui.png){width=14cm}
+
+*Gambar 7. Kotak konfirmasi "Setujui izin" sebelum keputusan disimpan.*
 
 **Hasilnya, dan giliran siapa berikutnya.** Izin yang disetujui menunggu pintu
 gerbang mencatat keberangkatan dan kepulangan santri; izin yang ditolak kembali

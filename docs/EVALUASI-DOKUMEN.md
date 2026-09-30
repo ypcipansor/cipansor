@@ -99,8 +99,8 @@ Yang tidak dilakukan: menambah aturan gaya panjang. Semakin banyak aturan prosa,
 
 | Hal | Mengapa | Siapa |
 |---|---|---|
-| Panduan naik ke T1 (dicoba di aplikasi berjalan, dengan tangkapan layar) | Semua kartu masih T2 dan bertanda ⚠; lingkungan penyusun tak diuji kemampuannya | penyusun berikut dengan skill `stack` |
-| Buklet peran lain (pesantren, TU, bendahara, kepala unit, organ, wali, santri) | Hanya Guru dan Umum | permintaan berikut |
+| Panduan naik ke T1 (dicoba di aplikasi berjalan, dengan tangkapan layar) | **Sebagian selesai (2026-09-30).** Panduan Umum bab 2 dan seluruh kartu buklet Guru, Musyrif, dan Wali Santri sudah T1 dengan tangkapan layar asli. Sisa: bab konsep/rujukan Panduan Umum, dan buklet peran lain | penyusun berikut dengan skill `stack` |
+| Buklet peran lain (pesantren, TU, bendahara, kepala unit, organ, wali, santri) | **Sebagian selesai (2026-09-30):** Musyrif dan Wali Santri terbit. Sisa: TU/staf, bendahara, kepala unit, organ yayasan, santri | permintaan berikut |
 | Biner `.docx`/`.pdf` di git | Tiga salinan per dokumen bisa menyimpang dan git tidak bisa menampilkan isinya; **diputuskan (2026-09-29): biner tidak dilacak** — hanya `.md` di git, biner dibangun ulang saat dibutuhkan | selesai |
 | Pembangunan dokumen di CI | Tidak lagi perlu: biner tidak dilacak, jadi tak ada "biner basi" yang harus dicegah | — |
 | Uji oleh satu guru sungguhan | ISO 26514 meminta panduan diuji pada pembaca | yayasan |
@@ -110,3 +110,50 @@ menganjurkan "ganti password secara berkala (minimal setiap 3 bulan)", bertentan
 kejadian, bukan kalender); pesan validasi "Password baru minimal 8 karakter" tidak menyebut batas 15 karakter tanpa 2FA; menu avatar
 berbahasa Inggris (Profile, Settings, Logout) padahal portal diputuskan berbahasa Indonesia; beberapa layar masih menulis
 "Siswa" alih-alih santri. Semuanya perlu dicatat di `known-issues.md` oleh pemilik repo.
+
+# 9. Tindak lanjut 2026-09-30
+
+Sesi ini menaikkan panduan ke T1, menerbitkan dua buklet peran baru, dan
+memeriksa ulang pilihan standar.
+
+**T1 — dijalankan pada aplikasi berjalan.** Tumpukan lokal (PostgreSQL + Redis,
+API :3001, web :3000) dijalankan; akun demo dipakai per peran. Sebelas alur
+tangkapan layar (`screenshot-flow.ts`) dijalankan dan **semuanya lolos**:
+`masuk-dan-kenal-aplikasi`, `masuk-verifikasi-dua-langkah`, `absensi-harian`,
+`tindak-lanjut-alpa`, `catatan-perilaku`, `izin-santri-harian`,
+`izin-santri-mukim`, `pantau-anak-wali`, `setoran-tahfidz-musyrif`,
+`pengesahan-rka-yayasan`, dan `persuratan-tte`. Empat alur baru dibuat untuk sesi
+ini (`masuk-verifikasi-dua-langkah`, `izin-santri-mukim`, `pantau-anak-wali`,
+`setoran-tahfidz-musyrif`).
+
+**Koreksi yang hanya terlihat saat dijalankan** (bukan dari kode):
+- Ikon lonceng header **membuka halaman Notifikasi Saya**, bukan panel melayang
+  seperti yang tertulis sebelumnya di Panduan Umum.
+- Halaman pertama setelah masuk berlabel **Dashboard**.
+- Layar Santri Binaan musyrif masih berjudul **Students**; kartu ditulis apa
+  adanya dengan catatan.
+- Formulir tahfidz meminta **Tipe**, **Nilai**, **Surah**, dan **Ayat Awal/Akhir**;
+  **Tanggal** sudah terisi hari ini, jadi langkah tanggal tidak diperlukan.
+- Label **Ayat Awal**/**Ayat Akhir** memuat tanda bintang di layar (penanda wajib),
+  sehingga pemeriksa label tidak menemukannya utuh. **Cacat pemeriksa diperbaiki**:
+  `label_hits()` di `check_docs.py` kini menerima akhiran " *" pada label wajib,
+  dan kartu kembali menulis labelnya persis.
+
+**Buklet baru.** `PANDUAN-PENGGUNA-MUSYRIF.md` dan
+`PANDUAN-PENGGUNA-WALI-SANTRI.md`, keduanya T1, memakai alur yang lolos. Jalur
+menu dicetak dari `role-menus.ts` (`MUSYRIF`, `SDIT_ORANG_TUA`, `SMPIT_ORANG_TUA`).
+
+**Standar diperiksa ulang** (`references/standar-dan-alasan.md`, bagian
+"Pemeriksaan ulang 2026-09-30"): arc42 tetap 12 bab; C4 tingkat 3 dipertahankan
+satu diagram lapisan (peringatan volatilitas Simon Brown dicatat); `llms.txt`
+**tidak** dibuat karena ia fitur situs web, bukan dokumen aplikasi; docs-as-code
+menuntut pemeriksa di CI — yang masih belum dijalankan di CI.
+
+**Pemeriksa mesin (30 September 2026).** `check_docs.py` 0 ERROR untuk
+DOKUMEN-TEKNIS (`--final`), PANDUAN-UMUM, -GURU, -MUSYRIF, -WALI-SANTRI;
+`scan_sensitive.py` bersih (5 berkas); `build_docs.py` menghasilkan `.docx`/`.pdf`
+untuk kelima panduan tanpa galat.
+
+**Belum selesai.** Buklet TU/staf, bendahara, kepala unit, organ yayasan, dan
+santri; bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen belum
+berjalan di CI.

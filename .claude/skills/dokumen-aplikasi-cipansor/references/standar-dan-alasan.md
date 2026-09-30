@@ -121,6 +121,43 @@ Bukan kerangka bab, melainkan cara menulis **di dalam** tiap bab dan kartu:
   dengan tugas berbeda. Diterbitkan sebagai **bagian umum + buklet per keluarga
   peran**, supaya guru tidak membaca bab bendahara.
 
+## Pemeriksaan ulang 2026-09-30
+
+Riset diulang atas tiga pertanyaan: apakah pilihan kerangka masih sesuai standar
+berlaku, apakah C4 tingkat 3 masih layak dirawat, dan apakah ada konvensi baru
+yang pantas diikuti. Hasilnya:
+
+- **arc42 tetap 12 bab** (arc42.org/overview; contoh arc42-by-Example). Tidak ada
+  perubahan struktur; bab 1 tetap memuat *tujuan mutu* lebih dulu, bukan daftar
+  kebutuhan.
+- **C4 — peringatan volatilitas, dari pembuatnya sendiri.** Simon Brown (GOTO
+  2026; YOW! 2025) menyarankan memulai dari **dua tingkat teratas** (konteks dan
+  kontainer) karena keduanya jarang berubah, sedangkan tingkat 3 (komponen) dan
+  tingkat 4 (kode) berubah tiap commit. Terapan kita: dokumen **tetap** memuat
+  tingkat 3 karena pembaca utamanya (pengembang baru) membutuhkannya, tetapi
+  tingkat itu ditulis sebagai **satu diagram lapisan modul**, bukan tiap kelas,
+  dan tingkat 4 sengaja **tidak** digambar. Bila nanti terbukti cepat basi, yang
+  diturunkan adalah tingkat 3, bukan tingkat 1–2.
+- **Konvensi baru 2026: `llms.txt` / `llms-full.txt` / `agents.md`.** Masing-masing
+  kini lazim: `llms.txt` (berkas ringkas di akar domain, 10–50 tautan terpilih
+  beranotasi) untuk situs; `llms-full.txt` untuk isi lengkap; `agents.md` (standar
+  Linux Foundation) untuk perilaku agen. **Terapan kita:** `AGENTS.md` sudah ada
+  dan sesuai maksudnya; dokumen teknis dan panduan sudah berbentuk Markdown yang
+  bisa dibaca agen. `llms.txt` publik **tidak** dibuat: ia fitur **situs web**,
+  bukan dokumen aplikasi, dan repositori ini publik sampai rilis — menambah berkas
+  akar baru adalah perubahan kode web dengan tesnya sendiri (aturan emas #7/#8),
+  di luar lingkup dokumen. Dicatat di sini supaya keputusan itu terlihat, bukan
+  terlupa.
+- **Docs-as-code — CI memeriksa, bukan manusia mengingat.** Praktik 2026 menuntut
+  validasi otomatis (lint, tautan, contoh terhadap API) pada tiap perubahan
+  dokumentasi. Terapan kita sudah ada: `check_docs.py`, `scan_sensitive.py`,
+  `build_docs.py` memverifikasi hasil. Yang belum: menjalankannya di CI. Selama
+  biner tidak dilacak git, dokumen Markdown ditinjau seperti kode lain, dan
+  pemeriksa dijalankan sebelum menyerahkan dokumen (lihat `docs/README.md`).
+
+Sumber tambahan yang dikutip di bagian ini: Simon Brown, *The C4 Model* (GOTO
+2026, YOW! 2025); llmstxt.org dan laporan adopsi 2026; panduan docs-as-code 2026.
+
 ## Prinsip yang menyatukan semuanya
 
 1. **Angka dari kode, bukan ingatan** — `collect_facts.py`; sebut commit dan
