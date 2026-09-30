@@ -28,6 +28,7 @@ import {
   getCertificates,
   verifyCertificate,
   renderCertificatePdf,
+  renderPublicCertificatePdf,
   type CertificateActor,
 } from '../certificates.service';
 
@@ -226,5 +227,35 @@ describe('certificates service', () => {
   it('404s a PDF for a certificate outside the caller\u2019s reach', async () => {
     mocked.digitalCertificate.findFirst.mockResolvedValue(null);
     await expect(renderCertificatePdf('cert-other', teacher)).rejects.toThrow(/not found/i);
+  });
+
+  it('renders a public certificate by number without a session, gated on isPublic', async () => {
+    const stored = {
+      id: 'cert-1',
+      certificateNumber: 'CERT-TFZ-30-2024001',
+      title: 'Sertifikat',
+      issueDate: new Date('2026-09-01'),
+      signatoryName: 'Ust. Ahmad',
+      signatoryTitle: 'Musyrif',
+      verificationUrl: 'https://cipansor.or.id/public/verify-sanad?code=CERT-TFZ-30-2024001',
+      student: null,
+      createdBy: null,
+    };
+    mocked.digitalCertificate.findFirst.mockResolvedValue(stored);
+
+    const { buffer } = await renderPublicCertificatePdf('CERT-TFZ-30-2024001');
+
+    // The lookup is keyed by number AND `isPublic: true` — a private row is
+    // never loaded, so this route cannot leak one even with its number.
+    expect(mocked.digitalCertificate.findFirst.mock.calls[0][0].where).toEqual({
+      certificateNumber: 'CERT-TFZ-30-2024001',
+      isPublic: true,
+    });
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+  });
+
+  it('404s a public PDF for a private or unknown number', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+    await expect(renderPublicCertificatePdf('SANAD-202601-PRIVATE1')).rejects.toThrow(/not found/i);
   });
 });

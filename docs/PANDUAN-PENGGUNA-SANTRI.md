@@ -4,6 +4,7 @@
 |---|---|---|---|---|
 | 0.1 | 30 September 2026 | aplikasi berjalan dari kode commit `a4735001` | **T1 — terverifikasi di aplikasi berjalan** | Penyusunan awal; tiap kartu dijalankan dengan akun demo santri pada tumpukan lokal (PostgreSQL + API :3001 + web :3000) dan memuat tangkapan layar asli |
 | 0.2 | 30 September 2026 | aplikasi berjalan dari kode commit `a4735001` | **T1 — terverifikasi di aplikasi berjalan** | Gambar Papan Peringkat diambil ulang dari halaman `/ibadah/leaderboard` (tangkapan pertama keliru memakai layar Jurnal Ibadah); kartu "Menetapkan target ibadah" memakai tangkapan halaman **Kelola Target Ibadah** yang sebenarnya, bukan Jurnal Ibadah |
+| 0.3 | 30 September 2026 | aplikasi berjalan dari kode commit `a4735001` | **T1 — terverifikasi di aplikasi berjalan** | Daftar tugas tidak lagi mencantumkan **Menetapkan target ibadah** (tindakan pengelola unit, bukan santri) dan diganti dengan **Melihat target ibadah**; baris pemecahan masalah target tidak lagi membahas penghapusan target (hak pengelola) melainkan kegagalan memuat daftar target |
 
 > **Tingkat verifikasi T1.** Semua kartu tugas di bawah sudah **dijalankan pada
 > aplikasi berjalan** dengan akun demo santri, dan tiap kartu memuat tangkapan
@@ -44,7 +45,7 @@ Harian), dan **Kegiatan** (Jadwal, Pengumuman, Aduan & Aspirasi). Anda melihat
 |---|---|---|
 | Melihat hafalan | Harian | Hafalan → Hafalan Saya |
 | Mengisi jurnal ibadah | Harian | Pesantren → Jurnal Ibadah |
-| Menetapkan target ibadah | Mingguan | Pesantren → Jurnal Ibadah → Kelola Target |
+| Melihat target ibadah | Mingguan | Pesantren → Jurnal Ibadah → Target Aktif |
 | Melihat papan peringkat ibadah | Mingguan | Pesantren → Jurnal Ibadah → Papan Peringkat |
 | Mengisi muhasabah harian | Harian | Pesantren → Muhasabah Harian |
 | Mengerjakan ujian online | Sesuai jadwal | Akademik → Ujian Online |
@@ -161,7 +162,7 @@ atau wali kelas — mereka yang menetapkannya.
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
 | **Belum ada target ibadah** | Unit belum menetapkan target | Minta musyrif menetapkan target unit |
-| "Gagal menghapus target" | Koneksi bermasalah | Muat ulang halaman |
+| Daftar target tidak muncul | Halaman belum selesai dimuat, atau koneksi bermasalah | Muat ulang halaman |
 
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 

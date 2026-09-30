@@ -214,3 +214,30 @@ export async function renderCertificatePdf(id: string, actor: CertificateActor) 
   const buffer = await generateCertificatePdfBuffer(certificate);
   return { certificate, buffer };
 }
+
+/**
+ * Render a *public* certificate's PDF from its printed verification number.
+ *
+ * The authenticated download route cannot serve a visitor who has only a
+ * certificate number: it is keyed by row id and scoped to the caller, so a
+ * recipient holding a printed certificate has no way to obtain the file — the
+ * gap that had the verification page link to an unrelated verification form
+ * instead. This is the public half of that flow, and it is deliberately narrow:
+ * the lookup is `isPublic: true`, exactly like `verifyCertificate`, so a
+ * private certificate stays unreachable here even with its number. The bytes
+ * come from the same renderer, and the download count is not incremented (there
+ * is no authenticated actor to attribute it to, and this route is unthrottled
+ * per row).
+ */
+export async function renderPublicCertificatePdf(code: string) {
+  // `findFirst`, not `findUnique`: the `isPublic` predicate is part of the
+  // identity here, and a private row must never be loaded into memory.
+  const certificate = await prisma.digitalCertificate.findFirst({
+    where: { certificateNumber: code, isPublic: true },
+    include: studentInclude,
+  });
+  if (!certificate) throw Errors.notFound('Certificate');
+
+  const buffer = await generateCertificatePdfBuffer(certificate);
+  return { certificate, buffer };
+}

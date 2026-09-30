@@ -330,6 +330,27 @@ export function useDownloadCertificate() {
   });
 }
 
+/**
+ * Download a *public* certificate by its printed verification number.
+ *
+ * Distinct from `useDownloadCertificate`, which is the authenticated,
+ * id-keyed, scope-checked route: a visitor on the public verification page
+ * holds only a number, so this hits `/certificates/public/{code}/download`,
+ * which the API answers without a session and only for a certificate marked
+ * `isPublic`. A private number gets the same 404 as an unknown one.
+ */
+export function useDownloadPublicCertificate() {
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const response = await api.get(
+        `/certificates/public/${encodeURIComponent(code)}/download`,
+        { responseType: "blob" },
+      );
+      return response.data as Blob;
+    },
+  });
+}
+
 // Generate certificate number
 export function generateCertificateNumber(
   type: CertificateType,

@@ -15,6 +15,12 @@ const router = Router();
 // printed certificate points here.
 router.get('/verify/:code', controller.verifyCertificate);
 
+// Public PDF delivery, keyed by the printed certificate number. Placed here,
+// with the other session-free routes, so a recipient can download a public
+// certificate. `/verify/:code` is a two-segment path and `/public/...` a
+// distinct prefix, so neither shadows the other.
+router.get('/public/:code/download', controller.downloadPublicCertificate);
+
 router.use(authenticate);
 
 router.get(

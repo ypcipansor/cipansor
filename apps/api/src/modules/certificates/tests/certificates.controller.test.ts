@@ -10,6 +10,7 @@ vi.mock('../certificates.service', () => ({
   updateCertificate: vi.fn(),
   deleteCertificate: vi.fn(),
   renderCertificatePdf: vi.fn(),
+  renderPublicCertificatePdf: vi.fn(),
   incrementDownloadCount: vi.fn(),
 }));
 
@@ -173,6 +174,47 @@ describe('certificatesController — download', () => {
   });
 });
 
+describe('certificatesController — public download', () => {
+  it('streams the PDF bytes for a public number without a session', async () => {
+    mocked.renderPublicCertificatePdf.mockResolvedValue({
+      certificate: { id: 'cert-1', certificateNumber: 'CERT-TFZ-30-2024001' },
+      buffer: Buffer.from('%PDF-1.4'),
+    });
+    const req = mockRequest({
+      params: { code: 'CERT-TFZ-30-2024001' },
+      user: undefined,
+    });
+    const res = mockResponse();
+
+    await run(controller.downloadPublicCertificate, req, res);
+
+    // The number, not a row id, is what the public caller holds — and no actor
+    // is passed, because there is no session.
+    expect(mocked.renderPublicCertificatePdf).toHaveBeenCalledWith('CERT-TFZ-30-2024001');
+    expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'application/pdf');
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Content-Disposition',
+      'attachment; filename="sertifikat-CERT-TFZ-30-2024001.pdf"'
+    );
+    expect(res.send).toHaveBeenCalledWith(expect.any(Buffer));
+    // No download count: the counter is written only on the scoped route.
+    expect(mocked.incrementDownloadCount).not.toHaveBeenCalled();
+  });
+
+  it('sends no bytes for a private or unknown number', async () => {
+    mocked.renderPublicCertificatePdf.mockRejectedValue(
+      Object.assign(new Error('Certificate not found'), { statusCode: 404 })
+    );
+    const req = mockRequest({ params: { code: 'SANAD-202601-PRIVATE1' }, user: undefined });
+    const res = mockResponse();
+
+    const next = await run(controller.downloadPublicCertificate, req, res);
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+    expect(res.send).not.toHaveBeenCalled();
+  });
+});
+
 interface RouteLayer {
   route?: { path: string; methods: Record<string, boolean> };
 }
@@ -198,9 +240,14 @@ function isPublicRoute(method: string, path: string) {
 }
 
 describe('certificatesRoutes — registration', () => {
-  it('serves verification without a session and every other route behind auth', () => {
+  it('serves verification and public download without a session and every other route behind auth', () => {
     expect(hasRoute('get', '/verify/:code')).toBe(true);
     expect(isPublicRoute('get', '/verify/:code')).toBe(true);
+
+    // Public PDF delivery, keyed by number — the route the verification page's
+    // "Unduh Sertifikat" button calls. It must stay before `authenticate`.
+    expect(hasRoute('get', '/public/:code/download')).toBe(true);
+    expect(isPublicRoute('get', '/public/:code/download')).toBe(true);
 
     for (const [method, path] of [
       ['get', '/'],

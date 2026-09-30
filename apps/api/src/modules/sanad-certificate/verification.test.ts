@@ -43,7 +43,7 @@ describe('verifyCertificate', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('rejects certificates that are not in the database, even with a valid-looking number', async () => {
-    mocked.digitalCertificate.findUnique.mockResolvedValue(null);
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
 
     const result = await verifyCertificate({
       certificateNumber: 'SANAD-202601-DEADBEEF',
@@ -53,8 +53,26 @@ describe('verifyCertificate', () => {
     expect(result).not.toHaveProperty('data');
   });
 
+  it('never discloses a private certificate, and answers exactly as an unknown number does', async () => {
+    // A private certificate is invisible to this public route: the query must
+    // carry `isPublic: true` so the row is never found, and the caller gets the
+    // same "tidak ditemukan" answer as a number that does not exist — the route
+    // must not confirm that a private certificate exists. Before the fix this
+    // used `findUnique({ where: { certificateNumber } })` and returned the
+    // holder, unit and grade for any number (CWE-862).
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+
+    const result = await verifyCertificate({
+      certificateNumber: 'SANAD-202601-PRIVATE1',
+    });
+
+    expect(mocked.digitalCertificate.findFirst.mock.calls[0][0].where.isPublic).toBe(true);
+    expect(result.valid).toBe(false);
+    expect(result).not.toHaveProperty('data');
+  });
+
   it('rejects a mismatching verification code for an existing certificate', async () => {
-    mocked.digitalCertificate.findUnique.mockResolvedValue(storedCertificate);
+    mocked.digitalCertificate.findFirst.mockResolvedValue(storedCertificate);
 
     const result = await verifyCertificate({
       certificateNumber: 'SANAD-202601-ABCD1234',
@@ -64,8 +82,8 @@ describe('verifyCertificate', () => {
     expect(result.valid).toBe(false);
   });
 
-  it('returns certificate details for a registered certificate', async () => {
-    mocked.digitalCertificate.findUnique.mockResolvedValue(storedCertificate);
+  it('returns certificate details for a registered public certificate', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(storedCertificate);
 
     const result = await verifyCertificate({
       certificateNumber: 'SANAD-202601-ABCD1234',

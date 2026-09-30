@@ -50,6 +50,27 @@ export const deleteCertificate = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Public PDF delivery for a *public* certificate, keyed by its printed
+ * verification number rather than its row id.
+ *
+ * This is the public counterpart of `downloadCertificate` below, reachable
+ * without a session so a recipient holding a printed certificate can obtain the
+ * file. It answers only for a certificate its issuer marked `isPublic` — the
+ * gating lives in the service (`renderPublicCertificatePdf`) — so a private
+ * certificate answers 404, the same as an unknown number.
+ */
+export const downloadPublicCertificate = asyncHandler(async (req, res) => {
+  const { certificate: rendered, buffer } = await service.renderPublicCertificatePdf(
+    req.params.code
+  );
+
+  const filename = `sertifikat-${rendered.certificateNumber.replace(/[^A-Za-z0-9]+/g, '-')}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(buffer);
+});
+
+/**
  * The download route answers with the PDF itself, so the caller's
  * `responseType: 'blob'` receives bytes rather than a JSON envelope. The bytes
  * are rendered on demand — there is no stored file to read (see

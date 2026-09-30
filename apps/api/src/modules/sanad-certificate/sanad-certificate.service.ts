@@ -698,16 +698,26 @@ export function generateCertificateHtml(
 
 /**
  * Verify a certificate against the persisted `DigitalCertificate` records.
- * A certificate is valid only if its number exists in the database (and, when
- * a verification code is supplied, the code matches). This endpoint is
- * public, so the returned projection is limited to what is printed on the
- * certificate itself — never internal IDs or contact data.
+ * A certificate is valid only if its number exists in the database, was
+ * marked `isPublic` by its issuer, and — when a verification code is
+ * supplied — the code matches. This endpoint is public, so the returned
+ * projection is limited to what is printed on the certificate itself, never
+ * internal IDs or contact data.
+ *
+ * The `isPublic` predicate is not optional here. Only a certificate its
+ * issuer chose to publish may be read without a session; without it, anyone
+ * holding (or guessing) a *private* certificate's number — a tahfidz syahadah
+ * minted for internal records, say — received the holder's name, unit and
+ * grade from this route. A private certificate now answers `valid: false`,
+ * exactly as an unknown number does, so this route cannot be used to confirm
+ * that a private certificate exists. This mirrors `certificates.service.ts`'s
+ * `verifyCertificate` (CWE-862).
  */
 export async function verifyCertificate(input: VerifyCertificateInput) {
   const { certificateNumber, verificationCode } = input;
 
-  const certificate = await prisma.digitalCertificate.findUnique({
-    where: { certificateNumber },
+  const certificate = await prisma.digitalCertificate.findFirst({
+    where: { certificateNumber, isPublic: true },
     include: {
       student: {
         select: {
