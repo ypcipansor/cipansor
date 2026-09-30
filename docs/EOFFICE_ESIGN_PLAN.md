@@ -177,10 +177,7 @@ precisely the assertion §1 exists to retire. No UI drives them, but anyone can
 call them directly or build a convincing lookalike verification page on top.
 Remove them, or change the response so it no longer asserts document validity.
 
-**Minor, same area:** `verifyByPdfBuffer` verifies `signature.pdfHash` using
-`signature.publicKey` — both read from the row just fetched — instead of binding
-`uploadedHash`. Outcome-equivalent, because the lookup keyed on equality, but it
-means the Ed25519 step adds no independent assurance against database tampering.
+**Minor, same area:** ✅ *Hardened in `f045be2`.* `verifyByPdfBuffer` verified `signature.pdfHash` using `signature.publicKey` — both read from the row just fetched — instead of binding `uploadedHash`. Outcome-equivalent, because the lookup keyed on equality, but it read back the field it searched on rather than the bytes uploaded. It now names `uploadedHash`, so the Ed25519 step visibly checks the caller's document.
 
 ### 2.7 Letter flow — four things that are wired to nothing
 
