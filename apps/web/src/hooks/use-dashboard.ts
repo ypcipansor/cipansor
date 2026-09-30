@@ -170,7 +170,11 @@ export function useChangePassword() {
       currentPassword: string;
       newPassword: string;
     }) => {
-      const response = await api.put("/auth/password", data);
+      // The form shows the API's reason on the field it concerns; a toast
+      // repeating it would be the same message twice.
+      const response = await api.put("/auth/password", data, {
+        skipErrorToast: true,
+      });
       return response.data;
     },
   });

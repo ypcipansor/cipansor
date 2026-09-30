@@ -13,12 +13,12 @@ export const listUsersQuerySchema = z.object({
 export const createUserSchema = z.object({
   name: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email format'),
+  // Bounds only; the policy (15 characters for a new account, the blocklist)
+  // runs in the service — lib/password-policy.ts. No composition rules.
   password: z
     .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(/[A-Z]/, 'Password must contain uppercase letter')
-    .regex(/[a-z]/, 'Password must contain lowercase letter')
-    .regex(/[0-9]/, 'Password must contain number'),
+    .min(8, 'Kata sandi minimal 8 karakter')
+    .max(256, 'Kata sandi terlalu panjang'),
   role: z.enum(['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STUDENT', 'PARENT']),
   unitId: z.string().uuid().optional().nullable(),
 });

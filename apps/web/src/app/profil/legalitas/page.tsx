@@ -169,7 +169,7 @@ export default async function LegalitasPage() {
           wordmarks — reused rather than restated, so the numbers here and on
           /profil and /wakaf-infaq cannot drift apart. */}
       <div className="max-w-4xl">
-        <LegalIdentity variant="profile" copy={content.legalIdentity} />
+        <LegalIdentity variant="legalitas" copy={content.legalIdentity} />
       </div>
 
       {/* Each unit's accreditation in force, from the portal's record

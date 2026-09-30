@@ -37,19 +37,21 @@ the mechanical cases.
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
 - [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
 - [realtime-polling](decisions/realtime-polling.md) — no push channel; the web polls; Socket.IO removed (no client); Web Push first for phones, WebSocket only for a seconds-level need and after Model A, with its conditions
-- [autentikasi-2fa-dan-sandi](decisions/autentikasi-2fa-dan-sandi.md) — 2FA wajib: admin, organ, kepala unit; diajak sesudah login: staf + wali, "Nanti saja" tanpa batas; sandi diganti karena kejadian, bukan kalender; panjang + daftar terlarang lokal (NIST 800-63B-4)
+- [autentikasi-2fa-dan-sandi](decisions/autentikasi-2fa-dan-sandi.md) — 2FA wajib: admin, organ, kepala unit; diajak sesudah login: staf + wali, "Nanti saja" tanpa batas; sandi diganti karena kejadian, bukan kalender; panjang + daftar terlarang lokal (NIST 800-63B-4); "Masuk dengan Google" hanya akun @cipansor.or.id (`hd`), peran wajib tetap kode Cipansor sesudahnya, tanpa jalur Microsoft
+- [struktur-organisasi-dan-identitas](decisions/struktur-organisasi-dan-identitas.md) — audit 2026-09-29: unit Pesantren dibuat; satu pohon org maks 3 tingkat, jabatan terpisah dari pemegangnya; Model A bertahap tapi menyeluruh (baseline hanya menyusut); Google OU per kebijakan + grup otomatis; Cipansor → Google → Microsoft ditegaskan (hub Microsoft butuh P1)
+- [penyimpanan-berkas](decisions/penyimpanan-berkas.md) — satu tabel berkas (pemilik, status tertaut), Blob privat lewat managed identity + SAS delegasi pengguna, tanpa kunci akun atau kontainer publik; yang tak tertaut dihapus sesudah 24 jam; rancangan #441 ditolak
 - [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
 
 ## Lessons — traps that already cost time
 
-- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape; a suite that signs in as someone who cannot be refused
+- [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape; a suite that signs in as someone who cannot be refused; an absence assertion that retries until the thing goes away
 - [teacher-dashboard-fake-stats](lessons/teacher-dashboard-fake-stats.md) — four kinds of figures that lie, and how to find each
 - [breadth-over-depth](lessons/breadth-over-depth.md) — built wider than used; walk a real journey end to end
 - [student-status-case-mismatch](lessons/student-status-case-mismatch.md) — `'active'` vs `'ACTIVE'`: 43 queries returned zero; one vocabulary + CHECK + scanner
 - [prisma-include-leaks-pii](lessons/prisma-include-leaks-pii.md) — `include: { student }` sends 69 columns of a child's data; always `select`
 - [rbac-nav-contract](lessons/rbac-nav-contract.md) — `navigation.ts` and `rbac.ts` are one contract; the three directions tested, and how they go blind
 - [api-integration-traps](lessons/api-integration-traps.md) — empty permission matrix, Express 5 `req.query`, `/:id` shadowing, unmounted paths; a file over multer's limit answering 500
-- [auth-session-traps](lessons/auth-session-traps.md) — refresh-token stampede, pre-rehydration redirects, the 4 KB cookie
+- [auth-session-traps](lessons/auth-session-traps.md) — refresh-token stampede, pre-rehydration redirects, the 4 KB cookie; an HttpOnly routing cookie every refusal must clear, no refresh without a session, the bucket minted in one place, e2e tests that rotate a shared session
 - [stale-temporal-data](lessons/stale-temporal-data.md) — derive dates from now; `isActive` is not a schedule
 - [migration-history-baselined](lessons/migration-history-baselined.md) — `0_init`; `migrate diff` blind to triggers; CI's `db push`; wrap data migrations in BEGIN/COMMIT
 - [seed-verify-throwaway-db](lessons/seed-verify-throwaway-db.md) — prove a seed change on a disposable, isolated Postgres

@@ -258,9 +258,9 @@ export default function LetterDetailPage({
       const response = await fetch(
         `/api/correspondence/letters/${letter.id}/pdf`,
         {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-          },
+          // The HttpOnly session cookie authenticates this same-origin fetch;
+          // there is no token in JavaScript to put in a header.
+          credentials: "same-origin",
         },
       );
 

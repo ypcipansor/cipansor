@@ -12,7 +12,7 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `3caefaf6` (#614) on
+  documentation-only merge is not rebuilt). At `5f879509` (#615) on
   2026-09-29. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
@@ -94,9 +94,15 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   (`decisions/realtime-polling.md`, 2026-09-28). Sign-in (roadmap 00.9):
   2FA recovery codes that work and the 2FA screens in Indonesian (#614),
   sessions that follow the account's live roles (#615), and 2FA mandatory for
-  the head of every unit (this change). Next in 00.9: the post-login
-  invitation, then the password policy. Then the wali's approval for
-  staff-filed leave off the pondok (roadmap 00.5, third part).
+  the head of every unit (#616). Then a unit's NPSN, set on *Edit Unit*, and
+  Profil Unit's real statistics (#619). #441 (SSO and Blob storage) closed
+  after its third audit; rebuilt as six PRs (roadmap 4). Profil → Legalitas
+  states its governance note once (#622). The post-login invitation to turn
+  2FA on (#623), and the realm badge beside a role name for every realm
+  (#624). The session moved to HttpOnly cookies (#620, issue #523). The
+  password rules (00.9, part A: this change); next, part B — a must-change
+  flag. Then the wali's
+  approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
   the `api-client` alias.

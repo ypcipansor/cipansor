@@ -10,6 +10,7 @@ vi.mock('../roles.service', () => ({
 vi.mock('@/lib/jwt', () => ({
   generateTokenPair: vi.fn(() => ({ accessToken: 'token-123', refreshToken: 'refresh-123' })),
   getExpirationDate: vi.fn(() => new Date()),
+  decodeToken: vi.fn(() => ({ sub: 'user-1', role: 'UNIT_ADMIN', roleCode: 'SMPIT_ADMIN' })),
 }));
 
 vi.mock('@/lib/prisma', () => ({
@@ -33,21 +34,36 @@ function mockReqRes(overrides: Partial<Request> = {}) {
     params: {},
     body: {},
     user: { sub: 'user-1' },
+    // Bearer clients get the tokens in the body; the browser path (no header)
+    // gets them only in the Set-Cookie below.
+    headers: { 'x-client': 'bearer' },
     ...overrides,
   } as unknown as Request;
 
   const res = {
     statusCode: 200,
     jsonPayload: undefined as unknown,
+    cookies: [] as Array<{ name: string; value: string }>,
     status(code: number) {
       (this as any).statusCode = code;
+      return this;
+    },
+    cookie(name: string, value: string) {
+      (this as any).cookies.push({ name, value });
+      return this;
+    },
+    clearCookie() {
       return this;
     },
     json(payload: unknown) {
       (this as any).jsonPayload = payload;
       return this;
     },
-  } as unknown as Response & { statusCode: number; jsonPayload: any };
+  } as unknown as Response & {
+    statusCode: number;
+    jsonPayload: any;
+    cookies: Array<{ name: string; value: string }>;
+  };
 
   return { req, res, next: vi.fn() };
 }
@@ -87,6 +103,49 @@ describe('RolesController.switchRole', () => {
     );
     expect(res.jsonPayload.success).toBe(true);
     expect(res.jsonPayload.data.accessToken).toBe('token-123');
+  });
+
+  it("routes a switched role by its own bucket, not by the user's legacy column", async () => {
+    // ketua@ is STAFF in the legacy column and Ketua Pengurus by assignment.
+    // The token's role claim builds the web's routing cookie; the column here
+    // bounced them from /perencanaan after every switch.
+    vi.mocked(rolesService.switchRole).mockResolvedValue({
+      user: { id: 'u-1', email: 'ketua@cipansor.or.id', role: 'STAFF', unitId: null },
+      activeRole: {
+        id: 'ra-ketua',
+        roleId: 'r-ketua',
+        unitId: null,
+        role: { code: 'YAYASAN_KETUA', permissions: [] },
+        unit: null,
+      },
+    } as any);
+
+    const { req, res, next } = mockReqRes({ body: { roleAssignmentId: 'ra-ketua' } as any });
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ roleCode: 'YAYASAN_KETUA', role: 'UNIT_ADMIN' })
+    );
+  });
+
+  it('routes a komite role, which has no bucket, by the legacy column', async () => {
+    vi.mocked(rolesService.switchRole).mockResolvedValue({
+      user: { id: 'u-1', email: 'komite@cipansor.or.id', role: 'STAFF', unitId: 'unit-smp' },
+      activeRole: {
+        id: 'ra-komite',
+        roleId: 'r-komite',
+        unitId: 'unit-smp',
+        role: { code: 'SMPIT_KOMITE', permissions: [] },
+        unit: { id: 'unit-smp', name: 'SMP IT' },
+      },
+    } as any);
+
+    const { req, res, next } = mockReqRes({ body: { roleAssignmentId: 'ra-komite' } as any });
+    await rolesController.switchRole(req, res, next);
+
+    expect(generateTokenPair).toHaveBeenCalledWith(
+      expect.objectContaining({ roleCode: 'SMPIT_KOMITE', role: 'STAFF' })
+    );
   });
 
   it('keeps unitId null when switching to a foundation role', async () => {
@@ -151,6 +210,33 @@ describe('RolesController.switchRole', () => {
         unitId: 'unit-home-sd',
       })
     );
+  });
+
+  it('never returns tokens to a cookie-authenticated switch', async () => {
+    // Same shape as the refresh exfiltration: page JS sets X-Client: bearer on
+    // a cookie-authenticated request. The body must not carry a fresh token.
+    const mockSwitchResult = {
+      user: { id: 'u-1', email: 'user@cipansor.or.id', role: 'TEACHER', unitId: 'unit-home-sd' },
+      activeRole: {
+        id: 'role-assign-1',
+        roleId: 'r-smp',
+        unitId: 'unit-active-smp',
+        role: { code: 'SMPIT_ADMIN', permissions: [] },
+        unit: { id: 'unit-active-smp', name: 'SMP IT' },
+      },
+    };
+    vi.mocked(rolesService.switchRole).mockResolvedValue(mockSwitchResult as any);
+
+    const { req, res, next } = mockReqRes({
+      body: { roleAssignmentId: 'role-assign-1' } as any,
+      // A session cookie is present, so this is a browser, not a bearer client.
+      cookies: { cipansor_at: 'session' },
+    });
+
+    await rolesController.switchRole(req, res, next);
+
+    expect(res.jsonPayload.data.accessToken).toBeUndefined();
+    expect(res.jsonPayload.data.refreshToken).toBeUndefined();
   });
 
   it('keeps a cross-unit service role on its home unit — only foundation roles carry no unit', async () => {

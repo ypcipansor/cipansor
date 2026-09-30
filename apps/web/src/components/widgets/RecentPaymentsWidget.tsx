@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -88,22 +89,19 @@ export function RecentPaymentsWidget({
 
     const fetchRecentPayments = async () => {
       try {
-        const token = localStorage.getItem("token");
-        const response = await fetch(
-          // `??` keeps an empty value empty, making the base relative — see lib/api.ts.
-          `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/api/analytics/finance`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        // The session rides an HttpOnly cookie; `api` attaches it. No token is
+        // read from JavaScript (there is none to read any more).
+        const response = await api.get<{
+          success?: boolean;
+          data?: { payments?: unknown[] };
+        }>("/analytics/finance", { skipErrorToast: true });
 
-        if (response.ok) {
-          const data = await response.json();
-          if (mounted) {
-            if (data.success && data.data && data.data.payments) {
-              // If we had real API returning payments list
-              // setPayments(data.data.payments);
-            }
-            setIsConnected(true);
+        if (mounted) {
+          if (response.data?.success && response.data.data?.payments) {
+            // If we had real API returning payments list
+            // setPayments(data.data.payments);
           }
+          setIsConnected(true);
         }
       } catch {
         if (mounted) {

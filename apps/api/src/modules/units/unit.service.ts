@@ -1,8 +1,15 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { UnitType, Prisma } from '@prisma/client';
+import { RoleCode, UnitType, Prisma } from '@prisma/client';
+import { STUDENT_STATUS, type UnitSummary } from '@cipansor/shared';
 import { isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import type { ListUnitsQuery, CreateUnitInput, UpdateUnitInput } from './unit.schema';
+
+/** Who is asking: the role in use and the unit it is bound to. */
+export interface UnitActor {
+  roleCode?: string | null;
+  unitId?: string | null;
+}
 
 export class UnitService {
   /**
@@ -123,15 +130,35 @@ export class UnitService {
   }
 
   /**
-   * Update unit
+   * Update a unit. The Super Admin edits every unit; a unit's admin edits their
+   * own — another unit answers 404, as if it did not exist — and never its type,
+   * which decides where the unit appears on the public site.
+   *
+   * The route used to check only "is some admin", so any unit's admin could
+   * rename, retype or re-address every other unit.
    */
-  async update(id: string, input: UpdateUnitInput) {
+  async update(id: string, input: UpdateUnitInput, actor: UnitActor) {
+    const isSuperAdmin = actor.roleCode === RoleCode.SUPER_ADMIN;
     const unit = await prisma.unit.findFirst({
       where: { id, deletedAt: null },
     });
 
-    if (!unit) {
+    if (!unit || (!isSuperAdmin && actor.unitId !== id)) {
       throw Errors.notFound('Unit');
+    }
+
+    if (input.type !== undefined && input.type !== unit.type && !isSuperAdmin) {
+      throw Errors.forbidden('Hanya Super Admin yang dapat mengubah jenis unit');
+    }
+
+    if (input.npsn) {
+      const holder = await prisma.unit.findFirst({
+        where: { npsn: input.npsn, id: { not: id } },
+        select: { name: true },
+      });
+      if (holder) {
+        throw Errors.conflict(`NPSN ini sudah tercatat untuk ${holder.name}`);
+      }
     }
 
     const updated = await prisma.unit.update({
@@ -143,10 +170,39 @@ export class UnitService {
         phone: input.phone,
         email: input.email,
         logoUrl: input.logoUrl,
+        npsn: input.npsn,
       },
     });
 
     return updated;
+  }
+
+  /**
+   * What the unit's profile counts. The yayasan's organs and the Super Admin
+   * read every unit's; everyone else only their own.
+   */
+  async summary(id: string, actor: UnitActor): Promise<UnitSummary> {
+    const unit = await prisma.unit.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!unit || (!isFoundationScopedRole(actor.roleCode) && actor.unitId !== id)) {
+      throw Errors.notFound('Unit');
+    }
+
+    const [activeStudents, teachers, classes] = await Promise.all([
+      prisma.student.count({
+        where: { unitId: id, deletedAt: null, status: STUDENT_STATUS.ACTIVE },
+      }),
+      prisma.teacher.count({
+        where: { unitId: id, user: { isActive: true, deletedAt: null } },
+      }),
+      prisma.class.count({
+        where: { unitId: id, deletedAt: null, academicYear: { isActive: true } },
+      }),
+    ]);
+
+    return { activeStudents, teachers, classes };
   }
 
   /**

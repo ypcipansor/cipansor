@@ -149,7 +149,15 @@ export function parseApiError(error: unknown): ParsedApiError {
       ?.data as Record<string, unknown>;
 
     if (responseData) {
-      message = (responseData.message as string) || "";
+      // The API's envelope is `{ success: false, error: { code, message } }`;
+      // a bare `message` is the older shape some routes still send. Reading
+      // only the latter showed "Data yang dikirim tidak sesuai format" for
+      // every refusal whose reason the API had spelled out.
+      const envelope = responseData.error as { message?: unknown } | undefined;
+      message =
+        (typeof envelope?.message === "string" && envelope.message) ||
+        (responseData.message as string) ||
+        "";
 
       // Extract validation errors
       if (responseData.errors && typeof responseData.errors === "object") {

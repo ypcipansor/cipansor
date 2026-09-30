@@ -1,12 +1,14 @@
 import express from 'express';
 import helmet from 'helmet';
 import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
+import { csrfProtection } from '@/middleware/csrf';
 import {
   defaultLimiter,
   authLimiter,
@@ -135,6 +137,17 @@ app.use(buildCorsMiddleware(config.cors.origins));
 // Request parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Parse the session cookies the auth module issues. `authenticate` reads the
+// access token from `cipansor_at` when no Authorization header is present, so
+// every browser request is authenticated without any JavaScript-visible token.
+app.use(cookieParser());
+// Once the session lives in an HttpOnly cookie the browser sends it on every
+// request, including ones another site forces. Reject an unsafe request that
+// carries a session cookie but no matching double-submit header. Read-only
+// routes and bearer-only clients are untouched (see middleware/csrf.ts). Once,
+// here, ahead of every router.
+app.use(csrfProtection);
 
 // Express 5 leaves `req.body` **undefined** when a request carries no body (or
 // no matching Content-Type); Express 4 defaulted it to {}. Forty-two

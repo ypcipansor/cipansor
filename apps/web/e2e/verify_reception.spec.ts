@@ -99,9 +99,9 @@ test("verify reception pages", async ({ page }) => {
     });
   });
 
-  // Inject auth token to bypass login redirect logic if any client-side check exists
+  // The session is an HttpOnly cookie; nothing token-like belongs in JS storage.
   await page.addInitScript(() => {
-    window.localStorage.setItem("accessToken", "mock-token");
+    window.localStorage.removeItem("accessToken");
   });
 
   // Login simulation (optional if we go straight to page with mocked auth)

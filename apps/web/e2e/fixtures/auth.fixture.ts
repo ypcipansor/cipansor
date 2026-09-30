@@ -66,9 +66,16 @@ export async function loginAsUser(page: Page, user: AuthUser) {
   // busy, so networkidle would always time out.
   await page.waitForLoadState("domcontentloaded");
 
-  // Verify token is stored
-  const token = await page.evaluate(() => localStorage.getItem("accessToken"));
-  expect(token).toBeTruthy();
+  // The session lives in an HttpOnly cookie, so nothing token-like may appear
+  // in the JS-reachable storage or cookies.
+  const leaked = await page.evaluate(() => ({
+    accessToken: localStorage.getItem("accessToken"),
+    refreshToken: localStorage.getItem("refreshToken"),
+    cookie: document.cookie,
+  }));
+  expect(leaked.accessToken).toBeNull();
+  expect(leaked.refreshToken).toBeNull();
+  expect(leaked.cookie).not.toContain("accessToken");
 }
 
 /**

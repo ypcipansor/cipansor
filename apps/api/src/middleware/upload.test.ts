@@ -194,7 +194,7 @@ describe('uploadsAuth', () => {
 
   function run(req: Partial<Request>) {
     const next = vi.fn() as unknown as NextFunction & ReturnType<typeof vi.fn>;
-    uploadsAuth({ headers: {}, query: {}, ...req } as Request, res, next);
+    uploadsAuth({ headers: {}, query: {}, cookies: {}, ...req } as Request, res, next);
     return next;
   }
 
@@ -206,7 +206,7 @@ describe('uploadsAuth', () => {
   });
 
   it('rejects a garbage token with 401', () => {
-    const next = run({ query: { token: 'not-a-jwt' } as Request['query'] });
+    const next = run({ headers: { authorization: 'Bearer not-a-jwt' } });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 
@@ -216,15 +216,23 @@ describe('uploadsAuth', () => {
     expect(next).toHaveBeenCalledWith();
   });
 
-  it('accepts a valid access token via ?token= (for <img>/<a> fetches)', () => {
+  it('rejects a valid token in ?token= — the log-leaking fallback is gone', () => {
     const token = generateAccessToken(payload);
     const next = run({ query: { token } as Request['query'] });
+    expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
+  });
+
+  it('accepts a valid access token from the HttpOnly session cookie', () => {
+    // The browser cannot put a token in the URL or a header for an <img>; it
+    // sends this cookie automatically. This is the path the web app now uses.
+    const token = generateAccessToken(payload);
+    const next = run({ cookies: { cipansor_at: token } });
     expect(next).toHaveBeenCalledWith();
   });
 
   it('rejects temporary 2FA tokens', () => {
     const token = generateAccessToken({ ...payload, isTemp: true });
-    const next = run({ query: { token } as Request['query'] });
+    const next = run({ cookies: { cipansor_at: token } });
     expect((next.mock.calls[0][0] as ApiError).statusCode).toBe(401);
   });
 });

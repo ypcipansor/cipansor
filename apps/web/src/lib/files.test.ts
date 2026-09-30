@@ -1,11 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { authFileUrl, objectUrlForFile, releaseObjectUrl } from "./files";
 
 describe("authFileUrl", () => {
-  beforeEach(() => {
-    localStorage.clear();
-  });
-
   it("returns empty string for null/undefined", () => {
     expect(authFileUrl(null)).toBe("");
     expect(authFileUrl(undefined)).toBe("");
@@ -17,30 +13,16 @@ describe("authFileUrl", () => {
     );
   });
 
-  it("appends the stored access token to /uploads URLs", () => {
-    localStorage.setItem("accessToken", "tok-123");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
-      "http://localhost:3001/uploads/a.pdf?token=tok-123",
-    );
-  });
-
-  it("uses & when the URL already has a query string", () => {
-    localStorage.setItem("accessToken", "tok-123");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf?v=2")).toBe(
-      "http://localhost:3001/uploads/a.pdf?v=2&token=tok-123",
-    );
-  });
-
-  it("URL-encodes the token", () => {
-    localStorage.setItem("accessToken", "a+b/c");
-    expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
-      "http://localhost:3001/uploads/a.pdf?token=a%2Bb%2Fc",
-    );
-  });
-
-  it("returns the bare URL when no token is stored", () => {
+  it("appends no token to /uploads URLs", () => {
+    // The session is an HttpOnly cookie now; there is no token in JS to append.
     expect(authFileUrl("http://localhost:3001/uploads/a.pdf")).toBe(
       "http://localhost:3001/uploads/a.pdf",
+    );
+  });
+
+  it("keeps an existing query string on an upload URL", () => {
+    expect(authFileUrl("http://localhost:3001/uploads/a.pdf?v=2")).toBe(
+      "http://localhost:3001/uploads/a.pdf?v=2",
     );
   });
 });

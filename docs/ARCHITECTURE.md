@@ -88,8 +88,17 @@ Next.js 16 App Router (RSC + client components). Conventions in
   API same-origin on each — hence `??` rather than `||` at every read of it, since
   `||` would fold the empty string into the localhost fallback. Wrap calls in React Query hooks under
   `src/hooks/*`; surface errors via `src/lib/api-error.ts`.
-- **Auth** — `accessToken` cookie read by `middleware.ts` before page JS; the
-  Axios response interceptor refreshes on 401 then redirects to `/login`.
+- **Auth** — the API issues the session as `HttpOnly; Secure; SameSite=Lax`
+  cookies (`cipansor_at`/`cipansor_rt`), plus a readable `cipansor_csrf` for
+  double-submit CSRF and an HttpOnly `cipansor_principal` holding only
+  `{id, role, roleCode}` for routing. `middleware.ts` reads
+  `cipansor_principal` locally before page JS runs — no API round trip, so a
+  page load and every `<Link>` prefetch cost no rate-limit slot. Unsafe requests
+  echo `cipansor_csrf` in `x-csrf-token`. The Axios response interceptor
+  refreshes on 401 then redirects to `/login`. No token is ever in
+  `localStorage` or a script-written cookie, and a request authenticated by a
+  session cookie never receives a token in a JSON body (`X-Client: bearer` is
+  honoured only for cookie-less clients — the mobile app).
 - **Routing/menus** — gate by role/permission (`config/navigation.ts`,
   `components/auth/protected-route.tsx`).
 
@@ -125,7 +134,7 @@ when typing request bodies.
 
 ```
 web hook (React Query)
-  -> lib/api.ts (Axios; Bearer token; baseURL .../api)
+  -> lib/api.ts (Axios; HttpOnly session cookie + x-csrf-token; baseURL .../api)
   -> Express route (authenticate -> authorize/hasPermission -> validate)
   -> controller (asyncHandler)
   -> service (business logic; Prisma via adapter)
@@ -184,11 +193,12 @@ hand-maintained list. A page added under a prefix nobody remembers to list bounc
 a prospective parent to the staff login screen. A marketing host with no
 application on it makes "public" the default there.
 
-**Why there are no per-unit subdomains:** sessions do not cross hosts — the token
-is in `localStorage` (per-origin) and `auth-storage` is a host-only cookie with no
-`domain=`. `SECONDARY_ROLES` deliberately gives one person roles in two units, so
-per-unit hosts would have forced them to sign in twice. Public unit pages are
-paths: `/unit/[slug]`.
+**Why there are no per-unit subdomains:** sessions do not cross hosts — the
+session is an `HttpOnly` cookie scoped to the portal host (no `domain=`), and
+`auth-storage` (the cached *user*, not a credential) is host-only too.
+`SECONDARY_ROLES` deliberately gives one person roles in two units, so per-unit
+hosts would have forced them to sign in twice. Public unit pages are paths:
+`/unit/[slug]`.
 
 Production and staging run on **Azure App Service** as sidecar containers
 (details in [`deploy-azure.md`](deploy-azure.md)): an **nginx** main container

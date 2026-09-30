@@ -38,20 +38,22 @@ import {
 import { Loader2, Eye, EyeOff, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { authService } from "@/services/auth.service";
+import { PASSWORD_HINT, PASSWORD_MIN_LENGTH_WITH_2FA } from "@cipansor/shared";
 
 /**
- * Mirrors `resetPasswordSchema` on the API. Kept in step by hand rather than
- * shared, because the API's copy also guards direct callers and must not become
- * whatever the form happens to allow.
+ * The floor only. Whether 8 characters are enough depends on the account's
+ * 2FA, which this signed-out page does not know; the API decides, along with
+ * the blocklist, and its reason is shown as the failure. No composition rules
+ * (decided 2026-09-28, NIST SP 800-63B-4).
  */
 const formSchema = z
   .object({
     newPassword: z
       .string()
-      .min(8, "Password minimal 8 karakter")
-      .regex(/[A-Z]/, "Harus mengandung huruf kapital")
-      .regex(/[a-z]/, "Harus mengandung huruf kecil")
-      .regex(/[0-9]/, "Harus mengandung angka"),
+      .min(
+        PASSWORD_MIN_LENGTH_WITH_2FA,
+        `Password minimal ${PASSWORD_MIN_LENGTH_WITH_2FA} karakter`,
+      ),
     confirmPassword: z.string(),
   })
   .refine((data) => data.newPassword === data.confirmPassword, {
@@ -148,6 +150,7 @@ function ResetPasswordForm() {
             )}
           </button>
         </div>
+        <p className="text-sm text-muted-foreground">{PASSWORD_HINT}</p>
         {errors.newPassword && (
           <p className="text-sm text-destructive">
             {errors.newPassword.message}

@@ -3,7 +3,9 @@
 > KEPUTUSAN 2026-09-28: siapa yang wajib 2FA (admin, organ, kepala unit), siapa
 > yang diajak sesudah login (staf dan wali, "Nanti saja" tanpa batas), dan
 > kebijakan sandi (ganti karena kejadian, bukan kalender; panjang dan daftar
-> terlarang, bukan aturan campuran). Riset dan sumbernya ada di bawah; jangan
+> terlarang, bukan aturan campuran). KEPUTUSAN 2026-09-29: "Masuk dengan
+> Google" untuk akun @cipansor.or.id saja, dan peran wajib 2FA tetap memasukkan
+> kode Cipansor sesudah Google. Riset dan sumbernya ada di bawah; jangan
 > diulang.
 
 **Keputusan pengguna 2026-09-28.** Usulan awalnya: tidak ada yang wajib 2FA,
@@ -53,6 +55,38 @@ memilih dari opsi yang disertai riset berikut.
   - sandi umum atau bocor ditolak lewat **daftar lokal**, tanpa mengirim apa
     pun ke layanan pihak ketiga.
 
+## Masuk dengan Google (SSO)
+
+Diputuskan 2026-09-29, sesudah audit ketiga #441 (PR itu ditutup dan
+dibangun ulang; lihat `roadmap.md` butir 4).
+
+- **Hanya Google, tanpa jalur Microsoft.** Microsoft berada di hilir Google
+  (`struktur-organisasi-dan-identitas.md`).
+- **Tahap pertama: akun `@cipansor.or.id` saja**, yaitu staf dan santri yang
+  punya akun Workspace yayasan.
+  - Syaratnya: klaim `hd` sama dengan domain yayasan, dan `email_verified`
+    benar.
+  - Wali tetap memakai sandi, dengan ajakan 2FA.
+  - Alasannya: yayasan mengendalikan akun itu, termasuk 2SV, OU, dan
+    penonaktifan saat orangnya keluar.
+- **Peran wajib 2FA tetap memasukkan kode Cipansor sesudah Google.**
+  - Aturannya sama dengan login sandi: `requiresSecondFactor`, bukan peran
+    utama saja.
+  - Klaim `amr` Google boleh ditinjau ulang kelak. Syaratnya: aplikasi Google
+    sudah terverifikasi, dan klaim itu diminta lewat parameter `claims`.
+- **Cara verifikasi dan penautan:**
+  - ID token diverifikasi di server: `iss`, `aud`, `exp`, `sub`, `hd`.
+  - Akun dicari lebih dulu lewat subjek penyedia (`sub`), bukan email.
+  - Penautan pertama ke akun yang sudah ada mengirim email pemberitahuan.
+  - *Profil → Keamanan* menampilkan akun yang tertaut, dengan tombol putus.
+  - Login yang ditolak tidak pernah membuat tautan.
+- **Tampilan:**
+  - Tombol standar Google (renderButton, kompatibel FedCM), bukan One Tap
+    sebagai jalur utama.
+  - Tombol tampil hanya bila `GOOGLE_CLIENT_ID` dikonfigurasi.
+  - Tanpa Turnstile kedua.
+  - Semua pesan berbahasa Indonesia.
+
 ## Opsi yang ditolak dan alasannya
 
 - **"Tidak ada yang wajib 2FA":** melanggar CIS Controls v8 Safeguard 6.5
@@ -60,6 +94,13 @@ memilih dari opsi yang disertai riset berikut.
   dan organ bisa membuat akun, memberi peran, dan melihat semua unit.
 - **Tunda dibatasi 3 kali lalu wajib** (bawaan Microsoft untuk kampanye
   Authenticator): dalam praktiknya menjadikan 2FA wajib bagi semua yang diajak.
+- **SSO dianggap sudah memenuhi 2FA** (percaya 2SV Workspace yang diwajibkan
+  dari Admin Console): Cipansor tidak bisa membuktikannya per login. Menerima
+  `amr` Google sekarang juga ditunda, karena butuh aplikasi terverifikasi dan
+  alur yang lebih rumit, sementara TOTP sudah berjalan untuk semua jalur.
+- **SSO untuk wali lewat Gmail pribadi di tahap pertama:** Google memang
+  menganggap @gmail.com otoritatif, tetapi siklus akun wali di luar kendali
+  yayasan. Ditinjau lagi sesudah akun @cipansor.or.id berjalan.
 - **Kedaluwarsa 90 hari untuk semua, atau 12 bulan untuk akun wajib:**
   NIST melarangnya ("SHALL NOT"). Pola sandi jadi mudah ditebak, yang lupa
   bertambah, dan sandi yang dicuri tetap berlaku sampai tanggalnya.
@@ -80,3 +121,11 @@ memilih dari opsi yang disertai riset berikut.
 - Microsoft security baseline Windows 10 v1903 (2019) — kedaluwarsa sandi
   dicabut, "ancient and obsolete mitigation of very low value":
   <https://learn.microsoft.com/en-us/archive/blogs/secguide/security-baseline-final-for-windows-10-v1903-and-windows-server-v1903>
+- Google, verifikasi ID token (email otoritatif hanya untuk @gmail.com, atau
+  bila `email_verified` benar dan `hd` ada):
+  <https://developers.google.com/identity/gsi/web/guides/verify-google-id-token>
+- Google, FedCM wajib sejak Agustus 2025; `use_fedcm_for_prompt` diabaikan:
+  <https://developers.google.com/identity/gsi/web/guides/fedcm-migration>
+- Google Developers Blog, 16 Juni 2026, klaim `auth_time` dan `amr` (opt-in,
+  aplikasi terverifikasi):
+  <https://developers.googleblog.com/enhance-security-and-trust-new-session-metadata-in-sign-in-with-google/>

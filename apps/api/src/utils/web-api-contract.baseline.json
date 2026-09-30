@@ -85,7 +85,6 @@
     "PATCH /simaan/{id}/complete  apps/web/src/hooks/use-simaan.ts",
     "PATCH /students/{id}  apps/web/src/services/students.service.ts",
     "PATCH /tahfidz/{id}  apps/web/src/services/tahfidz.service.ts",
-    "PATCH /units/{id}  apps/web/src/hooks/use-units.ts",
     "POST /alumni/donations  apps/web/src/hooks/use-alumni.ts",
     "POST /alumni/donations/{id}/confirm  apps/web/src/hooks/use-alumni.ts",
     "POST /alumni/{id}/achievements  apps/web/src/hooks/use-alumni.ts",

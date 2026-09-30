@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
-import { asyncHandler } from '@/middleware/error';
+import { asyncHandler, Errors } from '@/middleware/error';
+import { decodeToken } from '@/lib/jwt';
+import type { PrincipalClaims } from '@cipansor/shared';
 import { authService } from './auth.service';
 import {
   LoginInput,
@@ -9,20 +11,70 @@ import {
   SendPasswordResetInput,
   ResetPasswordInput,
 } from './auth.schema';
+import {
+  clearAuthCookies,
+  csrfTokenForRefresh,
+  mayReturnTokens,
+  randomCsrfToken,
+  refreshTokenFromCookie,
+  setSessionCookies,
+  setTempCookie,
+} from './auth.cookies';
 import { eventBus } from '@/lib/event-bus';
 import { logger } from '@/lib/logger';
 
 /**
+ * The routing claims for the cookie the Next middleware reads, taken from a
+ * token this process just minted (so decoding, not verifying, is correct here).
+ */
+function principalClaimsFromToken(accessToken: string): PrincipalClaims {
+  const payload = decodeToken(accessToken);
+  const roleCode = payload?.roleCode ?? '';
+  return {
+    id: payload?.sub ?? '',
+    role: payload?.role ?? roleCode,
+    roleCode,
+  };
+}
+
+/**
  * Login
  * POST /api/auth/login
+ *
+ * The tokens are issued as HttpOnly cookies, not in the JSON body, so page
+ * JavaScript can never read them. The response still carries the user (for
+ * 2FA flow state) but deliberately omits `accessToken`/`refreshToken`. A
+ * bearer-only client that needs the raw token in hand (the mobile app) logs in
+ * with `X-Client: bearer` — see `docs/MOBILE_API.md`.
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const input: LoginInput = req.body;
+  const bearer = mayReturnTokens(req);
   const result = await authService.login(input);
+
+  if (!('accessToken' in result)) {
+    const requiresTwoFactor = 'requiresTwoFactor' in result && result.requiresTwoFactor;
+    setTempCookie(res, result.tempToken, requiresTwoFactor ? 5 * 60 * 1000 : 10 * 60 * 1000);
+    return res.json({
+      success: true,
+      data: requiresTwoFactor
+        ? { requiresTwoFactor: true, ...(bearer ? { tempToken: result.tempToken } : {}) }
+        : { requiresTwoFactorSetup: true, ...(bearer ? { tempToken: result.tempToken } : {}) },
+    });
+  }
+
+  const { user, accessToken, refreshToken } = result;
+  setSessionCookies(
+    res,
+    accessToken,
+    refreshToken,
+    randomCsrfToken(),
+    principalClaimsFromToken(accessToken)
+  );
 
   res.json({
     success: true,
-    data: result,
+    data: bearer ? { user, accessToken, refreshToken } : { user },
   });
 });
 
@@ -47,12 +99,44 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
  * POST /api/auth/refresh
  */
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const { refreshToken }: RefreshTokenInput = req.body;
-  const tokens = await authService.refreshToken(refreshToken);
+  // The refresh token rides an HttpOnly cookie on the browser path; a
+  // bearer-only client may still POST it in the body.
+  const bearer = mayReturnTokens(req);
+  const fromBody = (req.body as RefreshTokenInput | undefined)?.refreshToken;
+  const token = refreshTokenFromCookie(req) || fromBody;
+  if (!token) {
+    // Nothing to end, and nothing cleared: a sign-in in the same browser may
+    // be setting the cookies while this answer is on its way.
+    throw Errors.unauthorized('Token penyegaran sesi wajib diisi.');
+  }
+
+  // A refresh the server refuses ends the browser's session here, cookies and
+  // all. The routing cookie would otherwise outlive it: the Next middleware
+  // keeps sending `/login` back to the dashboard while it exists, the
+  // dashboard's first call fails to refresh again, and the browser loops
+  // between the two with no way to sign in until the cookie expires.
+  let tokens: Awaited<ReturnType<typeof authService.refreshToken>>;
+  try {
+    tokens = await authService.refreshToken(token);
+  } catch (error) {
+    clearAuthCookies(res);
+    throw error;
+  }
+  // The CSRF token is NOT rotated here: a request holding the previous value
+  // must keep working across a background refresh (see csrfTokenForRefresh).
+  setSessionCookies(
+    res,
+    tokens.accessToken,
+    tokens.refreshToken,
+    csrfTokenForRefresh(req),
+    principalClaimsFromToken(tokens.accessToken)
+  );
 
   res.json({
     success: true,
-    data: tokens,
+    data: bearer
+      ? { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken }
+      : { refreshed: true },
   });
 });
 
@@ -73,9 +157,15 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // toast on the login page.
   const { refreshToken } = req.body ?? {};
 
+  // Prefer the cookie's refresh token so a browser logout revokes the session
+  // that is actually signed in, even though the body carries none.
+  const token = refreshTokenFromCookie(req) || refreshToken;
+
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, refreshToken);
+  await authService.logout(userId, token);
+
+  clearAuthCookies(res);
 
   res.json({
     success: true,
@@ -142,8 +232,22 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   const userId = req.user!.sub;
   const { token } = req.body;
   const isTemp = req.user?.isTemp;
+  const bearer = mayReturnTokens(req);
   const result = await authService.verifyTwoFactorLogin(userId, token, isTemp);
-  res.json({ success: true, data: result });
+
+  const { user, accessToken, refreshToken } = result;
+  setSessionCookies(
+    res,
+    accessToken,
+    refreshToken,
+    randomCsrfToken(),
+    principalClaimsFromToken(accessToken)
+  );
+
+  res.json({
+    success: true,
+    data: bearer ? { user, accessToken, refreshToken } : { user },
+  });
 });
 
 /**

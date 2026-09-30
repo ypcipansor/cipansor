@@ -4,6 +4,11 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import {
+  PASSWORD_HINT_NEW_ACCOUNT,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+} from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
 import { useCreateUser } from "@/hooks/use-users";
@@ -33,7 +38,15 @@ import { useState } from "react";
 
 const userSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  // A new account has no 2FA yet: 15 characters. The API also refuses common
+  // passwords and ones made of the person's name, and says so.
+  password: z
+    .string()
+    .min(
+      PASSWORD_MIN_LENGTH,
+      `Password minimal ${PASSWORD_MIN_LENGTH} karakter`,
+    )
+    .max(PASSWORD_MAX_LENGTH, "Password terlalu panjang"),
   name: z.string().min(1, "Name is required"),
   role: z.enum(
     ["SUPER_ADMIN", "UNIT_ADMIN", "TEACHER", "STUDENT", "STAFF", "PARENT"],
@@ -149,6 +162,9 @@ export default function NewUserPage() {
                     )}
                   </Button>
                 </div>
+                <p className="text-sm text-muted-foreground">
+                  {PASSWORD_HINT_NEW_ACCOUNT}
+                </p>
                 {errors.password && (
                   <p className="text-sm text-destructive">
                     {errors.password.message}

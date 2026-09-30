@@ -63,8 +63,12 @@ session transcript: nine auto-compactions, zero passes caused by the hook.
 What reaches the model is `additionalContext` from PostToolUse and
 UserPromptSubmit (tested live with a probe hook). So `context-sync-warn.sh`
 reads the current context size from the transcript (`usage` of the last
-main-chain reply) and warns twice per round: at `autoCompactWindow` − 120k
+main-chain reply) and warns twice per round: at `autoCompactWindow` − 75k
 ("run `sync-records` now") and at − 60k ("compaction is due and held").
+The first warning was at − 120k until 2026-09-29; the user found it too far
+ahead (compaction really fires at 567k–579k of a 600k window, so − 120k came
+about 90k early). − 75k leaves 40–55k for a pass that measures 15–30k, and
+the hold covers the rest.
 `pre-compact-sync.sh` holds the auto-compaction in that band without writing
 any stamp; only a `sync-records` pass by *this* session since the round began
 releases it (`sync_stamp.py` run from the skill records

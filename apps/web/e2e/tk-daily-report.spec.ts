@@ -206,14 +206,14 @@ test.describe("guru menulis, wali membaca", () => {
     await expect(card.getByText(ACTIVITY)).toBeVisible({ timeout: 15000 });
     const photo = card.getByRole("img", { name: "Foto kegiatan" });
     await expect(photo).toBeVisible();
-    // Stored uploads are served only with an access token, which an <img>
-    // cannot send as a header: the page puts the wali's own in the address,
-    // and the file comes back for it. (Whether it paints here depends on the
-    // stack: the API answers same-origin only, and this one runs the web and
-    // the API on two ports.)
+    // Stored uploads are served to the browser's HttpOnly session cookie,
+    // which an <img> sends automatically. The address must therefore carry no
+    // token at all — a `?token=` here was the old, script-readable session.
     const src = (await photo.getAttribute("src")) ?? "";
-    expect(src).toContain(`token=${encodeURIComponent(wali.accessToken)}`);
-    const file = await fetch(src);
+    expect(src).not.toContain("token=");
+    const cookies = await page.context().cookies();
+    const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
+    const file = await fetch(src, { headers: { cookie: cookieHeader } });
     expect(file.status).toBe(200);
     expect(file.headers.get("content-type")).toMatch(/^image\/png/);
 

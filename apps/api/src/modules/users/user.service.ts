@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
+import { assertPasswordAllowed } from '@/lib/password-policy';
 import { Errors } from '@/middleware/error';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
@@ -206,7 +207,12 @@ export class UserService {
       throw Errors.badRequest(`Role ${roleCode} is not seeded in the roles table`);
     }
 
-    // Hash password
+    // A new account has no 2FA yet: the single-factor rules apply.
+    assertPasswordAllowed(input.password, {
+      twoFactorEnabled: false,
+      email: input.email,
+      name: input.name,
+    });
     const passwordHash = await hashPassword(input.password);
 
     // Create user + primary role assignment together

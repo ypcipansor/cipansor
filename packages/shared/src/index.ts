@@ -40,5 +40,8 @@ export * from "./types/supplier";
 export * from "./types/assignment";
 export * from "./types/student-id-card";
 export * from "./roles";
+export * from "./types/session";
+export * from "./password-policy";
 export * from "./types/demo-accounts";
 export * from "./types/admissions";
+export * from "./types/unit";

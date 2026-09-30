@@ -95,16 +95,38 @@ export const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  // Send and receive the HttpOnly session cookies. In development the web
+  // (:3000) and API (:3001) are different origins, so without this the browser
+  // would not attach the cookie; in production the two are same-origin, where
+  // this is a no-op. The API's CORS allowlist must (and does) echo the origin
+  // and set `Access-Control-Allow-Credentials`.
+  withCredentials: true,
 });
 
-// Request interceptor to add auth token
+/** Read a cookie the API set for the double-submit CSRF check. */
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/** A method that changes state and therefore needs the CSRF header. */
+const UNSAFE_METHODS = new Set(["post", "put", "patch", "delete"]);
+
+// Request interceptor to attach the double-submit CSRF token.
+//
+// The session cookie rides along automatically; this only echoes the readable
+// CSRF cookie the API set beside it. The API rejects an unsafe request that
+// carries a session cookie without a matching header — the cross-site forgery
+// the cookie would otherwise permit. There is no Authorization header any
+// more: the bearer lives in the HttpOnly cookie, invisible to this code.
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("accessToken");
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
+    if (typeof window === "undefined") return config;
+    const method = (config.method ?? "get").toLowerCase();
+    if (UNSAFE_METHODS.has(method)) {
+      const csrf = readCookie("cipansor_csrf");
+      if (csrf) config.headers["x-csrf-token"] = csrf;
     }
     return config;
   },
@@ -124,44 +146,54 @@ api.interceptors.request.use(
  *
  * Now the first 401 performs the refresh and everyone else awaits its result.
  */
-let refreshInFlight: Promise<string> | null = null;
+let refreshInFlight: Promise<void> | null = null;
 
 /**
- * There is no session to refresh.
+ * Serialize the refresh across tabs of the same origin.
  *
- * This is NOT the same as a rejected session. An anonymous visitor on a public
- * page (`/public/spmb`, `/wakaf-infaq`) whose page happens to call a
- * protected endpoint will land here — and bouncing them to /login would be
- * wrong: they never claimed to be logged in. Treating this as a definitive
- * logout sent the landing page's "Daftar SPMB" call-to-action straight to the
- * staff login screen.
+ * The in-page single-flight above only covers one document. Two tabs whose
+ * access token expired at the same moment both call `/auth/refresh`, and the
+ * server rotates the refresh token on first use — so the second tab presents a
+ * token that was just deleted and is logged out. The Web Locks API holds the
+ * lock while one tab refreshes; the other waits, then presents the *rotated*
+ * refresh cookie the first tab's response already set, and succeeds. Falls back
+ * to running inline where the API is unavailable.
  */
-class NoSessionError extends Error {
-  constructor() {
-    super("No session to refresh");
-    this.name = "NoSessionError";
+function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== "undefined" && "locks" in navigator) {
+    return navigator.locks.request(
+      "cipansor-session-refresh",
+      fn,
+    ) as Promise<T>;
   }
+  return fn();
 }
 
-function refreshAccessToken(): Promise<string> {
+function refreshAccessToken(): Promise<void> {
   if (refreshInFlight) return refreshInFlight;
 
-  refreshInFlight = (async () => {
-    const refreshToken =
-      typeof window !== "undefined"
-        ? localStorage.getItem("refreshToken")
-        : null;
-    if (!refreshToken) throw new NoSessionError();
-
-    const response = await axios.post(`${API_URL}/auth/refresh`, {
-      refreshToken,
-    });
-    const { accessToken, refreshToken: newRefreshToken } = response.data.data;
-    localStorage.setItem("accessToken", accessToken);
-    localStorage.setItem("refreshToken", newRefreshToken);
-    document.cookie = `accessToken=${accessToken}; path=/; max-age=86400; samesite=lax`;
-    return accessToken as string;
-  })().finally(() => {
+  refreshInFlight = withRefreshLock(async () => {
+    // The refresh token is an HttpOnly cookie the API reads itself; there is
+    // nothing to read here. `withCredentials` on the shared instance makes the
+    // browser attach it. No local session is a normal, non-error state for an
+    // anonymous visitor, and the API answers 401, which the caller treats the
+    // same way NoSessionError used to be treated.
+    //
+    // This bypasses the `api` instance (and its request interceptor), so it
+    // must echo the CSRF cookie itself: the refresh cookie makes this an
+    // unsafe, cookie-authenticated POST, which the API's CSRF gate rejects
+    // without a matching header. The API keeps the same CSRF value across a
+    // refresh, so a request holding the previous value still matches.
+    const csrf = readCookie("cipansor_csrf");
+    await axios.post(
+      `${API_URL}/auth/refresh`,
+      {},
+      {
+        withCredentials: true,
+        ...(csrf ? { headers: { "x-csrf-token": csrf } } : {}),
+      },
+    );
+  }).finally(() => {
     refreshInFlight = null;
   });
 
@@ -179,8 +211,7 @@ api.interceptors.response.use(
 
     // Auth endpoints that should NEVER trigger token refresh —
     // their 401 means "wrong credentials", not "expired token". A wrong code
-    // on the 2FA step is one: there is no session to refresh yet, and the
-    // attempt used to wipe the temporary token before the message showed.
+    // on the 2FA step is one: there is no session to refresh yet.
     const authPaths = [
       "/auth/login",
       "/auth/register",
@@ -198,43 +229,38 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
+      // An anonymous visitor never had a session to lose, so there is nothing
+      // to refresh and nowhere to send them. Public pages call protected
+      // endpoints (the SPMB page reads /units), and bouncing a prospective
+      // parent to the staff login screen over that 401 is far worse than
+      // letting the caller render its own empty state. Nor is a refresh sent:
+      // it would spend the per-IP auth rate limit on every anonymous page, and
+      // its refusal could land after a sign-in has set the cookies.
+      //
+      // The readable CSRF cookie is set with every session and cleared with
+      // it — the one trace of the HttpOnly session that script can see. Read
+      // it before the refresh: a refused refresh clears it in its own response.
+      if (readCookie("cipansor_csrf") === null) {
+        return Promise.reject(error);
+      }
+
       try {
-        const accessToken = await refreshAccessToken();
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
-        }
+        await refreshAccessToken();
+        // The rotated token is in a new cookie; simply replay the request and
+        // let the browser attach it.
         return api(originalRequest);
       } catch (refreshError) {
-        // An anonymous visitor never had a session to lose. Public pages call
-        // protected endpoints (the SPMB page reads /units), and bouncing a
-        // prospective parent to the staff login screen over that 401 is far
-        // worse than letting the caller render its own empty state.
-        const hadSession =
-          typeof window !== "undefined" &&
-          !!localStorage.getItem("accessToken");
-        if (!hadSession) {
-          return Promise.reject(error);
-        }
-
         // Only a definitive rejection means the session is really gone. A 429
         // from the rate limiter, a 5xx or a dropped connection says nothing
         // about the token's validity, and logging the user out over one would
         // throw away a working session — the same reasoning as `fetchUser` in
         // stores/auth.ts.
         const status = (refreshError as AxiosError)?.response?.status;
-        const isDefinitive =
-          refreshError instanceof NoSessionError ||
-          status === 400 ||
-          status === 401 ||
-          status === 403;
+        const isDefinitive = status === 400 || status === 401 || status === 403;
         if (!isDefinitive) {
           return Promise.reject(error);
         }
 
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
-        document.cookie = "accessToken=; path=/; max-age=0";
-        document.cookie = "auth-storage=; path=/; max-age=0";
         if (
           typeof window !== "undefined" &&
           !window.location.pathname.includes("/login")
