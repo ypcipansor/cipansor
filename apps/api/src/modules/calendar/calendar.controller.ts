@@ -1,5 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
 import { calendarService } from './calendar.service';
+import {
+  getHolidaySyncConfig,
+  syncHolidaysForYear,
+  updateHolidaySyncConfig,
+} from './holiday-sync.service';
+import { Errors } from '../../middleware/error';
 
 export class CalendarController {
   async listEvents(req: Request, res: Response, next: NextFunction) {
@@ -175,6 +181,39 @@ export class CalendarController {
       const endDate = req.query.endDate as string | undefined;
       const stats = await calendarService.getStatistics(unitId, startDate, endDate);
       res.json({ data: stats });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getHolidaySyncConfig(_req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json({ data: await getHolidaySyncConfig() });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateHolidaySyncConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json({ data: await updateHolidaySyncConfig(req.body) });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async syncHolidays(req: Request, res: Response, next: NextFunction) {
+    try {
+      const year = Number(req.body?.year ?? new Date().getUTCFullYear());
+      if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+        throw Errors.badRequest('Tahun tidak valid');
+      }
+      const unitId = (req.body?.unitId as string | undefined) ?? null;
+      const result = await syncHolidaysForYear(year, {
+        unitId,
+        createdById: req.user!.sub,
+      });
+      res.json({ data: result });
     } catch (error) {
       next(error);
     }

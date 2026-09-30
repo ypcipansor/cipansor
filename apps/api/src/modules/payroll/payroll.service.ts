@@ -12,6 +12,9 @@
 
 import { prisma } from '../../lib/prisma';
 import { Prisma, SalaryComponentType, PayrollStatus } from '@prisma/client';
+import { attendanceDeductionService } from './attendance-deduction.service';
+import { Errors } from '../../middleware/error';
+import { workDatesInRange } from '../../utils/work-calendar';
 import { JournalReferenceType } from '@cipansor/shared';
 import { ACCOUNT_MAPPING_KEYS, getAccountOrFallback } from '../finance/accounting-config.service';
 import {
@@ -994,8 +997,57 @@ export const payrollService = {
       attendanceMap.set(att.staffId, current);
     }
 
-    // Calculate work days in period
-    const workDays = calculateWorkDays(period.startDate, period.endDate);
+    // Attendance-derived adjustments, computed once for the whole period from
+    // the configured PayrollPolicyRule rows. Nothing is hardcoded here.
+    const deductionRows = await attendanceDeductionService.computeForPeriod(period.id);
+    const deductionByStaff = new Map(deductionRows.map((row) => [row.staffId, row]));
+
+    // A payslip cannot be honest while the register it reads is incomplete:
+    // a work day with no row means nobody knows whether the person was there,
+    // so no deduction can be derived from it. Generation stops here.
+    const unresolved = deductionRows.filter((row) => row.unresolvedDates.length > 0);
+    if (unresolved.length > 0) {
+      const detail = unresolved
+        .slice(0, 5)
+        .map((row) => `${row.staffName} (${row.unresolvedDates.length} hari)`)
+        .join(', ');
+      const more = unresolved.length > 5 ? `, +${unresolved.length - 5} lainnya` : '';
+      throw Errors.badRequest(
+        `Absensi belum lengkap untuk ${unresolved.length} pegawai: ${detail}${more}. ` +
+          'Lengkapi presensi atau tandai pegawai yang tidak masuk sebelum generate slip.'
+      );
+    }
+
+    // A salary structure that crosses the legal bound (basic below the
+    // configured share, or below UMK) is reported, not silently applied —
+    // PP 36/2021 art. 32 bounds how far "upah" may be reduced. An admin may
+    // still proceed, but only by saying so and leaving a reason on the record.
+    // The attendance cap itself is enforced by the engine and never blocks.
+    const breached = deductionRows.filter((row) => row.guardBreaches.length > 0);
+    if (breached.length > 0 && !data.overrideGuardReason) {
+      const detail = breached
+        .slice(0, 5)
+        .map((row) => `${row.staffName}: ${row.guardBreaches[0]}`)
+        .join('; ');
+      const more = breached.length > 5 ? `; +${breached.length - 5} lainnya` : '';
+      throw Errors.badRequest(
+        `Potongan melampaui batas untuk ${breached.length} pegawai — ${detail}${more}. ` +
+          'Ubah aturan potongan, atau isi alasan override bila memang disengaja.'
+      );
+    }
+    // The override is not silent: the reason lands on each breaching slip, so
+    // the record says who decided and why when the slip is read back.
+    const guardNoteByStaff = new Map<string, string>();
+    if (data.overrideGuardReason) {
+      for (const row of breached) {
+        guardNoteByStaff.set(row.staffId, `Override batas potongan: ${data.overrideGuardReason}`);
+      }
+    }
+
+    // Work days come from the unit's configured week and its holidays, not a
+    // Monday–Friday literal: a 6-day unit and a 5-day unit must not print the
+    // same number on a slip.
+    const workDays = await countWorkDays(period.startDate, period.endDate, period.unitId);
 
     await prisma.$transaction(async (tx) => {
       for (const staff of staffList) {
@@ -1095,7 +1147,46 @@ export const payrollService = {
             });
           }
 
-          const netSalary = totalEarnings - totalDeductions;
+          // Apply the configured attendance rules: deductions come from the
+          // allowance side, additions go back to earnings. Each line is written
+          // to the slip so the employee can see what was docked and why.
+          const attendanceAdjust = deductionByStaff.get(staff.id);
+          if (attendanceAdjust) {
+            for (const line of attendanceAdjust.lines) {
+              let component = components.find((c) => c.code === line.code);
+              if (!component) {
+                // A rule may name a component that has no payslip line yet;
+                // create it so the FK holds and the line is visible.
+                component = await tx.salaryComponent.upsert({
+                  where: { code: line.code },
+                  update: {},
+                  create: {
+                    code: line.code,
+                    name: line.name,
+                    type: line.kind,
+                    isFixed: false,
+                    classification: 'TIDAK_TETAP',
+                  },
+                });
+              }
+              if (line.kind === 'DEDUCTION') {
+                totalDeductions += line.amount;
+              } else {
+                totalEarnings += line.amount;
+              }
+              payrollItems.push({
+                payrollId: '',
+                componentId: component.id,
+                componentCode: line.code,
+                componentName: component.name,
+                type: line.kind,
+                amount: new Prisma.Decimal(line.amount),
+                notes: line.detail,
+              });
+            }
+          }
+
+          const netSalaryFinal = totalEarnings - totalDeductions;
 
           // Create or update payroll
           if (existing && data.overwrite) {
@@ -1115,7 +1206,7 @@ export const payrollService = {
                 baseSalary: empSalary.baseSalary,
                 totalEarnings: new Prisma.Decimal(totalEarnings),
                 totalDeductions: new Prisma.Decimal(totalDeductions),
-                netSalary: new Prisma.Decimal(netSalary),
+                netSalary: new Prisma.Decimal(netSalaryFinal),
                 taxableIncome: new Prisma.Decimal(taxableIncome),
                 taxAmount: new Prisma.Decimal(taxAmount),
                 taxStatus: empSalary.taxStatus,
@@ -1127,6 +1218,7 @@ export const payrollService = {
                 absentDays,
                 lateDays,
                 status: 'DRAFT',
+                notes: guardNoteByStaff.get(staff.id),
               },
             });
 
@@ -1152,7 +1244,7 @@ export const payrollService = {
                 baseSalary: empSalary.baseSalary,
                 totalEarnings: new Prisma.Decimal(totalEarnings),
                 totalDeductions: new Prisma.Decimal(totalDeductions),
-                netSalary: new Prisma.Decimal(netSalary),
+                netSalary: new Prisma.Decimal(netSalaryFinal),
                 taxableIncome: new Prisma.Decimal(taxableIncome),
                 taxAmount: new Prisma.Decimal(taxAmount),
                 taxStatus: empSalary.taxStatus,
@@ -1164,6 +1256,7 @@ export const payrollService = {
                 absentDays,
                 lateDays,
                 status: 'DRAFT',
+                notes: guardNoteByStaff.get(staff.id),
               },
             });
 
@@ -1363,18 +1456,15 @@ export const payrollService = {
 };
 
 // Helper: Calculate work days (excluding weekends)
-function calculateWorkDays(startDate: Date, endDate: Date): number {
-  let count = 0;
-  const current = new Date(startDate);
-
-  while (current <= endDate) {
-    const day = current.getDay();
-    if (day !== 0 && day !== 6) {
-      // Not Sunday or Saturday
-      count++;
-    }
-    current.setDate(current.getDate() + 1);
-  }
-
-  return count;
+/**
+ * Working days in a period for a unit: the unit's `WorkWeekConfig` (or the
+ * yayasan default), minus whole-unit holidays. The same rules the deduction
+ * engine uses, so the slip's day count and its deductions agree.
+ */
+async function countWorkDays(
+  startDate: Date,
+  endDate: Date,
+  unitId: string | null
+): Promise<number> {
+  return (await workDatesInRange(startDate, endDate, unitId)).length;
 }

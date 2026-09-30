@@ -11,7 +11,6 @@ import {
 } from './hr.schema';
 import { Errors } from '../../middleware/error';
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
 
 // =====================================
 // STAFF ATTENDANCE CONTROLLERS
@@ -30,6 +29,15 @@ export async function getTeachers(req: Request, res: Response, next: NextFunctio
 export async function getStaffAttendance(req: Request, res: Response, next: NextFunction) {
   try {
     const query = res.locals.validatedQuery;
+    const user = req.user!;
+
+    // A unit admin sees only their own unit; SUPER_ADMIN may pass any unitId.
+    // Without this the list returned every unit's rows to a unit admin.
+    if (service.isUnitAdminUser(user)) {
+      if (!user.unitId) throw Errors.forbidden('Akun admin belum terhubung ke unit');
+      query.unitId = user.unitId;
+    }
+
     const result = await service.getStaffAttendance(query);
     res.json({ success: true, ...result });
   } catch (error) {
@@ -42,7 +50,7 @@ export async function getRetentionRisk(req: Request, res: Response, next: NextFu
     const { unitId } = req.query;
     const user = req.user!;
 
-    const targetUnitId = user.role === 'SUPER_ADMIN' ? (unitId as string) : user.unitId;
+    const targetUnitId = service.isSuperAdminUser(user) ? (unitId as string) : user.unitId;
     if (!targetUnitId) throw Errors.badRequest('unitId is required');
 
     const data = await service.getRetentionRiskAnalytics(targetUnitId);
@@ -58,6 +66,7 @@ export async function getStaffAttendanceById(req: Request, res: Response, next: 
     if (!attendance) {
       throw Errors.notFound('Attendance record not found');
     }
+    await service.assertMayManageStaff(req.user!, attendance.staffId);
     res.json({ success: true, data: attendance });
   } catch (error) {
     next(error);
@@ -67,7 +76,9 @@ export async function getStaffAttendanceById(req: Request, res: Response, next: 
 export async function createStaffAttendance(req: Request, res: Response, next: NextFunction) {
   try {
     const data = createStaffAttendanceSchema.parse(req.body);
-    const attendance = await service.createStaffAttendance(data);
+    const staffId = await service.resolveStaffId(data);
+    await service.assertMayManageStaff(req.user!, staffId);
+    const attendance = await service.createStaffAttendance({ ...data, staffId }, req.user?.sub);
     res.status(201).json({ success: true, data: attendance });
   } catch (error) {
     next(error);
@@ -77,6 +88,9 @@ export async function createStaffAttendance(req: Request, res: Response, next: N
 export async function updateStaffAttendance(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateStaffAttendanceSchema.parse(req.body);
+    const existing = await service.getStaffAttendanceById(req.params.id);
+    if (!existing) throw Errors.notFound('Attendance record not found');
+    await service.assertMayManageStaff(req.user!, existing.staffId);
     const attendance = await service.updateStaffAttendance(req.params.id, data);
     res.json({ success: true, data: attendance });
   } catch (error) {
@@ -87,7 +101,12 @@ export async function updateStaffAttendance(req: Request, res: Response, next: N
 export async function recordBulkAttendance(req: Request, res: Response, next: NextFunction) {
   try {
     const data = bulkAttendanceSchema.parse(req.body);
-    const result = await service.recordBulkAttendance(data);
+    // Every row must be within the caller's remit before any is written, so a
+    // unit admin cannot slip a foreign unit's staff into a bulk submission.
+    for (const record of data.records) {
+      await service.assertMayManageStaff(req.user!, await service.resolveStaffId(record));
+    }
+    const result = await service.recordBulkAttendance(data, req.user?.sub);
     res.json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -101,7 +120,17 @@ export async function getStaffAttendanceSummary(req: Request, res: Response, nex
       year: z.coerce.number().min(2000).max(2100),
     });
     const { month, year } = schema.parse(req.query);
-    const summary = await service.getStaffAttendanceSummary(req.params.staffId, month, year);
+    const target = await service.leaveStaffId({ staffId: req.params.staffId });
+    await service.assertMayManageStaff(req.user!, target);
+    const scopeUnitId = service.isUnitAdminUser(req.user!)
+      ? (req.user!.unitId ?? undefined)
+      : undefined;
+    const summary = await service.getStaffAttendanceSummary(
+      req.params.staffId,
+      month,
+      year,
+      scopeUnitId
+    );
     res.json({ success: true, data: summary });
   } catch (error) {
     next(error);
@@ -110,6 +139,9 @@ export async function getStaffAttendanceSummary(req: Request, res: Response, nex
 
 export async function deleteStaffAttendance(req: Request, res: Response, next: NextFunction) {
   try {
+    const existing = await service.getStaffAttendanceById(req.params.id);
+    if (!existing) throw Errors.notFound('Attendance record not found');
+    await service.assertMayManageStaff(req.user!, existing.staffId);
     await service.deleteStaffAttendance(req.params.id);
     res.json({ success: true, message: 'Attendance record deleted successfully' });
   } catch (error) {
@@ -128,7 +160,7 @@ export async function getLeaves(req: Request, res: Response, next: NextFunction)
 
     const { mine, ...otherQuery } = query;
     const shouldFilterByMe =
-      mine === true || (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.UNIT_ADMIN);
+      mine === true || (!service.isSuperAdminUser(user) && !service.isUnitAdminUser(user));
 
     // Apply filtering if explicitly requested or required by role
     if (shouldFilterByMe) {
@@ -144,7 +176,7 @@ export async function getLeaves(req: Request, res: Response, next: NextFunction)
         // If "mine" requested but no profile found:
         // - For non-admins, strict error.
         // - For admins who just pressed "My Leaves", return empty list instead of error.
-        if (user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.UNIT_ADMIN) {
+        if (!service.isSuperAdminUser(user) && !service.isUnitAdminUser(user)) {
           throw Errors.notFound('Employee profile not found');
         } else {
           // Admin with no profile: Force a filter that matches nothing
@@ -155,7 +187,7 @@ export async function getLeaves(req: Request, res: Response, next: NextFunction)
       }
     } else {
       // For admins viewing all, filter by unit if specified in token (UNIT_ADMIN)
-      if (user.role === UserRole.UNIT_ADMIN && user.unitId) {
+      if (service.isUnitAdminUser(user) && user.unitId) {
         query.unitId = user.unitId;
       }
     }
@@ -173,6 +205,7 @@ export async function getLeaveById(req: Request, res: Response, next: NextFuncti
     if (!leave) {
       throw Errors.notFound('Leave request not found');
     }
+    await service.assertMayManageLeave(req.user!, leave);
     res.json({ success: true, data: leave });
   } catch (error) {
     next(error);
@@ -184,18 +217,16 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
     const data = createLeaveSchema.parse(req.body);
     const user = req.user!;
 
-    // Auto-fill staffId/teacherId if creating for self
+    // Auto-fill the applicant when creating for self. One person is one Staff
+    // identity, so a guru's leave is filed against their Staff row too.
     if (!data.staffId && !data.teacherId) {
-      if (user.role === UserRole.TEACHER) {
-        const teacher = await prisma.teacher.findUnique({ where: { userId: user.sub } });
-        if (!teacher) throw Errors.notFound('Teacher profile not found');
-        data.teacherId = teacher.id;
-      } else if (user.role === UserRole.STAFF) {
-        const staff = await prisma.staff.findUnique({ where: { userId: user.sub } });
-        if (!staff) throw Errors.notFound('Staff profile not found');
-        data.staffId = staff.id;
-      }
+      data.staffId = await service.resolveStaffIdForUser(user.sub);
     }
+    // Filing for someone else is an admin action, and an admin stays in their unit.
+    await service.assertMayManageLeave(user, {
+      staffId: data.staffId ?? null,
+      teacherId: data.teacherId ?? null,
+    });
 
     const leave = await service.createLeave(data);
     res.status(201).json({ success: true, data: leave });
@@ -207,6 +238,9 @@ export async function createLeave(req: Request, res: Response, next: NextFunctio
 export async function updateLeave(req: Request, res: Response, next: NextFunction) {
   try {
     const data = updateLeaveSchema.parse(req.body);
+    const existing = await service.getLeaveById(req.params.id);
+    if (!existing) throw Errors.notFound('Leave request not found');
+    await service.assertMayManageLeave(req.user!, existing);
     const leave = await service.updateLeave(req.params.id, data);
     res.json({ success: true, data: leave });
   } catch (error) {
@@ -221,6 +255,9 @@ export async function approveLeave(req: Request, res: Response, next: NextFuncti
     if (!approverId) {
       throw Errors.unauthorized('User not authenticated');
     }
+    const existing = await service.getLeaveById(req.params.id);
+    if (!existing) throw Errors.notFound('Leave request not found');
+    await service.assertMayManageLeave(req.user!, existing);
     const leave = await service.approveLeave(req.params.id, approverId, data);
     res.json({ success: true, data: leave });
   } catch (error) {
@@ -230,6 +267,9 @@ export async function approveLeave(req: Request, res: Response, next: NextFuncti
 
 export async function cancelLeave(req: Request, res: Response, next: NextFunction) {
   try {
+    const existing = await service.getLeaveById(req.params.id);
+    if (!existing) throw Errors.notFound('Leave request not found');
+    await service.assertMayManageLeave(req.user!, existing);
     const leave = await service.cancelLeave(req.params.id);
     res.json({ success: true, data: leave, message: 'Leave request cancelled' });
   } catch (error) {
@@ -239,6 +279,9 @@ export async function cancelLeave(req: Request, res: Response, next: NextFunctio
 
 export async function deleteLeave(req: Request, res: Response, next: NextFunction) {
   try {
+    const existing = await service.getLeaveById(req.params.id);
+    if (!existing) throw Errors.notFound('Leave request not found');
+    await service.assertMayManageLeave(req.user!, existing);
     await service.deleteLeave(req.params.id);
     res.json({ success: true, message: 'Leave request deleted successfully' });
   } catch (error) {
@@ -250,6 +293,8 @@ export async function getLeaveBalance(req: Request, res: Response, next: NextFun
   try {
     const schema = z.object({ year: z.coerce.number().min(2000).max(2100) });
     const { year } = schema.parse(req.query);
+    const target = await service.leaveStaffId({ staffId: req.params.staffId });
+    await service.assertMayManageStaff(req.user!, target);
     const balance = await service.getLeaveBalance(req.params.staffId, year);
     res.json({ success: true, data: balance });
   } catch (error) {

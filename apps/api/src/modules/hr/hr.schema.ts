@@ -59,6 +59,150 @@ export const queryStaffAttendanceSchema = z.object({
   endDate: z.string().optional(),
 });
 
+// Self check-in / check-out. Coordinates and a selfie are captured on the
+// device; the server decides whether they are required from the policy.
+export const selfAttendanceSchema = z.object({
+  staffId: z.string().uuid().optional(),
+  latitude: z.coerce.number().min(-90).max(90).optional(),
+  longitude: z.coerce.number().min(-180).max(180).optional(),
+  accuracyMeters: z.coerce.number().min(0).optional(),
+  photoUrl: z.string().min(1).optional(),
+  deviceInfo: z.string().max(500).optional(),
+});
+
+// ==================== ATTENDANCE SETTINGS ====================
+
+const timeString = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Format jam harus HH:mm');
+
+export const attendanceSiteSchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  label: z.string().min(2),
+  latitude: z.coerce.number().min(-90).max(90),
+  longitude: z.coerce.number().min(-180).max(180),
+  radiusMeters: z.coerce.number().int().min(10).max(5000).default(200),
+  isActive: z.boolean().default(true),
+});
+
+export const workShiftSchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  name: z.string().min(2),
+  startTime: timeString,
+  endTime: timeString,
+  graceMinutes: z.coerce.number().int().min(0).max(180).default(15),
+  crossesMidnight: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+});
+
+export const shiftAssignmentSchema = z.object({
+  staffId: z.string().uuid(),
+  shiftId: z.string().uuid(),
+  effectiveFrom: z.string(),
+  effectiveTo: z.string().optional(),
+  daysOfWeek: z.array(z.coerce.number().int().min(0).max(6)).default([]),
+});
+
+export const shiftRotationSchema = z.object({
+  shiftId: z.string().uuid(),
+  name: z.string().min(2),
+  memberIds: z.array(z.string().uuid()).min(1),
+  startDate: z.string(),
+  endDate: z.string().optional(),
+  cycleDays: z.coerce.number().int().min(1).max(90).default(7),
+  isActive: z.boolean().default(true),
+});
+
+export const workWeekConfigSchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  workDays: z.array(z.coerce.number().int().min(0).max(6)).min(1),
+  hoursPerDay: z.coerce.number().int().min(1).max(12).default(7),
+  fridayEndTime: timeString.optional(),
+  isActive: z.boolean().default(true),
+});
+
+export const attendancePolicySchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  graceMinutes: z.coerce.number().int().min(0).max(180).default(15),
+  requireSelfie: z.boolean().default(true),
+  requireLocation: z.boolean().default(true),
+  outsideRadiusAction: z.enum(['FLAG', 'REJECT']).default('FLAG'),
+  photoRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
+  recordRetentionDays: z.coerce.number().int().min(30).max(36500).default(3650),
+  isActive: z.boolean().default(true),
+});
+
+export const attendanceExemptionSchema = z
+  .object({
+    roleCode: z.string().optional(),
+    staffId: z.string().uuid().optional(),
+    reason: z.string().max(500).optional(),
+    isActive: z.boolean().default(true),
+  })
+  .refine((d) => d.roleCode || d.staffId, {
+    message: 'roleCode atau staffId wajib diisi',
+  });
+
+// ==================== PAYROLL POLICY ====================
+
+export const payrollComponentSchema = z.object({
+  code: z.string().min(2).max(40),
+  name: z.string().min(2),
+  classification: z.enum(['POKOK', 'TETAP', 'TIDAK_TETAP']).default('TIDAK_TETAP'),
+  kind: z.enum(['EARNING', 'DEDUCTION']).default('EARNING'),
+  taxable: z.boolean().default(true),
+  bpjsBase: z.boolean().default(true),
+  isActive: z.boolean().default(true),
+  sortOrder: z.coerce.number().int().default(0),
+});
+
+export const payrollPolicyRuleSchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  code: z.string().min(2).max(60),
+  kind: z.enum(['EARNING', 'DEDUCTION']).default('DEDUCTION'),
+  trigger: z.enum(['LATE', 'ABSENT', 'EARLY_LEAVE', 'PRESENT', 'OVERTIME']),
+  basis: z.string().min(2),
+  mode: z.enum(['NOMINAL', 'PERSENTASE', 'PRORATA', 'PENGALI', 'BERTINGKAT', 'FORMULA', 'MANUAL']),
+  rate: z.coerce.number().optional(),
+  unit: z.enum(['PER_MENIT', 'PER_HARI', 'PER_KEJADIAN', 'PER_BULAN']).default('PER_KEJADIAN'),
+  tiersJson: z.record(z.string(), z.unknown()).optional(),
+  formulaExpr: z.string().max(500).optional(),
+  capPerDay: z.coerce.number().optional(),
+  capPerMonth: z.coerce.number().optional(),
+  rounding: z.enum(['NONE', 'ROUND', 'FLOOR', 'CEIL']).default('NONE'),
+  priority: z.coerce.number().int().default(0),
+  legalBasisDoc: z.string().max(500).optional(),
+  isActive: z.boolean().default(false),
+  effectiveFrom: z.string().optional(),
+  effectiveTo: z.string().optional(),
+});
+
+export const payrollGuardConfigSchema = z.object({
+  unitId: z.string().uuid().nullable().optional(),
+  maxDeductionPercent: z.coerce.number().int().min(0).max(100).default(50),
+  minBasicSharePercent: z.coerce.number().int().min(0).max(100).default(75),
+  mustStayAboveUmk: z.boolean().default(true),
+  umkNominal: z.coerce.number().optional(),
+  isActive: z.boolean().default(true),
+});
+
+// ==================== RETENTION ====================
+
+export const retentionPolicySchema = z.object({
+  dataType: z.enum(['ATTENDANCE_PHOTO', 'ATTENDANCE_RECORD', 'LEAVE', 'PAYROLL', 'AUDIT_LOG']),
+  retentionDays: z.coerce.number().int().min(1).max(36500),
+  action: z.enum(['DELETE', 'ANONYMIZE', 'ARCHIVE']).default('DELETE'),
+  isActive: z.boolean().default(true),
+});
+
+export const leaveTypeConfigSchema = z.object({
+  leaveType: z.nativeEnum(LeaveType),
+  entitlementDays: z.coerce.number().int().min(0).max(365).nullable().optional(),
+  periodBasis: z.enum(['CALENDAR_YEAR', 'ACADEMIC_YEAR']).default('CALENDAR_YEAR'),
+  isPaid: z.boolean().default(true),
+  requiresDocument: z.boolean().default(false),
+  isActive: z.boolean().default(true),
+  notes: z.string().max(500).optional(),
+});
+
 // Leave schemas
 export const createLeaveSchema = z.object({
   staffId: z.string().uuid().optional(),

@@ -112,6 +112,40 @@ router.post(
   calendarController.generateRecurringEvents.bind(calendarController)
 );
 
+// GET /calendar/holidays/config - Holiday-source settings
+router.get(
+  '/holidays/config',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  calendarController.getHolidaySyncConfig.bind(calendarController)
+);
+
+// PUT /calendar/holidays/config - Change the holiday source / years
+router.put(
+  '/holidays/config',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  calendarController.updateHolidaySyncConfig.bind(calendarController)
+);
+
+// POST /calendar/holidays/sync - Fetch a year's national holidays into the calendar
+router.post(
+  '/holidays/sync',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
+  calendarController.syncHolidays.bind(calendarController)
+);
+
+// GET /calendar/:id - Get event by ID
+router.get(
+  '/:id',
+  authorize(
+    UserRole.SUPER_ADMIN,
+    UserRole.UNIT_ADMIN,
+    UserRole.TEACHER,
+    UserRole.STUDENT,
+    UserRole.PARENT
+  ),
+  calendarController.getEventById.bind(calendarController)
+);
+
 // PUT /calendar/:id - Update event
 router.put(
   '/:id',

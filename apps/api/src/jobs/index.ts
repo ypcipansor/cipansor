@@ -27,3 +27,4 @@ export {
   runChatbotEscalationRetry,
   type EscalationRetrySummary,
 } from './chatbot-escalation-retry.job';
+export { runHolidaySync } from './holiday-sync.job';

@@ -21,14 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import {
   Table,
   TableBody,
   TableCell,
@@ -38,10 +30,7 @@ import {
 } from "@/components/ui/table";
 import {
   useStaffAttendances,
-  useCreateStaffAttendance,
-  useBulkStaffAttendance,
   useUnits,
-  useDepartments,
   STAFF_ATTENDANCE_STATUS_LABELS,
   StaffAttendanceStatus,
 } from "@/hooks";
@@ -52,38 +41,41 @@ import {
   Search,
   Users,
   XCircle,
-  Plus,
   Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+
+/** The name is on `user` for both a staff member and a teacher record. */
+const attendanceName = (item: {
+  staff?: { user?: { name: string } };
+  teacher?: { user?: { name: string } };
+}) => item.staff?.user?.name || item.teacher?.user?.name || "Tanpa nama";
 
 export default function StaffAttendancePage() {
   const [date, setDate] = useState<Date>(new Date());
   const [unitFilter, setUnitFilter] = useState<string>("");
   const [search, setSearch] = useState("");
-  const [isBulkOpen, setIsBulkOpen] = useState(false);
 
   // Queries
   const { data: attendanceData, isLoading } = useStaffAttendances({
     startDate: format(date, "yyyy-MM-dd"),
     endDate: format(date, "yyyy-MM-dd"),
+    unitId: unitFilter || undefined,
     limit: 100, // Fetch more for daily view
   });
 
   const { data: units } = useUnits();
 
-  // Mutations
-  const createAttendance = useCreateStaffAttendance();
-  const bulkAttendance = useBulkStaffAttendance();
-
   const attendances = attendanceData?.data || [];
 
   // Stats
   const stats = {
-    present: attendances.filter((a) => a.status === "PRESENT").length,
+    present: attendances.filter(
+      (a) =>
+        a.status === "PRESENT" || a.status === "REMOTE" || a.status === "DUTY",
+    ).length,
     late: attendances.filter((a) => a.status === "LATE").length,
     absent: attendances.filter((a) => a.status === "ABSENT").length,
     leave: attendances.filter(
@@ -98,6 +90,8 @@ export default function StaffAttendancePage() {
       ABSENT: "bg-red-100 text-red-800",
       LEAVE: "bg-blue-100 text-blue-800",
       SICK: "bg-purple-100 text-purple-800",
+      REMOTE: "bg-sky-100 text-sky-800",
+      DUTY: "bg-teal-100 text-teal-800",
     };
     return (
       <Badge className={colors[status]}>
@@ -106,32 +100,10 @@ export default function StaffAttendancePage() {
     );
   };
 
-  const handleBulkAttendance = async () => {
-    try {
-      // In a real app, you might select specific staff.
-      // For now we'll simulate a bulk action or just direct to a robust bulk form.
-      // But since we need to send staffIds, we usually need a list of ALL staff first.
-      // For this MVP step, let's just show a toast that it requires staff selection implementation
-      // Or we can implement a "Mark All Active Staff as Present" if we fetch staff list.
-
-      // Let's implement a simple "Check In" dialog for individual staff instead for now?
-      // Or just a placeholder.
-      toast.info(
-        "Fitur Absensi Massal akan segera hadir. Silakan input manual per karyawan.",
-      );
-      setIsBulkOpen(false);
-    } catch (error) {
-      toast.error("Gagal memproses absensi massal");
-    }
-  };
-
-  // Filtered Data
+  // Filtered Data (search stays client-side; the unit filter goes to the API)
   const filteredAttendances = attendances.filter((item) => {
-    if (unitFilter && item.staff?.unitId !== unitFilter) return false;
-    if (search) {
-      return item.staff?.fullName.toLowerCase().includes(search.toLowerCase());
-    }
-    return true;
+    if (!search) return true;
+    return attendanceName(item).toLowerCase().includes(search.toLowerCase());
   });
 
   return (
@@ -173,8 +145,16 @@ export default function StaffAttendancePage() {
                 />
               </PopoverContent>
             </Popover>
-            <Button onClick={() => setIsBulkOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button
+              variant="outline"
+              onClick={() => {
+                const params = new URLSearchParams({
+                  date: format(date, "yyyy-MM-dd"),
+                });
+                window.location.href = `/hr/attendance/bulk?${params}`;
+              }}
+            >
+              <CalendarIcon className="mr-2 h-4 w-4" />
               Absensi Massal
             </Button>
           </div>
@@ -277,9 +257,13 @@ export default function StaffAttendancePage() {
                     filteredAttendances.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell className="font-medium">
-                          {item.staff?.fullName}
+                          {attendanceName(item)}
                         </TableCell>
-                        <TableCell>{item.staff?.unit?.name || "-"}</TableCell>
+                        <TableCell>
+                          {item.staff?.unit?.name ||
+                            item.teacher?.unit?.name ||
+                            "-"}
+                        </TableCell>
                         <TableCell>
                           {item.checkIn
                             ? safeFormat(new Date(item.checkIn), "HH:mm")
@@ -314,27 +298,6 @@ export default function StaffAttendancePage() {
             </div>
           </CardContent>
         </Card>
-
-        {/* Bulk Dialog Placeholder */}
-        <Dialog open={isBulkOpen} onOpenChange={setIsBulkOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Absensi Massal</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">
-              <p className="text-muted-foreground">
-                Fitur ini akan memungkinkan Anda untuk menandai semua karyawan
-                sebagai "Hadir" atau mengimpor data dari mesin fingerprint.
-              </p>
-              <div className="mt-4 p-4 bg-yellow-50 text-yellow-800 rounded-md text-sm">
-                Status: Dalam Pengembangan
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setIsBulkOpen(false)}>Tutup</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
     </MainLayout>
   );
