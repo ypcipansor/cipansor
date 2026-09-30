@@ -7,6 +7,7 @@ import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
  */
 export interface CertificatePdfInput {
   certificateNumber: string;
+  certificateType?: string | null;
   title: string;
   description?: string | null;
   grade?: string | null;
@@ -15,6 +16,16 @@ export interface CertificatePdfInput {
   signatoryName: string;
   signatoryTitle: string;
   verificationUrl: string;
+  /**
+   * Per-type render data persisted at mint time (see `DigitalCertificate.metadata`).
+   * Without it a sanad's juz/teacher and a syahadah's qira'ah/silsilah — the
+   * details actually printed on the document the issuer handed over — are lost
+   * and the download falls back to the generic layout. Typed `unknown` because
+   * the column is Prisma `JsonValue`; the renderer narrows it and ignores
+   * anything unexpected, so a row minted before this column existed renders as
+   * before.
+   */
+  metadata?: unknown;
   student?: {
     nis?: string | null;
     user?: { name: string } | null;
@@ -61,6 +72,64 @@ function wrap(
   }
   if (line) lines.push(line);
   return lines;
+}
+
+/** Read a metadata value as a non-empty string, or undefined. */
+function metaString(metadata: Record<string, unknown>, key: string): string | undefined {
+  const value = metadata[key];
+  if (value === null || value === undefined) return undefined;
+  if (Array.isArray(value)) return value.length ? value.join(', ') : undefined;
+  const text = String(value).trim();
+  return text.length ? text : undefined;
+}
+
+/** Narrow the untyped `metadata` JSON column to a plain object, or null. */
+function asMetadata(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+/**
+ * The labelled details a printed sanad/syahadah carries, read back from the
+ * persisted mint metadata so the download matches the document the issuer
+ * handed over rather than the generic layout. Returns the same label the
+ * paper prints, in the order it prints them.
+ *
+ * Old rows minted before the column existed have no metadata and simply return
+ * nothing — the render then degrades to today's generic certificate, which is
+ * exactly the previous behaviour.
+ */
+function certificateDetails(input: CertificatePdfInput): Array<[string, string]> {
+  const m = asMetadata(input.metadata);
+  if (!m) return [];
+  const type = input.certificateType ?? '';
+  const details: Array<[string, string | undefined]> = [];
+
+  if (type === 'SANAD') {
+    details.push(['Juz', metaString(m, 'juz')]);
+    details.push(['Pengajar', metaString(m, 'teacherName')]);
+  } else if (type === 'TAHFIDZ') {
+    details.push(['Qira’ah', metaString(m, 'qiraahType')]);
+    details.push(['Jumlah Juz', metaString(m, 'completedJuz')]);
+    details.push(['Musyrif', metaString(m, 'musyrifName')]);
+  } else if (
+    type === 'TAHFIDZ_30_JUZ' ||
+    type === 'TAHFIDZ_5_JUZ' ||
+    type === 'TAHFIDZ_10_JUZ' ||
+    type === 'TAHFIDZ_JUZ_AMMA' ||
+    type === 'SANAD_QIRAAH'
+  ) {
+    details.push(['Qira’ah', metaString(m, 'qiraahType')]);
+    details.push(['Jumlah Juz', metaString(m, 'completedJuz')]);
+    details.push(['Musyrif', metaString(m, 'musyrifName')]);
+  }
+
+  // The silsilah is long and belongs on its own labelled block, not the
+  // two-column detail row, so it is appended as its own entry read by the
+  // caller.
+  details.push(['Silsilah Sanad', metaString(m, 'sanadChain')]);
+
+  return details.filter((entry): entry is [string, string] => Boolean(entry[1]));
 }
 
 /**
@@ -153,6 +222,17 @@ export async function generateCertificatePdfBuffer(input: CertificatePdfInput): 
     if (input.rank) bits.push(`Peringkat: ${input.rank}`);
     centered(bits.join('   ·   '), y, 12, bold);
     y -= 22;
+  }
+
+  // The details the printed sanad/syahadah carries and the generic layout
+  // cannot derive — juz, qira'ah, teacher, silsilah. Rendered from the mint
+  // metadata so the downloaded file matches the document the issuer handed
+  // over, not just the holder's name and grade.
+  for (const [label, value] of certificateDetails(input)) {
+    y -= 10;
+    ensureSpace(16);
+    centered(`${label}: ${value}`, y, 11, helv, muted);
+    y -= 16;
   }
 
   // Signature block, lower right of the last page's content column.

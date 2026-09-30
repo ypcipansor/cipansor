@@ -146,6 +146,9 @@ describe('generateCertificate persistence', () => {
           // route parses the body through this schema, whose default supplies
           // `isPublic: true`.
           isPublic: true,
+          // What was printed on the sanad is persisted, so the public download
+          // reproduces the issued document instead of the generic layout.
+          metadata: expect.objectContaining({ juz: 30, teacherName: 'Ust. Ahmad' }),
         }),
       })
     );

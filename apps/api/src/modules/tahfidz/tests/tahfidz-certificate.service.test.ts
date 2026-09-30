@@ -51,13 +51,25 @@ describe('TahfidzService.generateCertificate visibility', () => {
         studentId: '11111111-1111-4111-8111-111111111111',
         certificateType: 'TAHFIDZ_30_JUZ',
         grade: 'MUMTAZ',
+        qiraahType: 'Hafs',
+        completedJuz: [1, 2, 3],
+        musyrifName: 'Ust. Ahmad',
       }),
       'issuer-1'
     );
 
     expect(mocked.digitalCertificate.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ isPublic: true }),
+        data: expect.objectContaining({
+          isPublic: true,
+          // The qira'ah, juz and silsilah printed on the syahadah are stored,
+          // so the public download reproduces the issued document.
+          metadata: expect.objectContaining({
+            qiraahType: 'Hafs',
+            completedJuz: [1, 2, 3],
+            musyrifName: 'Ust. Ahmad',
+          }),
+        }),
       })
     );
   });

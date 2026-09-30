@@ -407,6 +407,14 @@ export async function generateCertificate(
         issueDate: sanad.certifiedAt,
         signatoryName: input.signedBy || sanad.teacher.name,
         signatoryTitle: input.signedByTitle || 'Guru Tahfidz',
+        // The juz and teacher printed on the sanad. Stored so the public
+        // download reproduces the issued document instead of the generic
+        // certificate, which knows only the holder's name and grade.
+        metadata: {
+          juz: sanad.juz,
+          juzName: getJuzName(sanad.juz),
+          teacherName: sanad.teacher.name,
+        },
         // Explicit, never the column default. The certificate's printed
         // verification URL points at the public page, so a row left private
         // failed its own verification ("Sertifikat tidak ditemukan") the moment
