@@ -290,6 +290,11 @@ def check_numbers(lines: list[str], facts: dict, r: Report) -> None:
     ]
     sched_ok = {j["cron_entries"], len(j["scheduled_job_files"])}
     for n, l in enumerate(lines, 1):
+        # A revision-history row records the number as it was at that commit
+        # ("~1.413 hulu rute API (dari ~1.412)"); it is history, not a claim
+        # about the current tree, so the number gate must not rewrite it.
+        if re.match(r"^\s*\|\s*\d+\.\d+\s*\|", l):
+            continue
         for rx, val, label in want:
             for m in re.finditer(rx, l):
                 got = int(m.group(1).replace(".", ""))

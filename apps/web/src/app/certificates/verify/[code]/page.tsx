@@ -261,16 +261,14 @@ export default function VerifyCertificatePage({
 
             {/* Actions */}
             <div className="flex flex-wrap gap-3 pt-4 border-t">
-              {certificate.pdfUrl && (
+              {certificate.isPublic && (
                 <Button asChild>
-                  <a
-                    href={certificate.pdfUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <Link
+                    href={`/public/verify-sanad?code=${encodeURIComponent(certificate.certificateNumber)}`}
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Download PDF
-                  </a>
+                    Unduh Sertifikat
+                  </Link>
                 </Button>
               )}
               <Button

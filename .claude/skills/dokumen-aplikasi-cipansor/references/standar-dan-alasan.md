@@ -1,24 +1,28 @@
 # Standar yang dipakai, dan alasannya
 
-Riset dilakukan 2026-09-28, diperiksa dan diperbarui 2026-09-29, atas pertanyaan:
-dokumentasi aplikasi seperti apa yang dianggap praktik terbaik untuk (a) dokumen
-teknis dan (b) panduan pengguna, pada sistem seukuran Cipansor — monorepo dengan
-puluhan modul, dikembangkan tim kecil, dipakai belasan keluarga peran, repo publik
-sampai rilis.
+Riset dilakukan 2026-09-28, diperiksa dan diperbarui 2026-09-29, diperiksa ulang
+2026-09-30 terhadap sumber resminya, atas pertanyaan: dokumentasi aplikasi seperti
+apa yang dianggap praktik terbaik untuk (a) dokumen teknis dan (b) panduan
+pengguna, pada sistem seukuran Cipansor — monorepo dengan puluhan modul,
+dikembangkan tim kecil, dipakai belasan keluarga peran, repo publik sampai rilis.
 
 Baca berkas ini bila pengguna bertanya "kenapa formatnya begini", atau bila harus
 memilih antara dua cara menyusun. Untuk *cara mengerjakan*, buka
 `dokumen-teknis.md` dan `panduan-pengguna.md`.
 
 > **Catatan edisi standar.** Sebutan standar di sini memakai edisi yang berlaku
-> pada 2026: **ISO/IEC/IEEE 26514:2022** (edisi ketiga; edisi 2010 yang sering
-> dikutip sudah digantikan — `26514:2008` → `26514:2022`). Edisi 2022 menambah
-> subpasal tentang **API dan chatbot** sebagai sasaran informasi bagi pengguna,
-> hal yang relevan di sini karena repo punya modul chatbot dan
-> `docs/MOBILE_API.md`. Keluarga 2651x lengkapnya: 26511 (manajer), 26512
-> (pengadaan), 26513 (penguji/peninjau), 26514 (perancang/pengembang), 26515
-> (lingkungan tangkas), 26516 (video instruksional), 26531 (manajemen konten).
-> Yang dipakai skill ini hanya 26514, sebagai daftar periksa mutu.
+> pada 2026: **ISO/IEC/IEEE 26514:2022** (diterbitkan 2022-01, menggantikan
+> `26514:2008` yang ditarik; ISO menandainya *Edition 1*, tetapi ia edisi
+> pertama dari judul *Design and development of information for users* — edisi
+> 2008 memakai judul *Requirements for designers and developers of user
+> documentation*). Edisi 2022 menambah subpasal tentang **API dan chatbot**
+> sebagai sasaran informasi bagi pengguna, hal yang relevan di sini karena repo
+> punya modul chatbot dan `docs/MOBILE_API.md`. Keluarga 2651x lengkapnya: 26511
+> (manajer), 26512 (pengadaan), 26513 (penguji/peninjau), 26514
+> (perancang/pengembang), 26515 (lingkungan tangkas), 26516 (video
+> instruksional), 26531 (manajemen konten). Yang dipakai skill ini hanya 26514,
+> sebagai daftar periksa mutu. Sumber diperiksa ulang 2026-09-30 pada
+> iso.org/standard/77451.html.
 
 ## Ringkasan pilihan
 

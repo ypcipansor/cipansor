@@ -218,12 +218,10 @@ export default function CertificatesPage() {
               <QrCode className="mr-2 h-4 w-4" />
               Verifikasi
             </DropdownMenuItem>
-            {row.original.pdfUrl && (
-              <DropdownMenuItem onClick={() => handleDownload(row.original)}>
-                <Download className="mr-2 h-4 w-4" />
-                Download PDF
-              </DropdownMenuItem>
-            )}
+            <DropdownMenuItem onClick={() => handleDownload(row.original)}>
+              <Download className="mr-2 h-4 w-4" />
+              Download PDF
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
                 navigator.clipboard.writeText(row.original.verificationUrl)

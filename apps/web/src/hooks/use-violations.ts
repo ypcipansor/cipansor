@@ -105,9 +105,12 @@ function categoryToViolationType(raw: any): ViolationTypeWithSeverity {
   return {
     id: name,
     name: label,
-    category: (raw?.category ??
-      SEVERITY_BY_DB_TYPE[dbType] ??
-      "LIGHT") as ViolationCategory,
+    // The API's `category` is the free-text category name (e.g. "IBADAH"), not
+    // a severity — severity lives in `type` (MINOR/MODERATE/MAJOR). Derive the
+    // display bucket from `type` so the badge gets a label and a colour; taking
+    // `raw.category` handed the badge a string it has no mapping for, and it
+    // rendered blank.
+    category: SEVERITY_BY_DB_TYPE[dbType] ?? "LIGHT",
     points: typeof raw?.points === "number" ? raw.points : 0,
     type: dbType,
     isActive: raw?.isActive ?? true,

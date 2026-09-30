@@ -8,8 +8,9 @@
 | 0.4 | 30 September 2026 | commit `40780b26` (kode `apps/` dan `packages/` menyatukan cabang README/galeri visual) | Angka diukur ulang setelah modul `certificates` masuk: 94 modul API, 67 modul empat berkas, 25 lengkap lima bagian, ~1.412 handler; `certificates` ditambahkan ke tabel ranah 5.3 dan Lampiran A; perbaikan `params` Next 16 diserahkan ke implementasi cabang ini dan dikunci uji penjaga `next-dynamic-params.guard.test.ts` | Agen OpenHands |
 | 0.5 | 30 September 2026 | commit `a4735001` (kode `apps/` dan `packages/` identik dengan `40780b26`) | Diperiksa ulang dengan pemeriksa skill terbaru: seluruh bab, Lampiran A, dan bab 9–11 lolos `check_docs.py --final` 0 ERROR. Angka diukur ulang, tidak berubah | Agen OpenHands |
 | 0.6 | 30 September 2026 | commit `a4735001` (kode tidak berubah) | Lampiran B: versi arc42 disebut tegas (v9, Juli 2025 — 12 bab tetap) setelah pemeriksaan ulang standar; pemeriksa `check_docs.py --final` tetap 0 ERROR/0 WARN | Agen OpenHands |
-| 0.7 | 30 September 2026 | commit `18f853f2` (termasuk rute `POST /api/certificates/:id/generate-pdf` yang belum dikomit) | Pemeriksaan ulang standar 2026 (arc42 v9, C4, Diátaxis, MADR 4.0, ISO/IEC/IEEE 26514:2022, 42010:2022, IEC/IEEE 82079-1:2019) tanpa perubahan kerangka; angka diukur ulang: ~1.413 hulu rute API (dari ~1.412). Pemeriksa `check_docs.py` kini juga mencocokkan angka hulu rute terhadap `facts.json` | Agen OpenHands |
+| 0.7 | 30 September 2026 | commit `18f853f2` | Pemeriksaan ulang standar 2026 (arc42 v9, C4, Diátaxis, MADR 4.0, ISO/IEC/IEEE 26514:2022, 42010:2022, IEC/IEEE 82079-1:2019) tanpa perubahan kerangka; angka diukur ulang: ~1.413 hulu rute API (dari ~1.412). Pemeriksa `check_docs.py` kini juga mencocokkan angka hulu rute terhadap `facts.json` | Agen OpenHands |
 | 0.8 | 30 September 2026 | commit `9b0efdc5` + pohon kerja (perbaikan modul `certificates`, `rewards`, `violations`, `hr` belum dikomit) | Lampiran A diukur ulang baris demi baris terhadap kode: `certificates` 9→10, `rewards` 9→10, `violations` 7→8, `hr` 37→42, `organisasi` 11→12 handler. Pemeriksa `check_docs.py` kini memeriksa **tiap baris** Lampiran A (jumlah handler, alamat mount, penandaan Prisma di route/controller), bukan hanya jumlah barisnya — jumlah baris yang cocok pernah menyembunyikan lima baris yang basi | Agen OpenHands |
+| 0.9 | 30 September 2026 | commit `7e985a08` + pohon kerja (temuan Devin: akses sertifikat, lingkup unit HR, poin kategori penghargaan) | Angka diukur ulang: **1.412 hulu rute API** (dari 1.413) dan Lampiran A baris `certificates` 10→9 — rute PDF sertifikat tidak lagi terdaftar di router; berkas PDF diunduh lewat rute `download`. Riwayat revisi dikecualikan dari gerbang angka (ia mencatat keadaan lama). Perkakas dokumen diberi uji regresi `scripts/test_tooling.py` | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -31,7 +32,7 @@ dalam **13 keluarga menu** (diukur pada commit `40780b26`, 30 September 2026);
 setiap peran melihat menu, dasbor, dan data yang berbeda.
 
 Pada commit ini, basis kode berisi **94 modul API**, **289 model data** dan
-**157 enum**, sekitar **1.413 hulu rute API**, **435 halaman web**, serta
+**157 enum**, sekitar **1.412 hulu rute API**, **435 halaman web**, serta
 **15 entri jadwal** (dari 13 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
 diakses lewat Prisma 7. Aplikasi berjalan sebagai dua layanan: API (Express 5)
 dan web (Next.js 16), dengan paket tipe bersama `@cipansor/shared`.
@@ -641,7 +642,7 @@ memanggil Prisma dari rute/controller.
 | business-unit | /api/business-units | 7 | - | ok |
 | calendar | /api/calendar | 12 | - | ok |
 | canteen | /api/canteen | 19 | - | ok |
-| certificates | /api/certificates | 10 | - | ok |
+| certificates | /api/certificates | 9 | - | ok |
 | cbt | /api/cbt | 20 | - | Prisma di route/controller |
 | chatbot | /api/chatbot | 9 | - | Prisma di route/controller |
 | classes | /api/classes | 9 | ya | ok |

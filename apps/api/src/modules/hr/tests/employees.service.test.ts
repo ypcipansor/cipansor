@@ -159,6 +159,20 @@ describe('hr getEmployees — unit scope (CWE-863)', () => {
     expect(mocked.user.findMany.mock.calls[0][0].where.unitId).toBe('unit-9');
   });
 
+  it('gives a foundation role the whole yayasan when it names no unit, even if its token carries one', async () => {
+    mocked.user.findMany.mockResolvedValue([]);
+    mocked.user.count.mockResolvedValue(0);
+
+    // A board member assigned to one unit still oversees them all: the roster
+    // must not be narrowed back to that unit by the token's own `unitId`.
+    await getEmployees(
+      { page: 1, limit: 20 },
+      { sub: 'ketua-1', roleCode: 'YAYASAN_KETUA', unitId: 'unit-3' }
+    );
+
+    expect(mocked.user.findMany.mock.calls[0][0].where.unitId).toBeUndefined();
+  });
+
   it('refuses a unit-bound role with no unit at all', async () => {
     await expect(
       getEmployees({ page: 1, limit: 20 }, { sub: 'x', roleCode: 'SDIT_ADMIN', unitId: null })

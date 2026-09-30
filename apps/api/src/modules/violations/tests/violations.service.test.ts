@@ -107,6 +107,27 @@ describe('violations service — unit scope (CWE-863)', () => {
     });
   });
 
+  it('defaults a category to the points and severity of its largest group, not its last', async () => {
+    // One row per (category, points, type), descending count. Twenty MINOR
+    // 15-point rows and one MAJOR 0-point row must seed new violations as
+    // 15 points / MINOR, not 0 points / MAJOR.
+    mocked.violation.groupBy.mockResolvedValue([
+      { category: 'ibadah', points: 15, type: 'MINOR', _count: 20 },
+      { category: 'ibadah', points: 0, type: 'MAJOR', _count: 1 },
+    ]);
+
+    await expect(getViolationCategories(teacher)).resolves.toEqual([
+      {
+        id: 'ibadah',
+        name: 'Ibadah',
+        category: 'IBADAH',
+        points: 15,
+        type: 'MINOR',
+        isActive: true,
+      },
+    ]);
+  });
+
   it('scopes the category detail to the caller\u2019s unit', async () => {
     mocked.violation.aggregate.mockResolvedValue({ _count: 0 });
 

@@ -34,14 +34,25 @@ export type CertificateType = (typeof CERTIFICATE_TYPE_VALUES)[number];
  */
 export const createCertificateSchema = z.object({
   studentId: z.uuid("Santri wajib dipilih"),
-  certificateType: z.enum(CERTIFICATE_TYPE_VALUES, "Jenis sertifikat wajib dipilih"),
+  certificateType: z.enum(
+    CERTIFICATE_TYPE_VALUES,
+    "Jenis sertifikat wajib dipilih",
+  ),
   title: z.string().trim().min(3, "Judul minimal 3 karakter").max(200),
   description: z.string().trim().max(2000).optional(),
   grade: z.string().trim().max(50).optional(),
   rank: z.number().int().positive().optional(),
   issueDate: z.string().datetime("Tanggal terbit tidak valid"),
-  signatoryName: z.string().trim().min(2, "Nama penandatangan minimal 2 karakter").max(120),
-  signatoryTitle: z.string().trim().min(2, "Jabatan penandatangan minimal 2 karakter").max(120),
+  signatoryName: z
+    .string()
+    .trim()
+    .min(2, "Nama penandatangan minimal 2 karakter")
+    .max(120),
+  signatoryTitle: z
+    .string()
+    .trim()
+    .min(2, "Jabatan penandatangan minimal 2 karakter")
+    .max(120),
   signatureUrl: z.url("URL tanda tangan tidak valid").optional(),
   isPublic: z.boolean().default(false),
 });

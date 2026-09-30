@@ -324,3 +324,78 @@ pemeriksa dokumen belum berjalan di CI; `uno` tak tersedia sehingga daftar isi
 pohon kerja (mencoba dua basis: relatif dokumen dan relatif akar) tetapi
 perubahannya belum dikomit; `.docx`/`.pdf` belum dibangun ulang pada sesi ini
 (hanya `.md` yang berubah, dan biner tidak dilacak git).
+
+# 13. Tindak lanjut 2026-09-30 (kelima) — temuan Devin ditutup, perkakas diberi uji regresi
+
+Sesi ini menindaklanjuti temuan tinjauan Devin (kontrol akses dan kecocokan
+dokumen dengan kode), menambah uji regresi untuk perkakas dokumen, memeriksa
+ulang standar lewat web, lalu memperbarui dokumen.
+
+**Temuan Devin yang ditutup di kode.**
+
+| Temuan | Tindakan |
+|---|---|
+| Sertifikat melewati pemeriksaan akses tingkat santri (CWE-863, tinggi) | `certificates.service.ts` diberi `assertStudentInScope`/`studentScope`: penerbitan dan pengunduhan PDF menolak santri di luar unit/kelas aktor. Diuji di `tests/` modul. |
+| Admin unit mengatur hal yang bukan kewenangannya (hr.routes.ts) | `hr.service.ts` diberi `actorReachesUnit`/`isFoundationScopedRole`; peran berlingkup yayasan dijangkau, peran unit hanya untuk unitnya. |
+| Kategori penghargaan kembali tanpa poin | `rewards.service.ts` `getRewardCategories` kini mengembalikan `points` dan `type` barisnya, bukan 0. |
+| PDF sertifikat: deskripsi panjang menimpa tanda tangan | `generate-certificate-pdf.ts` membungkus deskripsi dan memberi ruang; uji baru `generate-certificate-pdf.test.ts`. |
+| Panduan santri menyebut halaman target yang tidak ada | `PANDUAN-PENGGUNA-SANTRI.md`: bagian target ibadah ditulis sebagai "melihat" (halaman target memang lingkup unit, bukan aksi santri). |
+
+**Cacat dokumen yang ditemukan dan diperbaiki sesi ini (akibat perbaikan kode di atas).**
+
+1. **Rute yang sudah tidak ada masih dikutip.** Riwayat revisi v0.7 menyebut
+   `POST /api/certificates/:id/generate-pdf`, padahal cabang ini menggantinya
+   dengan `GET /api/certificates/:id/download`; `check_docs.py` menandai
+   `rute-tak-ada`. Kalimat basis kode pada baris itu dihapus.
+2. **Jumlah hulu rute bergeser kembali.** `facts.json` mengukur **1.412** hulu
+   rute (bukan 1.413), karena rute generate-pdf yang menaikkannya sudah tidak
+   ada. Ringkasan bab 1 dan Lampiran A diperbaiki.
+3. **Lampiran A baris `certificates` basi.** Kode kini 9 handler (bukan 10,
+   karena rute generate-pdf dilepas). Diperbaiki; pemeriksa per baris yang
+   ditambahkan sesi sebelumnya yang menangkapnya.
+4. **Gerbang angka menolak riwayat revisi.** Pemeriksa angka baru (v0.7) ikut
+   membaca baris riwayat revisi, sehingga kalimat sejarah "~1.413 hulu rute API
+   (dari ~1.412)" ditandai ERROR selamanya. Baris riwayat (`| 0.7 | … |`) kini
+   dikecualikan: ia mencatat keadaan saat commit itu, bukan klaim tentang pohon
+   sekarang. Perilaku ini dikunci uji.
+5. **Label tab di jalur menu ditolak pemeriksa.** `PANDUAN-PENGGUNA-SANTRI.md`
+   menulis tab **Target Aktif** di jalur menu, padahal pemeriksa hanya menerima
+   label menu. Tab disebut di langkah, jalur menu cukup sampai halaman.
+
+**Uji regresi perkakas (baru).** `scripts/test_tooling.py` (19 uji, `unittest`)
+mengunci jalur yang selama ini tak beruji: normalisasi rute (`:id`/`{id}`/`[id]`
+menjadi satu bentuk), pemisahan sel tabel yang menghormati pipa di dalam
+backtick, hitungan tabel yang mengabaikan blok kode, gerbang rute
+(terdaftar/lolos, tak terdaftar/ERROR, metode salah/ERROR dengan petunjuk), serta
+`verify_docx`/`verify_pdf` (tabel kurang, judul bab di dalam sel, tanpa "Daftar
+Isi", kepala tabel tak terbaca di PDF). Ini jawaban langsung atas temuan Devin
+"perkakas dokumen tanpa cakupan regresi".
+
+**Riset standar (kelima, lewat web).** Tidak ada edisi yang berganti: arc42
+tetap **v9 (Juli 2025)** (arc42.org/download — v9 menambah terjemahan Tionghoa;
+Jerman sudah 9.1), C4 tetap tanpa edisi bernomor, ISO/IEC/IEEE 42010:2022 tetap
+edisi berlaku (menggantikan 42010:2011), ISO/IEC/IEEE 26514:2022 tetap edisi
+berlaku (ISO menandainya *Edition 1*, terbit 2022-01, menggantikan 26514:2008
+yang ditarik), MADR 4.0.0 tetap template terkini (17 Sep 2024). Satu koreksi
+kecil dilakukan pada `references/standar-dan-alasan.md`: sebutan "edisi ketiga"
+untuk 26514 diganti dengan penjelasan yang benar (edisi pertama dari judul 2022).
+
+**Pemeriksa mesin (30 September 2026, kelima).**
+
+| Pemeriksa | Hasil |
+|---|---|
+| `check_docs.py --final` (DOKUMEN-TEKNIS) | 0 ERROR, 0 WARN |
+| `check_docs.py --final` (sembilan panduan) | 0 ERROR, 0 WARN |
+| `scripts/test_tooling.py` | 19 uji, OK |
+| `pnpm --filter api build:strict` | kode keluar 0 |
+| `pnpm --filter api test` | 349 berkas / 3.419 uji lulus |
+| `pnpm --filter web test` | 45 berkas / 640 uji lulus |
+| `pnpm format:check` | bersih (tiga berkas diformat ulang) |
+| `scripts/check-doc-refs.py` | 1.821 rujukan = 1.821 berkas; 0 menggantung |
+
+**Belum selesai.** Bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen
+belum berjalan di CI; `uno` tak tersedia sehingga daftar isi `.docx` terisi saat
+dibuka (F9); e2e Playwright untuk perbaikan `certificates`/`rewards`/`violations`
+belum dijalankan karena Docker tak tersedia di lingkungan ini (uji API untuk
+kedua sisi sudah ada).
+

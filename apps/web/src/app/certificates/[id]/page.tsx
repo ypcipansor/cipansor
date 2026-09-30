@@ -33,7 +33,6 @@ import {
   useCertificate,
   useDeleteCertificate,
   useDownloadCertificate,
-  useGenerateCertificatePDF,
 } from "@/hooks/use-certificate";
 import { useCreateSanad } from "@/hooks/use-takhosus";
 import { format } from "date-fns";
@@ -83,7 +82,6 @@ export default function CertificateDetailPage({
     error,
   } = useCertificate(resolvedParams.id);
   const deleteMutation = useDeleteCertificate();
-  const generatePDFMutation = useGenerateCertificatePDF();
   const downloadMutation = useDownloadCertificate();
 
   const handleDelete = async () => {
@@ -93,18 +91,6 @@ export default function CertificateDetailPage({
       router.push("/certificates");
     } catch {
       toast.error("Gagal menghapus sertifikat");
-    }
-  };
-
-  const handleGeneratePDF = async () => {
-    try {
-      const result = await generatePDFMutation.mutateAsync(resolvedParams.id);
-      toast.success("PDF sertifikat berhasil dibuat");
-      if (result?.pdfUrl) {
-        await handleDownloadPDF();
-      }
-    } catch {
-      toast.error("Gagal membuat PDF sertifikat");
     }
   };
 
@@ -425,33 +411,18 @@ export default function CertificateDetailPage({
                 <CardTitle>Aksi</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {certificate.pdfUrl ? (
-                  <Button
-                    className="w-full"
-                    onClick={handleDownloadPDF}
-                    disabled={downloadMutation.isPending}
-                  >
-                    {downloadMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Download className="mr-2 h-4 w-4" />
-                    )}
-                    Download PDF
-                  </Button>
-                ) : (
-                  <Button
-                    className="w-full"
-                    onClick={handleGeneratePDF}
-                    disabled={generatePDFMutation.isPending}
-                  >
-                    {generatePDFMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <FileText className="mr-2 h-4 w-4" />
-                    )}
-                    Generate PDF
-                  </Button>
-                )}
+                <Button
+                  className="w-full"
+                  onClick={handleDownloadPDF}
+                  disabled={downloadMutation.isPending}
+                >
+                  {downloadMutation.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Download PDF
+                </Button>
 
                 <Button variant="outline" className="w-full" asChild>
                   <a

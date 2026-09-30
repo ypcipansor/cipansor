@@ -1,6 +1,4 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { prisma } from '../../lib/prisma';
 import { certificateVerificationUrl } from '../../utils/verification-url';
 import { assertStudentInScope, studentScope } from '../../utils/student-scope';
@@ -195,33 +193,24 @@ export async function incrementDownloadCount(id: string) {
 }
 
 /**
- * Render the certificate to a PDF and store it under `public/uploads`, so the
- * detail page's Download button (and the printed verification QR) have a file.
+ * Render the certificate to a PDF and return its bytes.
  *
- * The bytes are produced from the row, never accepted from the client; the
- * stored path is relative to the API origin so the same value works in every
- * environment.
+ * The bytes are produced from the row, never accepted from the client. Nothing
+ * is written to disk: a certificate's PDF carries the holder's name, unit,
+ * class and grades, so a file under `public/uploads` — served to *any* signed-in
+ * token, including a santri's or a parent's — would hand every certificate to
+ * every account that can guess a filename. Serving the bytes only from the
+ * scoped download route keeps the row's scope the single authority on who may
+ * read it.
+ *
+ * `pdfUrl` therefore stays `null`: it is a URL into the public uploads
+ * directory, and a non-null value tells the web pages to link straight to that
+ * directory, past the scope check. The download route is the only reader.
  */
 export async function renderCertificatePdf(id: string, actor: CertificateActor) {
   const certificate = await getCertificateById(id, actor);
   if (!certificate) throw Errors.notFound('Certificate');
 
   const buffer = await generateCertificatePdfBuffer(certificate);
-  const filename = `certificate-${certificate.id}.pdf`;
-  const dir = path.join(process.cwd(), 'public', 'uploads');
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, filename), buffer);
-
-  const updated = await prisma.digitalCertificate.update({
-    where: { id },
-    data: { pdfUrl: `/uploads/${filename}` },
-    include: studentInclude,
-  });
-  return { certificate: updated, buffer };
-}
-
-/** Generate (or regenerate) the stored PDF and return the row. */
-export async function generateCertificatePdf(id: string, actor: CertificateActor) {
-  const { certificate } = await renderCertificatePdf(id, actor);
-  return certificate;
+  return { certificate, buffer };
 }

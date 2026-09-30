@@ -15,6 +15,11 @@ process.env.JWT_EXPIRES_IN = '1h';
 // otherwise fail tests that are about the *shape* of the URL, not its value.
 // Set before `config` is imported; dotenv never overrides an existing var.
 process.env.PUBLIC_SITE_URL = 'https://cipansor.or.id';
+// The portal host is pinned too: `utils/signature-url.ts` allows a signature
+// image only on a host the yayasan serves, and a developer's `.env` points both
+// hosts at localhost — the absolute-URL branch of that rule then has no real
+// host to match and the test would assert against the dev value.
+process.env.PORTAL_URL = 'https://portal.cipansor.or.id';
 // Unit tests mock Prisma, so a stub URL is fine. The opt-in DB integration
 // suite (RUN_DB_TESTS=1) needs a real connection, so leave the environment's
 // DATABASE_URL untouched in that mode.

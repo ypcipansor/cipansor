@@ -207,6 +207,12 @@ export async function getViolationCategories(actor: ScopeActor) {
     const current = byCategory.get(row.category);
     const count = row._count ?? 0;
     if (!current) {
+      // The first row of a category is its largest (points, type) group —
+      // `orderBy` is descending by group size — so that group sets the
+      // category's default points and severity. Later groups only add to the
+      // total; overwriting made the *least* common combination the default, so
+      // a category of twenty 10-point MINOR violations and one 0-point MAJOR
+      // one seeded new records as 0 points and MAJOR.
       byCategory.set(row.category, {
         id: row.category,
         points: row.points,
@@ -215,12 +221,6 @@ export async function getViolationCategories(actor: ScopeActor) {
       });
     } else {
       current.count += count;
-      // The majority (category, points, type) combination wins; the groupBy
-      // order is by descending count, so the first row of a category is it.
-      if (count > 0) {
-        current.points = row.points;
-        current.type = row.type;
-      }
     }
   }
 

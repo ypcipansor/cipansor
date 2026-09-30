@@ -126,37 +126,41 @@ diperbarui. Giliran wali kelas atau musyrif memverifikasinya.
 
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).
 
-## Menetapkan target ibadah
+## Melihat target ibadah Anda
 
-**Tujuan.** Menetapkan target ibadah harian Anda sendiri.
+**Tujuan.** Melihat target ibadah harian yang berlaku di unit Anda, sebagai
+ukuran jurnal ibadah.
 
-**Siapa.** Santri.
+**Siapa.** Santri. Target ditetapkan pengelola unit (musyrif, wali kelas, atau
+kepala unit), bukan oleh santri sendiri — halaman **Kelola Target Ibadah**
+(`/ibadah/targets`) menetapkan target untuk seluruh unit, termasuk menyemai
+target default dan menghapusnya, sehingga tombol tambah, ubah, dan hapus di
+halaman itu hanya untuk peran pengelola. Santri membaca target dan mencatat
+ibadahnya di **Jurnal Ibadah**.
 
-**Jalur menu.** Pesantren → Jurnal Ibadah → Kelola Target
-(`/ibadah/targets`). Formulirnya di `/ibadah/targets/new`.
+**Jalur menu.** Pesantren → Jurnal Ibadah (`/ibadah`).
 
-**Sebelum mulai.** Anda tahu target yang ingin dicapai.
+**Sebelum mulai.** Anda sudah menjalankan ibadahnya hari ini.
 
 **Langkah.**
 
-1. Buka **Jurnal Ibadah**, lalu klik **Kelola Target**.
-   *Halaman **Kelola Target Ibadah** terbuka.*
-2. Klik **Tambah Target**.
-3. Isi jenis ibadah dan targetnya, lalu klik **Simpan Target**.
-   *Target baru tampil di daftar target Anda.*
+1. Buka **Jurnal Ibadah**.
+2. Pilih tab **Target Aktif**.
+   *Daftar target ibadah unit Anda tampil beserta jenis dan besarannya.*
 
-![Gambar 4. Kelola Target Ibadah: menetapkan target harian santri.](screens/keseharian-santri/17-target-ibadah.png){width=14cm}
+![Gambar 4. Target Ibadah: daftar target unit yang menjadi ukuran jurnal harian.](screens/keseharian-santri/17-target-ibadah.png){width=14cm}
 
-*Gambar 4. Kelola Target Ibadah: menetapkan target harian santri.*
+*Gambar 4. Target Ibadah: daftar target unit yang menjadi ukuran jurnal harian.*
 
-**Hasilnya, dan giliran siapa berikutnya.** Target Anda tersimpan dan menjadi
-ukuran jurnal ibadah harian.
+**Hasilnya, dan giliran siapa berikutnya.** Target menjadi ukuran jurnal ibadah
+harian Anda. Bila target belum ada atau perlu diubah, sampaikan kepada musyrif
+atau wali kelas — mereka yang menetapkannya.
 
 **Bila tidak berhasil.**
 
 | Yang terlihat | Penyebab umum | Yang perlu dilakukan |
 |---|---|---|
-| **Buat Target Pertama** masih tampil | Belum ada target dibuat | Klik **Tambah Target** |
+| **Belum ada target ibadah** | Unit belum menetapkan target | Minta musyrif menetapkan target unit |
 | "Gagal menghapus target" | Koneksi bermasalah | Muat ulang halaman |
 
 **Ketersediaan.** Ada pada versi aplikasi yang dijelaskan buklet ini (lihat bagian 1).

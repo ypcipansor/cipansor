@@ -19,9 +19,13 @@ export const CERTIFICATE_TYPES = CERTIFICATE_TYPE_VALUES;
 /**
  * `signatureUrl` is rendered as `<img src>` by the detail page; refuse a host
  * that is not one of the yayasan's own (see `utils/signature-url.ts`).
+ *
+ * A same-site path (`/uploads/…`) is allowed as well as an absolute URL on an
+ * application host — `z.url()` alone would reject the path form, leaving the
+ * guard's path branch unreachable.
  */
 const guardedSignatureUrl = z
-  .url('URL tanda tangan tidak valid')
+  .string()
   .refine(isAllowedSignatureUrl, 'URL tanda tangan harus menunjuk ke domain yayasan')
   .optional();
 

@@ -49,24 +49,14 @@ export const deleteCertificate = asyncHandler(async (req, res) => {
   res.json(ApiResponse.success(null, 'Certificate deleted'));
 });
 
-export const generateCertificatePdf = asyncHandler(async (req, res) => {
-  const certificate = await service.generateCertificatePdf(req.params.id, actor(req));
-  res.json(ApiResponse.success(certificate, 'Certificate PDF generated'));
-});
-
 /**
  * The download route answers with the PDF itself, so the caller's
- * `responseType: 'blob'` receives bytes rather than a JSON envelope. When no
- * PDF has been generated yet, one is produced first — the button that reaches
- * this route is "Download PDF", and a 404 for a certificate that simply has not
- * been rendered yet is a dead end for the user.
+ * `responseType: 'blob'` receives bytes rather than a JSON envelope. The bytes
+ * are rendered on demand — there is no stored file to read (see
+ * `renderCertificatePdf`) — and the scope check happens inside the render, so
+ * a certificate outside the caller's reach answers 404 before any bytes exist.
  */
 export const downloadCertificate = asyncHandler(async (req, res) => {
-  const certificate = await service.getCertificateById(req.params.id, actor(req));
-  if (!certificate) throw Errors.notFound('Certificate');
-
-  // The bytes are rendered here (and stored) rather than re-read from disk, so
-  // the download never depends on a file a redeploy could have removed.
   const { certificate: rendered, buffer } = await service.renderCertificatePdf(
     req.params.id,
     actor(req)

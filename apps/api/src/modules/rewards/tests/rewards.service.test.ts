@@ -116,6 +116,20 @@ describe('rewards service — unit scope (CWE-863)', () => {
     });
   });
 
+  it('defaults a category to the points its largest group uses, not its last group', async () => {
+    // groupBy yields one row per (category, points) in descending count order;
+    // a category of twenty 10-point rows and one 0-point row must seed new
+    // rewards with 10, not 0.
+    mocked.reward.groupBy.mockResolvedValue([
+      { category: 'tahfidz', points: 10, _count: 20 },
+      { category: 'tahfidz', points: 0, _count: 1 },
+    ]);
+
+    await expect(getRewardCategories(teacher)).resolves.toEqual([
+      { id: 'tahfidz', name: 'Tahfidz', category: 'TAHFIDZ', points: 10, isActive: true },
+    ]);
+  });
+
   it('scopes the category detail to the caller\u2019s unit', async () => {
     mocked.reward.aggregate.mockResolvedValue({ _count: 0 });
 

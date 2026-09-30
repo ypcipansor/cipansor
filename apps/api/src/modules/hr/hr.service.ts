@@ -44,7 +44,12 @@ export interface HrActor extends UnitActor {
  * at `hr.routes.ts:683`.
  */
 function employeeListUnit(actor: HrActor, asked?: string): string | undefined {
-  if (isFoundationScopedRole(actor.roleCode)) return asked || actor.unitId || undefined;
+  // A foundation role oversees every unit and belongs to none. When it asks for
+  // no particular unit it gets the whole yayasan — its own token `unitId`, if it
+  // happens to carry one, must not narrow the roster back to a single unit
+  // (which is what `asked || actor.unitId` did, hiding every other unit from a
+  // board account that was assigned one).
+  if (isFoundationScopedRole(actor.roleCode)) return asked || undefined;
   if (!actor.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
   return actor.unitId;
 }

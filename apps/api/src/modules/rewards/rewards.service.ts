@@ -211,7 +211,12 @@ export async function getRewardCategories(actor: ScopeActor) {
   });
 
   // groupBy yields one row per (category, points); reduce to one entry per
-  // category, keeping the points the majority of its rows use.
+  // category. The first row of a category is its largest (points) group —
+  // `orderBy` is descending by group size — so that group's points is the
+  // category's default. Later groups only add to the total: overwriting the
+  // points with each later group made the *least* common value the default, so
+  // a category of twenty 10-point rewards and one 0-point reward handed new
+  // rewards 0 points.
   const byCategory = new Map<string, { id: string; points: number; count: number }>();
   for (const row of categories) {
     const current = byCategory.get(row.category);
@@ -220,7 +225,6 @@ export async function getRewardCategories(actor: ScopeActor) {
       byCategory.set(row.category, { id: row.category, points: row.points, count });
     } else {
       current.count += count;
-      if (count > 0) current.points = row.points;
     }
   }
 

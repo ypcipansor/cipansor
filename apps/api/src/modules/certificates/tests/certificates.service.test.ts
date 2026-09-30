@@ -21,23 +21,13 @@ vi.mock('@/utils/generate-certificate-pdf', () => ({
   generateCertificatePdfBuffer: vi.fn().mockResolvedValue(Buffer.from('%PDF-1.4')),
 }));
 
-vi.mock('fs', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('fs')>();
-  return {
-    ...actual,
-    default: { ...actual, mkdirSync: vi.fn(), writeFileSync: vi.fn() },
-    mkdirSync: vi.fn(),
-    writeFileSync: vi.fn(),
-  };
-});
-
 import { prisma } from '@/lib/prisma';
 import {
   createCertificate,
   getCertificateById,
   getCertificates,
   verifyCertificate,
-  generateCertificatePdf,
+  renderCertificatePdf,
   type CertificateActor,
 } from '../certificates.service';
 
@@ -210,7 +200,7 @@ describe('certificates service', () => {
     expect(mocked.digitalCertificate.findFirst.mock.calls[0][0].where.isPublic).toBe(true);
   });
 
-  it('renders a PDF for a certificate the caller may reach', async () => {
+  it('renders a PDF for a certificate the caller may reach, without writing it to a public file', async () => {
     mocked.digitalCertificate.findFirst.mockResolvedValue({
       id: 'cert-1',
       certificateNumber: 'TAH/09/2026/ABCDEF0123',
@@ -222,21 +212,19 @@ describe('certificates service', () => {
       student: null,
       createdBy: null,
     });
-    mocked.digitalCertificate.update.mockResolvedValue({ id: 'cert-1', pdfUrl: '/uploads/x.pdf' });
 
-    const result = await generateCertificatePdf('cert-1', teacher);
+    const { certificate, buffer } = await renderCertificatePdf('cert-1', teacher);
 
-    expect(result).toMatchObject({ id: 'cert-1' });
-    expect(mocked.digitalCertificate.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ pdfUrl: expect.stringMatching(/^\/uploads\//) }),
-      })
-    );
+    expect(certificate).toMatchObject({ id: 'cert-1' });
+    expect(buffer.subarray(0, 5).toString()).toBe('%PDF-');
+    // The bytes must never be persisted to `public/uploads`: that directory is
+    // served to every signed-in token, so a stored file would hand the
+    // certificate to anyone who guessed its name.
+    expect(mocked.digitalCertificate.update).not.toHaveBeenCalled();
   });
 
   it('404s a PDF for a certificate outside the caller\u2019s reach', async () => {
     mocked.digitalCertificate.findFirst.mockResolvedValue(null);
-    await expect(generateCertificatePdf('cert-other', teacher)).rejects.toThrow(/not found/i);
-    expect(mocked.digitalCertificate.update).not.toHaveBeenCalled();
+    await expect(renderCertificatePdf('cert-other', teacher)).rejects.toThrow(/not found/i);
   });
 });

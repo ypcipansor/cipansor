@@ -313,22 +313,6 @@ export function useDeleteCertificate() {
   });
 }
 
-export function useGenerateCertificatePDF() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.post<ApiResponse<DigitalCertificate>>(
-        `/certificates/${id}/generate-pdf`,
-      );
-      return response.data.data;
-    },
-    onSuccess: (_data, id) => {
-      queryClient.invalidateQueries({ queryKey: certificateKeys.detail(id) });
-    },
-  });
-}
-
 /**
  * Download the certificate PDF. The route answers with the file itself, so the
  * caller gets a Blob; the page turns it into an object URL and revokes it after
