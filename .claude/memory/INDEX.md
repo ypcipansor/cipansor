@@ -28,7 +28,7 @@ the mechanical cases.
 - [eoffice-revocation-authority](decisions/eoffice-revocation-authority.md) — who may revoke a naskah dinas; Pengawas, not Ketua; never Super Admin
 - [eoffice-revocation-mechanics](decisions/eoffice-revocation-mechanics.md) — revocation is a signed statement; the DICABUT stamp; requesting ≠ deciding
 - [eoffice-verify-by-upload-not-qr](decisions/eoffice-verify-by-upload-not-qr.md) — verify by uploading the PDF, never by a token page; Arabic in the naskah
-- [esign-standards-ceiling](decisions/esign-standards-ceiling.md) — AATL/eIDAS/PP 71 ceiling; Ed25519 blocks PAdES; no PSrE for now; research not to repeat
+- [esign-standards-ceiling](decisions/esign-standards-ceiling.md) — AATL/eIDAS/PP 71 ceiling; Ed25519 does not block PAdES (AATL does); no PSrE for now; PAdES B-B + RFC 3161 deferred (2026-09-29) until a TSA provider is chosen; research not to repeat
 - [chatbot-retrieval-settled](decisions/chatbot-retrieval-settled.md) — the whole corpus goes into every prompt; what was rejected; when to revisit
 - [route-naming](decisions/route-naming.md) — PPDB/PSB → SPMB with permanent redirects; pesantren terms are never translated
 - [istilah-dan-penamaan](decisions/istilah-dan-penamaan.md) — santri on every screen (murid only in state formats), spellings, portal Indonesian-only vs trilingual public site, `/api/v1`, tables follow models, no lab module, ZIS/wakaf law + what the yayasan offers, target module names
