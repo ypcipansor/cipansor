@@ -3,6 +3,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
 import type { CertificateType, DigitalCertificate } from "@cipansor/shared";
 
+/** `decodeURIComponent` that leaves a malformed `%`-sequence untouched. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 // Types — the DTO and its type union live once, in `@cipansor/shared`, so the
 // web picker can no longer offer a certificate type the API rejects.
 export type { CertificateType, DigitalCertificate };
@@ -244,13 +253,20 @@ export function useVerifyCertificate(code: string) {
   return useQuery({
     queryKey: certificateKeys.verification(code),
     queryFn: async () => {
+      // A number may contain slashes (`OTH/09/2026/…`), which must reach the
+      // API as a single percent-encoded segment or Express reads each slash as
+      // a new path segment and answers "route not found". `useParams()` hands
+      // the segment over still encoded, so normalize first — decoding then
+      // encoding again is a no-op for an already-encoded value and still
+      // correct for a raw one. The guard keeps a stray `%` from throwing.
+      const segment = encodeURIComponent(safeDecode(code));
       const response = await api.get<
         ApiResponse<{
           valid: boolean;
           certificate?: DigitalCertificate;
           message?: string;
         }>
-      >(`/certificates/verify/${code}`);
+      >(`/certificates/verify/${segment}`);
       return response.data.data;
     },
     enabled: !!code,

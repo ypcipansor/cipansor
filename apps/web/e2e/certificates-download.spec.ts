@@ -81,6 +81,44 @@ test.describe("Sertifikat publik — verifikasi dan unduh", () => {
       page.getByRole("button", { name: "Unduh Sertifikat" }),
     ).toHaveCount(0);
   });
+
+  test("nomor yang mengandung garis miring tetap terverifikasi", async ({
+    page,
+  }) => {
+    await injectSession(page, session);
+
+    // `POST /certificates` mints `OTH/09/2026/<hex>` — slashes and all. The
+    // route segment must be percent-encoded or Express splits it and the page
+    // reports "tidak valid" for a certificate that plainly exists.
+    const anyStudent = await apiRequest<{ data: Array<{ id: string }> }>(
+      session,
+      "GET",
+      "/students?limit=1",
+    );
+    const created = await apiRequest<{
+      data: { id: string; certificateNumber: string };
+    }>(session, "POST", "/certificates", {
+      studentId: anyStudent.data[0]?.id,
+      certificateType: "OTHER",
+      title: "Sertifikat Publik (uji garis miring)",
+      issueDate: new Date().toISOString(),
+      signatoryName: "Uji Akses",
+      signatoryTitle: "Penguji",
+      isPublic: true,
+    });
+    const number = created.data.certificateNumber;
+    expect(number).toContain("/");
+
+    try {
+      await page.goto(`/certificates/verify/${encodeURIComponent(number)}`);
+      await expect(page.getByText("Sertifikat Terverifikasi")).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: "Unduh Sertifikat" }),
+      ).toBeVisible();
+    } finally {
+      await apiRequest(session, "DELETE", `/certificates/${created.data.id}`);
+    }
+  });
 });
 
 /**
@@ -88,6 +126,13 @@ test.describe("Sertifikat publik — verifikasi dan unduh", () => {
  * calls. The API is asked directly because the seed exposes no private
  * certificate to click, and the property under test — a private number is
  * indistinguishable from an unknown one — is exactly what a browser would see.
+ *
+ * The private fixture is a certificate this test *creates* and deletes, not the
+ * seeded `PUBLIC_NUMBER` toggled private and restored. Playwright runs files
+ * fully parallel, and another test here downloads `PUBLIC_NUMBER`; flipping a
+ * shared row made the two race, and a failed restore leaked into every later
+ * test. A cert minted for this test and removed in `finally` touches no shared
+ * state.
  */
 test.describe("Sertifikat privat — akses publik ditolak", () => {
   test.beforeAll(async () => {
@@ -103,25 +148,41 @@ test.describe("Sertifikat privat — akses publik ditolak", () => {
     const session = await apiLogin(SEED_USERS.superAdmin);
     await injectSession(page, session);
 
-    // Make the seeded certificate private for the duration of the test, then
-    // restore it — the public route is what is being probed, not the row.
-    const publicBefore = await apiRequest<{
-      data: Array<{ id: string; isPublic: boolean }>;
-    }>(session, "GET", `/certificates?search=${PUBLIC_NUMBER}&limit=1`);
-    const cert = publicBefore.data[0];
-    expect(cert, "seed should expose the public certificate").toBeTruthy();
+    // Borrow a real student but mint a private certificate for this test alone.
+    const anyStudent = await apiRequest<{ data: Array<{ id: string }> }>(
+      session,
+      "GET",
+      "/students?limit=1",
+    );
+    const studentId = anyStudent.data[0]?.id;
+    expect(studentId, "seed should provide a student").toBeTruthy();
 
-    const setPublic = (isPublic: boolean) =>
-      apiRequest(session, "PATCH", `/certificates/${cert.id}`, { isPublic });
+    const created = await apiRequest<{
+      data: { id: string; certificateNumber: string };
+    }>(session, "POST", "/certificates", {
+      studentId,
+      certificateType: "OTHER",
+      title: "Sertifikat Internal (uji akses publik)",
+      issueDate: new Date().toISOString(),
+      signatoryName: "Uji Akses",
+      signatoryTitle: "Penguji",
+      isPublic: false,
+    });
+    const privateNumber = created.data.certificateNumber;
+    expect(privateNumber, "create should return a number").toBeTruthy();
 
     try {
-      await setPublic(false);
+      // A certificate number may itself contain slashes (`OTH/09/2026/…`), so
+      // the path segment has to be percent-encoded — the same way the web
+      // download hook builds it — or Express reads each slash as a new
+      // segment and the route never matches ("route not found").
+      const code = encodeURIComponent(privateNumber);
 
       // Verification: the public answer is `valid: false`, byte-for-byte the
       // same shape an unknown number gets — no holder, unit or grade.
       const privateVerify = await apiRequest<{
         data: { valid: boolean; certificate?: unknown; message?: string };
-      }>(session, "GET", `/certificates/verify/${PUBLIC_NUMBER}`);
+      }>(session, "GET", `/certificates/verify/${code}`);
       const unknownVerify = await apiRequest<typeof privateVerify>(
         session,
         "GET",
@@ -133,11 +194,11 @@ test.describe("Sertifikat privat — akses publik ditolak", () => {
 
       // Download: the public PDF route must 404 a private certificate.
       const download = await fetch(
-        `${process.env.API_URL || "http://localhost:3001/api"}/certificates/public/${PUBLIC_NUMBER}/download`,
+        `${process.env.API_URL || "http://localhost:3001/api"}/certificates/public/${code}/download`,
       );
       expect(download.status).toBe(404);
     } finally {
-      await setPublic(true);
+      await apiRequest(session, "DELETE", `/certificates/${created.data.id}`);
     }
   });
 });

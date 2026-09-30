@@ -12,7 +12,8 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 import { prisma } from '@/lib/prisma';
-import { verifyCertificate, generateCertificate } from './sanad-certificate.service';
+import { verifyCertificate, generateCertificate } from '../sanad-certificate.service';
+import { generateCertificateSchema } from '../sanad-certificate.schema';
 
 const mocked = prisma as unknown as {
   digitalCertificate: {
@@ -129,7 +130,7 @@ describe('generateCertificate persistence', () => {
     }));
 
     const result = await generateCertificate(
-      { sanadId: 'sanad-1', templateType: 'STANDARD', includeQRCode: true },
+      generateCertificateSchema.parse({ sanadId: '11111111-1111-4111-8111-111111111111' }),
       { userId: 'admin-1' }
     );
 
@@ -139,11 +140,42 @@ describe('generateCertificate persistence', () => {
           studentId: 'student-1',
           certificateType: 'SANAD',
           createdById: 'admin-1',
+          // The printed URL points at the public page, so the row must be
+          // public the moment it is minted — the column default (`false`) left
+          // every freshly issued certificate failing its own verification. The
+          // route parses the body through this schema, whose default supplies
+          // `isPublic: true`.
+          isPublic: true,
         }),
       })
     );
     expect(result.certificateNumber).toMatch(/^SANAD-\d{6}-[A-F0-9]+$/);
     expect(result.verificationCode).toBeTruthy();
+  });
+
+  it('honours an explicit private choice, so an internal record stays internal', async () => {
+    mocked.sanadRecord.findUnique.mockResolvedValue(sanad);
+    mocked.digitalCertificate.findFirst.mockResolvedValue(null);
+    mocked.digitalCertificate.create.mockImplementation(async ({ data }: any) => ({
+      ...data,
+      id: 'cert-internal',
+    }));
+
+    await generateCertificate(
+      {
+        sanadId: 'sanad-1',
+        templateType: 'STANDARD',
+        includeQRCode: true,
+        isPublic: false,
+      },
+      { userId: 'admin-1' }
+    );
+
+    expect(mocked.digitalCertificate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isPublic: false }),
+      })
+    );
   });
 
   it('reuses the stored number when regenerating the same certificate', async () => {
@@ -154,7 +186,7 @@ describe('generateCertificate persistence', () => {
     });
 
     const result = await generateCertificate(
-      { sanadId: 'sanad-1', templateType: 'STANDARD', includeQRCode: true },
+      generateCertificateSchema.parse({ sanadId: '11111111-1111-4111-8111-111111111111' }),
       { userId: 'admin-1' }
     );
 

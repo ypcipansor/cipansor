@@ -7,7 +7,7 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 import { prisma } from '@/lib/prisma';
-import { getSanadTree } from './sanad-certificate.service';
+import { getSanadTree } from '../sanad-certificate.service';
 
 const mocked = prisma as unknown as {
   sanadRecord: { findMany: ReturnType<typeof vi.fn> };

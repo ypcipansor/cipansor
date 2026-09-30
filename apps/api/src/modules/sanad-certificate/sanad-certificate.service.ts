@@ -407,6 +407,13 @@ export async function generateCertificate(
         issueDate: sanad.certifiedAt,
         signatoryName: input.signedBy || sanad.teacher.name,
         signatoryTitle: input.signedByTitle || 'Guru Tahfidz',
+        // Explicit, never the column default. The certificate's printed
+        // verification URL points at the public page, so a row left private
+        // failed its own verification ("Sertifikat tidak ditemukan") the moment
+        // it was issued. `generateCertificateSchema` defaults this to `true`;
+        // an issuer minting an internal record passes `false` and nothing
+        // discloses it publicly.
+        isPublic: input.isPublic ?? true,
         createdById: context.userId,
       },
     });
