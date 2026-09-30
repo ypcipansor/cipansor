@@ -8,8 +8,3 @@
 --
 -- NULL untuk pencabutan yang tercatat sebelum kolom ini ada.
 ALTER TABLE "letter_signed_documents" ADD COLUMN "revoked_sha256" TEXT;
-
--- Indeks untuk pencocokan salinan bercap: `revokedSha256 = ?` tanpa indeks
--- adalah pemindaian penuh tabel arsip.
-CREATE INDEX "letter_signed_documents_revoked_sha256_idx"
-  ON "letter_signed_documents"("revoked_sha256");
