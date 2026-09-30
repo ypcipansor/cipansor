@@ -759,3 +759,21 @@ export async function deleteAllPushSubscriptions(userId: string): Promise<number
   const { count } = await prisma.pushSubscription.deleteMany({ where: { userId } });
   return count;
 }
+
+/**
+ * Drop every push subscription for a user *except* one endpoint.
+ *
+ * The logout path uses this when the client named an endpoint it no longer
+ * trusts (a stale or foreign value): the account is no longer signed in
+ * anywhere, so every device must be cleared, but the named endpoint was already
+ * removed by `unsubscribePush` and deleting it twice would double-count.
+ */
+export async function deleteAllPushSubscriptionsExcept(
+  userId: string,
+  endpoint: string
+): Promise<number> {
+  const { count } = await prisma.pushSubscription.deleteMany({
+    where: { userId, endpoint: { not: endpoint } },
+  });
+  return count;
+}

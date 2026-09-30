@@ -409,7 +409,7 @@ describe('Event bus — logout clears push subscriptions', () => {
     });
   });
 
-  it('drops only the named device on a normal logout (other devices keep push)', async () => {
+  it('drops only the named device when another session is still signed in', async () => {
     (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
       count: 1,
     });
@@ -417,13 +417,61 @@ describe('Event bus — logout clears push subscriptions', () => {
     eventBus.emit('auth:logged_out', {
       userId: 'user-1',
       endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: true,
     });
     await settle();
 
     // Scoped to this endpoint: logging out on the laptop must not stop push on
-    // the still-signed-in phone.
+    // the still-signed-in phone, so no second, broader delete runs.
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledTimes(1);
     expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
       where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+  });
+
+  it('clears every other device on the account’s last logout', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: false,
+    });
+    await settle();
+
+    // No session remains anywhere, so the named endpoint is cleared and then
+    // everything else the user owns — a client-named endpoint is not trusted to
+    // be the whole story (CWE-200).
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        endpoint: { not: 'https://push.example.com/laptop' },
+      },
+    });
+  });
+
+  it('clears the real device even when the client names a stale endpoint', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    // The client sent an endpoint it no longer holds; the account has no other
+    // session. Trusting the stale value alone would leave the actual
+    // subscription delivering notifications to a signed-out browser.
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/stale',
+      hasActiveSession: false,
+    });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', endpoint: { not: 'https://push.example.com/stale' } },
     });
   });
 

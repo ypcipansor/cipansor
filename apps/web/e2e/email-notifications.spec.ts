@@ -112,7 +112,9 @@ test.describe("Browser push control", () => {
       /pasang dulu portal ini ke Layar Utama/,
       "Notifikasi push belum diaktifkan oleh pengelola sistem.",
       /Izin notifikasi diblokir/,
-      /Aktif di perangkat ini/,
+      // The card reports the device as registered, not as "actively receiving":
+      // no sender is wired on the API yet, so claiming delivery would be a lie.
+      /Perangkat ini terdaftar/,
       "Belum aktif di perangkat ini.",
     ];
     const visible = await Promise.all(
@@ -216,7 +218,7 @@ test.describe("Browser push control", () => {
     expect(subscribeRes.ok()).toBe(true);
     await expect(
       page.getByText(
-        "Aktif di perangkat ini. Notifikasi akan muncul walau portal tidak dibuka.",
+        "Perangkat ini terdaftar. Pengiriman notifikasi dari server belum diaktifkan.",
       ),
     ).toBeVisible();
 

@@ -9,7 +9,9 @@ import {
 import {
   clearPrivateServiceWorkerCaches,
   currentPushEndpoint,
+  forgetPushStatus,
 } from "@/lib/push-cache";
+import { getAppQueryClient } from "@/lib/query-client-registry";
 
 interface AuthState {
   user: User | null;
@@ -195,6 +197,12 @@ export const useAuthStore = create<AuthState>()(
           // former user's data from Cache Storage (CWE-524). Best-effort —
           // never block the logout.
           void clearPrivateServiceWorkerCaches();
+          // The push-status probe is per-account and survives in the shared
+          // React Query cache; drop it so the next login re-reads the server
+          // instead of trusting a still-fresh result from the account that just
+          // signed out (the browser subscription itself outlives logout).
+          const queryClient = getAppQueryClient();
+          if (queryClient) forgetPushStatus(queryClient);
           clearTwoFactorInvite();
           set({
             user: null,

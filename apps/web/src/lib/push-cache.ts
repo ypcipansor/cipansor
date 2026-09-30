@@ -46,3 +46,63 @@ export async function currentPushEndpoint(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Endpoints this tab deliberately turned off.
+ *
+ * The settings page and the authenticated shell each run a `useWebPush`
+ * instance. When the user clicks "Matikan", the settings instance deletes the
+ * row and unsubscribes the browser, but the shell instance still holds the
+ * former `PushSubscription`; the `false` status then looks like a row to repair
+ * and the shell re-registers the endpoint. A module-level set is what makes the
+ * two agree — it is shared by every instance in the tab and survives the
+ * settings page unmounting. `logout()` clears it.
+ */
+const deliberatelyOff = new Set<string>();
+
+/** Record an endpoint the user turned off on purpose. */
+export function markPushDeliberatelyOff(endpoint: string): void {
+  deliberatelyOff.add(endpoint);
+}
+
+/** Whether the user turned this endpoint off on purpose in this tab. */
+export function isPushDeliberatelyOff(endpoint: string): boolean {
+  return deliberatelyOff.has(endpoint);
+}
+
+/** Forget one endpoint's deliberate-off marker — the user subscribed again. */
+export function unmarkPushDeliberatelyOff(endpoint: string): void {
+  deliberatelyOff.delete(endpoint);
+}
+
+/** Forget every deliberate-off marker — the session ended. */
+export function clearDeliberatePushOff(): void {
+  deliberatelyOff.clear();
+}
+
+/**
+ * Cache key for "does the API hold a row for this endpoint".
+ *
+ * Includes the account because push rows are per-user: without it, logging out
+ * and back in reused another account's (or a deleted row's) still-fresh answer.
+ */
+export function pushStatusQueryKey(
+  userId: string | null,
+  endpoint: string | null,
+) {
+  return ["web-push-status", userId, endpoint] as const;
+}
+
+/**
+ * Drop the push-status cache when the session ends.
+ *
+ * Called from `logout()`: a browser `PushSubscription` survives the sign-out,
+ * so a later login on the same device would otherwise read the previous
+ * account's cached status. Removing the queries forces a fresh server probe.
+ */
+export function forgetPushStatus(queryClient: {
+  removeQueries: (filters: { queryKey: readonly unknown[] }) => void;
+}): void {
+  queryClient.removeQueries({ queryKey: ["web-push-status"] });
+  clearDeliberatePushOff();
+}

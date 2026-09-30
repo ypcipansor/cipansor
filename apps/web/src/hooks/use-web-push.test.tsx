@@ -18,20 +18,31 @@ vi.hoisted(() => {
 });
 
 import { useWebPush } from "./use-web-push";
+import { useAuthStore } from "@/stores/auth";
+import { clearDeliberatePushOff } from "@/lib/push-cache";
 
-// Server calls now go through React Query, so every render needs a client.
-function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({
+// Server calls now go through React Query, so every render needs a client. The
+// settings page and the shell share one client in the app, so the tests do too
+// when they need to reproduce that.
+function makeClient() {
+  return new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-function renderWebPush() {
-  return renderHook(() => useWebPush(), { wrapper });
+function wrapperWith(client: QueryClient) {
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+  };
+}
+
+function renderWebPush(client = makeClient()) {
+  return renderHook(() => useWebPush(), { wrapper: wrapperWith(client) });
 }
 
 const subscription = {
@@ -79,6 +90,22 @@ function installPushEnv(opts: {
 describe("useWebPush", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // `clearAllMocks` keeps each mock's implementation, so a test that changed
+    // one (a rejection, a `false` status) would leak into the next. Restore the
+    // defaults explicitly.
+    subscribePush.mockResolvedValue(undefined);
+    unsubscribePush.mockResolvedValue(undefined);
+    pushStatus.mockResolvedValue(true);
+    subscription.unsubscribe.mockResolvedValue(true);
+    // The deliberate-off set is module-level, so it outlives a test file; clear
+    // it or the "does not re-register" test's marker leaks into the next run.
+    clearDeliberatePushOff();
+    // A signed-in user is required: push rows are per-account, so the hook only
+    // probes the server when it knows who the account is.
+    useAuthStore.setState({
+      user: { id: "user-1", name: "Test", email: "t@example.com" } as never,
+      isAuthenticated: true,
+    });
   });
   afterEach(() => vi.restoreAllMocks());
 
@@ -213,5 +240,75 @@ describe("useWebPush", () => {
 
     const { result } = renderWebPush();
     expect(result.current.state).toBe("unsupported");
+  });
+
+  it("does not re-register an endpoint after the user deliberately disabled it", async () => {
+    // The settings page and the shell mount two instances against one client.
+    // Disabling from the settings instance must not be undone by the shell's
+    // reconciliation, which still holds the former PushSubscription.
+    installPushEnv({ existing: subscription });
+    const client = makeClient();
+    const settings = renderHook(() => useWebPush(), {
+      wrapper: wrapperWith(client),
+    });
+    const shell = renderHook(() => useWebPush(), {
+      wrapper: wrapperWith(client),
+    });
+
+    await waitFor(() =>
+      expect(settings.result.current.state).toBe("subscribed"),
+    );
+    await waitFor(() => expect(shell.result.current.state).toBe("subscribed"));
+
+    await act(async () => {
+      await settings.result.current.disable();
+    });
+    expect(settings.result.current.state).toBe("unsubscribed");
+
+    // Give the shell's reconciliation effect a chance to (wrongly) fire.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+    expect(subscribePush).not.toHaveBeenCalled();
+    expect(shell.result.current.state).toBe("unsubscribed");
+  });
+
+  it("stops retrying a failed repair instead of looping", async () => {
+    // The status says "no row", but the repair API is down. React Query flips
+    // isPending back to false on failure; the old effect depended on it and
+    // re-fired the same failed request on every render.
+    installPushEnv({ existing: subscription });
+    pushStatus.mockResolvedValue(false);
+    subscribePush.mockRejectedValue(new Error("unavailable"));
+    renderWebPush();
+
+    await waitFor(() => expect(subscribePush).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(subscribePush).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a fresh account's status out of another account's cache", async () => {
+    // Logging out and back in on the same browser reused a still-fresh result
+    // for the same endpoint, because the key excluded the account.
+    installPushEnv({ existing: subscription });
+    pushStatus.mockResolvedValueOnce(true);
+    const client = makeClient();
+    const first = renderWebPush(client);
+    await waitFor(() => expect(first.result.current.state).toBe("subscribed"));
+
+    // A different account signs in; the status must be re-probed, not reused.
+    act(() => {
+      useAuthStore.setState({
+        user: { id: "user-2", name: "Other", email: "o@example.com" } as never,
+        isAuthenticated: true,
+      });
+    });
+    const second = renderWebPush(client);
+    await waitFor(() => expect(pushStatus).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(second.result.current.state).toBe("subscribed"));
   });
 });

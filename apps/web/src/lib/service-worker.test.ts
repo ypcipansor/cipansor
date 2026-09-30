@@ -548,6 +548,48 @@ describe("sw.js notification click routing", () => {
     // Falls back to the app root rather than opening a foreign origin.
     expect(worker.openWindow).toHaveBeenCalledWith(`${ORIGIN}/`);
   });
+
+  it("matches the query string, not just the path", async () => {
+    const worker = loadWorker();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    // Same path, different query: focusing this tab would show the wrong list.
+    worker.matchAll.mockResolvedValue([
+      { url: `${ORIGIN}/notifications?filter=read`, focus },
+    ]);
+
+    await dispatchClick(worker, { url: "/notifications?filter=unread" });
+
+    expect(focus).not.toHaveBeenCalled();
+    expect(worker.openWindow).toHaveBeenCalledWith(
+      `${ORIGIN}/notifications?filter=unread`,
+    );
+  });
+
+  it("focuses a tab only when the full URL matches", async () => {
+    const worker = loadWorker();
+    const focus = vi.fn().mockResolvedValue(undefined);
+    worker.matchAll.mockResolvedValue([
+      { url: `${ORIGIN}/notifications?filter=unread`, focus },
+    ]);
+
+    await dispatchClick(worker, { url: "/notifications?filter=unread" });
+
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(worker.openWindow).not.toHaveBeenCalled();
+  });
+
+  it("navigates a matched client that has no focus()", async () => {
+    const worker = loadWorker();
+    const navigate = vi.fn().mockResolvedValue(undefined);
+    worker.matchAll.mockResolvedValue([
+      { url: `${ORIGIN}/dashboard`, navigate },
+    ]);
+
+    await dispatchClick(worker, { url: "/dashboard" });
+
+    expect(navigate).toHaveBeenCalledWith(`${ORIGIN}/dashboard`);
+    expect(worker.openWindow).not.toHaveBeenCalled();
+  });
 });
 
 describe("sw.js push subscription rotation", () => {

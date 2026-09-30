@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { clearPrivateServiceWorkerCaches } from "./push-cache";
+import {
+  clearPrivateServiceWorkerCaches,
+  forgetPushStatus,
+  isPushDeliberatelyOff,
+  markPushDeliberatelyOff,
+  pushStatusQueryKey,
+  unmarkPushDeliberatelyOff,
+} from "./push-cache";
 
 /** Replace `navigator.serviceWorker` with the given (or no) registration. */
 function installServiceWorker(
@@ -51,5 +58,43 @@ describe("clearPrivateServiceWorkerCaches", () => {
     });
 
     await expect(clearPrivateServiceWorkerCaches()).resolves.toBeUndefined();
+  });
+});
+
+describe("push cache keys", () => {
+  it("namespaces the status by account and endpoint", () => {
+    expect(pushStatusQueryKey("user-1", "https://push.example.com/a")).toEqual([
+      "web-push-status",
+      "user-1",
+      "https://push.example.com/a",
+    ]);
+    // Different accounts never share a key, so one account's cached answer
+    // cannot be read for another.
+    expect(
+      pushStatusQueryKey("user-2", "https://push.example.com/a"),
+    ).not.toEqual(pushStatusQueryKey("user-1", "https://push.example.com/a"));
+  });
+
+  it("tracks a deliberate-off endpoint and clears it on resubscribe", () => {
+    const endpoint = "https://push.example.com/a";
+    expect(isPushDeliberatelyOff(endpoint)).toBe(false);
+
+    markPushDeliberatelyOff(endpoint);
+    expect(isPushDeliberatelyOff(endpoint)).toBe(true);
+
+    unmarkPushDeliberatelyOff(endpoint);
+    expect(isPushDeliberatelyOff(endpoint)).toBe(false);
+  });
+
+  it("forgetPushStatus removes every account's status queries and markers", () => {
+    markPushDeliberatelyOff("https://push.example.com/a");
+    const removeQueries = vi.fn();
+    forgetPushStatus({ removeQueries });
+
+    expect(removeQueries).toHaveBeenCalledWith({
+      queryKey: ["web-push-status"],
+    });
+    // The next session must not inherit this one's "turned off" endpoints.
+    expect(isPushDeliberatelyOff("https://push.example.com/a")).toBe(false);
   });
 });

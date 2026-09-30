@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { WebPushSubscriptionPayload } from "@cipansor/shared";
 import { notificationsService } from "@/services/notifications.service";
+import { useAuthStore } from "@/stores/auth";
+import {
+  isPushDeliberatelyOff,
+  markPushDeliberatelyOff,
+  pushStatusQueryKey,
+  unmarkPushDeliberatelyOff,
+} from "@/lib/push-cache";
 
 /**
  * Browser Web Push, wired end-to-end.
@@ -161,14 +168,22 @@ export function useWebPush() {
 
   const endpoint = browserSubscription?.endpoint ?? null;
 
+  // The signed-in account. Push rows are per-user, so a cached status for one
+  // account must never be read for another: the key includes the user id, and
+  // logout drops these queries outright (see `forgetPushStatus`). Without this,
+  // logging out and straight back in reused a still-fresh `true` for the same
+  // endpoint — the server row was gone but the card showed "Aktif" and
+  // reconciliation never restored it.
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+
   // Does the API hold a row for this browser's endpoint? Distinct from "the
   // browser has a subscription" — the two disagree after a failed registration
   // or a logout-time purge, and claiming "Aktif" then leaves the device
   // silently unable to receive anything.
   const statusQuery = useQuery({
-    queryKey: ["web-push-status", endpoint],
+    queryKey: pushStatusQueryKey(userId, endpoint),
     queryFn: () => notificationsService.pushStatus(endpoint as string),
-    enabled: supported && !!VAPID_PUBLIC_KEY && !!endpoint,
+    enabled: supported && !!VAPID_PUBLIC_KEY && !!endpoint && !!userId,
     retry: false,
   });
 
@@ -178,10 +193,14 @@ export function useWebPush() {
         sub.toJSON() as WebPushSubscriptionPayload,
       ),
     retry: false,
+    // Reconciliation runs silently on every authenticated page, so a failed
+    // repair must not raise the global error toast the QueryProvider attaches
+    // to every mutation. The `enable()` path toasts for itself.
+    meta: { silentError: true },
     // Write the status straight back: the server now has this endpoint, so the
     // toggle flips to "Aktif" at once instead of after a refetch round-trip.
     onSuccess: (_data, sub) =>
-      queryClient.setQueryData(["web-push-status", sub.endpoint], true),
+      queryClient.setQueryData(pushStatusQueryKey(userId, sub.endpoint), true),
   });
 
   const unregisterMutation = useMutation({
@@ -197,27 +216,47 @@ export function useWebPush() {
       if (!unsubscribed) throw new Error("Browser refused to unsubscribe");
     },
     retry: false,
+    // The explicit "Matikan" click toasts for itself; the shell's automatic
+    // reconciliation must stay silent.
+    meta: { silentError: true },
     onSuccess: (_data, sub) => {
       setBrowserSubscription(null);
-      queryClient.setQueryData(["web-push-status", sub.endpoint], false);
+      // One deliberate, this-browser unsubscribe — not a stale server row.
+      // Record it so every other `useWebPush` instance (the shell) can tell the
+      // difference and refuses to re-register the endpoint we just removed.
+      markPushDeliberatelyOff(sub.endpoint);
+      queryClient.setQueryData(pushStatusQueryKey(userId, sub.endpoint), false);
     },
   });
 
-  // Reconcile a browser subscription the server has no row for. Silent by
-  // design: it runs on every authenticated page (see useWebPushReconcile), and
-  // a failure only means the next visit retries.
-  const { mutate: reconcile, isPending: reconciling } = registerMutation;
+  // Reconcile a browser subscription the server has no row for — a registration
+  // that failed after `subscribe()` succeeded, or a logout-time purge. Silent by
+  // design, and bounded: it runs once per mount for a given endpoint, so a
+  // failing repair cannot loop. React Query flips `isPending` back to false when
+  // the mutation rejects; the old effect depended on that flag, so the same
+  // failed request fired again and again on every authenticated page.
+  const { mutate: reconcile } = registerMutation;
   const registered = statusQuery.data;
+  const attemptedRef = useRef<{
+    endpoint: string;
+    userId: string | null;
+  } | null>(null);
   useEffect(() => {
+    if (!browserSubscription || !userId) return;
+    const { endpoint: currentEndpoint } = browserSubscription;
+    // A deliberate unsubscribe must win over a stale status: never repair it.
+    if (isPushDeliberatelyOff(currentEndpoint)) return;
+    if (registered !== false) return;
+    const attempted = attemptedRef.current;
     if (
-      !browserSubscription ||
-      registered !== false ||
-      registerMutation.isPending
+      attempted?.endpoint === currentEndpoint &&
+      attempted.userId === userId
     ) {
       return;
     }
+    attemptedRef.current = { endpoint: currentEndpoint, userId };
     reconcile(browserSubscription);
-  }, [browserSubscription, registered, registerMutation.isPending, reconcile]);
+  }, [browserSubscription, userId, registered, reconcile]);
 
   const [busy, setBusy] = useState(false);
   // Read once on the client, then refreshed by `enable()`. `Notification` does
@@ -272,6 +311,9 @@ export function useWebPush() {
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         }));
+      // A fresh, deliberate subscribe clears any earlier "turned off" marker so
+      // reconciliation is free to keep the row alive again.
+      unmarkPushDeliberatelyOff(subscription.endpoint);
       setBrowserSubscription(subscription);
       await registerMutation.mutateAsync(subscription);
       toast.success("Notifikasi push aktif di perangkat ini.");
@@ -300,7 +342,7 @@ export function useWebPush() {
   return {
     state,
     supported,
-    busy: busy || reconciling,
+    busy: busy || registerMutation.isPending,
     enable,
     disable,
   };

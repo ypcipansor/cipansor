@@ -575,7 +575,36 @@ export class AuthService {
     // place it would keep pushing this user's private notifications to a device
     // they have signed out of (CWE-200); clearing it is handled by the event
     // bus so auth does not reach into the notifications module.
-    eventBus.emit('auth:logged_out', { userId, endpoint: pushEndpoint ?? null });
+    //
+    // The endpoint is client-supplied and may be stale or unrelated, so the
+    // listener must not trust it alone: it also needs to know whether this was
+    // the account's last session. Report that here, after the revoke above, so
+    // the check reflects the state the logout actually produced.
+    const hasActiveSession = await this.hasActiveSession(userId);
+    eventBus.emit('auth:logged_out', {
+      userId,
+      endpoint: pushEndpoint ?? null,
+      hasActiveSession,
+    });
+  }
+
+  /**
+   * Whether the user still has a usable refresh-token session.
+   *
+   * Used by `logout()` to tell the `auth:logged_out` listener whether the
+   * account is really gone: if another device is still signed in, only the
+   * endpoint this browser named may be cleared; if none remains, every push row
+   * the user owns must be.
+   */
+  async hasActiveSession(userId: string): Promise<boolean> {
+    const row = await prisma.refreshToken.findFirst({
+      where: {
+        userId,
+        expiresAt: { gt: new Date() },
+      },
+      select: { id: true },
+    });
+    return row !== null;
   }
 
   /**

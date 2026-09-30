@@ -352,9 +352,17 @@ self.addEventListener("notificationclick", (event) => {
     self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {
         if (!client.url.startsWith(self.location.origin)) continue;
-        if (new URL(client.url).pathname === safe.pathname && "focus" in client) {
-          return client.focus();
+        const open = new URL(client.url);
+        // Match the full URL, query string included: two tabs can share a
+        // pathname but show different data (`/notifications?filter=read` vs
+        // `?filter=unread`). Matching pathname alone focused the wrong one and
+        // `focus()` does not navigate, so the click never reached the target.
+        if (open.pathname !== safe.pathname || open.search !== safe.search) {
+          continue;
         }
+        if ("focus" in client) return client.focus();
+        // No `focus()` on this client (some engines): still route it.
+        if ("navigate" in client) return client.navigate(safe.href);
       }
       return self.clients.openWindow(safe.href);
     }),

@@ -470,8 +470,8 @@ export default function NotificationSettingsPage() {
               Notifikasi Push di Perangkat Ini
             </CardTitle>
             <CardDescription>
-              Terima notifikasi langsung di perangkat ini, termasuk saat portal
-              dipasang sebagai aplikasi.
+              Daftarkan perangkat ini untuk notifikasi push. Perangkat akan siap
+              menerima begitu pengiriman dari server diaktifkan pengelola.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -485,7 +485,7 @@ export default function NotificationSettingsPage() {
               {webPush.state === "denied" &&
                 "Izin notifikasi diblokir. Buka pengaturan situs di browser untuk mengizinkan."}
               {webPush.state === "subscribed" &&
-                "Aktif di perangkat ini. Notifikasi akan muncul walau portal tidak dibuka."}
+                "Perangkat ini terdaftar. Pengiriman notifikasi dari server belum diaktifkan."}
               {webPush.state === "unsubscribed" &&
                 "Belum aktif di perangkat ini."}
             </p>
