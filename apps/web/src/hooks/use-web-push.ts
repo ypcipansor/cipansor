@@ -143,6 +143,16 @@ export function useWebPush() {
     PushSubscription | null | undefined
   >(undefined);
 
+  // The signed-in account. Push rows are per-user, so a cached status for one
+  // account must never be read for another: the key includes the user id, and
+  // logout drops these queries outright (see `forgetPushStatus`). Without this,
+  // logging out and straight back in reused a still-fresh `true` for the same
+  // endpoint — the server row was gone but the card showed "Aktif" and
+  // reconciliation never restored it.
+  //
+  // Declared before the effects below, which read it.
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+
   // `Notification` does not exist during SSR; resolve support on the client.
   const supported =
     typeof window !== "undefined" &&
@@ -151,10 +161,9 @@ export function useWebPush() {
     "Notification" in window;
 
   useEffect(() => {
-    if (!supported) {
-      setBrowserSubscription(null);
-      return;
-    }
+    // `browserSubscription` starts null, so an unsupported browser needs no
+    // reset — writing it here would only be a cascading render.
+    if (!supported) return;
     let cancelled = false;
     currentSubscription()
       .then((sub) => {
@@ -175,30 +184,53 @@ export function useWebPush() {
     listenForPushChanges();
   }, []);
 
-  // Drop the subscription this tab still holds when a deliberate change happens
-  // anywhere — the settings page turning push off in *this* tab, or another tab
-  // doing it. Without this the retained `PushSubscription` keeps `state` at
-  // "subscribed" and leaves the repair effect a live subscription to work from.
-  useEffect(
-    () =>
-      onPushDeliberateChange((changedEndpoint, off) => {
-        if (!off) return;
+  // React to a deliberate push change made anywhere — the settings page turning
+  // push off in *this* tab, or another tab doing either. The marker is what the
+  // repair effect reads; the subscription state is what the card shows.
+  //
+  // Off: drop the subscription this tab still holds. Without it the retained
+  // `PushSubscription` keeps `state` at "subscribed" and leaves the repair
+  // effect a live subscription to work from, so the row the user just deleted
+  // comes straight back.
+  //
+  // On: re-read the live subscription and refresh the status. The other tab
+  // subscribed through the *shared* `pushManager`, but this tab's copy was
+  // cleared by the earlier off, so without re-reading it keeps showing "Belum
+  // aktif di perangkat ini" while push is in fact back on. The read is guarded
+  // so a later off cannot be undone by a slow one: it only adopts an endpoint
+  // that is still not deliberately off, and drops the result if this tab has
+  // unmounted.
+  useEffect(() => {
+    let cancelled = false;
+    const stop = onPushDeliberateChange((changedEndpoint, off) => {
+      if (off) {
         setBrowserSubscription((current) =>
           current?.endpoint === changedEndpoint ? null : current,
         );
-      }),
-    [],
-  );
+        return;
+      }
+      currentSubscription()
+        .then((sub) => {
+          if (cancelled) return;
+          // A subsequent off may have arrived while this read was in flight;
+          // honour it rather than resurrecting what the user turned off.
+          if (!sub || isPushDeliberatelyOff(sub.endpoint)) return;
+          setBrowserSubscription(sub);
+          // The server row was just written by the other tab; refresh this
+          // account's status so the card flips to "Aktif" without a remount.
+          queryClient.invalidateQueries({
+            queryKey: pushStatusQueryKey(userId, sub.endpoint),
+          });
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [queryClient, userId]);
 
   const endpoint = browserSubscription?.endpoint ?? null;
-
-  // The signed-in account. Push rows are per-user, so a cached status for one
-  // account must never be read for another: the key includes the user id, and
-  // logout drops these queries outright (see `forgetPushStatus`). Without this,
-  // logging out and straight back in reused a still-fresh `true` for the same
-  // endpoint — the server row was gone but the card showed "Aktif" and
-  // reconciliation never restored it.
-  const userId = useAuthStore((state) => state.user?.id ?? null);
 
   // Does the API hold a row for this browser's endpoint? Distinct from "the
   // browser has a subscription" — the two disagree after a failed registration

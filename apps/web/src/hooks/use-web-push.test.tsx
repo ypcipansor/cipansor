@@ -19,7 +19,7 @@ vi.hoisted(() => {
 
 import { useWebPush } from "./use-web-push";
 import { useAuthStore } from "@/stores/auth";
-import { clearDeliberatePushOff, listenForPushChanges } from "@/lib/push-cache";
+import { clearDeliberatePushOff } from "@/lib/push-cache";
 
 // Server calls now go through React Query, so every render needs a client. The
 // settings page and the shell share one client in the app, so the tests do too
@@ -274,15 +274,16 @@ describe("useWebPush", () => {
     expect(shell.result.current.state).toBe("unsubscribed");
   });
 
-  it("does not re-register when another tab already turned push off", async () => {
-    // The deliberate-off marker is per tab. Tab B's shell is already mounted
-    // when the user clicks "Matikan" in tab A; tab B still holds the shared
-    // subscription and its status probe returns `false`, so without the
-    // cross-tab signal it re-creates the row the user just deleted.
+  it("drops its live subscription when another tab turns push off", async () => {
+    // A live tab, not a pre-seeded marker: the shell is already mounted and
+    // showing "Aktif" when the user clicks "Matikan" in the other tab. The off
+    // broadcast must drop the subscription this tab holds, or the retained
+    // `PushSubscription` keeps `state` at "subscribed" and the repair effect
+    // re-creates the row.
     installPushEnv({ existing: subscription });
-    pushStatus.mockResolvedValue(false);
-    // Tab B's listener is live before tab A acts.
-    listenForPushChanges();
+    pushStatus.mockResolvedValue(true);
+    const { result } = renderWebPush();
+    await waitFor(() => expect(result.current.state).toBe("subscribed"));
 
     await act(async () => {
       const otherTab = new BroadcastChannel("cipansor-push");
@@ -290,17 +291,48 @@ describe("useWebPush", () => {
         type: "push-off",
         endpoint: "https://push.example.com/abc",
       });
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setTimeout(r, 30));
       otherTab.close();
     });
 
+    expect(result.current.state).toBe("unsubscribed");
+    expect(subscribePush).not.toHaveBeenCalled();
+  });
+
+  it("recovers when another tab turns push back on", async () => {
+    // Off then on in tab A. Tab B cleared its subscription on the off, and the
+    // on broadcast must make it re-read the shared `pushManager` — otherwise it
+    // keeps showing "Belum aktif di perangkat ini" while push is back on.
+    const { getSubscription } = installPushEnv({ existing: subscription });
+    pushStatus.mockResolvedValue(true);
     const { result } = renderWebPush();
+    await waitFor(() => expect(result.current.state).toBe("subscribed"));
+
     await act(async () => {
+      const otherTab = new BroadcastChannel("cipansor-push");
+      otherTab.postMessage({
+        type: "push-off",
+        endpoint: "https://push.example.com/abc",
+      });
       await new Promise((r) => setTimeout(r, 30));
+      otherTab.close();
+    });
+    expect(result.current.state).toBe("unsubscribed");
+
+    // Tab A re-subscribed; the browser subscription is shared, so this tab can
+    // read it back.
+    getSubscription.mockResolvedValue(subscription);
+    await act(async () => {
+      const otherTab = new BroadcastChannel("cipansor-push");
+      otherTab.postMessage({
+        type: "push-on",
+        endpoint: "https://push.example.com/abc",
+      });
+      await new Promise((r) => setTimeout(r, 30));
+      otherTab.close();
     });
 
-    expect(subscribePush).not.toHaveBeenCalled();
-    expect(result.current.state).toBe("unsubscribed");
+    await waitFor(() => expect(result.current.state).toBe("subscribed"));
   });
 
   it("stops retrying a failed repair instead of looping", async () => {
