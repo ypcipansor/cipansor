@@ -61,9 +61,10 @@ export const PUBLIC_PATH_PREFIXES = [
   "/public/verify-card",
   /**
    * Where a printed sanad/syahadah's QR points (`certificateVerificationUrl`).
-   * Same reasoning as `/public/verify-card` above: the matcher exempts it from
-   * the session wall, and listing it here keeps it on the apex — the host the
-   * printed QR embeds — rather than 404ing the recipient who scanned it.
+   * Same reasoning as `/public/verify-card` above: the middleware matcher
+   * already exempts `/public/*` from the session wall, but listing it here keeps
+   * the two canonical lists in step (Flag 11) and records that this page is
+   * meant to be read without a session.
    */
   "/public/verify-sanad",
 ];

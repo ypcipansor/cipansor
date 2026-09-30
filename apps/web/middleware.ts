@@ -77,8 +77,9 @@ const publicPrefixes = [
   /**
    * Where a printed sanad/syahadah's QR points (`certificateVerificationUrl`).
    * Kept in step with `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the sync
-   * test enforces it) so a recipient who scans the printed certificate reaches
-   * the verification page — and the download button on it — without a session.
+   * test enforces it). Like `/public/verify-card` the matcher already exempts it
+   * from the session wall; the listing records the read-without-a-session
+   * intent and keeps the two canonical lists in agreement (Flag 11).
    */
   "/public/verify-sanad",
 ];
