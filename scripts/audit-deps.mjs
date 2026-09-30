@@ -37,15 +37,14 @@ const SEVERITY_RANK = { low: 0, moderate: 1, high: 2, critical: 3 };
  * Each entry pins one exact version against one exact range, so a regression,
  * a new advisory for the same package, or a widened range all still fail.
  * Verify the fix is really present in the tarball before adding an entry.
+ *
+ * The brace-expansion 1.x line used to need an entry here (1.1.18 against
+ * "<=5.0.7"): the fix was backported to 1.1.18 while the newest 5.x line was
+ * the only one the advisory's range named. That is no longer needed — the root
+ * override now moves 1.x to 1.1.21, which the advisory's own ranges clear — so
+ * the list is empty and waits for the next package that genuinely needs it.
  */
-const BACKPORTED_FIXES = [
-  {
-    name: "brace-expansion",
-    version: "1.1.18",
-    range: "<=5.0.7",
-    note: "Unbounded expansion (CVE-2026-14257) is fixed on the 1.x line in 1.1.18, which adds the EXPANSION_MAX_LENGTH cap. 1.x cannot move to 5.x: brace-expansion 5's CommonJS build exports a named `expand`, while minimatch@3 calls the module itself.",
-  },
-];
+const BACKPORTED_FIXES = [];
 
 const isBackported = (name, version, range) =>
   BACKPORTED_FIXES.some(
