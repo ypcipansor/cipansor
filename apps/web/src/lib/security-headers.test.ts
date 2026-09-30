@@ -33,13 +33,16 @@ describe("static security headers", () => {
     expect(byKey["Cross-Origin-Opener-Policy"]).toBe("same-origin");
   });
 
-  it("keeps the push permission the portal needs and denies the rest", () => {
+  it("keeps the permissions the portal needs and denies the rest", () => {
     const policy = byKey["Permissions-Policy"];
     expect(policy).toContain("push=(self)");
+    // The E-Simaan setoran recorder calls `getUserMedia({ audio: true })`;
+    // denying `microphone` here makes every recording fail with no visible
+    // cause beyond a generic toast.
+    expect(policy).toContain("microphone=(self)");
     // Denied permissions use the empty allowlist `()`.
     expect(policy).toContain("geolocation=()");
     expect(policy).toContain("camera=()");
-    expect(policy).toContain("microphone=()");
   });
 
   it("is wired into next.config's headers() so it actually ships", () => {
@@ -83,6 +86,17 @@ describe("Content-Security-Policy", () => {
 
   it("allows the app's own blob/data PDF previews in a frame", () => {
     expect(csp).toMatch(/frame-src[^;]*blob:[^;]*data:/);
+  });
+
+  it("allows the recorded-audio blob and the API-host recording to play", () => {
+    // `AudioRecorder` previews a just-recorded `blob:` URL; the tahfidz record
+    // page plays a saved recording served from the API host (an absolute
+    // `/uploads/**` URL). Without `media-src` the browser falls back to
+    // `default-src 'self'` and both are blocked — a silent preview and a
+    // recording that will not play.
+    const mediaSrc = csp.split("; ").find((d) => d.startsWith("media-src"))!;
+    expect(mediaSrc).toContain("blob:");
+    expect(mediaSrc).toContain(apiOrigin());
   });
 });
 

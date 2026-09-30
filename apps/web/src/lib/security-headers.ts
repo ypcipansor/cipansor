@@ -57,6 +57,12 @@ export function contentSecurityPolicy(nonce: string): string {
     // announcement may embed.
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
+    // Audio/video: the E-Simaan setoran recorder previews a just-recorded blob
+    // (`AudioRecorder`, a `blob:` URL) and the tahfidz record page plays a saved
+    // recording served from the API host (`/uploads/**`, an absolute URL, so a
+    // different origin than the portal). Without both, the preview is silent and
+    // playback is blocked.
+    `media-src 'self' blob: ${apiOrigin()}`,
     `connect-src 'self' ${apiOrigin()} https://challenges.cloudflare.com`,
     // `blob:`/`data:` are the app's own local PDF previews (an uploaded file
     // shown in an `<iframe>` before it is saved); `challenges.cloudflare.com`
@@ -109,12 +115,16 @@ export const STATIC_SECURITY_HEADERS: { key: string; value: string }[] = [
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Push notifications are the one permission the portal needs; geolocation and
-  // the camera/microphone are not used, and the payment request API has no
-  // place here. Naming them denies the prompt to any injected script.
+  // Push notifications and the microphone are the permissions the portal
+  // needs: Web Push, and the E-Simaan setoran recorder (`AudioRecorder` calls
+  // `getUserMedia({ audio: true })`). Both are scoped to our own origin. The
+  // camera, geolocation and the payment request API are not used — the document
+  // capture field is a plain `<input type="file" capture>` (a file picker, not
+  // a `getUserMedia` camera) — so naming them denies the prompt to any injected
+  // script.
   {
     key: "Permissions-Policy",
     value:
-      "push=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=()",
+      "push=(self), fullscreen=(self), camera=(), microphone=(self), geolocation=(), payment=()",
   },
 ];
