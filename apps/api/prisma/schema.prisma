@@ -7902,6 +7902,10 @@ model LetterSignedDocument {
 
   signature LetterSignature @relation(fields: [signatureId], references: [id], onDelete: Cascade)
 
+  /// Indeks untuk pencocokan salinan bercap. Tanpa ini, `revokedSha256 = ?`
+  /// adalah pemindaian penuh tabel arsip — dan "tanpa batas" hanya berarti
+  /// seluruh tabel, bukan tepat dan murah.
+  @@index([revokedSha256])
   @@map("letter_signed_documents")
 }
 
