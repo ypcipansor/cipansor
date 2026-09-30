@@ -21,6 +21,11 @@ Inggris. Keduanya sengaja hidup berdampingan di sini.
 | guru — buku panduan peran | [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) |
 | musyrif — membina santri mukim | [`PANDUAN-PENGGUNA-MUSYRIF.md`](./PANDUAN-PENGGUNA-MUSYRIF.md) |
 | wali santri — memantau anak | [`PANDUAN-PENGGUNA-WALI-SANTRI.md`](./PANDUAN-PENGGUNA-WALI-SANTRI.md) |
+| tata usaha — layanan administrasi unit | [`PANDUAN-PENGGUNA-TATA-USAHA.md`](./PANDUAN-PENGGUNA-TATA-USAHA.md) |
+| bendahara — tagihan, pembayaran, akuntansi | [`PANDUAN-PENGGUNA-BENDAHARA.md`](./PANDUAN-PENGGUNA-BENDAHARA.md) |
+| kepala unit — akademik dan kepegawaian unit | [`PANDUAN-PENGGUNA-KEPALA-UNIT.md`](./PANDUAN-PENGGUNA-KEPALA-UNIT.md) |
+| pengurus yayasan — mutu, risiko, dan keuangan yayasan | [`PANDUAN-PENGGUNA-PENGURUS-YAYASAN.md`](./PANDUAN-PENGGUNA-PENGURUS-YAYASAN.md) |
+| santri — hafalan, ibadah, ujian, dan kegiatan harian | [`PANDUAN-PENGGUNA-SANTRI.md`](./PANDUAN-PENGGUNA-SANTRI.md) |
 | pengembang baru — butuh peta kode | [`ARCHITECTURE.md`](./ARCHITECTURE.md), lalu `AGENTS.md` akar |
 | mengelola server produksi | [`DEPLOYMENT.md`](./DEPLOYMENT.md), [`deploy-azure.md`](./deploy-azure.md) |
 | membangun aplikasi Android orang tua | [`MOBILE_API.md`](./MOBILE_API.md) |
@@ -39,6 +44,11 @@ kode yang sebenarnya. Tiap dokumen punya sumber Markdown **dan** terbitan
 | [`PANDUAN-PENGGUNA-GURU.md`](./PANDUAN-PENGGUNA-GURU.md) `.docx` `.pdf` | guru | Diátaxis: buklet peran, kartu tugas |
 | [`PANDUAN-PENGGUNA-MUSYRIF.md`](./PANDUAN-PENGGUNA-MUSYRIF.md) | musyrif | Diátaxis: buklet peran, kartu tugas |
 | [`PANDUAN-PENGGUNA-WALI-SANTRI.md`](./PANDUAN-PENGGUNA-WALI-SANTRI.md) | wali santri | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-TATA-USAHA.md`](./PANDUAN-PENGGUNA-TATA-USAHA.md) | tata usaha | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-BENDAHARA.md`](./PANDUAN-PENGGUNA-BENDAHARA.md) | bendahara | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-KEPALA-UNIT.md`](./PANDUAN-PENGGUNA-KEPALA-UNIT.md) | kepala unit | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-PENGURUS-YAYASAN.md`](./PANDUAN-PENGGUNA-PENGURUS-YAYASAN.md) | pengurus yayasan | Diátaxis: buklet peran, kartu tugas |
+| [`PANDUAN-PENGGUNA-SANTRI.md`](./PANDUAN-PENGGUNA-SANTRI.md) | santri | Diátaxis: buklet peran, kartu tugas |
 | [`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md) | penulis dan pemeriksa dokumen | audit dokumen terhadap kode: temuan, akar masalah, yang belum selesai |
 
 Bacalah `EVALUASI-DOKUMEN.md` sebelum memperbarui dokumen: ia mencatat apa yang

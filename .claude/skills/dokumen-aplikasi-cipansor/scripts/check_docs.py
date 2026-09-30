@@ -182,8 +182,11 @@ def label_hits(repo: Path, label: str, limit: int = 3) -> list[str]:
     # Cocokkan sebagai teks UTUH: literal string ("Label", 'Label', `Label`) atau teks JSX (>Label< atau
     # sebaris sendiri). Substring bebas terlalu longgar: 'Keluar' cocok dengan puluhan tempat lain.
     # Label kolom wajib di layar memuat penanda " *" (mis. "Ayat Awal *"); terima akhiran itu.
+    # `[ \t]*` after the quote/angle bracket: a label often sits after an icon in
+    # JSX (`<Plus ... /> Buat Perjanjian Kinerja`), where the old pattern saw the
+    # `/` before it and reported a real screen label as missing.
     rx = re.compile(
-        r"(?:[\"'`>]|^[ \t]*)" + re.escape(label) + r"\s*\*?(?:[\"'`<]|[ \t]*$)", re.M
+        r"(?:[\"'`>][ \t]*\n?[ \t]*|^[ \t]*)" + re.escape(label) + r"\s*\*?(?:[\"'`<]|[ \t]*$)", re.M
     )
     out = []
     for name, body in _WEB_FILES:
@@ -480,7 +483,10 @@ def check_pengguna(text: str, lines: list[str], repo: Path, facts: dict, r: Repo
             r.add("WARN", n, "istilah-pengembang",
                   "istilah pengembang (main/cabang/commit/staging) di teks pengguna — tulis "
                   "'sudah tersedia di aplikasi' / 'belum tersedia di aplikasi yang Anda pakai'")
-        if re.search(r"\bsiswa\b|\bmurid\b", l, re.I) and "**" not in l and '"' not in l and not l.lstrip().startswith("|"):
+        # Jalur gambar (`screens/…/data-siswa.png`) memuat "siswa" tanpa salah:
+        # itu nama berkas tangkapan, bukan prosa. Buang dulu sebelum memeriksa.
+        prose = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", l)
+        if re.search(r"\bsiswa\b|\bmurid\b", prose, re.I) and "**" not in l and '"' not in l and not l.lstrip().startswith("|"):
             r.add("WARN", n, "istilah-santri",
                   "'siswa/murid' di prosa — keputusan yayasan: santri (kecuali mengutip label layar)")
 
@@ -489,7 +495,7 @@ def check_pengguna(text: str, lines: list[str], repo: Path, facts: dict, r: Repo
     generic = {"avatar", "header", "menu kiri", "ikon lonceng", "lonceng"}
     for n, l in enumerate(lines, 1):
         if l.startswith("**Jalur menu.**"):
-            for u in re.findall(r"`(/[A-Za-z0-9_\-/\[\]]*)`", l):
+            for u in re.findall(r"`(/[A-Za-z0-9_\-/\[\]]*)`", re.sub(r"`[^`]*\[\][^`]*`", "", l)):
                 if u != "/" and not any(p.match(u) for p in pages):
                     r.add("ERROR", n, "halaman-tak-ada", f"{u} bukan halaman di apps/web/src/app")
             rest = re.sub(r"\(\s*`[^`]*`\s*\)", "", l.replace("**Jalur menu.**", ""))  # (`/jalur`) → dibuang

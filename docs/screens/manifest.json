@@ -232,5 +232,455 @@
     "caption": "Keputusan tersimpan; muncul pesan \"Izin disetujui\".",
     "bytes": 81533,
     "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/12-form-santri-baru.png",
+    "source": "layanan-tata-usaha/12-form-santri-baru.png",
+    "flow": "layanan-tata-usaha",
+    "step": "12-form-santri-baru",
+    "caption": "Formulir Tambah Siswa: identitas santri, orang tua, dan pendaftaran kelas.",
+    "bytes": 26822,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/02-data-siswa.png",
+    "source": "layanan-tata-usaha/02-data-siswa.png",
+    "flow": "layanan-tata-usaha",
+    "step": "02-data-siswa",
+    "caption": "Data Siswa: daftar santri unit beserta kelas dan statusnya.",
+    "bytes": 47462,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/13-form-izin.png",
+    "source": "layanan-tata-usaha/13-form-izin.png",
+    "flow": "layanan-tata-usaha",
+    "step": "13-form-izin",
+    "caption": "Formulir Ajukan Izin: santri, jenis izin, waktu berangkat, dan tujuan.",
+    "bytes": 37564,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/14-pos-gerbang.png",
+    "source": "layanan-tata-usaha/14-pos-gerbang.png",
+    "flow": "layanan-tata-usaha",
+    "step": "14-pos-gerbang",
+    "caption": "Pos Gerbang: memeriksa kode izin lalu mencatat keluar dan kembali.",
+    "bytes": 27724,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/07-buat-surat.png",
+    "source": "layanan-tata-usaha/07-buat-surat.png",
+    "flow": "layanan-tata-usaha",
+    "step": "07-buat-surat",
+    "caption": "Buat Surat Baru: menyusun naskah dinas keluar, arah, perihal, dan pemeriksanya.",
+    "bytes": 36575,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/06-surat-masuk.png",
+    "source": "layanan-tata-usaha/06-surat-masuk.png",
+    "flow": "layanan-tata-usaha",
+    "step": "06-surat-masuk",
+    "caption": "Buku agenda Surat Masuk: surat yang diterima unit beserta disposisinya.",
+    "bytes": 34410,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/09-daftar-pendaftar.png",
+    "source": "layanan-tata-usaha/09-daftar-pendaftar.png",
+    "flow": "layanan-tata-usaha",
+    "step": "09-daftar-pendaftar",
+    "caption": "Daftar Pendaftar: berkas calon santri yang menunggu diverifikasi.",
+    "bytes": 23717,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/10-pengumuman.png",
+    "source": "layanan-tata-usaha/10-pengumuman.png",
+    "flow": "layanan-tata-usaha",
+    "step": "10-pengumuman",
+    "caption": "Pengumuman: kabar unit yang dibaca pengguna. Tombol Buat Baru tampil untuk admin unit.",
+    "bytes": 26486,
+    "width": 1024
+  },
+  {
+    "path": "screens/layanan-tata-usaha/11-kinerja-pk.png",
+    "source": "layanan-tata-usaha/11-kinerja-pk.png",
+    "flow": "layanan-tata-usaha",
+    "step": "11-kinerja-pk",
+    "caption": "Perjanjian Kinerja: kesepakatan target kerja pegawai.",
+    "bytes": 36255,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/12-form-tagihan.png",
+    "source": "keuangan-bendahara/12-form-tagihan.png",
+    "flow": "keuangan-bendahara",
+    "step": "12-form-tagihan",
+    "caption": "Formulir Buat Tagihan: pilih santri, jenis tagihan, jumlah, dan jatuh tempo.",
+    "bytes": 36891,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/13-tagihan-massal.png",
+    "source": "keuangan-bendahara/13-tagihan-massal.png",
+    "flow": "keuangan-bendahara",
+    "step": "13-tagihan-massal",
+    "caption": "Buat Tagihan Massal: satu tagihan untuk banyak santri sekaligus.",
+    "bytes": 33586,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/02-tagihan-spp.png",
+    "source": "keuangan-bendahara/02-tagihan-spp.png",
+    "flow": "keuangan-bendahara",
+    "step": "02-tagihan-spp",
+    "caption": "Tagihan & SPP: daftar tagihan santri, tunggakan, dan ringkasan.",
+    "bytes": 39470,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/05-verifikasi-pembayaran.png",
+    "source": "keuangan-bendahara/05-verifikasi-pembayaran.png",
+    "flow": "keuangan-bendahara",
+    "step": "05-verifikasi-pembayaran",
+    "caption": "Verifikasi Pembayaran: bukti bayar yang menunggu persetujuan bendahara.",
+    "bytes": 33154,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/06-akuntansi.png",
+    "source": "keuangan-bendahara/06-akuntansi.png",
+    "flow": "keuangan-bendahara",
+    "step": "06-akuntansi",
+    "caption": "Akuntansi: bagan akun, jurnal, dan laporan keuangan unit.",
+    "bytes": 42356,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/14-riwayat-pembayaran.png",
+    "source": "keuangan-bendahara/14-riwayat-pembayaran.png",
+    "flow": "keuangan-bendahara",
+    "step": "14-riwayat-pembayaran",
+    "caption": "Riwayat Pembayaran: transaksi yang sudah dicatat beserta kuitansinya.",
+    "bytes": 26370,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/09-pengumuman.png",
+    "source": "keuangan-bendahara/09-pengumuman.png",
+    "flow": "keuangan-bendahara",
+    "step": "09-pengumuman",
+    "caption": "Pengumuman unit yang dibaca pengguna.",
+    "bytes": 26486,
+    "width": 1024
+  },
+  {
+    "path": "screens/keuangan-bendahara/11-evaluasi-kinerja.png",
+    "source": "keuangan-bendahara/11-evaluasi-kinerja.png",
+    "flow": "keuangan-bendahara",
+    "step": "11-evaluasi-kinerja",
+    "caption": "Evaluasi Kinerja Periodik: penilaian capaian kerja bulanan.",
+    "bytes": 41056,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/09-kelas.png",
+    "source": "kepemimpinan-kepala-unit/09-kelas.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "09-kelas",
+    "caption": "Classes: daftar kelas (rombel) unit dan wali kelasnya.",
+    "bytes": 38897,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/08-kurikulum.png",
+    "source": "kepemimpinan-kepala-unit/08-kurikulum.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "08-kurikulum",
+    "caption": "Mata Pelajaran & Jadwal: struktur kurikulum dan jadwal kelas.",
+    "bytes": 44928,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/16-form-absensi.png",
+    "source": "kepemimpinan-kepala-unit/16-form-absensi.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "16-form-absensi",
+    "caption": "Formulir Absensi Harian: status kehadiran tiap santri satu kelas.",
+    "bytes": 30154,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/07-penilaian.png",
+    "source": "kepemimpinan-kepala-unit/07-penilaian.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "07-penilaian",
+    "caption": "Penilaian: nilai formatif dan sumatif per mata pelajaran.",
+    "bytes": 46601,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/10-tahfidz.png",
+    "source": "kepemimpinan-kepala-unit/10-tahfidz.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "10-tahfidz",
+    "caption": "Tahfidz: catatan hafalan seluruh santri unit.",
+    "bytes": 38560,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/12-sdm.png",
+    "source": "kepemimpinan-kepala-unit/12-sdm.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "12-sdm",
+    "caption": "SDM & Kepegawaian: data pegawai, kontrak, dan absensi staf.",
+    "bytes": 44818,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/17-bk.png",
+    "source": "kepemimpinan-kepala-unit/17-bk.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "17-bk",
+    "caption": "Bimbingan Konseling: sesi pendampingan santri dan tindak lanjutnya.",
+    "bytes": 28698,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/11-laporan-harian.png",
+    "source": "kepemimpinan-kepala-unit/11-laporan-harian.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "11-laporan-harian",
+    "caption": "Laporan Harian: catatan kegiatan belajar mengajar harian.",
+    "bytes": 32679,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/13-kinerja-pk.png",
+    "source": "kepemimpinan-kepala-unit/13-kinerja-pk.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "13-kinerja-pk",
+    "caption": "Perjanjian Kinerja: target kerja yang disepakati pegawai.",
+    "bytes": 36255,
+    "width": 1024
+  },
+  {
+    "path": "screens/kepemimpinan-kepala-unit/15-pengumuman.png",
+    "source": "kepemimpinan-kepala-unit/15-pengumuman.png",
+    "flow": "kepemimpinan-kepala-unit",
+    "step": "15-pengumuman",
+    "caption": "Pengumuman: kabar unit yang dibaca pengguna.",
+    "bytes": 26486,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/05-unit-pendidikan.png",
+    "source": "tata-kelola-yayasan/05-unit-pendidikan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "05-unit-pendidikan",
+    "caption": "Unit Pendidikan: daftar TK, SD, SMP, dan SMA beserta statusnya.",
+    "bytes": 44431,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/04-yayasan.png",
+    "source": "tata-kelola-yayasan/04-yayasan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "04-yayasan",
+    "caption": "Yayasan: profil, dokumen, dan organ yayasan.",
+    "bytes": 26074,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/06-penjaminan-mutu.png",
+    "source": "tata-kelola-yayasan/06-penjaminan-mutu.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "06-penjaminan-mutu",
+    "caption": "Penjaminan Mutu (SPMI): standar, audit mutu, dan temuan.",
+    "bytes": 37396,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/07-manajemen-risiko.png",
+    "source": "tata-kelola-yayasan/07-manajemen-risiko.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "07-manajemen-risiko",
+    "caption": "Manajemen Risiko: daftar risiko dan rencana mitigasinya.",
+    "bytes": 38113,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/08-pengawasan.png",
+    "source": "tata-kelola-yayasan/08-pengawasan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "08-pengawasan",
+    "caption": "Pengawasan Internal: temuan audit internal dan tindak lanjutnya.",
+    "bytes": 40165,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/09-kepatuhan-syariah.png",
+    "source": "tata-kelola-yayasan/09-kepatuhan-syariah.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "09-kepatuhan-syariah",
+    "caption": "Kepatuhan Syariah: penilaian dan audit kepatuhan syariah.",
+    "bytes": 42042,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/10-perencanaan-strategis.png",
+    "source": "tata-kelola-yayasan/10-perencanaan-strategis.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "10-perencanaan-strategis",
+    "caption": "Perencanaan Strategis: rantai RPJP → Renstra → RKA unit.",
+    "bytes": 44015,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/12-verifikasi-pembayaran.png",
+    "source": "tata-kelola-yayasan/12-verifikasi-pembayaran.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "12-verifikasi-pembayaran",
+    "caption": "Verifikasi Pembayaran: persetujuan bukti bayar tingkat yayasan.",
+    "bytes": 33154,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/13-laporan-keuangan.png",
+    "source": "tata-kelola-yayasan/13-laporan-keuangan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "13-laporan-keuangan",
+    "caption": "Laporan Keuangan: buku besar dan laporan keuangan yayasan.",
+    "bytes": 42356,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/14-bos-bop.png",
+    "source": "tata-kelola-yayasan/14-bos-bop.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "14-bos-bop",
+    "caption": "BOS/BOP: pengelolaan dana bantuan operasional sekolah.",
+    "bytes": 29236,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/15-donasi-zis.png",
+    "source": "tata-kelola-yayasan/15-donasi-zis.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "15-donasi-zis",
+    "caption": "Donasi & Infak: catatan ZIS dan donasi yang masuk.",
+    "bytes": 35968,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/16-pengadaan.png",
+    "source": "tata-kelola-yayasan/16-pengadaan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "16-pengadaan",
+    "caption": "Pengadaan Barang: permintaan dan proses pengadaan unit.",
+    "bytes": 35946,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/18-alumni.png",
+    "source": "tata-kelola-yayasan/18-alumni.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "18-alumni",
+    "caption": "Data Alumni: jejak lulusan tiap unit.",
+    "bytes": 40381,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/20-aduan.png",
+    "source": "tata-kelola-yayasan/20-aduan.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "20-aduan",
+    "caption": "Aduan & Aspirasi: keluhan yang masuk beserta status penanganannya.",
+    "bytes": 34113,
+    "width": 1024
+  },
+  {
+    "path": "screens/tata-kelola-yayasan/11-kinerja-pk.png",
+    "source": "tata-kelola-yayasan/11-kinerja-pk.png",
+    "flow": "tata-kelola-yayasan",
+    "step": "11-kinerja-pk",
+    "caption": "Perjanjian Kinerja: kesepakatan target kerja pegawai dan atasan penilai.",
+    "bytes": 36255,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/02-hafalan.png",
+    "source": "keseharian-santri/02-hafalan.png",
+    "flow": "keseharian-santri",
+    "step": "02-hafalan",
+    "caption": "Hafalan Saya: setoran dan capaian hafalan Al-Quran.",
+    "bytes": 34092,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/03-jurnal-ibadah.png",
+    "source": "keseharian-santri/03-jurnal-ibadah.png",
+    "flow": "keseharian-santri",
+    "step": "03-jurnal-ibadah",
+    "caption": "Jurnal Ibadah: catatan sholat, tilawah, dan target ibadah.",
+    "bytes": 38390,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/04-papan-peringkat.png",
+    "source": "keseharian-santri/04-papan-peringkat.png",
+    "flow": "keseharian-santri",
+    "step": "04-papan-peringkat",
+    "caption": "Papan Peringkat: peringkat ketekunan ibadah antar santri.",
+    "bytes": 38390,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/05-muhasabah.png",
+    "source": "keseharian-santri/05-muhasabah.png",
+    "flow": "keseharian-santri",
+    "step": "05-muhasabah",
+    "caption": "Muhasabah Harian: refleksi diri santri setiap hari.",
+    "bytes": 36003,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/06-ujian-online.png",
+    "source": "keseharian-santri/06-ujian-online.png",
+    "flow": "keseharian-santri",
+    "step": "06-ujian-online",
+    "caption": "Ujian Online: daftar ujian yang tersedia untuk dikerjakan.",
+    "bytes": 28555,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/07-portofolio.png",
+    "source": "keseharian-santri/07-portofolio.png",
+    "flow": "keseharian-santri",
+    "step": "07-portofolio",
+    "caption": "Portofolio Saya: kumpulan karya dan prestasi santri.",
+    "bytes": 32499,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/11-kitab-kuning.png",
+    "source": "keseharian-santri/11-kitab-kuning.png",
+    "flow": "keseharian-santri",
+    "step": "11-kitab-kuning",
+    "caption": "Kitab Kuning: capaian kajian kitab per santri.",
+    "bytes": 35874,
+    "width": 1024
+  },
+  {
+    "path": "screens/keseharian-santri/14-aduan.png",
+    "source": "keseharian-santri/14-aduan.png",
+    "flow": "keseharian-santri",
+    "step": "14-aduan",
+    "caption": "Aduan & Aspirasi: menyampaikan keluhan atau saran ke unit.",
+    "bytes": 34113,
+    "width": 1024
   }
 ]

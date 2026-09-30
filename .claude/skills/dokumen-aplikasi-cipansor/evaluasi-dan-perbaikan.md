@@ -4,6 +4,28 @@ Catatan perubahan skill, terbaru di atas. Audit lengkap atas hasil pemakaiannya 
 `docs/EVALUASI-DOKUMEN.md`; katalog kesalahan dan kode pemeriksanya di
 `references/kesalahan-yang-sudah-terjadi.md`.
 
+## 30 September 2026 (buklet peran lengkap) — lima buklet baru, satu cacat pemeriksa
+
+Lanjutan sesi T1: kelima buklet peran yang belum terbit dikerjakan —
+`PANDUAN-PENGGUNA-TATA-USAHA.md`, `-BENDAHARA.md`, `-KEPALA-UNIT.md`,
+`-PENGURUS-YAYASAN.md`, `-SANTRI.md` — semuanya T1 dengan tangkapan layar asli
+dari alur yang lolos, dan `.docx`/`.pdf` bersampul dibangun ulang.
+
+Dua cacat `check_docs.py` ditemukan **lewat pemeriksa itu sendiri** dan
+diperbaiki:
+
+| Cacat | Akibat | Perbaikan |
+|---|---|---|
+| `label_hits()` tidak mengenali label yang berdiri setelah ikon dalam JSX (`<Plus … /> Buat Perjanjian Kinerja`) — pola lama melihat `/` sebelum label lalu melaporkan label layar yang benar sebagai hilang | Label nyata ditolak | Pola menerima `[\"'`>]` diikuti spasi/baris baru sebelum label |
+| Pemeriksa `istilah-santri` menghitung jalur gambar (`screens/…/data-siswa.png`) sebagai prosa, lalu memperingatkan "siswa" | Peringatan palsu pada setiap gambar bernama `*-siswa*` | Jalur gambar (`![…](…)`) dibuang sebelum pemeriksaan prosa |
+
+Sisanya kosong: kelima buklet `check_docs.py --final` 0 ERROR, `scan_sensitive.py`
+bersih, dan `.pdf` diperiksa tanpa halaman kosong. Jalur menu dicetak dari
+`navigation.ts` (blok `yayasanNavigation`, `studentNavigation`) dan
+`role-menus.ts`; label tombol/pesan disalin dari `page.tsx` masing-masing.
+`docs/README.md` dan `docs/EVALUASI-DOKUMEN.md` diperbarui menunjuk kedelapan
+buklet.
+
 ## 29 September 2026 (riset standar) — periksa ulang pilihan standar terhadap praktik terbaik
 
 Pengguna meminta evaluasi ulang: "sesuai standar best practice seperti apa?" Riset web

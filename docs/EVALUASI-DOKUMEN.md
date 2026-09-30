@@ -99,8 +99,8 @@ Yang tidak dilakukan: menambah aturan gaya panjang. Semakin banyak aturan prosa,
 
 | Hal | Mengapa | Siapa |
 |---|---|---|
-| Panduan naik ke T1 (dicoba di aplikasi berjalan, dengan tangkapan layar) | **Sebagian selesai (2026-09-30).** Panduan Umum bab 2 dan seluruh kartu buklet Guru, Musyrif, dan Wali Santri sudah T1 dengan tangkapan layar asli. Sisa: bab konsep/rujukan Panduan Umum, dan buklet peran lain | penyusun berikut dengan skill `stack` |
-| Buklet peran lain (pesantren, TU, bendahara, kepala unit, organ, wali, santri) | **Sebagian selesai (2026-09-30):** Musyrif dan Wali Santri terbit. Sisa: TU/staf, bendahara, kepala unit, organ yayasan, santri | permintaan berikut |
+| Panduan naik ke T1 (dicoba di aplikasi berjalan, dengan tangkapan layar) | **Sebagian selesai (2026-09-30).** Panduan Umum bab 2 dan seluruh kartu kedelapan buklet peran sudah T1 dengan tangkapan layar asli dari alur yang lolos. Sisa: bab konsep/rujukan Panduan Umum | penyusun berikut dengan skill `stack` |
+| Buklet peran lain (pesantren, TU, bendahara, kepala unit, organ, wali, santri) | **Selesai (2026-09-30):** kedelapan buklet terbit — Guru, Musyrif, Wali Santri, Tata Usaha, Bendahara, Kepala Unit, Pengurus Yayasan, Santri. | selesai |
 | Biner `.docx`/`.pdf` di git | Tiga salinan per dokumen bisa menyimpang dan git tidak bisa menampilkan isinya; **diputuskan (2026-09-29): biner tidak dilacak** — hanya `.md` di git, biner dibangun ulang saat dibutuhkan | selesai |
 | Pembangunan dokumen di CI | Tidak lagi perlu: biner tidak dilacak, jadi tak ada "biner basi" yang harus dicegah | — |
 | Uji oleh satu guru sungguhan | ISO 26514 meminta panduan diuji pada pembaca | yayasan |
