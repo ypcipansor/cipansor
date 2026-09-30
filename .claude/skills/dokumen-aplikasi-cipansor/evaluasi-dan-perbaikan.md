@@ -32,8 +32,8 @@ bab risiko dan manual, serta langkah manual yang keliru — dan menilai dirinya 
 
 | Akar | Perbaikan |
 |---|---|
-| Tak ada yang mencocokkan kalimat dengan kode | `scripts/check_docs.py` (rute, angka, ERD, label layar, pesan, kartu tugas, tabel, id diagram, bab 9/10/11, biner basi, jejak sumber) |
-| Hasil biner tak diperiksa; lingkungan tak diperiksa | `build_docs.py` `verify_docx`/`verify_pdf`, GAGAL bila diagram tak terender, pengisian daftar isi yang merusak dibuang, `build.json`, `--pdf`; `scripts/check_env.py` (termasuk LibreOffice **Writer** dan modul `uno`) |
+| Tak ada yang mencocokkan kalimat dengan kode | `scripts/check_docs.py` (rute, angka, ERD, label layar, pesan, kartu tugas, tabel, id diagram, bab 9/10/11, jejak sumber) |
+| Hasil biner tak diperiksa; lingkungan tak diperiksa | `build_docs.py` `verify_docx`/`verify_pdf`, GAGAL bila diagram tak terender, pengisian daftar isi yang merusak dibuang, `--pdf`; `scripts/check_env.py` (termasuk LibreOffice **Writer** dan modul `uno`) |
 | Skrip ukur menyesatkan | `collect_facts.py`: berkas job vs berkas yang dijadwalkan, empat berkas vs lima bagian, indeks rute, ringkasan keputusan utuh |
 | Templat membawa bug dan sistem yang sudah dihapus | `assets/template-*.md` ditulis ulang (C4 berlabel, kolom ukuran, label layar, ketersediaan satu kalimat) |
 | Skill khusus lingkungan chat | `SKILL.md` ditulis ulang: gerbang per langkah, perintah yang jalan di repo mana pun, uji kemampuan alih-alih asumsi |

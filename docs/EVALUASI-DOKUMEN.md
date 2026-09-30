@@ -68,8 +68,8 @@ Daftar isi terisi, tetapi nomor halamannya mengikuti tabel yang rusak, jadi tak 
 
 | Akar | Perbaikan yang diterapkan |
 |---|---|
-| Aturan berupa prosa; tak ada yang memeriksa kalimat terhadap kode | `scripts/check_docs.py`: mencocokkan rute, angka, nama model ERD, label layar, pesan, kartu tugas, tabel, id diagram, bab 9/10/11, biner basi; `--trace` mencetak berkas:baris tiap label |
-| Berkas biner dibangun di lingkungan yang merusaknya dan tak diperiksa | `build_docs.py` memverifikasi `.docx` (jumlah tabel, sel/kepala kosong, gambar) dan PDF; pengisian daftar isi yang merusak dibuang; menulis `build.json`; `--pdf` |
+| Aturan berupa prosa; tak ada yang memeriksa kalimat terhadap kode | `scripts/check_docs.py`: mencocokkan rute, angka, nama model ERD, label layar, pesan, kartu tugas, tabel, id diagram, bab 9/10/11; `--trace` mencetak berkas:baris tiap label |
+| Berkas biner dibangun di lingkungan yang merusaknya dan tak diperiksa | `build_docs.py` memverifikasi `.docx` (jumlah tabel, sel/kepala kosong, gambar) dan PDF; pengisian daftar isi yang merusak dibuang; `--pdf` |
 | Lingkungan tak diperiksa (LibreOffice tanpa Writer memuat semuanya dengan galat) | `scripts/check_env.py` sebelum menulis; mencetak perintah pasang |
 | Templat membawa bug (id `Prod` ganda, Sentry dan `lib/realtime.ts` yang sudah dihapus, "enum status", "Tersedia: produksi/main") lalu disalin setia | Templat ditulis ulang: C4-1/2/3 berlabel, kolom `Ukuran`, label layar bukan enum, satu kalimat ketersediaan |
 | Skrip ukur menyesatkan | `collect_facts.py`: `scheduled_job_files` vs berkas job; `four_file_modules` vs `five_part_modules`; rute per modul; ringkasan keputusan tak terpotong |
@@ -101,8 +101,8 @@ Yang tidak dilakukan: menambah aturan gaya panjang. Semakin banyak aturan prosa,
 |---|---|---|
 | Panduan naik ke T1 (dicoba di aplikasi berjalan, dengan tangkapan layar) | Semua kartu masih T2 dan bertanda ⚠; lingkungan penyusun tak diuji kemampuannya | penyusun berikut dengan skill `stack` |
 | Buklet peran lain (pesantren, TU, bendahara, kepala unit, organ, wali, santri) | Hanya Guru dan Umum | permintaan berikut |
-| Biner `.docx`/`.pdf` di git | Tiga salinan per dokumen bisa menyimpang; kini dijaga `--built`, tetapi pola yang lebih bersih adalah hanya `.md` di git dan biner sebagai artefak CI | keputusan pengguna |
-| Pembangunan dokumen di CI | Mencegah biner basi | keputusan pengguna |
+| Biner `.docx`/`.pdf` di git | Tiga salinan per dokumen bisa menyimpang dan git tidak bisa menampilkan isinya; **diputuskan (2026-09-29): biner tidak dilacak** — hanya `.md` di git, biner dibangun ulang saat dibutuhkan | selesai |
+| Pembangunan dokumen di CI | Tidak lagi perlu: biner tidak dilacak, jadi tak ada "biner basi" yang harus dicegah | — |
 | Uji oleh satu guru sungguhan | ISO 26514 meminta panduan diuji pada pembaca | yayasan |
 
 **Temuan sampingan di aplikasi (bukan di dokumen), ditemukan saat mencocokkan label:** halaman Profile → Keamanan masih

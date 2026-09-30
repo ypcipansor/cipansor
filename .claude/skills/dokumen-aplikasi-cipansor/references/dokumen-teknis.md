@@ -159,7 +159,8 @@ sumber daya cloud**, IP, jalur host, **kelemahan yang masih terbuka di produksi*
 python scripts/check_docs.py naskah.md --kind teknis --repo <repo> --facts fakta/facts.json --final   # 0 ERROR
 python scripts/scan_sensitive.py naskah.md                                                            # bersih
 python scripts/build_docs.py naskah.md --out keluaran --format docx --pdf … --commit <hash>          # kode keluar 0, tanpa "GAGAL"
-python scripts/check_docs.py naskah.md --kind teknis --repo <repo> --facts fakta/facts.json --built keluaran/<nama>.build.json
 ```
+
+`.docx`/`.pdf` adalah artefak (diabaikan `.gitignore`); bangun saat dibutuhkan, jangan commit.
 
 Terakhir, baca dengan mata: ringkasan eksekutif, bab 11, dan satu skenario bab 6 dibandingkan dengan kodenya.

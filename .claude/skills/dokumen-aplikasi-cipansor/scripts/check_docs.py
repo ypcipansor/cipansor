@@ -657,7 +657,6 @@ def main() -> int:
     ap.add_argument("--repo", required=True, help="folder repo cipansor (untuk mencocokkan rute, label, model)")
     ap.add_argument("--facts", help="facts.json; bila tak diberikan, diukur ulang dari --repo")
     ap.add_argument("--final", action="store_true")
-    ap.add_argument("--built", help="NAMA.build.json dari build_docs.py: tolak .docx/.pdf yang basi terhadap sumber")
     ap.add_argument("--trace", help="tulis jejak sumber label (panduan pengguna) ke berkas .md ini")
     a = ap.parse_args()
     global TRACE_OUT
@@ -675,21 +674,6 @@ def main() -> int:
         return 2
 
     r = Report()
-    if a.built:
-        import hashlib
-        bj = Path(a.built)
-        if not bj.is_file():
-            r.add("ERROR", 0, "build-tak-ada", f"{a.built} tidak ada — jalankan build_docs.py dulu")
-        else:
-            info = json.loads(bj.read_text(encoding="utf-8"))
-            if info["source_sha256"] != hashlib.sha256(text.encode()).hexdigest():
-                r.add("ERROR", 0, "biner-basi", "sumber .md berubah sesudah .docx/.pdf dibangun — bangun ulang")
-            for fn, h in info.get("outputs", {}).items():
-                f = bj.parent / fn
-                if not f.exists():
-                    r.add("ERROR", 0, "biner-hilang", f"{fn} tercatat di build.json tetapi tidak ada")
-                elif hashlib.sha256(f.read_bytes()).hexdigest() != h:
-                    r.add("ERROR", 0, "biner-berubah", f"{fn} berbeda dari yang dicatat build.json (disunting tangan?)")
     check_common(text, lines, r, a.final)
     check_images(text, lines, src.parent, a.kind, r)
     if a.kind == "teknis":

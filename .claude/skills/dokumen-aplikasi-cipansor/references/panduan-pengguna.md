@@ -206,8 +206,9 @@ tindakan. Satu topik, satu tujuan; yang bisa ditemukan sendiri tidak dijelaskan.
 python scripts/check_docs.py naskah.md --kind pengguna --repo <repo> --facts fakta/facts.json --final --trace jejak.md   # 0 ERROR
 python scripts/scan_sensitive.py naskah.md                                                                              # bersih
 python scripts/build_docs.py naskah.md --out keluaran --format docx --pdf --commit <hash> …                             # kode keluar 0
-python scripts/check_docs.py naskah.md --kind pengguna --repo <repo> --facts fakta/facts.json --built keluaran/<nama>.build.json
 ```
+
+`.docx`/`.pdf` adalah artefak (diabaikan `.gitignore`); bangun saat dibutuhkan, jangan commit.
 
 Lalu, dengan mata: buka `jejak.md` dan pastikan tiap label berasal dari layar yang dimaksud; bandingkan satu kartu
 dengan `page.tsx`-nya baris demi baris (nilai bawaan, `disabled`, teks toast).

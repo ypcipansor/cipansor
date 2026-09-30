@@ -107,13 +107,13 @@ python scripts/build_docs.py naskah.md --out keluaran --format both --pdf --name
 
 `build_docs.py` memeriksa dirinya sendiri: jumlah tabel sumber = tabel `.docx`, tak ada tabel/kepala kosong, gambar terpasang,
 daftar isi ada; pengisian daftar isi lewat LibreOffice yang merusak berkas **dibuang** (dipakai cadangan sebelumnya);
-PDF diperiksa (kepala tabel terbaca, tak ada halaman kosong). Sekaligus menulis `<nama>.build.json` (hash sumber dan hasil).
-Peringatan `PERINGATAN`/`PERINGATAN PDF` **dilaporkan** ke pengguna, tidak diabaikan. Jangan menyunting `.docx` hasil; perbaiki
-Markdown lalu bangun ulang.
+PDF diperiksa (kepala tabel terbaca, tak ada halaman kosong). Peringatan `PERINGATAN`/`PERINGATAN PDF` **dilaporkan** ke
+pengguna, tidak diabaikan. Jangan menyunting `.docx` hasil; perbaiki Markdown lalu bangun ulang.
 
-```bash
-python scripts/check_docs.py naskah.md --kind <…> --repo <repo> --facts fakta/facts.json --built keluaran/<nama>.build.json   # tidak basi
-```
+`.docx`/`.pdf` adalah **artefak, bukan berkas yang dilacak**: `.gitignore` mengabaikannya, dan hanya `.md` yang masuk git.
+Biner dibangun ulang saat dibutuhkan untuk dikirim ke pengurus/donor/auditor. Karena git menampilkan biner sebagai
+"Binary files differ", menyimpannya di git tidak menambah kemampuan meninjau apa pun — sumber `.md` yang ditinjau.
+(Tidak ada lagi `*.build.json`; tidak ada lagi pemeriksaan "biner basi".)
 
 ### 6. Lihat hasilnya (bila Anda dapat melihat gambar)
 
@@ -122,21 +122,22 @@ diagram. Bila tidak dapat melihat gambar, gerbang langkah 5 adalah satu-satunya 
 
 ### 7. Serahkan
 
-Taruh keluaran di `docs/` (`.md` sebagai sumber; `.docx`, `.pdf`, `diagrams/`, `fakta/`, `*.build.json` sebagai
-hasil bangun), lalu ikuti aturan repo: cabang fitur, komit dengan pesan jelas, jangan mendorong ke `main`; perubahan hanya
-dokumen tidak menjalankan CI kode.
+Taruh keluaran di `docs/` (`.md` sebagai sumber — itulah yang dilacak git; `.docx`, `.pdf`, `diagrams/`, `fakta/`
+sebagai hasil bangun, diabaikan `.gitignore`), lalu ikuti aturan repo: cabang fitur, komit dengan pesan jelas, jangan
+mendorong ke `main`; perubahan hanya dokumen tidak menjalankan CI kode.
 
-**Penamaan di `docs/`** (satu berkas, satu nama, tiga berkas senama per terbitan — `.md` + `.docx`/`.pdf` + `.build.json`):
+**Penamaan di `docs/`** (satu berkas, satu nama; `.docx`/`.pdf` senama dibangun di samping `.md`-nya, tidak dilacak):
 
 | Terbitan | Nama |
 |---|---|
-| Dokumen Teknis | `DOKUMEN-TEKNIS.md` (+ `.docx`, `.pdf`, `.build.json`) |
-| Panduan Pengguna, bagian umum | `PANDUAN-PENGGUNA-UMUM.md` (+ …) |
-| Panduan Pengguna, per peran | `PANDUAN-PENGGUNA-<PERAN>.md`, mis. `PANDUAN-PENGGUNA-GURU.md` (+ …) |
+| Dokumen Teknis | `DOKUMEN-TEKNIS.md` (biner: `DOKUMEN-TEKNIS.docx`, `.pdf`) |
+| Panduan Pengguna, bagian umum | `PANDUAN-PENGGUNA-UMUM.md` (biner senama) |
+| Panduan Pengguna, per peran | `PANDUAN-PENGGUNA-<PERAN>.md`, mis. `PANDUAN-PENGGUNA-GURU.md` (biner senama) |
 | Audit dokumen | `EVALUASI-DOKUMEN.md` |
 
 `docs/README.md` adalah peta seluruh dokumentasi; **perbarui ia** bila terbitan atau namanya berubah (tabel "Mulai dari
-mana" dan bagian "Dokumen aplikasi"). Hasil bangun `fakta/`, `diagrams/`, `alur/` **tidak** dilacak git (lihat `.gitignore`).
+mana" dan bagian "Dokumen aplikasi"). Hasil bangun `fakta/`, `diagrams/`, `alur/`, `*.docx`, `*.pdf` **tidak** dilacak git
+(lihat `.gitignore`).
 
 Laporan singkat ke pengguna, **apa adanya**:
 
@@ -174,9 +175,9 @@ bagian yang menyebut hal-hal itu, jalankan langkah 3–5, naikkan versi, isi Riw
 |---|---|
 | `scripts/check_env.py` | Memeriksa perkakas (pandoc, mmdc, Chromium, LibreOffice **Writer**, uno, font) dan mencetak perintah pasang |
 | `scripts/collect_facts.py` | Mengukur repo → `facts.json`/`facts.md` (modul, model, peran, rute, job terjadwal vs berkas job, env, keputusan); `--compare` untuk pembaruan. Hanya pustaka standar; hanya **nama** variabel lingkungan |
-| `scripts/check_docs.py` | Pemeriksa naskah terhadap kode: rute, angka, ERD, label layar, pesan, kartu, tabel, diagram, bab 9/10/11, biner basi (`--built`), jejak sumber (`--trace`) |
+| `scripts/check_docs.py` | Pemeriksa naskah terhadap kode: rute, angka, ERD, label layar, pesan, kartu, tabel, diagram, bab 9/10/11, jejak sumber (`--trace`) |
 | `scripts/scan_sensitive.py` | Memindai md/txt/html/docx dari pola sensitif (kunci, JWT, connection string, host cloud, IP, jalur host, sandi demo, NIK/telepon) |
-| `scripts/build_docs.py` | Markdown → `.docx` (sampul, daftar isi, tabel, diagram, header/footer) dan/atau `.md`/`.pdf`; memverifikasi hasilnya; menulis `build.json` |
+| `scripts/build_docs.py` | Markdown → `.docx` (sampul, daftar isi, tabel, diagram, header/footer) dan/atau `.md`/`.pdf`; memverifikasi hasilnya. Keluaran adalah artefak, tidak dilacak git |
 | `scripts/update_toc.py` | Mengisi daftar isi `.docx` lewat LibreOffice (dipanggil `build_docs.py`) |
 | `references/dokumen-teknis.md` | Kontrak tiap bab arc42, resep bab 6/9/10/11, aturan angka, kepekaan, diagram |
 | `references/panduan-pengguna.md` | T1/T2/T3 + uji kemampuan, resep T2 dan perangkapnya, kartu tugas, memilih tugas, audiens, tangkapan layar |

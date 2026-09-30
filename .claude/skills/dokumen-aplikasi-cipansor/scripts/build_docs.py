@@ -715,15 +715,6 @@ def main() -> int:
                 print(f"OK  {pdf}")
                 for prob in verify_pdf(pdf, md):
                     print(f"PERINGATAN PDF: {prob}", file=sys.stderr)
-        # Catatan pembangunan: hash sumber + hasil. check_docs.py --built memakainya untuk menolak
-        # .docx/.pdf yang basi (sumber .md sudah berubah tetapi biner belum dibangun ulang).
-        info = {"source": src.name, "source_sha256": hashlib.sha256(md.encode()).hexdigest(),
-                "commit": a.commit, "built": date.today().isoformat(), "outputs": {}}
-        for ext in (".docx", ".pdf"):
-            f = out / f"{name}{ext}"
-            if f.exists():
-                info["outputs"][f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
-        (out / f"{name}.build.json").write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return 0
 
 

@@ -151,9 +151,18 @@ __pycache__/
 # salinan yang basi begitu repo bergerak, dan tiap bangun menulis PNG bernama
 # hash yang baru. `alur/` adalah berkas kerja untuk menangkap tangkapan layar
 # (skill `screenshot-roles`), bukan keluaran terbit. Yang dilacak cukup `.md`
-# (sumber) + `*.build.json` (hash sumber, dasar `check_docs.py --built`);
-# `.docx`/`.pdf` sengaja tetap dilacak karena itu yang dikirim ke pengurus,
-# donor, dan auditor.
+# (sumber).
+#
+# `.docx`/`.pdf` dan `*.build.json` **tidak** dilacak. Biner hanya perantara
+# untuk menghasilkan `.pdf`, dan sebagai berkas git ia tidak berguna untuk
+# ditinjau: git menampilkannya sebagai "Binary files differ", jadi reviewer tak
+# bisa melihat isinya cocok atau tidak dengan `.md`. Menyimpannya di git justru
+# memunculkan masalah "tiga salinan yang bisa berbeda" (kelas cacat D5), yang
+# hilang dengan sendirinya bila biner dibangun ulang dari sumber saat dibutuhkan.
+# `.md` adalah satu-satunya sumber; ia ditinjau seperti kode lain.
 docs/fakta/
 docs/diagrams/
 docs/alur/
+docs/*.build.json
+docs/*.docx
+docs/*.pdf

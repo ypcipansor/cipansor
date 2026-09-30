@@ -71,17 +71,18 @@ dilacak. Cara menangkapnya ada di skill `screenshot-roles`.
 
 ## Konvensi folder ini
 
-- **Sumber adalah Markdown.** `.docx` dan `.pdf` dihasilkan darinya, jangan
-  disunting langsung. Tiap terbitan punya `*.build.json` berisi hash sumber dan
-  hasil bangun; `check_docs.py --built` memakainya untuk menolak biner yang basi.
+- **Sumber adalah Markdown.** Hanya `.md` yang dilacak git; `.docx` dan
+  `.pdf` dihasilkan darinya dan **tidak** disunting maupun di-commit. Biner
+  dibangun ulang saat dibutuhkan untuk dikirim ke pengurus, donor, atau auditor
+  — git menampilkannya sebagai "Binary files differ", jadi menyimpannya di repo
+  tidak menambah kemampuan meninjau apa pun.
 - **Nama dokumen terbit memakai HURUF-BESAR** (`DOKUMEN-TEKNIS.md`); catatan
   kerja dan rencana memakai huruf kecil (`deploy-azure.md`,
   `planning/chatbot-design.md`). Beberapa dokumen lama seperti `ARCHITECTURE.md`
   dan `MOBILE_API.md` mengikuti gaya HURUF_BESAR dengan garis bawah.
 - **Hasil bangun tidak dilacak git** (lihat `.gitignore`): `fakta/` (angka
-  terukur dari kode), `diagrams/` (gambar Mermaid berhash), dan `alur/` (berkas
-  kerja tangkapan layar). Yang dilacak: `.md`, `*.build.json`, dan
-  `.docx`/`.pdf`.
+  terukur dari kode), `diagrams/` (gambar Mermaid berhash), `alur/` (berkas
+  kerja tangkapan layar), dan biner `*.docx`/`*.pdf`. Yang dilacak: `.md`.
 
 ## Membangun ulang dokumen aplikasi
 
@@ -98,8 +99,6 @@ python3 $S/check_docs.py docs/DOKUMEN-TEKNIS.md --kind teknis \
 python3 $S/build_docs.py docs/DOKUMEN-TEKNIS.md --out docs \
   --format docx --pdf --title "Dokumen Teknis Aplikasi" --subtitle "Sistem Informasi Cipansor" \
   --version 0.3 --status Draf --commit <hash> --logo apps/web/public/logo.png
-python3 $S/check_docs.py docs/DOKUMEN-TEKNIS.md --kind teknis --repo . \
-  --facts docs/fakta/facts.json --built docs/DOKUMEN-TEKNIS.build.json
 python3 $S/scan_sensitive.py docs/DOKUMEN-TEKNIS.md docs/PANDUAN-PENGGUNA-*.md
 ```
 
@@ -134,4 +133,4 @@ sampai seorang pengguna peran itu mencobanya. Yang belum dikerjakan ada di
 [`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 8.
 
 Seluruh keluaran lolos pemeriksa mesin pada 29 September 2026: `check_docs.py`
-0 ERROR (termasuk `--final` dan `--built`), `scan_sensitive.py` bersih.
+0 ERROR (termasuk `--final`), `scan_sensitive.py` bersih.
