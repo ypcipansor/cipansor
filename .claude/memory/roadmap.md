@@ -73,6 +73,14 @@ items before 2026-09-25 is in the history of this file and of
          and changing one's own password should end the *other* sessions,
          not this one — today every refresh token is revoked, the current
          one included.
+       - **passkey (FIDO2/WebAuthn) as the first sign-in path** (decided
+         2026-09-30, `decisions/autentikasi-2fa-dan-sandi.md`): a "Masuk
+         dengan passkey" button above the password form; password + TOTP +
+         recovery codes kept as fallback, so no second recovery channel is
+         built; one passkey satisfies `requiresSecondFactor` because WebAuthn
+         user verification is provable, unlike Google's `amr`. After 4.A and
+         passwords part B, as its own multi-PR track (schema + registration;
+         sign-in ceremony; admin reset + recovery hardening + e2e).
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
