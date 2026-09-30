@@ -205,3 +205,58 @@ kesepuluh dokumen; PDF tanpa halaman kosong.
 **Belum selesai.** Bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen
 belum berjalan di CI; sebagian gambar lama di manifes belum membawa `url`
 sehingga pemeriksa halaman-kembar belum menjangkaunya.
+
+# 11. Tindak lanjut 2026-09-30 (ketiga) — bangun ulang, satu angka bergeser, satu cacat pemeriksa
+
+Sesi ini menjalankan alur skill dari awal atas pohon kerja saat ini: lingkungan
+diperiksa, kode diukur ulang, dokumen dibangun ulang, dan pilihan standar
+diperiksa ulang lewat riset web.
+
+**Lingkungan.** `check_env.py` awalnya menandai empat kebutuhan wajib belum ada
+(pandoc, mermaid-cli, LibreOffice Writer, python-docx). Semuanya dipasang
+(`apt-get`, `npm -g`, `pip`); `check_env.py` kemudian melaporkan "Siap membangun".
+Catatan: `uno` (untuk mengisi daftar isi otomatis) tetap tak dapat dimuat karena
+`libreglo.so` tak ditemukan, jadi daftar isi `.docx` terisi saat dibuka di Word —
+ini **bukan** kegagalan build, dan dilaporkan apa adanya.
+
+**Angka bergeser, dan pemeriksa menangkapnya.** Pengukuran ulang
+(`collect_facts.py --compare`) menunjukkan satu pergeseran: **~1.413 hulu rute API**
+(dari ~1.412) karena rute `POST /api/certificates/:id/generate-pdf` ada di pohon
+kerja tetapi belum dikomit. Angka itu ditulis di ringkasan bab 1 `DOKUMEN-TEKNIS.md`
+dan **tidak diperiksa** oleh `check_docs.py` — ia hanya memeriksa modul, model,
+enum, kode peran, halaman web, kunci env, dan hitungan pekerjaan terjadwal. Pola
+baru `(\d[\d.]*)\s+hulu rute` → `api.handler_count_approx` ditambahkan; pemeriksa
+kini menandai ERROR "1.412 hulu rute — facts.json mengukur 1413". Dokumen
+dinaikkan ke **v0.7** (basis commit `18f853f2`) dan angkanya diperbaiki.
+
+**Riset standar (ketiga).** Hasilnya tidak mengubah kerangka; yang diperbarui
+adalah edisi acuan dan kesadaran perkakas — arc42 v9 (Juli 2025), C4 dengan
+Structurizr sebagai acuan model-as-code dan D2 yang kini mengenal konsep C4,
+ISO/IEC/IEEE 42010:2022, 26514:2022 (API/chatbot), MADR 4.0.0 (17 Sep 2024),
+Diátaxis yang tetap hidup, serta perkakas lint 2026 (Vale, markdownlint, lychee,
+cspell, textlint). Alasan tetap memakai pemeriksa sendiri alih-alih Vale/lychee
+dicatat di `references/standar-dan-alasan.md`: yang diperiksa bukan gaya prosa,
+melainkan kecocokan klaim dengan kode.
+
+**Pemeriksa mesin (30 September 2026, ketiga).**
+
+| Pemeriksa | Hasil |
+|---|---|
+| `check_docs.py --final` (DOKUMEN-TEKNIS) | 0 ERROR, 0 WARN |
+| `check_docs.py --final` (sembilan panduan) | 0 ERROR, 0 WARN |
+| `scan_sensitive.py` (berkas yang ditambahkan/diubah) | bersih |
+| `build_docs.py --pdf` (DOKUMEN-TEKNIS, PANDUAN-UMUM, PANDUAN-GURU) | kode keluar 0, tanpa baris `GAGAL`; 11 diagram dirender, 0 gagal |
+
+**Temuan sampingan (skrip repo, bukan dokumen).** `scripts/check-doc-refs.py`
+melaporkan **77 tautan gambar menggantung** pada panduan, padahal berkasnya ada di
+`docs/screens/…`. Akarnya: panduan menulis gambar dengan jalur relatif ke dokumen
+(`screens/…`, benar untuk GitHub) sementara skrip menyelesaikannya relatif ke akar
+repo. Dampaknya: skrip tak lagi menjalankan tugasnya untuk berkas panduan — ia
+memeriksa hanya `docs/images/`, bukan `docs/screens/`. Ini **sudah ada di `main`**
+(bukan regresi sesi ini), dan perbaikannya milik repo (ubah skrip agar mencoba
+kedua basis, atau perlakukan `screens/` seperti `images/`), bukan milik dokumen.
+
+**Belum selesai.** Bab konsep/rujukan Panduan Umum masih T2; pemeriksa dokumen
+belum berjalan di CI; `uno` tak tersedia di lingkungan ini sehingga daftar isi
+`.docx` terisi saat dibuka (F9), bukan saat dibangun; `check-doc-refs.py` perlu
+diperbaiki agar mengenali jalur gambar relatif dokumen.

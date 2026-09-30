@@ -21,6 +21,7 @@ menulis; jalankan `check_docs.py` sesudah tiap bab. Kolom *Pemeriksa* menyebut k
 | A11 | Kartu absensi: status "Alpa" sebagai tombol (tombolnya **Tidak Hadir**, berbentuk ikon); penyebab `Simpan` nonaktif dikarang ("belum ada perubahan") | Kartu T2 disusun tanpa membaca `page.tsx` sampai selesai | `label-layar`, `pesan-karangan`; resep T2 | Baca nilai bawaan, `disabled`, label, toast dari `page.tsx` |
 | A12 | Pesan "Tidak memiliki akses" dikutip dalam tanda kutip; tak ada di kode | Pesan diparafrase lalu dikutip | `pesan-karangan` | Salin persis dari toast/Alert/pesan API |
 | A13 | Dua gambar di buklet santri sama-sama menampilkan Jurnal Ibadah: "Papan Peringkat" (langkahnya `goto /ibadah`) dan "Kelola Target" (halaman sebenarnya `/ibadah/targets`) | Langkah alur tidak menunjuk halaman yang dimaksud; tak seorang pun membuka gambarnya | tak otomatis — `screenshot-flow.ts` hanya memeriksa `see`, bukan apakah tangkapan cocok dengan judul kartu | Arahkan langkah `goto` ke halaman yang benar (`/ibadah/leaderboard`, `/ibadah/targets`) dan **buka gambarnya** sebelum menyerahkan; `see` yang cocok tidak menjamin layarnya benar |
+| A14 | Bab 1 menulis "~1.412 hulu rute API"; angka nyata 1.413 (rute `POST /api/certificates/:id/generate-pdf` ditambahkan di pohon kerja) | Angka ditulis saat pengukuran lama, tak ada pola pemeriksa untuknya | `angka-salah` — kini ada pola `(\d[\d.]*)\s+hulu rute` → `api.handler_count_approx` | Tulis angka dari `facts.json` dan sebut basis commitnya; jangan menyunting angka dengan tangan |
 
 ## B. Kebocoran dan kepekaan
 

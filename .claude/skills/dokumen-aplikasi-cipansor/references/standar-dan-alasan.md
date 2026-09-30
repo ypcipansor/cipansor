@@ -185,6 +185,48 @@ yang pantas diikuti. Hasilnya:
 Sumber tambahan yang dikutip di bagian ini: Simon Brown, *The C4 Model* (GOTO
 2026, YOW! 2025); llmstxt.org dan laporan adopsi 2026; panduan docs-as-code 2026.
 
+## Pemeriksaan ulang 2026-09-30 (kedua) — perkakas pemeriksa dan edisi standar
+
+Riset diulang atas pertanyaan "sesuai standar praktik terbaik seperti apa", dengan
+menyebut perkakas dan edisi terbaru. Hasilnya **tidak mengubah kerangka** (arc42 +
+C4 + Diátaxis + ADR + docs-as-code tetap pilihan yang benar); yang diperkuat adalah
+*edisi acuan* dan *kesadaran perkakas*:
+
+- **arc42 — v9 (Juli 2025)** tetap 12 bab; v9 menyempurnakan bab 10 (persyaratan
+  mutu) dan gambar konsep bab 8, bukan menomori ulang bab. Dokumen menyebut
+  versinya di Lampiran B. Sumber: arc42.org/download, github.com/arc42/arc42-template.
+- **C4 — Structurizr sebagai acuan model-as-code**, dan **D2 kini mengenal konsep
+  C4 bawaan** (`c4-person`, `legend`). Terapan kita tetap **Mermaid di dalam
+  Markdown** (bisa disunting, dibanding per baris di git, dirender GitHub, dan
+  `build_docs.py` mengubahnya jadi gambar) — Structurizr/D2 tidak ditambahkan karena
+  menuntut berkas model terpisah yang menjadi sumber kedua yang bisa menyimpang.
+- **ISO/IEC/IEEE 42010:2022** (menggantikan 42010:2011) tetap dipakai sebagai daftar
+  periksa sudut pandang (bab 5–8 arc42), bukan format. Sumber: iso.org.
+- **ISO/IEC/IEEE 26514:2022** (edisi ketiga) tetap acuan mutu panduan; edisi ini
+  secara eksplisit menyebut **API dan chatbot** sebagai saluran informasi pengguna
+  — relevan karena repo punya modul `chatbot` dan `docs/MOBILE_API.md`.
+- **MADR 4.0.0 (17 September 2024)** adalah versi template ADR terkini (sebelumnya
+  bernama "Markdown *Any* Decision Records"; 4.0 menegaskan kembali fokus
+  *arsitektural*). Terapan kita: `.claude/memory/decisions/` sudah mengikuti
+  semangat satu-keputusan-satu-catatan; dokumen **merangkum dan menautkan**, tidak
+  menyalin. Sumber: adr.github.io/madr, changelog MADR.
+- **Diátaxis** tetap kerangka hidup yang dirawat Daniele Procida (diataxis.fr,
+  github.com/evildmp/diataxis-documentation-framework); tidak ada perubahan empat
+  mode. Terapan kita tetap "satu halaman, satu jenis".
+- **Perkakas lint/verifikasi docs-as-code 2026** yang lazim: **Vale** (gaya bahasa,
+  gaya prosa), **markdownlint** (struktur Markdown), **lychee** (tautan mati, ada
+  GitHub Action), **cspell** (ejaan), **textlint** (aturan teks). Repo ini **tidak**
+  memasangnya; ia memakai pemeriksa sendiri (`check_docs.py`, `scan_sensitive.py`,
+  `build_docs.py`, `scripts/check-doc-refs.py`) karena yang perlu diperiksa bukan
+  gaya prosa melainkan **kecocokan klaim dengan kode** (rute, angka, label layar,
+  nama model) — hal yang tidak diperiksa Vale/lychee. Perkakas itu tetap dicatat
+  sebagai opsi bila nanti dokumen tumbuh dan butuh pemeriksa ejaan/tautan otomatis.
+
+Sumber yang dikutip di bagian ini: arc42.org/download; c4model.com; structurizr.com;
+d2lang.com/blog/c4; iso.org (42010:2022, 26514:2022); adr.github.io/madr +
+changelog; diataxis.fr; errata-ai/vale, lycheeverse/lychee, markdownlint,
+streetsidesoftware/cspell, textlint.org.
+
 ## Prinsip yang menyatukan semuanya
 
 1. **Angka dari kode, bukan ingatan** — `collect_facts.py`; sebut commit dan
@@ -216,4 +258,5 @@ Sumber tambahan yang dikutip di bagian ini: Simon Brown, *The C4 Model* (GOTO
 | Minimalisme | Carroll, *The Nurnberg Funnel* (1990); ringkasan teknis-komunikasi |
 | IEC/IEEE 82079-1:2019 (informasi untuk dipakai) | standards.ieee.org, iso.org (cancels IEC 82079-1:2012) |
 | Dokumentasi ramping | agilemodeling.com/essays/agiledocumentation.htm |
+| Perkakas pemeriksa docs-as-code | Vale (errata-ai/vale), markdownlint, lychee (+ lychee-action), cspell, textlint |
 

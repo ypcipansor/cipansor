@@ -4,6 +4,37 @@ Catatan perubahan skill, terbaru di atas. Audit lengkap atas hasil pemakaiannya 
 `docs/EVALUASI-DOKUMEN.md`; katalog kesalahan dan kode pemeriksanya di
 `references/kesalahan-yang-sudah-terjadi.md`.
 
+## 30 September 2026 (pemeriksaan ulang ketiga) — angka hulu rute masuk pemeriksa, riset perkakas
+
+Pengguna meminta dokumen dibangun ulang dari skill, dievaluasi, dan diperiksa ulang
+terhadap standar praktik terbaik lewat riset web. Hasil:
+
+- **Dokumen dibangun ulang dari sumber.** Kesepuluh `.md` di `docs/` diukur ulang
+  (`collect_facts.py`) dan dibangun ulang (`.docx`/`.pdf`) dengan `build_docs.py`
+  kode keluar 0, tanpa baris `GAGAL`. Satu angka bergeser: **~1.413 hulu rute API**
+  (dari ~1.412) karena rute `POST /api/certificates/:id/generate-pdf` belum dikomit
+  di pohon kerja. `DOKUMEN-TEKNIS.md` naik ke **v0.7** dengan basis commit `18f853f2`.
+- **Cacat pemeriksa ditutup.** `check_docs.py` **tidak** memeriksa angka "hulu rute
+  API" terhadap `facts.json`, padahal angka itu ditulis di ringkasan bab 1 dan mudah
+  basi (persis yang terjadi: 1.412 vs 1.413). Ditambahkan pola
+  `(\d[\d.]*)\s+hulu rute` → `api.handler_count_approx`; pemeriksa kini menandai
+  ERROR bila angka tak cocok. Inilah jenis cacat yang dulu lolos karena tidak ada
+  polanya — bukan karena modelnya salah.
+- **Riset standar diperbarui** (`references/standar-dan-alasan.md`, bagian
+  "Pemeriksaan ulang 2026-09-30 (kedua)"): arc42 **v9** (Juli 2025), C4 dengan
+  **Structurizr** sebagai acuan model-as-code dan **D2** yang kini mengenal konsep C4,
+  **ISO/IEC/IEEE 42010:2022**, **26514:2022** (API/chatbot), **MADR 4.0.0**
+  (17 Sep 2024), Diátaxis yang tetap hidup, dan **perkakas lint 2026** (Vale,
+  markdownlint, lychee, cspell, textlint). Kerangka **tidak berubah** — yang
+  ditambahkan hanya edisi acuan dan alasan mengapa pemeriksa sendiri tetap dipakai
+  alih-alih Vale/lychee (yang diperiksa bukan gaya prosa, melainkan kecocokan klaim
+  dengan kode).
+
+**Pemeriksa mesin (30 September 2026, ketiga).** `check_docs.py --final` 0 ERROR/0
+WARN untuk DOKUMEN-TEKNIS dan kesembilan panduan; `scan_sensitive.py` bersih pada
+berkas yang ditambahkan; `build_docs.py` kode keluar 0 untuk DOKUMEN-TEKNIS,
+PANDUAN-UMUM, dan PANDUAN-GURU (tiga dokumen dibangun ulang; sisanya sudah terbangun).
+
 ## 30 September 2026 (buklet peran lengkap) — lima buklet baru, satu cacat pemeriksa
 
 Lanjutan sesi T1: kelima buklet peran yang belum terbit dikerjakan —

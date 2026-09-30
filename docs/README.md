@@ -143,16 +143,19 @@ mencatat commit basisnya di sampul dan riwayat revisi.
 
 ## Status dokumen aplikasi
 
-Draf 0.4, basis kode PR #512 (setelah `main` `2377f5fb`). Panduan pengguna kini
-berperingkat **T1** pada bagian yang sudah dijalankan: bab "Mulai Memakai
+Draf 0.7 dokumen teknis, basis kode commit `18f853f2` (pohon kerja PR #512, termasuk
+rute `POST /api/certificates/:id/generate-pdf` yang belum dikomit). Panduan pengguna
+kini berperingkat **T1** pada bagian yang sudah dijalankan: bab "Mulai Memakai
 Aplikasi" pada Panduan Umum, dan seluruh kartu tugas **delapan buklet peran** —
 **Guru**, **Musyrif**, **Wali Santri**, **Tata Usaha**, **Bendahara**,
 **Kepala Unit**, **Pengurus Yayasan**, dan **Santri** — masing-masing memuat
 tangkapan layar asli dari alur yang lolos pada aplikasi berjalan. Bab konsep dan
 rujukan Panduan Umum masih berperingkat **T2** (disusun dari kode, belum diuji
 sebagai bacaan konsep). Yang belum dikerjakan ada di
-[`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 10.
+[`EVALUASI-DOKUMEN.md`](./EVALUASI-DOKUMEN.md), bagian 11.
 
 Seluruh keluaran lolos pemeriksa mesin pada 30 September 2026: `check_docs.py`
 0 ERROR/0 WARN untuk kesepuluh dokumen, `scan_sensitive.py` bersih, PDF tanpa
-halaman kosong.
+halaman kosong (28 halaman dokumen teknis; 9–19 halaman tiap buklet). Pemeriksa
+`check_docs.py` juga mencocokkan angka "hulu rute API" terhadap `facts.json`
+sejak pemeriksaan ulang terakhir.

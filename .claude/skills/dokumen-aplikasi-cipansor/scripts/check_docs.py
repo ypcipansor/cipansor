@@ -286,6 +286,7 @@ def check_numbers(lines: list[str], facts: dict, r: Report) -> None:
         (r"(\d[\d.]*)\s+kode peran", p.get("role_code_count"), "kode peran"),
         (r"(\d[\d.]*)\s+halaman web", w.get("page_count"), "halaman web"),
         (r"(\d[\d.]*)\s+kunci", e.get("total_keys"), "kunci variabel lingkungan"),
+        (r"(\d[\d.]*)\s+hulu rute", a.get("handler_count_approx"), "hulu rute API"),
     ]
     sched_ok = {j["cron_entries"], len(j["scheduled_job_files"])}
     for n, l in enumerate(lines, 1):
