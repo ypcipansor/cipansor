@@ -83,9 +83,10 @@ test("install banner, Android/Chrome visitor", async ({ page }) => {
   // banner listens for the dispatch. Synthesize it so the native banner renders.
   await page.addInitScript(() => {
     const fire = () => {
-      const e: Record<string, unknown> = new Event("beforeinstallprompt");
-      e.prompt = async () => {};
-      e.userChoice = Promise.resolve({ outcome: "dismissed" });
+      const e = Object.assign(new Event("beforeinstallprompt"), {
+        prompt: async () => {},
+        userChoice: Promise.resolve({ outcome: "dismissed" }),
+      });
       window.dispatchEvent(e);
     };
     setTimeout(fire, 1500);
