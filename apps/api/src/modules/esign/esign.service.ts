@@ -1906,10 +1906,13 @@ export const EsignService = {
       };
     }
 
-    // 3. Verify Ed25519 digital signature over the PDF byte hash
+    // 3. Verify the Ed25519 signature over the *uploaded* byte hash. The row
+    //    was fetched by `pdfHash === uploadedHash`, so the two are equal by
+    //    construction; naming `uploadedHash` here keeps the binding explicit
+    //    rather than reading back the same field we looked the row up by.
     const isSigValid = verifyPdfHashSignature(
       signature.publicKey,
-      signature.pdfHash,
+      uploadedHash,
       signature.pdfSignature
     );
 
