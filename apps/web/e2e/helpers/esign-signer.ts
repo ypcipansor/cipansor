@@ -29,67 +29,35 @@ const NIK = "3273010101900001";
 const BIRTH_DATE = "1990-01-01";
 export const SIGNER_PASSPHRASE = "passphrase-e2e-yang-panjang";
 
+/**
+ * The identity this fixture writes before it requests a key.
+ *
+ * Used as a read-only marker of a fixture-enrolled key: an account whose key
+ * came from somewhere else carries a different legal name, and the spec can say
+ * so plainly instead of failing at the signing step with a passphrase error
+ * that reads like a product bug.
+ */
+const SIGNER_LEGAL_NAME = "Super Admin E2E";
+
 export interface SignerFixture {
   session: AuthSession;
   userId: string;
 }
 
 /**
- * Confirm that an already-issued key is sealed with `SIGNER_PASSPHRASE`.
- *
- * The probe uses the key-rotation endpoint because it is the only one that
- * checks the passphrase without signing a letter: a correct `currentPassphrase`
- * succeeds (and re-seals the key with the same passphrase, so nothing changes),
- * while a wrong one fails. It needs the account password because that endpoint
- * checks the account password *before* the passphrase — with a deliberately
- * wrong password the probe could never reach the passphrase check and would
- * misreport every key as foreign.
- *
- * This exists so a warm database enrolled outside this fixture fails with a
- * sentence that names the cause and the fix, instead of the signing step
- * failing with a "passphrase wrong" that reads like a product bug.
- */
-async function assertSignerPassphrase(
-  session: AuthSession,
-  accountPassword: string,
-): Promise<void> {
-  const res = await fetch(
-    `${process.env.API_URL || "http://localhost:3001/api"}/esign/me/passphrase`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${session.accessToken}`,
-      },
-      body: JSON.stringify({
-        currentPassphrase: SIGNER_PASSPHRASE,
-        accountPassword,
-        newPassphrase: SIGNER_PASSPHRASE,
-      }),
-    },
-  );
-  if (res.ok) return;
-
-  const text = await res.text();
-  throw new Error(
-    `The signing key already on this account is not usable with ` +
-      `SIGNER_PASSPHRASE, so this spec's signing step would fail. Re-seed the ` +
-      `database (ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed) ` +
-      `to reset the e-sign state. Response: ${res.status} ${text.slice(0, 200)}`,
-  );
-}
-
-/**
  * Enrol `session`'s user as a signer and return the activated session.
  *
- * If the account already holds an active key, the passphrase is assumed to be
- * the one this helper set and the existing enrolment is reused — after a probe
- * confirms it, so a key sealed with some other passphrase fails loudly here
- * rather than at the signing step.
+ * If the account already holds a key, it is reused as-is. There is deliberately
+ * no probe of the stored passphrase: the passphrase is sealed with scrypt and
+ * is not observable from outside, so the only endpoint that could confirm it is
+ * the one that *changes* it — which rewrites the stored key material and spends
+ * a passphrase rate-limit slot on every run, even when the passphrase already
+ * matches. The spec proves the passphrase the honest way: it signs a real
+ * letter, and a key that was sealed with some other passphrase fails there with
+ * the API's "Passphrase tanda tangan salah".
  */
 export async function ensureSigner(
   session: AuthSession,
-  accountPassword: string,
 ): Promise<SignerFixture> {
   const userId = String(session.user.id);
 
@@ -99,6 +67,7 @@ export async function ensureSigner(
       state: string | null;
       approvedAwaitingActivation: boolean;
       pendingRequest: { id: string } | null;
+      identity: { legalName: string | null };
     };
   }>(session, "GET", "/esign/me");
 
@@ -109,20 +78,26 @@ export async function ensureSigner(
           "mid-enrolment. Re-seed the database to reset the e-sign state.",
       );
     }
-    // A key may already exist from an earlier run — but only if this fixture
-    // sealed it. The spec always signs with `SIGNER_PASSPHRASE`, so a key whose
-    // passphrase came from anywhere else (a warm database enrolled by hand)
-    // would fail at signing with a confusing "passphrase wrong" that looks like
-    // a product bug rather than a fixture assumption. Probe the known
-    // passphrase on the real signing endpoint and say plainly what is wrong.
-    await assertSignerPassphrase(session, accountPassword);
+    // Read-only check that this fixture sealed the key. The passphrase itself
+    // is unobservable, but the identity this fixture wrote is not: a key whose
+    // passphrase came from elsewhere carries another legal name, and the spec
+    // can say so instead of reporting a passphrase error at the signing step.
+    if (status.data.identity?.legalName !== SIGNER_LEGAL_NAME) {
+      throw new Error(
+        `Signing key for ${userId} was not enrolled by this fixture ` +
+          `(identity is "${status.data.identity?.legalName ?? "unset"}", not ` +
+          `"${SIGNER_LEGAL_NAME}"), so it is not sealed with SIGNER_PASSPHRASE. ` +
+          `Re-seed the database (ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 ` +
+          `pnpm --filter api db:seed) to reset the e-sign state.`,
+      );
+    }
     return { session, userId };
   }
 
   // Identity first: the service refuses a key request until the record is
   // complete *and* a KTP file is on it.
   await apiRequest(session, "PUT", "/esign/me/identity", {
-    legalName: "Super Admin E2E",
+    legalName: SIGNER_LEGAL_NAME,
     nik: NIK,
     birthPlace: "Ciamis",
     birthDate: BIRTH_DATE,
@@ -204,5 +179,5 @@ export async function ensureSigner(
 /** Enrol the seeded Super Admin as a signer. */
 export async function ensureSuperAdminSigner(): Promise<SignerFixture> {
   const session = await apiLogin(SEED_USERS.superAdmin);
-  return ensureSigner(session, SEED_USERS.superAdmin.password);
+  return ensureSigner(session);
 }
