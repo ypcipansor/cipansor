@@ -11,6 +11,26 @@ vi.mock("@/services/notifications.service", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
+// `useAuthStore`'s rehydration and the hook's reconcile effect both call
+// `authApi.me()`. Left real, that request hits whatever is on localhost:3000's
+// API — a live dev server answering 401 for the anonymous test session clears
+// the user this suite sets, and the status query then never enables. Pin it so
+// the test is hermetic regardless of a running API.
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    authApi: {
+      ...actual.authApi,
+      me: vi.fn().mockResolvedValue({
+        data: {
+          data: { id: "user-1", name: "Test", email: "t@example.com" },
+        },
+      }),
+    },
+  };
+});
+
 // The hook reads this at module load, and ESM imports are hoisted above plain
 // statements — so it must be set in a hoisted block, not before the import.
 vi.hoisted(() => {
