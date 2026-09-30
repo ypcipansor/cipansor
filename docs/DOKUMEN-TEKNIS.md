@@ -5,6 +5,7 @@
 | 0.1 | 29 September 2026 | commit `aefc719` | Penyusunan awal | Agen OpenHands |
 | 0.2 | 29 September 2026 | commit `aefc719` (kode identik dengan `ab82539`) | Koreksi hasil audit: alamat rute SPMB dan alur persuratan dibaca ulang dari kode; hitungan pekerjaan terjadwal; ukuran tata letak modul disebut dua-duanya; ERD memakai nama model Prisma yang nyata; diagram C4 berlabel tingkat 1–3; bab 9–11 disusun ulang; rincian kontrol akses dan data pribadi dikeluarkan dari bab 11 | Agen OpenHands; audit oleh Claude |
 | 0.3 | 29 September 2026 | commit `1a0e6b1e` (kode `apps/` dan `packages/` identik dengan `aefc719`) | Diperiksa ulang dengan pemeriksa skill terbaru: baris keputusan `dokumentasi-bergambar.md` ditambahkan ke bab 9; sebutan pekerjaan terjadwal dirapikan. Angka diukur ulang, tidak berubah | Agen OpenHands |
+| 0.4 | 30 September 2026 | commit `40780b26` (kode `apps/` dan `packages/` menyatukan cabang README/galeri visual) | Angka diukur ulang setelah modul `certificates` masuk: 94 modul API, 67 modul empat berkas, 25 lengkap lima bagian, ~1.412 handler; `certificates` ditambahkan ke tabel ranah 5.3 dan Lampiran A; perbaikan `params` Next 16 diserahkan ke implementasi cabang ini dan dikunci uji penjaga `next-dynamic-params.guard.test.ts` | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -22,11 +23,11 @@ Penggunanya adalah seluruh jenjang peran yayasan: organ yayasan (Pembina,
 Pengurus, Pengawas), kepala sekolah dan pengelola unit, guru dan pendidik
 pesantren (ustadz, musyrif, muhafidz), tenaga administrasi dan bendahara, serta
 wali santri dan santri. Sistem mencatat **53 kode peran** yang dikelompokkan ke
-dalam **13 keluarga menu** (diukur pada commit `aefc719`, 29 September 2026);
+dalam **13 keluarga menu** (diukur pada commit `40780b26`, 30 September 2026);
 setiap peran melihat menu, dasbor, dan data yang berbeda.
 
-Pada commit ini, basis kode berisi **93 modul API**, **289 model data** dan
-**157 enum**, sekitar **1.395 hulu rute API**, **435 halaman web**, serta
+Pada commit ini, basis kode berisi **94 modul API**, **289 model data** dan
+**157 enum**, sekitar **1.412 hulu rute API**, **435 halaman web**, serta
 **15 entri jadwal** (dari 13 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
 diakses lewat Prisma 7. Aplikasi berjalan sebagai dua layanan: API (Express 5)
 dan web (Next.js 16), dengan paket tipe bersama `@cipansor/shared`.
@@ -88,7 +89,7 @@ setiap orang pada data yang berhak dilihatnya.
 
 ## 1.4 Cara membaca dokumen ini
 
-- **Angka** ditulis dengan basis pengukurannya ("pada commit `aefc719`"). Bila
+- **Angka** ditulis dengan basis pengukurannya ("pada commit `40780b26`"). Bila
   angka tidak bersumber, ia tidak dicantumkan.
 - **Status kemampuan** selalu disebut: **di cabang**, **di `main`**, **di
   staging**, atau **di produksi**. Sebuah perbaikan di `main` yang belum
@@ -214,7 +215,7 @@ flowchart TB
   subgraph API["API (Express 5)"]
     MW["Rantai middleware<br/>helmet, cors, csrf, rate limit,<br/>normalisasi paginasi"]
     Auth["Autentikasi dan otorisasi<br/>authenticate, authorize,<br/>Turnstile untuk rute publik"]
-    Mod["Modul ranah, 93 buah<br/>routes, controller, service, schema"]
+    Mod["Modul ranah, 94 buah<br/>routes, controller, service, schema"]
     Bus["Event bus bertipe<br/>lib/event-bus.ts"]
     Jobs["Penjadwal<br/>jobs/scheduler.ts"]
     Err["Penanganan galat<br/>middleware/error.ts"]
@@ -249,8 +250,8 @@ flowchart LR
 
 Aturan lapisannya: **rute tidak pernah memanggil Prisma; controller tidak memuat
 logika bisnis.** Aturan itu belum sepenuhnya menjadi kenyataan. Pada pengukuran
-commit ini, **66 dari 93 modul** memiliki empat berkas inti (routes, controller,
-service, schema), tetapi hanya **24** yang lengkap lima bagian, yaitu keempatnya
+commit ini, **67 dari 94 modul** memiliki empat berkas inti (routes, controller,
+service, schema), tetapi hanya **25** yang lengkap lima bagian, yaitu keempatnya
 ditambah `index.ts` (ukuran yang dipakai `known-issues.md`, yang mencatat 22
 pada 25 September 2026). **12 modul** memanggil Prisma langsung dari rute atau
 controller. Perbaikannya adalah fase 6 rencana audit (`roadmap.md`). Tanggapan
@@ -267,6 +268,7 @@ memakai satu amplop `{ success, data, meta? }` lewat `src/utils/response.ts`.
 | Keuangan | `finance`, `finance-enhancement`, `wallet`, `donation`, `payroll`, `procurement`, `suppliers`, `canteen`, `laundry`, `scholarship` | Verifikasi pembayaran berjenjang; `scholarship` hanya pustaka penilaian tanpa rute |
 | Sarana & aset | `inventory`, `facilities`, `library` | Inventaris adalah aset tetap |
 | Kepegawaian & kinerja | `hr`, `performance-management` | PK dan evaluasi periodik |
+| Sertifikat & piagam | `certificates`, `sanad-certificate` | Penerbitan bernomor dan verifikasi publik lewat kode/QR; nomor memakai CSPRNG |
 | Tata kelola yayasan | `foundation`, `perencanaan`, `pengawasan`, `risk`, `syariah`, `quality`, `organisasi`, `tatalaksana`, `business-unit`, `lingkungan` | Rantai RPJP → Renstra → RKA |
 | Komunikasi | `announcements`, `messages`, `notifications`, `chatbot` | Chatbot memakai penyedia model bahasa |
 | Persuratan & TTE | `correspondence`, `esign`, `reception`, `complaints` | Verifikasi naskah dengan unggah PDF |
@@ -277,7 +279,7 @@ Katalog lengkap ada di Lampiran A.
 
 # 6. Tampak Runtime
 
-Empat skenario di bawah dibaca langsung dari kode pada commit `aefc719`. Berkas
+Empat skenario di bawah dibaca langsung dari kode pada commit `40780b26`. Berkas
 rujukan tiap skenario ada di Lampiran E.
 
 ## 6.1 Masuk, verifikasi dua langkah, dan penyegaran sesi
@@ -422,7 +424,7 @@ tentang siapa yang berhak memutuskan).
 ## 6.6 Pekerjaan terjadwal
 
 `jobs/scheduler.ts` memuat **15 entri jadwal** atas **13 berkas pekerjaan**
-(diukur pada commit `aefc719`), berzona waktu `Asia/Jakarta` dan berjalan di
+(diukur pada commit `40780b26`), berzona waktu `Asia/Jakarta` dan berjalan di
 dalam proses API. Satu berkas bisa dijadwalkan lebih dari sekali
 (`dashboard-snapshot` tiga kali).
 
@@ -579,7 +581,7 @@ ditinjau ulang setiap kuartal.
 | Kategori | Ringkasan | Dampak | Arah penanganan |
 |---|---|---|---|
 | Kontrak web↔API | Sejumlah panggilan web belum terlayani API; jumlahnya tercatat di baseline uji yang hanya boleh menyusut. | Sedang | Fase 1 rencana audit, area demi area; uji penjaga mencegah yang baru |
-| Konsistensi lapisan | 12 modul memanggil Prisma dari rute atau controller; hanya 24 dari 93 modul lengkap lima bagian; bentuk respons belum seragam. | Sedang | Fase 6: satukan ke lapisan baku |
+| Konsistensi lapisan | 12 modul memanggil Prisma dari rute atau controller; hanya 25 dari 94 modul lengkap lima bagian; bentuk respons belum seragam. | Sedang | Fase 6: satukan ke lapisan baku |
 | Pekerjaan terjadwal | Mengandaikan satu instans API; penskalaan menjalankan pekerjaan dua kali. | Tinggi bila diskalakan | Kunci advisory atau worker terpisah sebelum scale-out |
 | Optimasi gambar | Optimizer `next/image` tidak pernah mengecilkan gambar; gambar harus disajikan pada ukuran tampil. | Rendah–Sedang | Perbaikan image runtime |
 | Konsep ganda | Tahfidz di lima modul, rapor di lima tempat, P5 di dua modul. | Sedang | Fase 3: konsolidasi berdasar desain |
@@ -617,7 +619,7 @@ ditinjau ulang setiap kuartal.
 
 # Lampiran A — Katalog Modul API
 
-Diukur pada commit `aefc719` (29 September 2026). "Handler" adalah perkiraan
+Diukur pada commit `40780b26` (30 September 2026). "Handler" adalah perkiraan
 jumlah `router.get/post/put/patch/delete`. "Layering" menandai modul yang
 memanggil Prisma dari rute/controller.
 
@@ -635,6 +637,7 @@ memanggil Prisma dari rute/controller.
 | business-unit | /api/business-units | 7 | - | ok |
 | calendar | /api/calendar | 12 | - | ok |
 | canteen | /api/canteen | 19 | - | ok |
+| certificates | /api/certificates | 9 | - | ok |
 | cbt | /api/cbt | 20 | - | Prisma di route/controller |
 | chatbot | /api/chatbot | 9 | - | Prisma di route/controller |
 | classes | /api/classes | 9 | ya | ok |
@@ -793,7 +796,7 @@ Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure)
 
 | Hal | Sumber |
 |---|---|
-| Commit dan tanggal ukur | `aefc719`, 29 September 2026 (skrip `collect_facts.py`) |
+| Commit dan tanggal ukur | `40780b26`, 30 September 2026 (skrip `collect_facts.py`) |
 | Ringkasan sistem | `README.md`, `docs/ARCHITECTURE.md` |
 | Alamat rute yang disebut | `apps/api/src/modules/*/*.routes.ts` (dicek otomatis oleh `check_docs.py`) |
 | Model data | `apps/api/prisma/schema.prisma` |
