@@ -55,6 +55,12 @@ export interface SignerFixture {
  * matches. The spec proves the passphrase the honest way: it signs a real
  * letter, and a key that was sealed with some other passphrase fails there with
  * the API's "Passphrase tanda tangan salah".
+ *
+ * A warm key that clearly cannot sign — expired, revoked, or left mid-enrolment
+ * — is refused here with its own reason. A key that merely came from somewhere
+ * else is refused with what can actually be known: its passphrase is not
+ * guaranteed to be `SIGNER_PASSPHRASE`, because the identity that would show
+ * this fixture wrote it is not.
  */
 export async function ensureSigner(
   session: AuthSession,
@@ -78,17 +84,32 @@ export async function ensureSigner(
           "mid-enrolment. Re-seed the database to reset the e-sign state.",
       );
     }
-    // Read-only check that this fixture sealed the key. The passphrase itself
-    // is unobservable, but the identity this fixture wrote is not: a key whose
-    // passphrase came from elsewhere carries another legal name, and the spec
-    // can say so instead of reporting a passphrase error at the signing step.
+    // A key that cannot sign regardless of passphrase: say so, and say why.
+    // The identity of such a key is *not* frozen (saveMyIdentity only refuses
+    // while the key is live), so the identity check below would misreport it.
+    if (status.data.state === "EXPIRED" || status.data.state === "REVOKED") {
+      throw new Error(
+        `Signer key for ${userId} is ${status.data.state}, so it cannot sign ` +
+          "regardless of passphrase. Re-seed the database " +
+          "(ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed) " +
+          "to reset the e-sign state.",
+      );
+    }
+    // Read-only check that this fixture sealed the key. A stored passphrase is
+    // sealed with scrypt and cannot be read back, so this proves nothing about
+    // it; what it proves is that the account carries a *different* identity
+    // from the one this fixture writes, so the key came from elsewhere and its
+    // passphrase is unknown. State it as unknown, not as wrong — a live key's
+    // identity is frozen, but "not this fixture's key" still does not by itself
+    // make the passphrase differ.
     if (status.data.identity?.legalName !== SIGNER_LEGAL_NAME) {
       throw new Error(
         `Signing key for ${userId} was not enrolled by this fixture ` +
           `(identity is "${status.data.identity?.legalName ?? "unset"}", not ` +
-          `"${SIGNER_LEGAL_NAME}"), so it is not sealed with SIGNER_PASSPHRASE. ` +
-          `Re-seed the database (ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 ` +
-          `pnpm --filter api db:seed) to reset the e-sign state.`,
+          `"${SIGNER_LEGAL_NAME}"), so its passphrase is not known to be ` +
+          `SIGNER_PASSPHRASE. Re-seed the database ` +
+          `(ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed) ` +
+          `to reset the e-sign state.`,
       );
     }
     return { session, userId };
