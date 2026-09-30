@@ -90,13 +90,16 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   checks (`check_docs.py`, `check_env.py`, a self-verifying `build_docs.py`).
   The documents were later flattened from `docs/dokumen-aplikasi/` into `docs/`
   root (source `DOKUMEN-TEKNIS.md`, `PANDUAN-PENGGUNA-*.md`, `EVALUASI-DOKUMEN.md`;
-  generated `fakta/`, `diagrams/`, `alur/` untracked) with `docs/README.md` as
-  the index.
+  generated `fakta/`, `diagrams/`, `alur/`, and the `*.docx`/`*.pdf` artifacts
+  untracked) with `docs/README.md` as the index. The `.docx`/`.pdf` are no longer
+  committed (2026-09-29, user's call): git cannot show a binary's contents, so a
+  tracked copy could not be reviewed against its `.md` source and only added
+  drift risk; `check_docs.py --built` and `build.json` were removed with it.
   The fix commits (`0b6c189`, `0f993b3`) are on the branch (the first push
   attempts were refused with 403 until the Claude GitHub App access was
   restored).
-  Open: T1 verification with screenshots, the other role booklets, and whether
-  the `.docx`/`.pdf` stay in git or become a CI artifact (user's call).
+  Open: T1 verification with screenshots and the other role booklets (the
+  `.docx`/`.pdf`-in-git question is settled: they are untracked).
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),
