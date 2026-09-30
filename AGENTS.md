@@ -258,6 +258,7 @@ its "use when" matches the task.
 | [`panduan-peran`](.claude/skills/panduan-peran/SKILL.md) | who a role is, the menu it sees (printed from code), the menu path a report gives, "can role X do Y", user manuals for staff |
 | [`tata-kelola-yayasan`](.claude/skills/tata-kelola-yayasan/SKILL.md) | yayasan organs, the RPJP → Renstra → RKA chain and its ratification, PK and atasan penilai |
 | [`naskah-dinas`](.claude/skills/naskah-dinas/SKILL.md) | E-Office letters, TTE keys and identity, the signed PDF, verification by upload, revocation |
+| [`dokumen-aplikasi-cipansor`](.claude/skills/dokumen-aplikasi-cipansor/SKILL.md) | technical document (arc42 + C4) or user manual (Diátaxis, per role) for this app — handover, grant/donor/auditor pack, staff training |
 
 The Claude Code hooks, what each one enforces, and why each works the way it
 does are in [`.claude/README.md`](./.claude/README.md). Read it before touching
