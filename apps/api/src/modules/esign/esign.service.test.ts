@@ -59,6 +59,7 @@ vi.mock('../../lib/prisma', () => ({
     },
     letterFlowEvent: { create: vi.fn() },
     letterSignedDocument: { create: vi.fn(), findUnique: vi.fn() },
+    letterUpload: { findUnique: vi.fn() },
     auditLog: { create: vi.fn() },
     user: { findUnique: vi.fn() },
     userIdentity: { findUnique: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), update: vi.fn() },
@@ -70,6 +71,9 @@ vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: emitMock } }));
 vi.mock('@/lib/password', () => ({ comparePassword: compareMock }));
 vi.mock('@/utils/letter-uploaded-file', () => ({
   readUploadedPdfBytes: vi.fn(),
+  uploadFilenameFromUrl: vi.fn((url: string | null | undefined) =>
+    url ? (url.split('/uploads/')[1]?.split(/[?#]/)[0] ?? null) : null
+  ),
 }));
 
 const PASS = 'kalimat-sandi-tanda-tangan-2026';
@@ -850,6 +854,7 @@ describe('menandatangani surat', () => {
       letter({ content: 'Naskah yang disusun penyusun.' }) as any
     );
     vi.mocked(readUploadedPdfBytes).mockResolvedValue(uploadedBytes);
+    vi.mocked(prisma.letterUpload.findUnique).mockResolvedValue({ userId: 'ketua' } as any);
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(
       letter({
         authoringTrack: 'UPLOADED',
@@ -890,6 +895,7 @@ describe('menandatangani surat', () => {
    */
   it('tidak menandatangani naskah UPLOADED bila berkasnya tidak dapat dibaca', async () => {
     vi.mocked(readUploadedPdfBytes).mockRejectedValue(new Error('tidak ada di penyimpanan'));
+    vi.mocked(prisma.letterUpload.findUnique).mockResolvedValue({ userId: 'ketua' } as any);
     vi.mocked(prisma.letter.findUnique).mockResolvedValue(
       letter({
         authoringTrack: 'UPLOADED',
@@ -907,6 +913,56 @@ describe('menandatangani surat', () => {
       /tidak ada di penyimpanan/i
     );
     expect(prisma.letterSignedDocument.create).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Berkas unggahan milik orang lain tidak dapat dijadikan naskah surat ini
+   * (CWE-639).
+   *
+   * `fileUrl` dapat menunjuk URL unggahan siapa pun. Tanpa pemeriksaan
+   * kepemilikan, penanda tangan menandatangani, meng-hash, dan mengarsipkan
+   * berkas milik orang lain sebagai naskahnya sendiri — sebuah akses
+   * lintas-pemilik yang tidak terdeteksi.
+   */
+  it('menolak menandatangani berkas unggahan milik orang lain', async () => {
+    vi.mocked(readUploadedPdfBytes).mockResolvedValue(Buffer.from('%PDF-1.7'));
+    vi.mocked(prisma.letterUpload.findUnique).mockResolvedValue({ userId: 'orang-lain' } as any);
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      letter({
+        authoringTrack: 'UPLOADED',
+        fileUrl: 'https://portal.cipansor.or.id/uploads/milik-orang-lain.pdf',
+      }) as any
+    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
+      /diunggah oleh pihak lain/i
+    );
+    expect(prisma.letterSignature.create).not.toHaveBeenCalled();
+    expect(readUploadedPdfBytes).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Berkas yang kepemilikannya tidak tercatat ditolak, bukan dilewatkan.
+   *
+   * Unggahan yang dibuat sebelum tabel kepemilikan ada tidak dapat dibuktikan
+   * pemiliknya; menebaknya akan mengembalikan celah yang ditutup di sini.
+   */
+  it('menolak menandatangani berkas unggahan yang tidak tercatat pemiliknya', async () => {
+    vi.mocked(readUploadedPdfBytes).mockResolvedValue(Buffer.from('%PDF-1.7'));
+    vi.mocked(prisma.letterUpload.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      letter({
+        authoringTrack: 'UPLOADED',
+        fileUrl: 'https://portal.cipansor.or.id/uploads/tak-tercatat.pdf',
+      }) as any
+    );
+    vi.mocked(prisma.userSigningKey.findUnique).mockResolvedValue(activeKey() as any);
+
+    await expect(EsignService.signLetter('letter-1', 'ketua', PASS)).rejects.toThrow(
+      /tidak tercatat sebagai unggahan/i
+    );
+    expect(prisma.letterSignature.create).not.toHaveBeenCalled();
   });
 });
 
@@ -938,6 +994,10 @@ describe('verifikasi publik', () => {
         publicKey: s.publicKey,
         signature: s.signature,
         signedAt,
+        // Bentuk kanonik yang dipakai saat menandatangani. Verifikasi membacanya
+        // agar tanda tangan lama (v1) tetap sah; tanpa ini fixture ditandatangani
+        // v2 tetapi diverifikasi sebagai v1 dan selalu dinyatakan berubah.
+        canonicalVersion: s.canonicalVersion,
         // Dibiarkan nullable secara eksplisit: beberapa tes mengisi keduanya
         // untuk menguji surat yang dicabut, dan inferensi `null` akan menolaknya.
         revokedAt: null as Date | null,
@@ -1050,6 +1110,7 @@ describe('verifikasi publik', () => {
       return Promise.resolve(null as any);
     }) as unknown as typeof prisma.letterSignature.findUnique);
 
+    vi.mocked(prisma.letterSignature.findFirst).mockResolvedValue(null as never);
     vi.mocked(prisma.letterSignature.findMany).mockResolvedValue([
       {
         verificationToken: 'tok-revoked',

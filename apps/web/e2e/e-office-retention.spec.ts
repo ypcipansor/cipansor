@@ -11,7 +11,7 @@ import { loginAs } from "./helpers/auth-api";
  * sini bukan bahwa kartunya ada, melainkan bahwa halaman benar-benar membaca
  * endpoint retensi dan menawarkan ekspor yang berasal dari endpoint itu —
  * sekaligus bahwa tidak ada tombol yang memusnahkan arsip, sebab pemusnahan
- * menuntut penilaian dan berita acara (Peraturan ANRI 5/2021 Pasal 6).
+ * menuntut penilaian dan berita acara (UU 43/2009 Pasal 51–52 dan PP 28/2012).
  */
 test.describe("E-Office peninjauan retensi", () => {
   test("petugas arsip dapat membuka daftar retensi dari beranda e-office", async ({

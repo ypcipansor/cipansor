@@ -36,7 +36,6 @@ import {
   signPdfHash,
   signRevocation,
   verifyPdfHashSignature,
-  verifySignature,
   type EncryptedKeyMaterial,
   type ScryptParams,
   type SignablePayload,
@@ -46,6 +45,7 @@ import {
 import {
   generateLetterPdfBuffer,
   stampSignatureVisualisation,
+  stampRevoked,
   LetterPdfError,
   LETTER_PDF_GENERATOR,
   LETTER_PDF_RELATIONS,
@@ -53,6 +53,7 @@ import {
 import { verifyLetterByToken } from '@/utils/letter-verification';
 import { matchRevokedCopy } from '@/utils/letter-revoked-copy';
 import { readUploadedPdfBytes } from '@/utils/letter-uploaded-file';
+import { assertLetterUploadOwnedBy } from '@/utils/letter-upload-ownership';
 import { assertLetterAccess, type LetterActor } from '@/utils/letter-access';
 import {
   LetterRevocationRequestStatus,
@@ -1235,6 +1236,54 @@ export const EsignService = {
     await clearFailedAttempts(key!.id);
 
     /**
+     * Catat hash salinan bercap DICABUT (bila arsipnya ada).
+     *
+     * Pencocokan berkas yang diunggah ke halaman verifikasi mencari salinan
+     * bercap; sebelumnya ia membuat ulang cap itu pada setiap permintaan dan
+     * hanya memeriksa 200 tanda tangan tercabut terbaru — begitu pencabutan
+     * melewati 200, salinan resmi yang lebih tua dijawab "tidak terdaftar".
+     * Menyimpan hashnya di sini membuat pencocokan tepat dan tanpa batas.
+     *
+     * Usaha terbaik: arsip yang hilang atau rusak tidak menggagalkan
+     * pencabutan — pencabutan itu sendiri sudah tercatat dan sah. Yang
+     * kehilangan hanyalah pengenalan salinan bercap untuk naskah ini, dan
+     * jalur cadangan (membuat ulang cap, terbatas) masih menanganinya.
+     */
+    try {
+      const archived = await prisma.letterSignedDocument.findUnique({
+        where: { signatureId: updated.id },
+        select: { bytes: true, sha256: true },
+      });
+      if (archived) {
+        const archivedBytes = Buffer.from(archived.bytes);
+        // Arsip yang tidak lagi utuh tidak boleh menjadi dasar cap.
+        if (crypto.createHash('sha256').update(archivedBytes).digest('hex') === archived.sha256) {
+          // Nama pencabut dibaca dari pengguna, bukan dari `actor` — ia dipakai
+          // `stampRevoked` saat mengunduh (`revoked.revokedBy.name`), dan cap
+          // harus keluar byte demi byte sama agar hash-nya cocok.
+          const revoker = await prisma.user.findUnique({
+            where: { id: actor.id },
+            select: { name: true },
+          });
+          const stamped = await stampRevoked(archivedBytes, {
+            reason: trimmed,
+            revokedAt,
+            revokedByName: revoker?.name ?? null,
+          });
+          await prisma.letterSignedDocument.update({
+            where: { signatureId: updated.id },
+            data: {
+              revokedSha256: crypto.createHash('sha256').update(stamped).digest('hex'),
+            },
+          });
+        }
+      }
+    } catch {
+      // Sengaja ditelan: pencabutan sudah sah; ini hanya mempercepat dan
+      // memperluas pengenalan salinan bercap.
+    }
+
+    /**
      * Status surat sengaja tidak diubah.
      *
      * Surat ini memang pernah ditandatangani dan memang pernah beredar;
@@ -1357,6 +1406,22 @@ export const EsignService = {
       representedOffice,
     };
 
+    /**
+     * Berkas naskah `UPLOADED` harus milik rantai surat ini (CWE-639).
+     *
+     * Diperiksa sebelum apa pun ditandatangani atau ditulis: `fileUrl` dapat
+     * menunjuk unggahan milik orang lain, dan yang ditandatangani adalah byte
+     * berkas itu. Yang berhak adalah penyusun (pengunggah naskahnya) dan para
+     * peninjau yang ditugaskan; berkas yang tidak tercatat pemiliknya ditolak,
+     * sebab kepemilikannya tidak dapat dibuktikan.
+     */
+    if (letter.authoringTrack === LetterAuthoringTrack.UPLOADED) {
+      await assertLetterUploadOwnedBy(letter.fileUrl, [
+        letter.createdById,
+        ...letter.reviewers.map((r) => r.reviewerId),
+      ]);
+    }
+
     let signed;
     try {
       signed = signPayload(toMaterial(key!), passphrase, payload);
@@ -1431,6 +1496,7 @@ export const EsignService = {
               // setelahnya, dan nilainya ikut ditandatangani.
               signingAuthorityForm: authorityForm,
               representedOffice,
+              canonicalVersion: signed.canonicalVersion,
             },
           });
 

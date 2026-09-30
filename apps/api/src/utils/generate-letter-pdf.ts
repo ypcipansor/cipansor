@@ -8,9 +8,9 @@ import {
   natureMarking,
   siteConfig,
   signingAuthorityLines,
+  SigningAuthorityForm as SharedSigningAuthorityForm,
   type LetterNature,
   type LetterType,
-  type SigningAuthorityForm as SharedSigningAuthorityForm,
 } from '@cipansor/shared';
 import { LOGO_CIPANSOR_PNG_BASE64 } from '@/assets/logo-cipansor';
 import { letterVerificationUrl } from '@/utils/verification-url';
@@ -632,6 +632,38 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
 
   const rightAlignX = width - 220;
 
+  /**
+   * Garis kewenangan (a.n./u.b./Plt./Plh.), bila naskah ditandatangani dengan
+   * salah satunya.
+   *
+   * Ia **bukan** hiasan: ia menyatakan dari mana wewenang penanda tangan
+   * berasal, dan karena itu ikut ditandatangani (`canonicalPayload`) —
+   * mengubahnya setelah penandatanganan membatalkan tanda tangannya.
+   *
+   * Dihitung **hanya** untuk bentuk selain NONE. Bentuk NONE (bawaan, dan
+   * keadaan hampir semua naskah) mencetak blok yang persis sama seperti
+   * sebelumnya: nama yayasan lalu jabatan pengirim. `signingAuthorityLines`
+   * mengembalikan `[jabatan,]` untuk NONE selama ada `senderTitle`, dan
+   * memakainya di sini akan menghapus nama yayasan dari setiap surat biasa —
+   * karena itu bentuk NONE tidak pernah sampai ke sana.
+   */
+  const authorityForm = (activeSignature?.signingAuthorityForm ?? 'NONE') as unknown as
+    SharedSigningAuthorityForm | undefined;
+  const authorityLines =
+    activeSignature && authorityForm && authorityForm !== SharedSigningAuthorityForm.NONE
+      ? signingAuthorityLines({
+          form: authorityForm,
+          representedOffice: activeSignature.representedOffice,
+          signerOffice: letter.senderTitle,
+        })
+      : [];
+  const printAuthorityLines = () => {
+    for (const line of authorityLines) {
+      cur.text(sanitizeForWinAnsi(line), { x: rightAlignX, font: fontTimes });
+      cur.down();
+    }
+  };
+
   if (isDecree) {
     // A keputusan records where it was *established*, not where a letter was
     // written, so it never closes "Tasikmalaya, <tanggal>" like a surat.
@@ -639,45 +671,24 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
     cur.down();
     cur.text(`Pada tanggal  : ${dateStr}`, { x: rightAlignX, font: fontTimes });
     cur.down();
-    cur.text(DECIDING_OFFICIAL_TITLE_CASE, { x: rightAlignX, font: fontTimes });
-    cur.down();
+    if (authorityLines.length > 0) {
+      printAuthorityLines();
+    } else {
+      cur.text(DECIDING_OFFICIAL_TITLE_CASE, { x: rightAlignX, font: fontTimes });
+      cur.down();
+    }
   } else if (template.addressed) {
     cur.text('Hormat Kami,', { x: rightAlignX, font: fontTimes });
     cur.down();
+    // Surat alamat tidak pernah mencetak nama yayasan; hanya garis
+    // kewenangannya, bila penanda tangan memilih salah satunya.
+    if (authorityLines.length > 0) printAuthorityLines();
   } else {
     cur.text(`${LETTERHEAD.city}, ${dateStr}`, { x: rightAlignX, font: fontTimes });
     cur.down();
 
-    /**
-     * Garis kewenangan (a.n./u.b./Plt./Plh.), bila naskah ditandatangani
-     * dengan salah satunya.
-     *
-     * Tercetak di tempat nama jabatan biasa berdiri, mengikuti susunan
-     * pedoman tata naskah dinas: singkatan di depan nama jabatan yang diwakili,
-     * lalu jabatan penanda tangan. Karena ia menggantikan baris nama
-     * yayasan/jabatan, naskah a.n. tidak mencetak "Yayasan Pesantren Cipansor"
-     * diikuti jabatan dua kali.
-     *
-     * Ia **bukan** hiasan: ia menyatakan dari mana wewenang penanda tangan
-     * berasal, dan karena itu ikut ditandatangani (`canonicalPayload`) —
-     * mengubahnya setelah penandatanganan membatalkan tanda tangannya. Bentuk
-     * NONE (bawaan, dan keadaan hampir semua naskah) mencetak blok yang persis
-     * sama seperti sebelumnya.
-     */
-    const authorityLines = activeSignature
-      ? signingAuthorityLines({
-          form: (activeSignature.signingAuthorityForm ??
-            'NONE') as unknown as SharedSigningAuthorityForm,
-          representedOffice: activeSignature.representedOffice,
-          signerOffice: letter.senderTitle,
-        })
-      : [];
-
     if (authorityLines.length > 0) {
-      for (const line of authorityLines) {
-        cur.text(sanitizeForWinAnsi(line), { x: rightAlignX, font: fontTimes });
-        cur.down();
-      }
+      printAuthorityLines();
     } else {
       cur.text(siteConfig.legalName, { x: rightAlignX, font: fontTimes });
       cur.down();

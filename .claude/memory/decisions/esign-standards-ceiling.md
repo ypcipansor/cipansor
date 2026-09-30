@@ -45,7 +45,8 @@ ketergantungan (pembangun CMS/PKCS#7, sertifikat X.509, plumbing byte-range)
 tanpa menambah nilai bukti — justru TSA itu yang menjawab "apakah kunci masih
 berlaku *saat* ditandatangani", inti semantik pencabutan. Bentuk yang berjalan
 sekarang (Ed25519 *detached* atas hash byte PDF, byte tertandatangan diarsipkan,
-verifikasi lewat unggah) sudah sah menurut UU 43/2009 dan sudah terverifikasi.
+verifikasi lewat unggah) sudah sah menurut UU 11/2008 jo. UU 19/2016 (UU ITE)
+Pasal 11 dan sudah terverifikasi.
 Pemicu untuk membuka kembali: yayasan menetapkan penyedia TSA (BSrE/Privy/VIDA/
 Peruri/Digisign) atau memutuskan sertifikasi PSrE; kapan pun itu terjadi,
 Ed25519 boleh tetap dipakai untuk PAdES — penggantian algoritma adalah pilihan

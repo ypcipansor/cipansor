@@ -10,8 +10,8 @@ export enum LetterDirection {
 /**
  * Derajat kecepatan penyampaian — bukan derajat kerahasiaan.
  *
- * ANRI mengenal empat tingkat. Urutannya dari yang paling mendesak:
- * KILAT (batas 24 jam) → URGENT/Sangat Segera (2 × 24 jam) →
+ * Pedoman tata naskah dinas mengenal empat tingkat. Urutannya dari yang paling
+ * mendesak: KILAT (batas 24 jam) → URGENT/Sangat Segera (2 × 24 jam) →
  * IMMEDIATE/Segera → NORMAL/Biasa. Sebelumnya hanya tiga yang ada, sehingga
  * "Kilat" tergeser menjadi "Segera".
  */
@@ -625,7 +625,7 @@ export type CreateDispositionResponse =
  *
  * Yang dikembalikan adalah **usul**, bukan keputusan: JRA adalah instrumen yang
  * disahkan, dan memusnahkan arsip menuntut penilaian serta berita acara
- * (Peraturan ANRI 5/2021 Pasal 6). Karena itu tidak ada endpoint yang menghapus
+ * (UU 43/2009 Pasal 51–52 dan PP 28/2012). Karena itu tidak ada endpoint yang menghapus
  * naskah; yang ada hanya daftar ini dan ekspornya.
  */
 export interface RetentionDueLetter {

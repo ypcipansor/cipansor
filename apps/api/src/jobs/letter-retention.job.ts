@@ -8,12 +8,14 @@ import { letterScopeWhere, type LetterActor } from '@/utils/letter-access';
  *
  * **Kenapa hanya menghitung, dan bukan memusnahkan.** Jadwal Retensi Arsip
  * (JRA) adalah instrumen yang *disahkan*, bukan angka yang dikarang di kode
- * (Peraturan ANRI 5/2021 tentang Pengelolaan Arsip Dinamis, Pasal 6;
- * Perka ANRI 7/2016 tentang Sistem Klasifikasi Keamanan dan Akses Arsip
- * Dinamis). Nilai `FilingClassification.retention` yang ada di basis data pun
- * disalin dari JRA induk sektor; ia memberi *usul*, sedangkan keputusan
- * memusnahkan arsip harus melalui penilaian dan berita acara. Karena itu
- * pekerjaan ini menghasilkan daftar usul dan mencatatnya, dan tidak pernah
+ * (UU 43/2009 tentang Kearsipan Pasal 48 — JRA ditetapkan pimpinan pencipta
+ * arsip; Pasal 51–52 — pemusnahan hanya setelah habis retensi, wajib melalui
+ * prosedur yang benar, dan dilarang tanpa prosedur; PP 28/2012 sebagai aturan
+ * pelaksanaannya; Perka ANRI 7/2016 tentang Sistem Klasifikasi Keamanan dan
+ * Akses Arsip Dinamis). Nilai `FilingClassification.retention` yang ada di
+ * basis data pun disalin dari JRA induk sektor; ia memberi *usul*, sedangkan
+ * keputusan memusnahkan arsip harus melalui penilaian dan berita acara. Karena
+ * itu pekerjaan ini menghasilkan daftar usul dan mencatatnya, dan tidak pernah
  * menghapus naskah yang sudah ditandatangani — berkas yang buktinya justru
  * dipertahankan.
  *

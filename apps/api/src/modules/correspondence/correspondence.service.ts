@@ -1074,7 +1074,7 @@ export const CorrespondenceService = {
    * perintah CLI; seorang petugas arsip tidak punya layar untuk melihatnya, dan
    * laporan yang tak terbaca tidak mengubah kepatuhan apa pun. Rute ini
    * memberikan permukaannya, tanpa menambah kemampuan menghapus: memusnahkan
-   * arsip menuntut penilaian dan berita acara (Peraturan ANRI 5/2021 Pasal 6),
+   * arsip menuntut penilaian dan berita acara (UU 43/2009 Pasal 51–52 dan PP 28/2012),
    * jadi yang disediakan hanyalah daftar dan ekspornya.
    *
    * Cakupannya dijaga `reviewLetterRetentionForActor`; rutenya menjaga bahwa

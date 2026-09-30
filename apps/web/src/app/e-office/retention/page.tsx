@@ -37,7 +37,7 @@ import { safeFormat } from "@/lib/date";
  *
  * **Tidak ada tombol musnah, dan itu disengaja.** Memusnahkan arsip bukan
  * pekerjaan satu klik: JRA adalah instrumen yang disahkan, dan pemusnahan
- * menuntut penilaian serta berita acara (Peraturan ANRI 5/2021 Pasal 6). Yang
+ * menuntut penilaian serta berita acara (UU 43/2009 Pasal 51–52 dan PP 28/2012). Yang
  * disediakan halaman ini adalah daftar usul dan ekspornya untuk dibawa ke
  * rapat penilaian — keputusan tetap di tangan manusia.
  *

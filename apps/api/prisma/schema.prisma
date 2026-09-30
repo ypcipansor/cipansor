@@ -499,6 +499,7 @@ model User {
   revocationDecisions  LetterRevocationRequest[] @relation("LetterRevocationDecider")
   letterDispatches     LetterDispatch[]  @relation("LetterDispatcher")
   letterAttachments    LetterAttachment[] @relation("LetterAttachmentUploader")
+  letterUploads        LetterUpload[]   @relation("LetterUploader")
 
   // Risk Management
   createdRisks        Risk[]             @relation("RiskCreator")
@@ -7327,14 +7328,17 @@ enum LetterDirection {
 
 /// Derajat kecepatan penyampaian naskah — bukan derajat kerahasiaan.
 ///
-/// ANRI mengenal empat (Peraturan ANRI 5/2021 dan pedoman tata naskah dinas
-/// instansi): **Kilat** (hari yang sama / 24 jam), **Segera** (2 × 24 jam),
-/// **Biasa** (urut jadwal kurir), dan sejumlah instansi menyisipkan satu tingkat
-/// lagi sehingga menjadi Kilat, Sangat Segera, Segera, Biasa. Skema ini dulu
-/// hanya menyimpan tiga, sehingga naskah "Kilat" — yang tenggatnya paling ketat
-/// — terpaksa dicatat sebagai "Segera" dan tenggatnya bergeser satu tingkat.
-/// `KILAT` ditambahkan agar tiap derajat punya wadahnya sendiri; nilai lama
-/// tidak diubah namanya supaya baris yang sudah ada tetap sah.
+/// Pedoman tata naskah dinas instansi mengenal **tiga**: **Amat Segera/Kilat**
+/// (hari yang sama, batas 24 jam), **Segera** (2 × 24 jam), dan **Biasa** (urut
+/// jadwal kurir). Sejumlah instansi menyisipkan satu tingkat lagi sehingga
+/// menjadi Kilat, Sangat Segera, Segera, Biasa. (Peraturan ANRI 5/2021 tentang
+/// Pedoman Umum Tata Naskah Dinas mengatur jenis dan pengendalian naskah, bukan
+/// daftar derajat kecepatan; daftar itu berasal dari pedoman tata naskah dinas
+/// instansi.) Skema ini dulu hanya menyimpan tiga, sehingga naskah "Kilat" —
+/// yang tenggatnya paling ketat — terpaksa dicatat sebagai "Segera" dan
+/// tenggatnya bergeser satu tingkat. `KILAT` ditambahkan agar tiap derajat
+/// punya wadahnya sendiri; nilai lama tidak diubah namanya supaya baris yang
+/// sudah ada tetap sah.
 enum LetterUrgency {
   KILAT // Kilat — batas waktu 24 jam
   URGENT // Sangat Segera — batas waktu 2 x 24 jam
@@ -7803,6 +7807,15 @@ model LetterSignature {
   /// Dicetak pada naskah di depan singkatan garis kewenangannya.
   representedOffice String? @map("represented_office")
 
+  /// Versi bentuk kanonik yang ditandatangani (`canonicalPayload`).
+  ///
+  /// `1` berakhir pada `signedAt`; `2` menambahkan garis kewenangan. Verifikasi
+  /// wajib memakai versi ini, bukan bentuk terkini: sebuah tanda tangan lama
+  /// dibuat atas byte `v1`, dan merekonstruksinya dengan `v2` menolak tanda
+  /// tangan yang sah. NULL berarti baris dibuat sebelum kolom ini ada — yaitu
+  /// `v1`, satu-satunya bentuk saat itu.
+  canonicalVersion Int? @map("canonical_version")
+
   /// Pencabutan tidak menghapus baris: surat yang pernah beredar harus tetap
   /// dapat dijelaskan statusnya kepada yang memindai QR-nya.
   revokedAt         DateTime? @map("revoked_at")
@@ -7870,6 +7883,20 @@ model LetterSignedDocument {
   /// Naskah lama yang byte-nya tidak lagi dapat dibuat ulang tetap dapat
   /// dijelaskan: build inilah yang membuatnya.
   generator String
+
+  /// Hash salinan **bercap DICABUT** dari byte di atas.
+  ///
+  /// Diisi saat naskah dicabut, supaya salinan bercap yang diunduh penerimanya
+  /// dapat dikenali kembali tanpa menghitung ulang capnya. Sebelum ini
+  /// pengenalan salinan bercap bekerja dengan membuat ulang cap pada setiap
+  /// permintaan, dibatasi 200 tanda tangan tercabut terbaru — sehingga begitu
+  /// pencabutan melewati 200, salinan resmi yang lebih tua dijawab "tidak
+  /// terdaftar". Kolom ini membuat pencarian tepat dan tanpa batas: berkas yang
+  /// diunggah dicocokkan langsung pada hash-nya.
+  ///
+  /// NULL untuk pencabutan yang tercatat sebelum kolom ini ada; jalur cadangan
+  /// (membuat ulang cap, terbatas) menanganinya.
+  revokedSha256 String? @map("revoked_sha256")
 
   archivedAt DateTime @default(now()) @map("archived_at")
 
@@ -8114,6 +8141,33 @@ model LetterAttachment {
 
   @@index([letterId, order])
   @@map("letter_attachments")
+}
+
+/// Catatan pemilik sebuah berkas unggahan.
+///
+/// `Letter.fileUrl` menyimpan URL berkas naskah yang diunggah penyusunnya. URL
+/// itu dapat disalin: seorang penyusun yang mengetahui URL unggahan orang lain
+/// dapat menempelkannya sebagai `fileUrl` suratnya, lalu menandatangani dan
+/// mengarsipkan berkas milik orang lain sebagai naskahnya sendiri — akses
+/// lintas-pemilik yang tidak terdeteksi, sebab pembaca byte tidak memeriksa
+/// siapa pemilik berkasnya.
+///
+/// Baris ini menutupnya: setiap unggahan yang sah mencatat pemiliknya, dan
+/// penandatanganan menolak berkas yang bukan milik penanda tangan. Ia adalah
+/// *indeks kepemilikan* — sesuatu yang sengaja tidak dimiliki `/uploads` saat
+/// penyajian berkas (lihat `uploadsAuth`), tetapi wajib ada di sini karena
+/// jalur ini menandatangani berkas sebagai naskah resmi.
+model LetterUpload {
+  id       String @id @default(uuid())
+  /// Nama berkas tersimpan (`randomUUID` + ekstensi), bukan URL penuh.
+  filename String @unique
+  userId   String @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation("LetterUploader", fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("letter_uploads")
 }
 
 /// Cara sebuah naskah keluar dari kantor.

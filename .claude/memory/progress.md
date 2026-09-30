@@ -131,6 +131,47 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   against; the listener now registers first). Both were pre-existing, neither a
   regression from the access-control change.
 
+  **Third pass, 2026-09-29 — the signature's own invariants and the citations.**
+  Walking the a.n./u.b./Plt./Plh. payload change to its end turned up four
+  things a diff review would not:
+
+  - **`canonicalVersion`.** Adding the authority fields extended the signed
+    payload, so every letter signed *before* the change would have been
+    reported as forged (a `v1` signature checked against the `v2` shape). The
+    payload is now versioned (`canonicalPayload(payload, version)`,
+    `CURRENT_CANONICAL_VERSION`, `LetterSignature.canonicalVersion`,
+    `canonicalVersionOf` mapping the pre-column `NULL` rows to `v1`), and
+    verification reads the stored version rather than guessing.
+  - **Upload ownership (CWE-639).** The `UPLOADED` signing path read
+    `Letter.fileUrl` and signed those bytes without asking who uploaded them —
+    so a drafter could paste another user's upload URL and have the system
+    sign and archive *someone else's document* as their own naskah. `LetterUpload`
+    records `filename → userId` at upload, and `assertLetterUploadOwnedBy`
+    refuses a file whose owner is not in the letter's chain; a file with no
+    ownership row is refused, not waved through.
+  - **A revoked download answered with the forgery sentence.** `stampRevoked`
+    changes the bytes, so the system's own post-revocation download no longer
+    matched `pdfHash` and `verifyByPdfBuffer` called it "tidak terdaftar". The
+    stamped copy's hash is now stored on the archive at revocation time
+    (`LetterSignedDocument.revokedSha256`) and matched exactly — replacing a
+    bounded (200-row) recompute that silently stopped recognising older official
+    copies.
+  - **A retention guard that actually guards.** The user's hard constraint is
+    that retention lists, never destroys; `letter-retention.no-destroy.guard.test.ts`
+    now checks the job, its CLI *and* the whole API tree for any `delete`/
+    `deleteMany`/raw SQL `DELETE` of `Letter`/`LetterSignature`.
+
+  **Citations corrected at the source.** Five files cited "Peraturan ANRI
+  5/2021 Pasal 6" for the destruction rule; that regulation is *Pedoman Umum
+  Tata Naskah Dinas* and its Pasal 6 is about types of regulatory naskah —
+  nothing to do with retention. The destruction rule is **UU 43/2009 Pasal
+  51–52 jo. PP 28/2012**. Two more attributions were wrong the same way:
+  signature validity cited UU 43/2009 (Kearsipan) instead of **UU 11/2008 jo.
+  UU 19/2016 (UU ITE) Pasal 11**, and the urgency degrees were credited to
+  Peraturan ANRI 5/2021 rather than the instansi tata-naskah pedoman. All fixed
+  in `docs/EOFFICE_ESIGN_PLAN.md` (§2.9–§2.13, §4.3), the `naskah-dinas` skill,
+  `decisions/esign-standards-ceiling.md` and the source comments.
+
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),

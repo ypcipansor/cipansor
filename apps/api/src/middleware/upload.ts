@@ -6,6 +6,7 @@ import { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@/lib/jwt';
 import { tokenFromRequest } from './auth';
 import { Errors } from './error';
+import { prisma } from '@/lib/prisma';
 
 // Ensure upload directory exists
 const uploadDir = path.join(process.cwd(), 'public/uploads');
@@ -210,6 +211,31 @@ export const handleSingleUpload = (fieldName: string) => {
                 message: 'File content does not match its declared type',
               },
             });
+          }
+
+          /**
+           * Catat pemilik berkas ini (CWE-639).
+           *
+           * Sebuah URL unggahan dapat disalin dan dipakai sebagai `fileUrl`
+           * surat orang lain, lalu ditandatangani sebagai naskah penanda
+           * tangan. Baris ini memberi penandatanganan sesuatu untuk diperiksa.
+           * Tanpa `req.user` (mis. unggahan anonim) tidak ada yang dicatat —
+           * dan berkas tanpa catatan akan ditolak saat ditandatangani, bukan
+           * diterima diam-diam.
+           */
+          if (req.user?.id) {
+            try {
+              await prisma.letterUpload.upsert({
+                where: { filename: req.file.filename },
+                create: { filename: req.file.filename, userId: req.user.id },
+                update: {},
+              });
+            } catch (e) {
+              // Pencatatan gagal bukan alasan menolak unggahan; berkasnya tetap
+              // berguna. Yang penting adalah berkas tanpa catatan kelak ditolak
+              // saat hendak ditandatangani, bukan diterima tanpa pemeriksaan.
+              console.error('[upload] gagal mencatat kepemilikan berkas:', e);
+            }
           }
 
           // Construct public URL

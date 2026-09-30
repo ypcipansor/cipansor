@@ -192,8 +192,11 @@ The flow is otherwise strong (§3.2). These are the gaps:
 
 | e | ✅ *Fixed after PR-4.* **A letter cannot be edited after it is created** | Found while building PR-4, not fixed by it. There is no `PATCH /letters/:id` — the only `router.patch` in the module is `/dispositions/:id/status`, and `UpdateLetterInput` is a DTO with no endpoint behind it. So the flow PR-2 completed has no middle step: a reviewer returns a draft, the page says *"Surat dikembalikan untuk diperbaiki"*, and the author's only available move is to resubmit the identical text. It also means lampiran and tembusan can only be attached at creation. Fixing it is a surface of its own — an edit form, a rule for which statuses and which fields are editable by whom, and re-clearing every paraf on save, since a paraf approves a specific text. |
 
-**Minor:** urgency has three levels (`NORMAL`/`IMMEDIATE`/`URGENT`); the common
-ANRI set is four, adding **Kilat**.
+**Minor:** urgency had three levels (`NORMAL`/`IMMEDIATE`/`URGENT`); the
+pedoman tata naskah dinas recognises **Amat Segera/Kilat** (24 jam), **Segera**
+(2 × 24 jam) and **Biasa**, with several instances using a fourth — Kilat,
+Sangat Segera, Segera, Biasa. `KILAT` was added so the tightest degree has its
+own value.
 
 ### 2.8 Access control — a cross-unit service role read the whole letter book
 
@@ -229,6 +232,141 @@ kewenangannya* — access follows the task, not the org chart. It is also why th
 `RESTRICTED_NATURES` exclusion exists at all; without the unit boundary, the
 exclusion only stopped the classification a role had no business seeing, not the
 letter book itself.
+
+### 2.9 `canonicalVersion` — a signature must be verified by the rule it was made under
+
+Found on the round-2 follow-up, and it is the reason the signing-authority forms
+of §2.7(c) could not be added safely.
+
+`canonicalPayload` builds the exact bytes a signature is computed over. Adding
+the a.n./u.b./Plt./Plh. fields extended that payload — so a letter signed
+*before* the change was signed over `v1` bytes, and reconstructing those bytes
+with the new `v2` shape (two more newline-separated fields, even when empty)
+produces a **different message**, which the correct key then rejects. Every
+signature made before the authority feature would have been reported as forged
+the moment the feature shipped.
+
+The fix is versioning, not a flag day: `canonicalPayload(payload, version)`
+keeps `v1` and `v2` side by side, `CURRENT_CANONICAL_VERSION` is what signing
+uses, `LetterSignature.canonicalVersion` stores which rule was used, and
+`canonicalVersionOf(stored)` maps the pre-column `NULL` rows to `v1` — the only
+shape that existed when they were made. Verification reads the stored version
+and never guesses. Migration `20260929160000_letter_signature_canonical_version`.
+
+Pinned by `esign.test.ts` (a `v1` payload and a `v2` payload differ; a `v1`
+signature verifies only under `v1`) and by `letter-verification.ts` reading the
+column on the public path.
+
+### 2.10 An uploaded naskah could be someone else's file (CWE-639)
+
+Found on the round-2 follow-up while tracing what the signing path actually
+reads.
+
+For an `UPLOADED` letter (§5b(a)) the signing path reads the drafter's file
+bytes and signs them. It read `Letter.fileUrl` and handed the bytes to the
+signer — but `fileUrl` is a URL, and a URL can be copied. A drafter who knew (or
+guessed) another user's upload URL could paste it as their own `fileUrl`, and
+the system would sign, hash and archive **someone else's document** as that
+drafter's naskah. `readUploadedPdfBytes` only proves the file exists and is a
+PDF; it has no idea who uploaded it, and `/uploads` is served by `uploadsAuth`,
+which is authentication rather than authorisation (§5b(a), and the same
+`/uploads` gap the KTP discussion turns on).
+
+`LetterUpload` is the ownership index the upload endpoint never had: every
+authenticated upload records `filename → userId`, and `assertLetterUploadOwnedBy`
+refuses a file whose owner is not in the letter's own chain (drafter and
+assigned reviewers — the people who may legitimately supply a letter's bytes).
+A file with no ownership row is **refused**, not waved through: uploads made
+before the table existed cannot be proven anyone's, and guessing re-opens the
+hole. The drafter re-uploads. Migration `20260929170000_letter_upload_ownership`.
+
+### 2.11 A revoked download was answered with the forgery sentence
+
+The row in §PR-2 claimed "copies already in circulation still verify" — true —
+and implied the system's own post-revocation download would too. It did not.
+
+`stampRevoked` marks a download of a withdrawn naskah with `DICABUT`; that
+changes the bytes, so their hash no longer equals the signed `pdfHash`, and
+`verifyByPdfBuffer` — which looks an upload up **by** that hash — answered the
+system's own stamped copy with the sentence a forgery gets. The sentence the
+plan predicted is exactly the one it received.
+
+`utils/letter-revoked-copy.ts` closes it, and the second version changed how.
+The first recomputed the stamp on every request against the 200 most recent
+revocations — two costs: `stampRevoked` on every upload, and, worse, once
+revocations passed 200 an older official copy was answered "tidak terdaftar".
+Now `LetterSignedDocument.revokedSha256` stores the stamped copy's hash when the
+revocation is recorded, so the match is one exact, unbounded comparison; rows
+without it (older revocations) fall back to the bounded recompute, exactly as
+before, so nothing stops being recognised. Nothing in the uploaded file is
+trusted: a hand-stamped "DICABUT" recomputes to a different hash and still gets
+the forgery sentence. Migration
+`20260929180000_letter_signed_document_revoked_hash`.
+
+### 2.12 The retention job must never destroy — a guard, not a promise
+
+The user's hard constraint is that retention **lists and warns, it never
+deletes**. The reasoning is in §2.13; the enforcement is a test.
+
+`letter-retention.no-destroy.guard.test.ts` reads the retention job and its CLI
+and fails if either grows a Prisma `delete`/`deleteMany`/`drop`/`truncate`, a
+raw `$executeRaw`/`$queryRaw` carrying `DELETE FROM` / `DROP TABLE` / `TRUNCATE`,
+or a `DISPOSED`/`destroyed` write. It also walks the whole API source and fails
+if any non-test module deletes a `Letter` or `LetterSignature` — so "the system
+never destroys a naskah" is checked across the tree, not only in the retention
+job. The job already only reads and proposes, but a future edit that "cleans up"
+past-retention rows would silently turn a review tool into a shredder — and the
+deletion would be of archive records, which **UU 43/2009 Pasal 51–52** and its
+implementing **PP 28/2012** require a lawful procedure and a berita acara for.
+The guard makes that an error rather than a review comment.
+
+### 2.13 Why retention stops at a list — what the regulations actually require
+
+The constraint was the user's, and the sources agree with it, so it is recorded
+rather than assumed.
+
+- **UU 43/2009 Pasal 51–52** is the operative rule: pemusnahan is allowed only
+  for archives that *tidak memiliki nilai guna* **and** *telah habis retensinya
+  dan berketerangan dimusnahkan berdasarkan JRA* **and** are not barred by other
+  law **and** are not tied to a pending case; it "wajib dilaksanakan sesuai
+  dengan prosedur yang benar", and Pasal 52(1) forbids destroying archives
+  *without* the correct procedure. The procedure — panitia penilai, an
+  assessment, the berita acara — is set by **PP 28/2012** (Pasal 55 delegates
+  it there). A scheduled job cannot produce a berita acara, and a retention date
+  passing is not the same event as a retention date being *assessed*.
+- **Peraturan ANRI 5/2021** is *Pedoman Umum Tata Naskah Dinas* — it governs
+  how a naskah dinas is written, secured and controlled, **not** how an archive
+  is destroyed. It is the source for the classification levels the system
+  already models (Pasal 104: sangat rahasia / rahasia / terbatas / biasa) and
+  for the *pengendalian naskah dinas keluar* the dispatch feature fills in
+  (Pasal 132–138: registration, a buku agenda/kartu kendali carrying at least
+  nomor urut, tanggal pengiriman, tanggal dan nomor naskah, tujuan, isi ringkas,
+  keterangan; and, for the electronic application, "fitur pencatatan riwayat,
+  pengiriman dan penyimpanan").
+- **Perka ANRI 7/2016** is the same posture for the *access* side: an archive's
+  classification decides who may see it, and Pasal 5(d) — *setiap pegawai hanya
+  dapat mengakses arsip yang berada pada tanggung jawab tugas dan
+  kewenangannya* — is the rule §2.8 restores.
+
+So the job (`letter-retention.job.ts`, `db:retention-review`, Mon 05:00 WIB) and
+the screen (`/e-office/retention`) answer exactly one question — **which naskah
+are past their JRA-derived retention** — and hand it to the people who may act
+on it. There is no destroy button on the page, deliberately; the page's own
+comment says why. The one action is an export for the assessment meeting.
+
+Two things the *code* must not do, and the guard in §2.12 enforces: delete a
+row, or write a `DISPOSED`/`destroyed` state. Disposition is a human decision
+with a berita acara behind it; the system's job ends at "here is the list".
+
+> **Citation corrected 2026-09-29.** This section and six source files cited
+> "Peraturan ANRI 5/2021 Pasal 6" for the destruction rule. Both halves were
+> wrong: **Peraturan ANRI 5/2021 is Pedoman Umum Tata Naskah Dinas**, and its
+> **Pasal 6** lists the types of *Naskah Dinas pengaturan* (peraturan,
+> instruksi, surat edaran, SOP) — nothing to do with retention. The destruction
+> rule is **UU 43/2009 Pasal 51–52 jo. PP 28/2012**. The citations were
+> corrected at the source (`letter-retention.job.ts`,
+> `letter-retention.no-destroy.guard.test.ts`, `correspondence.service.ts`,
+> `letter-access.ts`, the shared DTO, the retention page and its e2e spec).
 
 ---
 
@@ -598,8 +736,9 @@ signature adds dependencies (a CMS/PKCS#7 builder, an X.509 certificate, the
 byte-range plumbing) but no evidential value, because it is the timestamp that
 answers "was the key valid *at the time of signing*", the whole point of
 revocation semantics. The current form (detached Ed25519 over the PDF byte
-hash, signed bytes archived, verification by upload) is valid under UU 43/2009
-and proven end to end. Revisit when the yayasan picks a TSA provider
+hash, signed bytes archived, verification by upload) is valid under **UU 11/2008
+jo. UU 19/2016 (UU ITE) Pasal 11** and proven end to end. Revisit when the
+yayasan picks a TSA provider
 (BSrE/Privy/VIDA/Peruri/Digisign) or decides on PSrE certification — and then
 Ed25519 may stay, since the algorithm swap is an Acrobat interoperability
 choice, not a PAdES requirement. See

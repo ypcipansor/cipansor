@@ -75,12 +75,12 @@ export const LETTER_NATURE_LABELS: Record<LetterNature, string> = {
  * bahasa Inggris. Pada naskah dinas, derajat kecepatan menentukan tenggat
  * penyampaian; menggesernya satu tingkat bukan soal gaya bahasa.
  *
- * ANRI mengenal empat derajat — Kilat, Sangat Segera, Segera, Biasa — dan
- * keempatnya kini tersedia. Sebelumnya hanya tiga yang ada, sehingga "Kilat"
- * (tenggat 24 jam) terpaksa dicatat sebagai "Segera" dan tenggatnya bergeser
- * satu tingkat. Istilah lama tidak diubah namanya agar data yang sudah ada
- * tetap sah; yang berubah hanya arti URGENT dari "Amat Segera" menjadi
- * "Sangat Segera" — keduanya sinonim dalam pedoman tata naskah dinas.
+ * Pedoman tata naskah dinas mengenal empat derajat — Kilat, Sangat Segera,
+ * Segera, Biasa — dan keempatnya kini tersedia. Sebelumnya hanya tiga yang ada,
+ * sehingga "Kilat" (tenggat 24 jam) terpaksa dicatat sebagai "Segera" dan
+ * tenggatnya bergeser satu tingkat. Istilah lama tidak diubah namanya agar data
+ * yang sudah ada tetap sah; yang berubah hanya arti URGENT dari "Amat Segera"
+ * menjadi "Sangat Segera" — keduanya sinonim dalam pedoman tata naskah dinas.
  */
 export const LETTER_URGENCY_LABELS: Record<LetterUrgency, string> = {
   [LetterUrgency.KILAT]: "Kilat",

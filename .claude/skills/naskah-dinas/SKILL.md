@@ -104,6 +104,47 @@ dicatat ─disposisi─► DISPOSED ─► ARCHIVED
   #454).
 - **Tidak ada NIP** di blok tanda tangan maupun di halaman verifikasi
   (diputuskan 2026-09-03).
+- **Jalur `UPLOADED`** (penyusun mengekspor PDF sendiri lalu mengunggahnya):
+  yang ditandatangani adalah byte unggahan itu, dengan visualisasi TTE
+  dicap di atasnya — bukan render ulang sistem. Berkas yang diunggah harus
+  **tercatat milik rantai surat itu** (`LetterUpload`, CWE-639); berkas tanpa
+  catatan pemilik ditolak, sebab kepemilikannya tidak dapat dibuktikan.
+  Jalur penyusunan (`GENERATED`/`UPLOADED`) ikut ditampilkan di halaman
+  verifikasi, karena jaminannya berbeda.
+
+## Bentuk kanonik dan versinya
+
+`canonicalPayload` adalah **byte yang ditandatangani**. Ia pernah berubah —
+garis kewenangan (a.n./u.b./Plt./Plh.) menambah dua ruas — sehingga
+`canonicalPayload(payload, version)` menyimpan `v1` dan `v2` berdampingan.
+`LetterSignature.canonicalVersion` mencatat versi yang dipakai; baris lama
+bernilai `NULL` dan diperlakukan sebagai `v1` (`canonicalVersionOf`). Verifikasi
+**wajib** memakai versi tersimpan, bukan bentuk terkini: memverifikasi tanda
+tangan `v1` dengan aturan `v2` menolaknya sebagai berubah. Menambah ruas baru
+pada payload berarti menaikkan `CURRENT_CANONICAL_VERSION`, bukan menyunting
+`v1`.
+
+## Retensi — mendaftar, tidak pernah memusnahkan
+
+- **Jadwal Retensi Arsip** disalin dari JRA ke `FilingClassification.retention`
+  (tahun). Pekerjaan mingguan (`letter-retention.job.ts`, Senin 05:00 WIB) dan
+  perintah `pnpm --filter api db:retention-review` menghitung naskah yang
+  melewati masa retensinya, dan **hanya itu**.
+- **Tidak ada tombol musnah, dan itu batas keras.** Pemusnahan arsip menuntut
+  prosedur yang benar dan berita acara (UU 43/2009 Pasal 51–52 jo. PP 28/2012),
+  bukan pekerjaan terjadwal. Penjaganya bukan sekadar niat:
+  `letter-retention.no-destroy.guard.test.ts` menolak `delete`/`deleteMany`/
+  SQL `DELETE` di pekerjaan/CLI retensi, dan menolak modul non-uji mana pun yang
+  menghapus `Letter`/`LetterSignature`. Halaman `/e-office/retention` menyajikan
+  daftar usul dan ekspornya untuk rapat penilaian.
+- Daftarnya dibatasi cakupan akses (`letterScopeWhere`): TU satu sekolah tidak
+  melihat perihal naskah Rahasia unit lain.
+- **Naskah yang dicabut tetap dikenali saat diunggah.** Salinan bercap DICABUT
+  byte-nya berbeda dari `pdfHash`, jadi `verifyByPdfBuffer` mencocokkannya lewat
+  `revokedSha256` yang disimpan pada arsip saat pencabutan dicatat
+  (`utils/letter-revoked-copy.ts`), lalu meneruskannya ke `verifyByToken` agar
+  jawabannya "dicabut", bukan "tidak terdaftar". Cap karangan siapa pun tetap
+  dijawab "tidak terdaftar", sebab yang dipercaya hash-nya, bukan teksnya.
 
 ## Verifikasi publik — unggah PDF, bukan QR
 
@@ -120,6 +161,12 @@ dicatat ─disposisi─► DISPOSED ─► ARCHIVED
 - Naskah yang dicabut tetap terverifikasi sebagai *ditemukan, utuh, dicabut*.
   Pencabutannya **dibuktikan** secara kriptografis (`revocationVerified`),
   bukan sekadar dipercaya.
+- **Status kunci** (`/public/verify-key`, `GET /esign/public/key-status?fingerprint=…`)
+  menjawab apakah **kunci** yang menandatangani masih berlaku (aktif /
+  kedaluwarsa / dicabut, dengan kode sebab RFC 5280) dari sidik jari SPKI-DER
+  yang tercetak di setiap halaman verifikasi. Ia **tentang kunci, bukan
+  dokumen** — sehingga tidak dapat menjadi oracle token yang dihapus §1
+  rencana. Ini menutup AATL ICA7.
 
 ## Pencabutan naskah
 

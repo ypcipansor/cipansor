@@ -1,5 +1,10 @@
 import { prisma } from '@/lib/prisma';
-import { publicKeyFingerprint, verifyRevocation, verifySignature } from '@/utils/esign';
+import {
+  canonicalVersionOf,
+  publicKeyFingerprint,
+  verifyRevocation,
+  verifySignature,
+} from '@/utils/esign';
 
 export async function verifyLetterByToken(token: string) {
   const signature = await prisma.letterSignature.findUnique({
@@ -27,6 +32,13 @@ export async function verifyLetterByToken(token: string) {
        */
       signingAuthorityForm: true,
       representedOffice: true,
+      /**
+       * Bentuk kanonik yang dipakai saat menandatangani. Wajib dibaca: sebuah
+       * tanda tangan lama dibuat atas byte `v1` (tanpa ruas garis kewenangan),
+       * dan memverifikasinya dengan `v2` menolak tanda tangan yang sah. Baris
+       * yang belum memilikinya berarti `v1`.
+       */
+      canonicalVersion: true,
       /**
        * Nama dan jabatan saja — NIP tidak diambil, apalagi dikirim.
        *
@@ -67,20 +79,25 @@ export async function verifyLetterByToken(token: string) {
   }
 
   const l = signature.letter;
-  const intact = verifySignature(signature.publicKey, signature.signature, {
-    letterId: l.id,
-    letterNumber: l.letterNumber,
-    date: l.date,
-    type: l.type,
-    nature: l.nature,
-    subject: l.subject,
-    content: l.content,
-    unitId: l.unitId,
-    signerId: signature.signerId,
-    signedAt: signature.signedAt,
-    signingAuthorityForm: signature.signingAuthorityForm,
-    representedOffice: signature.representedOffice,
-  });
+  const intact = verifySignature(
+    signature.publicKey,
+    signature.signature,
+    {
+      letterId: l.id,
+      letterNumber: l.letterNumber,
+      date: l.date,
+      type: l.type,
+      nature: l.nature,
+      subject: l.subject,
+      content: l.content,
+      unitId: l.unitId,
+      signerId: signature.signerId,
+      signedAt: signature.signedAt,
+      signingAuthorityForm: signature.signingAuthorityForm,
+      representedOffice: signature.representedOffice,
+    },
+    canonicalVersionOf(signature.canonicalVersion)
+  );
 
   const isPublicNature = l.nature === 'PUBLIC';
   const isValid = intact && !signature.revokedAt;

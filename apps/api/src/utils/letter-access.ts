@@ -56,10 +56,10 @@ export function handlesUnitCorrespondence(actor: LetterActor): boolean {
 /**
  * Klasifikasi yang menuntut akses lebih ketat daripada akses biasa sebuah
  * unit. Inilah yang SKKAAD maksud dengan *"semakin tinggi tingkat klasifikasi
- * informasinya, semakin ketat pula pengaturan aksesnya"* (Peraturan ANRI
- * 5/2021; Perka ANRI 7/2016 Pasal 5). Untuk klasifikasi ini, akses tidak lagi
- * diberikan karena "satu unit", melainkan karena benar-benar ada di dalam
- * rantai naskahnya.
+ * informasinya, semakin ketat pula dalam pengaturan aksesnya"* (Perka ANRI
+ * 7/2016 Pasal 5 huruf c; rumusan yang sama diulang Peraturan ANRI 5/2021
+ * Pasal 106). Untuk klasifikasi ini, akses tidak lagi diberikan karena "satu
+ * unit", melainkan karena benar-benar ada di dalam rantai naskahnya.
  */
 const RESTRICTED_NATURES: LetterNature[] = [
   LetterNature.CONFIDENTIAL,
@@ -170,11 +170,22 @@ export function letterScopeWhere(actor: LetterActor): Prisma.LetterWhereInput {
 
   if (handlesUnitCorrespondence(actor) && actor.unitId) {
     // The office sees its whole unit's letter book — but a classified item in
-    // it only if it is genuinely inside that letter's chain.
+    // it only if it is genuinely inside that letter's chain. A letter assigned
+    // to this actor from *another* unit (a disposition or a review) must also
+    // appear: `assertLetterAccess` already opens its direct URL, so leaving it
+    // out of the list made the two disagree — the row was reachable by URL but
+    // absent from the book, and the CSV matched the list. Composed as
+    // "(own-unit AND not-restricted) OR in-chain": a classified letter outside
+    // the chain stays hidden.
     return {
-      AND: [
-        { unitId: actor.unitId },
-        { OR: [notRestricted, chainWhere(actor, { includeCc: false })] },
+      OR: [
+        {
+          AND: [
+            { unitId: actor.unitId },
+            { OR: [notRestricted, chainWhere(actor, { includeCc: false })] },
+          ],
+        },
+        chainWhere(actor, { includeCc: false }),
       ],
     };
   }

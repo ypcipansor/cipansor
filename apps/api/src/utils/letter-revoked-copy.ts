@@ -13,27 +13,28 @@ import { stampRevoked } from '@/utils/generate-letter-pdf';
  * paling perlu dijelaskan statusnya dituduh palsu, dan itu kelas jawaban keliru
  * yang dihindari di seluruh halaman verifikasi.
  *
- * **Yang dipercaya bukan teksnya, melainkan hashnya.** Capnya dibuat ulang dari
- * byte arsip yang tersimpan, lalu hasilnya dibandingkan sebagai hash. Menempelkan
- * tulisan "DICABUT" ke PDF karangan karena itu tidak menolong pemalsu: sistem
- * tetap menghitung, cap karangan itu tidak akan sama dengan cap yang dihasilkan
- * dari arsip, dan jawabannya tetap "tidak terdaftar".
+ * **Yang dipercaya bukan teksnya, melainkan hashnya.** Hash salinan bercap
+ * disimpan pada arsipnya (`LetterSignedDocument.revokedSha256`) saat pencabutan
+ * dicatat, lalu hasilnya dibandingkan sebagai hash. Menempelkan tulisan
+ * "DICABUT" ke PDF karangan karena itu tidak menolong pemalsu: sistem tetap
+ * membandingkan hash, cap karangan itu tidak akan sama dengan cap yang
+ * dihasilkan dari arsip, dan jawabannya tetap "tidak terdaftar".
  *
- * **Cap dibuat ulang, bukan disimpan.** Justru karena cap dan unduhan sama-sama
- * memanggil `stampRevoked` dengan masukan yang sama persis (arsip, sebab, waktu,
- * nama pencabut — semuanya tetap setelah dicatat), byte yang dibandingkan di
- * sini identik dengan byte yang diunduh penerimanya. Menyimpan hash salinan
- * bercap akan membuat keduanya dapat menyimpang diam-diam bila `stampRevoked`
- * berubah; dengan menghitung di kedua sisi, keduanya menyimpang bersama dan
- * verifikasi tetap benar. Ini kebalikan dari byte yang *ditandatangani*, yang
- * memang harus diarsipkan — sebab byte itu tidak boleh berubah selamanya.
+ * **Kenapa disimpan, bukan dibuat ulang.** Versi sebelumnya membuat ulang cap
+ * pada setiap permintaan, dibatasi 200 tanda tangan tercabut terbaru. Dua
+ * kelemahan: biaya `stampRevoked` pada setiap unggahan, dan — yang lebih buruk —
+ * begitu pencabutan melewati 200, salinan resmi yang lebih tua dijawab "tidak
+ * terdaftar". Menyimpan hash salinan itu menutup keduanya: pencocokan menjadi
+ * satu perbandingan tepat dan tanpa batas. Baris yang belum punya hash
+ * (pencabutan lama) jatuh ke jalur cadangan yang membuat ulang cap, terbatas —
+ * sama seperti perilaku sebelumnya, agar tidak ada yang berhenti dikenali.
  *
  * **Batasnya.** Hanya tanda tangan yang arsipnya ada (`letterSignedDocument`)
  * yang dapat dikenali; surat lama yang dicabut sebelum arsip ada tidak ikut
  * dikenali di sini. Jumlahnya kecil dan `db:archive-letters` menutupnya.
  */
 
-/** Berapa tanda tangan tercabut yang diperiksa dalam satu permintaan. */
+/** Berapa tanda tangan tercabut yang diperiksa dalam jalur cadangan. */
 const MAX_CANDIDATES = 200;
 
 const sha256 = (b: Buffer) => crypto.createHash('sha256').update(b).digest('hex');
@@ -44,6 +45,9 @@ export interface RevokedCopyMatch {
 
 type RevokedCopyClient = {
   letterSignature: {
+    /** Jalur cepat: cocokkan langsung pada hash salinan bercap yang tersimpan. */
+    findFirst: (args: unknown) => Promise<{ verificationToken: string } | null>;
+    /** Jalur cadangan: pencabutan lama yang belum punya hash salinan. */
     findMany: (args: unknown) => Promise<
       Array<{
         verificationToken: string;
@@ -65,8 +69,19 @@ export async function matchRevokedCopy(
   uploadedHash: string,
   client: RevokedCopyClient = prisma as unknown as RevokedCopyClient
 ): Promise<RevokedCopyMatch | null> {
+  // Jalur cepat: hash salinan bercap sudah tersimpan saat pencabutan dicatat.
+  const exact = await client.letterSignature.findFirst({
+    where: { revokedAt: { not: null }, document: { revokedSha256: uploadedHash } },
+    select: { verificationToken: true },
+  });
+  if (exact) return { verificationToken: exact.verificationToken };
+
+  // Jalur cadangan: pencabutan yang tercatat sebelum hash salinan disimpan.
   const candidates = await client.letterSignature.findMany({
-    where: { revokedAt: { not: null }, document: { isNot: null } },
+    where: {
+      revokedAt: { not: null },
+      document: { isNot: null, revokedSha256: null },
+    },
     orderBy: { revokedAt: 'desc' },
     take: MAX_CANDIDATES,
     select: {

@@ -1,14 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import crypto from 'crypto';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import {
   ESIGN_ALGORITHM,
   EsignError,
+  CURRENT_CANONICAL_VERSION,
   MAX_PASSPHRASE_ATTEMPTS,
   MIN_PASSPHRASE_LENGTH,
   assertPassphraseStrength,
   canonicalPayload,
   createKeyMaterial,
   digestOf,
+  fingerprintOfSigningKey,
   lockoutUntil,
   newVerificationToken,
   publicKeyFingerprint,
@@ -130,8 +134,49 @@ describe('menandatangani dan memverifikasi', () => {
 });
 
 describe('bentuk kanonik', () => {
-  it('diberi penanda versi', () => {
-    expect(canonicalPayload(payload()).startsWith('cipansor-esign/v1')).toBe(true);
+  it('ditandatangani dalam bentuk terkini (v2)', () => {
+    expect(CURRENT_CANONICAL_VERSION).toBe(2);
+    expect(canonicalPayload(payload()).startsWith('cipansor-esign/v2')).toBe(true);
+    expect(signPayload(createKeyMaterial(PASS), PASS, payload()).canonicalVersion).toBe(2);
+  });
+
+  /**
+   * Bentuk v1 tetap dapat direkonstruksi, dan berbeda dari v2.
+   *
+   * Ini yang membuat tanda tangan lama tetap sah setelah garis kewenangan
+   * ditambahkan: verifikasi tanda tangan lama memakai `version: 1`, yang
+   * menghasilkan byte persis seperti saat ditandatangani.
+   */
+  it('bentuk v1 lama tetap dapat direkonstruksi dan berbeda dari v2', () => {
+    const v1 = canonicalPayload(payload(), 1);
+    const v2 = canonicalPayload(payload(), 2);
+    expect(v1.startsWith('cipansor-esign/v1')).toBe(true);
+    expect(v2.startsWith('cipansor-esign/v2')).toBe(true);
+    expect(v1).not.toBe(v2);
+    // Ruas garis kewenangan hanya ada di v2.
+    expect(v1.split('\n')).toHaveLength(11);
+    expect(v2.split('\n')).toHaveLength(13);
+  });
+
+  /**
+   * Tanda tangan lama yang dibuat atas v1 tetap terverifikasi dengan v1, dan
+   * **tidak** terverifikasi bila diverifikasi dengan v2.
+   *
+   * Inilah kegagalan yang dicegah dengan menyimpan `canonicalVersion`:
+   * menebak bentuk terkini akan menolak setiap tanda tangan sebelum garis
+   * kewenangan ada.
+   */
+  it('tanda tangan v1 terverifikasi dengan v1, bukan dengan v2', () => {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
+    const publicKeyBase64 = (publicKey.export({ type: 'spki', format: 'der' }) as Buffer).toString(
+      'base64'
+    );
+
+    const p = payload();
+    const signature = crypto.sign(null, Buffer.from(canonicalPayload(p, 1), 'utf8'), privateKey);
+
+    expect(verifySignature(publicKeyBase64, signature.toString('base64'), p, 1)).toBe(true);
+    expect(verifySignature(publicKeyBase64, signature.toString('base64'), p, 2)).toBe(false);
   });
 
   it('stabil untuk masukan yang sama', () => {
@@ -215,5 +260,32 @@ describe('sidik jari kunci publik', () => {
     const spki = (publicKey.export({ type: 'spki', format: 'der' }) as Buffer).toString('base64');
     expect(publicKeyFingerprint(spki)).toBe(publicKeyFingerprint(spki));
     expect(publicKeyFingerprint(spki)).toMatch(/^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+  });
+
+  it('menghitung sidik jari dari Buffer SPKI tanpa menyentuh bahan kunci', () => {
+    const { publicKey } = crypto.generateKeyPairSync('ed25519');
+    const spkiDer = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+    // Bentuk yang sama dengan `publicKeyFingerprint` atas base64-nya.
+    expect(fingerprintOfSigningKey(spkiDer)).toBe(publicKeyFingerprint(spkiDer.toString('base64')));
+  });
+
+  /**
+   * Penjaga struktural atas temuan CodeQL `js/insufficient-password-hash`.
+   *
+   * Laporan itu keliru — yang di-hash adalah SPKI publik, bukan sandi — tetapi
+   * ia muncul dari satu bentuk kode yang nyata: `createKeyMaterial` memegang
+   * passphrase di badannya, dan memanggil `crypto.createHash` dari sana (baik
+   * langsung, maupun lewat `publicKeyFingerprint` atas field objeknya) membuat
+   * analisis alir data membaca rantai "passphrase → objek → hash". Uji ini
+   * menolak bentuk itu kembali: sidik jari harus dihitung lewat
+   * `fingerprintOfSigningKey(publicDer)`, yang hanya menerima Buffer.
+   */
+  it('createKeyMaterial tidak menghitung hash apa pun di badannya', () => {
+    const source = readFileSync(resolve(__dirname, 'esign.ts'), 'utf8');
+    const start = source.indexOf('export function createKeyMaterial');
+    const end = source.indexOf('\n}\n', start);
+    const body = source.slice(start, end);
+    expect(body).not.toContain('createHash');
+    expect(body).toContain('fingerprintOfSigningKey(publicDer)');
   });
 });

@@ -7,7 +7,7 @@ import { matchRevokedCopy } from '@/utils/letter-revoked-copy';
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    letterSignature: { findMany: vi.fn() },
+    letterSignature: { findMany: vi.fn(), findFirst: vi.fn() },
   },
 }));
 
@@ -43,12 +43,35 @@ function candidate(archived: Buffer, over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.mocked(prisma.letterSignature.findMany).mockReset();
+  vi.mocked(prisma.letterSignature.findFirst).mockReset();
+  // Bawaan jalur cepat: tidak ada hash salinan bercap yang tersimpan, sehingga
+  // uji di bawah menjalankan jalur cadangan (membuat ulang cap) apa adanya.
+  vi.mocked(prisma.letterSignature.findFirst).mockResolvedValue(null as never);
 });
 
 describe('matchRevokedCopy', () => {
   /**
+   * Jalur cepat: hash salinan bercap yang tersimpan langsung cocok, tanpa
+   * membuat ulang cap dan tanpa batas 200 kandidat.
+   */
+  it('cocok lewat hash salinan bercap yang tersimpan', async () => {
+    vi.mocked(prisma.letterSignature.findFirst).mockResolvedValue({
+      verificationToken: 'tok-tercabut',
+    } as never);
+
+    const stamped = await stamp(await tinyPdf());
+    expect(await matchRevokedCopy(stamped, sha256(stamped))).toEqual({
+      verificationToken: 'tok-tercabut',
+    });
+    // Jalur cadangan tidak dijalankan saat jalur cepat sudah menemukan.
+    expect(prisma.letterSignature.findMany).not.toHaveBeenCalled();
+  });
+
+  /**
    * Inti keluhan yang berkas ini tutup: salinan bercap DICABUT — keluaran resmi
    * sistem sendiri — harus dikenali, bukan dijawab "tidak terdaftar".
+   *
+   * Jalur cadangan: pencabutan lama yang belum punya hash salinan bercap.
    */
   it('mengenali salinan bercap yang identik dengan arsip dicabut', async () => {
     const archived = await tinyPdf();

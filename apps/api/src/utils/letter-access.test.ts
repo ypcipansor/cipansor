@@ -164,15 +164,27 @@ describe('letterScopeWhere', () => {
       unitId: SMP,
     });
 
+    // Two branches: the unit's own book, and anything assigned to this actor
+    // from elsewhere (a disposition or a review).
+    const or = where.OR as Array<Record<string, unknown>>;
+    expect(or).toHaveLength(2);
+
     // The unit clause is still there…
-    const and = where.AND as Array<Record<string, unknown>>;
-    expect(and[0]).toEqual({ unitId: SMP });
+    const ownUnit = or[0].AND as Array<Record<string, unknown>>;
+    expect(ownUnit[0]).toEqual({ unitId: SMP });
     // …but a Rahasia / Sangat Rahasia naskah in that unit only appears when the
     // office is genuinely inside its chain, so the classification is a real
     // access boundary and not just a printed marking.
-    const or = (and[1] as { OR: unknown[] }).OR;
-    expect(JSON.stringify(or)).toContain('CONFIDENTIAL');
-    expect(JSON.stringify(or)).toContain('STRICTLY_CONFIDENTIAL');
+    const natureOrChain = (ownUnit[1] as { OR: unknown[] }).OR;
+    expect(JSON.stringify(natureOrChain)).toContain('CONFIDENTIAL');
+    expect(JSON.stringify(natureOrChain)).toContain('STRICTLY_CONFIDENTIAL');
+
+    // The second branch is the chain itself: a letter assigned to this actor
+    // from another unit must appear, because `assertLetterAccess` already opens
+    // its direct URL — the list and the direct read have to agree.
+    const chain = (or[1] as { OR: unknown[] }).OR;
+    expect(chain).toHaveLength(4);
+    expect(JSON.stringify(chain)).toContain('dispositions');
   });
 
   // The list-shaped version of the same hole: scoping a parent by unitId would
