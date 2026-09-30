@@ -77,8 +77,13 @@ pertama**, bukan sebagai faktor kedua setelah sandi.
   TOTP atau kode pemulihan, sama seperti sekarang. Inilah yang membedakannya
   dari Model C (tanpa sandi) yang pemulihannya harus dirancang dari nol.
 - **TOTP tetap** untuk pengguna yang belum mendaftarkan passkey.
-- **Integritas faktor:** autentikator terakhir tidak boleh dihapus. Bila TOTP
-  dimatikan, minimal satu passkey harus tersisa, dan sebaliknya. Menambah atau
+- **Integritas faktor — hanya untuk akun wajib 2FA.** Bagi akun yang
+  `requiresSecondFactor`, autentikator terakhir tidak boleh dihapus: bila TOTP
+  dimatikan, minimal satu passkey harus tersisa, dan sebaliknya — akun wajib
+  tidak pernah turun di bawah AAL2. Akun yang 2FA-nya **opsional** (staf, wali,
+  santri) tetap boleh mematikan faktor terakhirnya dan kembali ke sandi saja,
+  sesuai kebijakan 2FA yang sudah berlaku (dan akun wajib hanya bisa dimatikan
+  oleh Super Admin, seperti aturan di atas). Untuk semua orang, menambah atau
   menghapus autentikator adalah tindakan berisiko — wajib autentikasi ulang
   dengan faktor yang sudah terdaftar, dan pemilik diberi tahu lewat surel
   (OWASP MFA Cheat Sheet).
