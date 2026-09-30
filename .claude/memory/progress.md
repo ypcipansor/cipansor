@@ -103,6 +103,21 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   choice, not a PAdES requirement), signing uploaded DOCX/PDF bytes, and
   a.n./u.b./Plt./Plh.
 
+  **Round-2 follow-up, found by this agent (not in F1–F12): cross-unit service
+  roles read the whole letter book.** `letterScopeWhere`, `assertLetterAccess`
+  and `choosesUnit` keyed their "sees everything" branch on `seesAllUnits`,
+  which is broad enough for shared services (a librarian sees every santri) but
+  not for correspondence. Every cross-unit service account — pustakawan,
+  perawat, keamanan, musyrif, ustadz, laboran, and the Pesantren office — was
+  handed the entire yayasan's correspondence, unclassified letters included, and
+  could pass `?unitId=` to read another school's agenda; the retention list came
+  with it. The three now key on `isFoundationScopedRole` (board + super admin),
+  the same line `admissions.access.ts` draws for SPMB, so those roles see only
+  the letters they are actually part of. Regression tests pin the list clause,
+  the direct read, and `choosesUnit`. Also silenced the `/correspondence/stats`
+  toast the E-Office home fired for every staff member without letter duty
+  (`skipErrorToast`).
+
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),

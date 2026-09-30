@@ -379,12 +379,18 @@ export function useCorrespondence(unitId?: string) {
 
   // Get Stats — same reasoning as useLetters: no unit is a valid scope, not a
   // reason to skip the request.
+  //
+  // Best-effort: the E-Office home is shown to every staff member (their
+  // personal inbox is legitimate), but `/correspondence/stats` answers 403 to
+  // anyone without letter duty. Without `skipErrorToast` the dashboard greets
+  // each of them with a "missing permission" toast on load.
   const useStats = () => {
     return useQuery({
       queryKey: ["letters", "stats", unitId ?? "all"],
       queryFn: async () => {
         const response = await api.get("/correspondence/stats", {
           params: unitId ? { unitId } : undefined,
+          skipErrorToast: true,
         });
         return response.data.data;
       },

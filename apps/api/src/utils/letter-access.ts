@@ -2,7 +2,7 @@ import { Prisma, LetterStatus, LetterDirection, LetterNature, RoleCode } from '@
 import { LETTER_UNIT_SCOPE_ROLES } from '@cipansor/shared';
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
-import { seesAllUnits } from './resolve-unit-id';
+import { isFoundationScopedRole } from './resolve-unit-id';
 
 /**
  * Who may read a letter.
@@ -136,13 +136,22 @@ function isInLetterChain(
  * True when the caller may pick which unit to look at (and so may pass
  * `?unitId=`). Everyone else is confined to what the scope clause allows.
  *
- * Foundation and cross-unit roles have no `unitId` of their own, which is why
- * the previous controller answered them with 403 "User has no unit assigned":
- * the sekretaris and ketua yayasan could not open the letter list that their
- * own routing workflow depends on.
+ * Foundation roles have no `unitId` of their own, which is why the previous
+ * controller answered them with 403 "User has no unit assigned": the sekretaris
+ * and ketua yayasan could not open the letter list that their own routing
+ * workflow depends on.
+ *
+ * Deliberately `isFoundationScopedRole`, not `seesAllUnits`. The two differ by
+ * the cross-unit service roles (pustakawan, perawat, keamanan, musyrif, ustadz,
+ * laboran, and the Pesantren office): `seesAllUnits` is *broad enough for
+ * shared services* — a librarian sees every santri — but a letter book is not a
+ * shared service. Widening it there gave those accounts the whole yayasan's
+ * correspondence, unclassified letters included, and let them pass `?unitId=` to
+ * read another school's agenda. It is the same distinction `admissions.access.ts`
+ * draws for SPMB: the foundation board reads across units; service staff do not.
  */
 export function choosesUnit(actor: LetterActor): boolean {
-  return seesAllUnits(actor);
+  return isFoundationScopedRole(actor.roleCode);
 }
 
 /**
@@ -155,7 +164,7 @@ export function choosesUnit(actor: LetterActor): boolean {
  * correspondence sees only letters they are actually part of.
  */
 export function letterScopeWhere(actor: LetterActor): Prisma.LetterWhereInput {
-  if (seesAllUnits(actor)) return {};
+  if (isFoundationScopedRole(actor.roleCode)) return {};
 
   const notRestricted: Prisma.LetterWhereInput = { nature: { notIn: RESTRICTED_NATURES } };
 
@@ -250,7 +259,7 @@ export async function assertLetterAccess(
 
   if (!letter) throw Errors.notFound('Letter not found');
 
-  if (seesAllUnits(actor)) return letter;
+  if (isFoundationScopedRole(actor.roleCode)) return letter;
 
   const restricted = isRestrictedNature(letter.nature);
   const inChain = isInLetterChain(actor, letter, { includeCc: !restricted });

@@ -202,6 +202,27 @@ describe('letterScopeWhere', () => {
     // unit office's ordinary letter book is exactly what remains.
     expect(JSON.stringify(where)).toContain('"notIn"');
   });
+
+  // Regression: the scope clause used `seesAllUnits`, which is broad enough for
+  // shared services (a librarian sees every santri) but not for correspondence.
+  // It handed every cross-unit service account — pustakawan, perawat, keamanan,
+  // musyrif, ustadz, laboran — the whole yayasan's letter book, unclassified
+  // letters included, and let them pass `?unitId=` to read another unit's
+  // agenda. Access is by the chain, exactly as for a parent.
+  it('confines a cross-unit service role to the letters they are part of', () => {
+    for (const roleCode of [
+      RoleCode.PUSTAKAWAN,
+      RoleCode.PERAWAT,
+      RoleCode.KEAMANAN,
+      RoleCode.MUSYRIF,
+      RoleCode.USTADZ,
+      RoleCode.LABORAN,
+    ]) {
+      const where = letterScopeWhere({ id: 'svc-1', roleCode, unitId: SMP });
+      expect(where.unitId).toBeUndefined();
+      expect(where.OR).toHaveLength(2);
+    }
+  });
 });
 
 describe('classified letters restrict access (ANRI SKKAAD)', () => {
@@ -296,6 +317,22 @@ describe('classified letters restrict access (ANRI SKKAAD)', () => {
       )
     ).resolves.toBeTruthy();
   });
+
+  // Regression: assertLetterAccess returned any letter for a `seesAllUnits`
+  // actor, so a cross-unit service role could fetch a school's ordinary letter
+  // by id. It now opens only to the foundation board, or to a chain member.
+  it('refuses a cross-unit service role a letter it is not part of', async () => {
+    vi.mocked(prisma.letter.findUnique).mockResolvedValue(
+      bareLetter({ nature: LetterNature.LIMITED }) as never
+    );
+
+    await expect(
+      assertLetterAccess(
+        { id: 'pustakawan-1', roleCode: RoleCode.PUSTAKAWAN, unitId: SMP },
+        'letter-1'
+      )
+    ).rejects.toThrow(/tidak memiliki akses/);
+  });
 });
 
 describe('role helpers', () => {
@@ -304,6 +341,23 @@ describe('role helpers', () => {
     expect(handlesUnitCorrespondence({ id: 'b', roleCode: RoleCode.SMPIT_ORANG_TUA })).toBe(false);
     expect(choosesUnit({ id: 'c', roleCode: RoleCode.YAYASAN_KETUA })).toBe(true);
     expect(choosesUnit({ id: 'd', roleCode: RoleCode.SMPIT_TATA_USAHA })).toBe(false);
+  });
+
+  // Regression: `choosesUnit` was `seesAllUnits`, so a cross-unit service role
+  // could pass `?unitId=` and read any unit's letter book. Only the foundation
+  // board (and super admin) may choose a unit here.
+  it('does not let a cross-unit service role choose a unit', () => {
+    for (const roleCode of [
+      RoleCode.PUSTAKAWAN,
+      RoleCode.PERAWAT,
+      RoleCode.KEAMANAN,
+      RoleCode.MUSYRIF,
+      RoleCode.USTADZ,
+      RoleCode.LABORAN,
+      RoleCode.PESANTREN_TATA_USAHA,
+    ]) {
+      expect(choosesUnit({ id: 'svc-1', roleCode, unitId: SMP })).toBe(false);
+    }
   });
 });
 
