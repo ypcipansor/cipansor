@@ -1358,8 +1358,9 @@ docker compose exec api node -e "
 
 1. **Which letters must verify outside the pesantren?** That answer sets whether
    Tier 2 (BSrE) is required or merely desirable, and by when.
-2. **Signing authority (PR-6):** who may sign a.n. whom, and when u.b./Plt./Plh.
-   apply.
+2. ~~**Signing authority (PR-6):** who may sign a.n. whom, and when u.b./Plt./Plh.
+   apply.~~ **Shipped `1513317`** — the a.n./u.b./Plt./Plh. forms are in the
+   naskah and the signature block.
 3. **Retention:** how long a signed letter and its archived PDF must be kept —
    this drives whether Tier 3 (B-LTA) is in scope.
 4. **Arabic in letter bodies (PR-7):** whether staff need to write Arabic script

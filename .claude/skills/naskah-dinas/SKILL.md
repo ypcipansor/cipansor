@@ -149,10 +149,14 @@ dicatat ─disposisi─► DISPOSED ─► ARCHIVED
   2026-09-03: **tetap memakai kunci sendiri, tanpa PSrE**. Keputusan itu
   sekaligus menunda segel elektronik dan kalimat kaki baku BSrE. Kalimat BSrE
   **tidak boleh disalin**, karena menyebut sertifikat yang tidak kita punya.
-- **Ed25519 menghalangi PAdES dan AATL**, yang hanya menerima RSA ≥ 2048 atau
-  EC ≥ 256. Mengganti algoritma adalah migrasi, bukan tambalan.
-- Belum ada stempel waktu RFC 3161 (PR-5). Tanpanya, pertanyaan "apakah
-  kuncinya masih berlaku *saat* menandatangani" belum bisa dijawab.
+- **Ed25519 tidak menghalangi PAdES.** ETSI TS 119 312 V2.1.1 Tabel A.1
+  mencantumkan EdDSA sebagai *shall support*; yang tidak menerimanya adalah
+  **AATL**, program keanggotaan CA yang memang bukan sasaran yayasan. Mengganti
+  ke RSA/ECDSA adalah pilihan interoperabilitas Acrobat, bukan syarat PAdES.
+- Belum ada stempel waktu RFC 3161, dan **PAdES B-B ditunda (opsi b,
+  2026-09-29)** sampai yayasan menetapkan penyedia TSA — tanpa stempel waktu
+  tepercaya, pertanyaan "apakah kuncinya masih berlaku *saat* menandatangani"
+  belum bisa dijawab. Lihat `decisions/esign-standards-ceiling.md`.
 - Visualisasi TTE menurut aturan Indonesia minimal berisi QR, nama, dan
   jabatan. Logo tidak bisa menggantikan QR.
 
@@ -160,12 +164,7 @@ dicatat ─disposisi─► DISPOSED ─► ARCHIVED
 
 Dari `docs/EOFFICE_ESIGN_PLAN.md` §6:
 - naskah mana yang harus terverifikasi di luar pesantren (menentukan perlu
-  tidaknya PSrE);
-- kewenangan menandatangani a.n., u.b., Plt., dan Plh. (PR-6). Anggaran Dasar
-  Pasal 18: Pengurus mewakili yayasan oleh **Ketua Umum bersama satu anggota
-  Pengurus lain**, dengan urutan pengganti bila berhalangan, dan kuasa tertulis
-  untuk perbuatan tertentu (`tata-kelola-yayasan/anggaran-dasar.md`) — naskah
-  yang mewakili yayasan ke luar dengan satu tanda tangan belum memenuhinya;
+  tidaknya PSrE, dan kapan PAdES B-B dibuka kembali);
 - berapa lama naskah bertanda tangan dan arsip PDF-nya disimpan;
 - huruf Arab di badan naskah (PR-7, atau jalur DOCX);
 - berapa lama naskah yang dicabut masih bisa diunduh;
