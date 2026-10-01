@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { Errors } from '../../middleware/error';
-import { calculateMonthlyPph21, reconcileSalary } from './payroll-tax';
+import { calculateMonthlyPph21, isBasicSalaryComponent, reconcileSalary } from './payroll-tax';
 import { dayOf, dayString, wibWeekday } from '../../utils/wib';
 import {
   holidaysInRange,
@@ -473,6 +473,15 @@ export const attendanceDeductionService = {
     const guardRow = await prisma.payrollGuardConfig.findFirst({
       where: { isActive: true, OR: [{ unitId: period.unitId }, { unitId: null }] },
     });
+    // The slip only taxes the base salary when an active basic component is
+    // marked taxable; read the same flag here or the engine estimates a PPh 21
+    // the slip never charges and shrinks the allowance it may spend.
+    const basicComponents = await prisma.salaryComponent.findMany({
+      where: { isActive: true, type: 'EARNING' },
+      select: { code: true, classification: true, isTaxable: true },
+    });
+    const basicComponent = basicComponents.find((c) => isBasicSalaryComponent(c));
+    const baseIsTaxable = basicComponent?.isTaxable ?? false;
     const guard: GuardLimits | null = guardRow
       ? {
           maxDeductionPercent: guardRow.maxDeductionPercent,
@@ -557,7 +566,11 @@ export const attendanceDeductionService = {
       // the base salary plus the fixed earning items — summing only the items
       // left an employee whose salary is entirely `baseSalary` with a zero
       // hourly rate, so every UPAH_SEJAM overtime rule paid nothing.
-      const reconciled = reconcileSalary(salary?.items ?? [], Number(salary?.baseSalary ?? 0));
+      const reconciled = reconcileSalary(
+        salary?.items ?? [],
+        Number(salary?.baseSalary ?? 0),
+        baseIsTaxable
+      );
       const ctx: StaffPayContext = {
         baseSalary: reconciled.baseSalary,
         allowances: reconciled.allowances,

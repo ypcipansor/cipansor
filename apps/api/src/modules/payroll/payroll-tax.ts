@@ -127,8 +127,18 @@ export function isBasicSalaryComponent(c: { code: string; classification: string
  * allowance side (the ceiling for attendance deductions), the other deduction
  * lines, and the taxable base. Both the generator and the deduction engine read
  * this, so the cap they agree on describes the same slip.
+ *
+ * `baseIsTaxable` mirrors the payslip's own rule: the generator only adds the
+ * base salary to taxable income when it finds an active basic component marked
+ * taxable. Defaulting it to `true` here taxed a base the slip never taxed, so
+ * the engine over-estimated PPh 21 and shrank the allowance an attendance
+ * deduction could spend.
  */
-export function reconcileSalary(items: SalaryItemLike[], baseSalary: number): ReconciledSalary {
+export function reconcileSalary(
+  items: SalaryItemLike[],
+  baseSalary: number,
+  baseIsTaxable = true
+): ReconciledSalary {
   const earningItems = items.filter((i) => i.component.type === 'EARNING');
   const allowances = earningItems
     .filter((i) => !isBasicSalaryComponent(i.component))
@@ -143,7 +153,7 @@ export function reconcileSalary(items: SalaryItemLike[], baseSalary: number): Re
     .filter((i) => i.component.type === 'DEDUCTION')
     .reduce((s, i) => s + effectiveItemAmount(i, baseSalary), 0);
   const taxableIncome =
-    baseSalary +
+    (baseIsTaxable ? baseSalary : 0) +
     earningItems
       .filter((i) => !isBasicSalaryComponent(i.component) && i.component.isTaxable)
       .reduce((s, i) => s + effectiveItemAmount(i, baseSalary), 0);

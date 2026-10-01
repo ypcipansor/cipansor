@@ -4,22 +4,30 @@ vi.mock('../../../lib/prisma', () => ({
   prisma: {
     staff: { findUnique: vi.fn() },
     attendanceSite: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
-    attendancePolicy: { findFirst: vi.fn() },
-    attendanceRecord: { create: vi.fn() },
-    staffAttendance: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
+    attendancePolicy: { findFirst: vi.fn(), findMany: vi.fn() },
+    attendanceRecord: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+    staffAttendance: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     shiftAssignment: { findFirst: vi.fn() },
-    shiftRotation: { findFirst: vi.fn() },
+    shiftRotation: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     workShift: { findUnique: vi.fn(), update: vi.fn() },
     workWeekConfig: { findFirst: vi.fn() },
     calendarEvent: { findFirst: vi.fn(), findMany: vi.fn() },
     attendanceExemption: { findFirst: vi.fn() },
     userRoleAssignment: { findMany: vi.fn() },
     auditLog: { create: vi.fn() },
+    leave: { findMany: vi.fn() },
+    retentionPolicy: { findMany: vi.fn() },
+    unit: { findMany: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
 
+vi.mock('../../../utils/managed-upload', () => ({
+  deleteManagedUpload: vi.fn(),
+}));
+
 import { prisma } from '../../../lib/prisma';
+import { deleteManagedUpload } from '../../../utils/managed-upload';
 import { todayWib, dayOf } from '../../../utils/wib';
 import {
   selfCheckIn,
@@ -34,6 +42,8 @@ import {
   scopedUnitId,
   updateAttendanceSite,
   updateWorkShift,
+  updateShiftRotation,
+  enforceAttendanceRetention,
 } from '../hr.service';
 import { bulkAttendanceSchema } from '../hr.schema';
 
@@ -65,6 +75,14 @@ beforeEach(() => {
   m.attendancePolicy.findFirst.mockResolvedValue(null);
   m.userRoleAssignment.findMany.mockResolvedValue([]);
   m.auditLog.create.mockResolvedValue({});
+  m.attendanceRecord.findMany.mockResolvedValue([]);
+  m.attendanceRecord.updateMany.mockResolvedValue({ count: 1 });
+  m.staffAttendance.deleteMany.mockResolvedValue({ count: 0 });
+  m.leave.findMany.mockResolvedValue([]);
+  m.retentionPolicy.findMany.mockResolvedValue([]);
+  m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }]);
+  m.attendancePolicy.findMany.mockResolvedValue([]);
+  vi.mocked(deleteManagedUpload).mockResolvedValue('deleted');
   // The punch and its evidence are one write; run the callback against the mock.
   m.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
     typeof fn === 'function' ? fn(prisma) : Promise.all(fn as unknown[])
@@ -476,5 +494,75 @@ describe('scoped settings writes cannot change unit', () => {
       updateWorkShift('shift-1', { unitId: 'unit-2' } as never, 'unit-1')
     ).rejects.toThrow(/unit lain/i);
     expect(m.workShift.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a rotation repointed at another unit’s shift', async () => {
+    m.shiftRotation.findUnique.mockResolvedValue({ shift: { unitId: 'unit-1' } });
+    m.workShift.findUnique.mockResolvedValue({ unitId: 'unit-2' });
+    await expect(
+      updateShiftRotation('rot-1', { shiftId: 'shift-other' } as never, 'unit-1')
+    ).rejects.toThrow(/unit/i);
+    expect(m.shiftRotation.update).not.toHaveBeenCalled();
+  });
+
+  it('allows a rotation repointed within the same unit', async () => {
+    m.shiftRotation.findUnique.mockResolvedValue({ shift: { unitId: 'unit-1' } });
+    m.workShift.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    m.shiftRotation.update.mockResolvedValue({ id: 'rot-1' });
+    await updateShiftRotation('rot-1', { shiftId: 'shift-own' } as never, 'unit-1');
+    expect(m.shiftRotation.update).toHaveBeenCalled();
+  });
+});
+
+describe('enforceAttendanceRetention — shared photos', () => {
+  const now = new Date('2026-10-01T00:00:00Z');
+  const expiredAt = new Date('2025-01-01T00:00:00Z'); // well past the 365-day window
+
+  function photoRow(id: string, photoUrl: string, capturedAt: Date) {
+    return { id, photoUrl, capturedAt, attendance: { staff: { unitId: 'unit-1' } } };
+  }
+
+  it('keeps a file another, unexpired record still points at', async () => {
+    const shared = 'http://localhost:3000/uploads/shared.jpg';
+    m.attendanceRecord.findMany.mockResolvedValue([
+      photoRow('r-old', shared, expiredAt),
+      photoRow('r-new', shared, new Date('2026-09-30T00:00:00Z')),
+    ]);
+
+    const result = await enforceAttendanceRetention(now);
+
+    // The expired row drops its reference; the file survives for the other row.
+    expect(deleteManagedUpload).not.toHaveBeenCalled();
+    expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r-old', photoUrl: shared },
+      data: { photoUrl: null },
+    });
+    expect(result.photosErased).toBe(1);
+  });
+
+  it('deletes a file once no unexpired record references it', async () => {
+    const url = 'http://localhost:3000/uploads/solo.jpg';
+    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-1', url, expiredAt)]);
+
+    await enforceAttendanceRetention(now);
+
+    expect(deleteManagedUpload).toHaveBeenCalledWith(url);
+    expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r-1', photoUrl: url },
+      data: { photoUrl: null },
+    });
+  });
+
+  it('leaves an external URL and its reference alone', async () => {
+    const url = 'https://photos.example/selfie.jpg';
+    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-1', url, expiredAt)]);
+    vi.mocked(deleteManagedUpload).mockResolvedValue('unsupported');
+
+    const result = await enforceAttendanceRetention(now);
+
+    // No managed bytes to remove: clearing the field would lose the only
+    // reference to a photo still stored elsewhere.
+    expect(m.attendanceRecord.updateMany).not.toHaveBeenCalled();
+    expect(result.photosErased).toBe(0);
   });
 });

@@ -1438,6 +1438,17 @@ export async function updateShiftRotation(
   });
   if (!rotation) throw Errors.notFound('Rotasi shift');
   assertWithinScope(scopeUnitId, rotation.shift.unitId, 'Rotasi shift');
+  // A rotation is scoped by its shift, so a new `shiftId` must stay inside the
+  // caller's unit too — otherwise the rotation is silently moved to another
+  // unit's shift while the ownership check read the old one.
+  if (data.shiftId !== undefined && data.shiftId !== null) {
+    const target = await prisma.workShift.findUnique({
+      where: { id: data.shiftId as string },
+      select: { unitId: true },
+    });
+    if (!target) throw Errors.notFound('Shift');
+    assertWithinScope(scopeUnitId, target.unitId, 'Shift');
+  }
   return prisma.shiftRotation.update({ where: { id }, data });
 }
 
@@ -1675,35 +1686,64 @@ export async function enforceAttendanceRetention(now = new Date()) {
 
   let photosErased = 0;
   let recordsDeleted = 0;
+
+  const photoDaysByUnit = new Map<string, number>();
   for (const unit of units) {
     const policy =
       policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
-    const photoDays = policy?.photoRetentionDays ?? globalPhotoDays;
-    const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
+    photoDaysByUnit.set(unit.id, policy?.photoRetentionDays ?? globalPhotoDays);
+  }
 
-    // Identify the expired photos first: once the URL is cleared the file can
-    // no longer be found, so the storage delete has to precede the update.
-    const expiredPhotos = await prisma.attendanceRecord.findMany({
-      where: {
-        photoUrl: { not: null },
-        capturedAt: { lt: new Date(now.getTime() - photoDays * 86_400_000) },
-        attendance: { staff: { unitId: unit.id } },
-      },
-      select: { id: true, photoUrl: true },
-    });
-    let erasedHere = 0;
-    for (const photo of expiredPhotos) {
-      // Delete the bytes first; clear the URL only after they are gone (or were
-      // already gone). A failed unlink leaves the row intact so the next run
-      // retries, instead of orphaning the file.
-      const removed = await deleteManagedUpload(photo.photoUrl);
+  // A selfie URL can be shared: a check-in and its check-out may store the same
+  // upload. Unlinking the file for one record therefore breaks the other, so a
+  // file is only removed once no *unexpired* record still references it. All
+  // rows are read up front so the decision does not depend on visit order.
+  const photoRows = await prisma.attendanceRecord.findMany({
+    where: { photoUrl: { not: null } },
+    select: {
+      id: true,
+      photoUrl: true,
+      capturedAt: true,
+      attendance: { select: { staff: { select: { unitId: true } } } },
+    },
+  });
+  const expiredPhotos: typeof photoRows = [];
+  const stillReferenced = new Set<string>();
+  for (const row of photoRows) {
+    if (!row.photoUrl) continue;
+    const unitId = row.attendance.staff.unitId;
+    const days = (unitId ? photoDaysByUnit.get(unitId) : undefined) ?? globalPhotoDays;
+    if (row.capturedAt < new Date(now.getTime() - days * 86_400_000)) expiredPhotos.push(row);
+    else stillReferenced.add(row.photoUrl);
+  }
+  for (const photo of expiredPhotos) {
+    if (!photo.photoUrl) continue;
+    // Another record that has not expired still points at this file: clearing
+    // this row's reference is safe, deleting the file is not.
+    if (stillReferenced.has(photo.photoUrl)) {
       const cleared = await prisma.attendanceRecord.updateMany({
         where: { id: photo.id, photoUrl: photo.photoUrl },
         data: { photoUrl: null },
       });
-      if (removed || cleared.count > 0) erasedHere += cleared.count;
+      photosErased += cleared.count;
+      continue;
     }
-    photosErased += erasedHere;
+    // Delete the bytes first; clear the URL only after they are gone (or were
+    // already gone). An external URL has no adapter to remove it, and clearing
+    // the field would lose the only reference to a photo still stored there.
+    const result = await deleteManagedUpload(photo.photoUrl);
+    if (result === 'unsupported') continue;
+    const cleared = await prisma.attendanceRecord.updateMany({
+      where: { id: photo.id, photoUrl: photo.photoUrl },
+      data: { photoUrl: null },
+    });
+    photosErased += cleared.count;
+  }
+
+  for (const unit of units) {
+    const policy =
+      policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
+    const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
 
     // Rows still carrying an active approved leave are kept: cancelling that
     // leave restores them, and a purged row would leave the cancellation with

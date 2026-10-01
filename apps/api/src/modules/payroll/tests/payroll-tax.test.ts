@@ -100,4 +100,34 @@ describe('reconcileSalary', () => {
     // Base + the taxable allowance; the deduction is not income.
     expect(split.taxableIncome).toBe(4_000_000);
   });
+
+  it('leaves an untaxed base salary out of taxable income', () => {
+    // The payslip only taxes the base when its basic component is marked
+    // taxable. Counting it here anyway made the engine estimate a PPh 21 the
+    // slip never charged, shrinking the allowance a deduction could spend.
+    const split = reconcileSalary(
+      [
+        item({
+          code: 'BASIC_SALARY',
+          classification: 'POKOK',
+          isTaxable: false,
+          amount: 10_000_000,
+        }),
+        item({ code: 'MEAL_ALLOWANCE', amount: 1_000_000, isTaxable: true }),
+      ],
+      10_000_000,
+      false
+    );
+
+    expect(split.baseSalary).toBe(10_000_000);
+    expect(split.allowances.map((a) => a.code)).toEqual(['MEAL_ALLOWANCE']);
+    expect(split.taxableIncome).toBe(1_000_000);
+    // The 1/173 basis still includes the untaxed base — it is a wage, taxed or not.
+    expect(split.monthlyWage).toBe(11_000_000);
+  });
+
+  it('taxes the base by default, for a structure with no basic component', () => {
+    const split = reconcileSalary([item({ code: 'MEAL_ALLOWANCE', amount: 500_000 })], 3_500_000);
+    expect(split.taxableIncome).toBe(4_000_000);
+  });
 });
