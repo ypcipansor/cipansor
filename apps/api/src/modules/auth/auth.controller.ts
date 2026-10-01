@@ -277,6 +277,12 @@ export const disableTwoFactor = asyncHandler(async (req: Request, res: Response)
 export const getTwoFactorStatus = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.sub;
   const result = await authService.getTwoFactorStatus(userId);
+  // Per-user session state, never cacheable. Without `no-store` the browser
+  // caches the JSON and revalidates with `If-None-Match`, so the next sign-in
+  // gets a 304 instead of the body — and a shared machine could serve one
+  // account's status to the next. `e2e/two-factor-invite.spec.ts` caught the
+  // 304 (Playwright's `r.ok()` is 200–299).
+  res.setHeader('Cache-Control', 'no-store, private');
   res.json({ success: true, data: result });
 });
 

@@ -23,6 +23,7 @@ const { authServiceMock } = vi.hoisted(() => ({
     refreshToken: vi.fn(),
     logout: vi.fn(),
     verifyTwoFactorLogin: vi.fn(),
+    getTwoFactorStatus: vi.fn(),
   },
 }));
 
@@ -37,7 +38,13 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { login, refreshToken, logout, verifyTwoFactorLogin } from '../auth.controller';
+import {
+  login,
+  refreshToken,
+  logout,
+  verifyTwoFactorLogin,
+  getTwoFactorStatus,
+} from '../auth.controller';
 import { ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE } from '../auth.cookies';
 
 const USER = {
@@ -55,8 +62,13 @@ function mockRes() {
   const cleared: string[] = [];
   const res = {
     jsonPayload: undefined as unknown,
+    headers: {} as Record<string, string>,
     json(payload: unknown) {
       (this as any).jsonPayload = payload;
+      return this;
+    },
+    setHeader(name: string, value: string) {
+      (this as any).headers[name] = value;
       return this;
     },
     cookie(name: string, value: string, options: any) {
@@ -67,7 +79,7 @@ function mockRes() {
       cleared.push(name);
       return this;
     },
-  } as unknown as Response & { jsonPayload: any };
+  } as unknown as Response & { jsonPayload: any; headers: Record<string, string> };
   return { res, cookies, cleared };
 }
 
@@ -245,5 +257,18 @@ describe('auth controller: cookies, not body tokens', () => {
     expect(cleared).toEqual(
       expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
     );
+  });
+
+  it('marks the 2FA status no-store so a revalidation cannot answer 304', async () => {
+    authServiceMock.getTwoFactorStatus.mockResolvedValue({ enabled: false, isInvited: true });
+
+    const { res } = mockRes();
+    await getTwoFactorStatus(mockReq(), res, vi.fn());
+
+    expect(authServiceMock.getTwoFactorStatus).toHaveBeenCalledWith('u-1');
+    expect(res.jsonPayload.data).toEqual({ enabled: false, isInvited: true });
+    // Express would otherwise add an ETag and a 304 on `If-None-Match`; the web
+    // client's post-sign-in invitation waits for a 2xx status answer.
+    expect(res.headers['Cache-Control']).toBe('no-store, private');
   });
 });

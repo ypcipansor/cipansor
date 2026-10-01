@@ -77,11 +77,13 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
     expect(page.url()).toContain("/spmb");
-    const bodyText = await page.textContent("body");
-    expect(bodyText).toContain("Total Pendaftar");
-    expect(bodyText).toContain("Menunggu Verifikasi");
-    expect(bodyText).toContain("Lulus Seleksi");
-    expect(bodyText).toContain("Gelombang Aktif");
+    // The hub is a client component: `domcontentloaded` can land before React
+    // mounts it, so a one-shot `textContent("body")` reads the pre-hydration
+    // shell on WebKit under load. Await the labels themselves instead.
+    await expect(page.getByText("Total Pendaftar")).toBeVisible();
+    await expect(page.getByText("Menunggu Verifikasi")).toBeVisible();
+    await expect(page.getByText("Lulus Seleksi")).toBeVisible();
+    await expect(page.getByText("Gelombang Aktif")).toBeVisible();
   });
 
   test("admin registrations list filters by status query parameter and opens detail verification panel", async ({
