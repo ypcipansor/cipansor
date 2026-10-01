@@ -1,0 +1,105 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../../lib/prisma', () => ({
+  prisma: {
+    payrollPeriod: { findUnique: vi.fn() },
+    payrollGuardConfig: { findFirst: vi.fn() },
+    payrollPolicyRule: { findMany: vi.fn() },
+    salaryComponent: { findMany: vi.fn() },
+    staff: { findMany: vi.fn() },
+    staffAttendance: { findMany: vi.fn() },
+    attendanceExemption: { findMany: vi.fn() },
+    userRoleAssignment: { findMany: vi.fn() },
+  },
+}));
+
+vi.mock('../../../utils/work-calendar', () => ({
+  workWeekFor: vi.fn(async () => ({ workDays: [1, 2, 3, 4, 5, 6], hoursPerDay: 7 })),
+  holidaysInRange: vi.fn(async () => []),
+  isHolidayDay: vi.fn(() => false),
+}));
+
+import { prisma } from '../../../lib/prisma';
+import { attendanceDeductionService } from '../attendance-deduction.service';
+
+const m = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+
+const PERIOD = {
+  id: 'period-1',
+  unitId: 'unit-1',
+  startDate: new Date('2026-09-01'),
+  endDate: new Date('2026-09-02'),
+};
+
+/** A base salary of 10M plus a 1M meal allowance — no other lines. */
+const STAFF = [
+  {
+    id: 'staff-1',
+    user: { id: 'user-1', name: 'Ustadz Ahmad' },
+    employeeSalary: {
+      baseSalary: 10_000_000,
+      taxStatus: 'TK/0',
+      npwp: null,
+      items: [
+        {
+          amount: 1_000_000,
+          isPercentage: false,
+          rate: null,
+          component: {
+            code: 'MEAL_ALLOWANCE',
+            name: 'Tunjangan Makan',
+            type: 'EARNING',
+            classification: 'TIDAK_TETAP',
+            isTaxable: true,
+          },
+        },
+      ],
+    },
+  },
+];
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  m.payrollPeriod.findUnique.mockResolvedValue(PERIOD as never);
+  m.payrollGuardConfig.findFirst.mockResolvedValue(null as never);
+  m.payrollPolicyRule.findMany.mockResolvedValue([] as never);
+  m.staff.findMany.mockResolvedValue(STAFF as never);
+  m.staffAttendance.findMany.mockResolvedValue([] as never);
+  m.attendanceExemption.findMany.mockResolvedValue([] as never);
+  m.userRoleAssignment.findMany.mockResolvedValue([] as never);
+});
+
+describe('computeForPeriod — PPh 21 basis matches the slip', () => {
+  it('does not tax an untaxed base salary, so the allowance cap is not shrunk', async () => {
+    m.salaryComponent.findMany.mockResolvedValue([
+      { code: 'BASIC_SALARY', classification: 'POKOK', isTaxable: false },
+    ] as never);
+
+    const [row] = await attendanceDeductionService.computeForPeriod(PERIOD.id);
+
+    // Only the 1M taxable allowance is income; the 10M base is untaxed, so the
+    // slip charges no PPh 21 and the whole 1M allowance stays available.
+    expect(row.allowanceCap).toBe(1_000_000);
+  });
+
+  it('taxes a taxable base salary, reducing the allowance the engine may spend', async () => {
+    m.salaryComponent.findMany.mockResolvedValue([
+      { code: 'BASIC_SALARY', classification: 'POKOK', isTaxable: true },
+    ] as never);
+
+    const [row] = await attendanceDeductionService.computeForPeriod(PERIOD.id);
+
+    // Base 10M + allowance 1M = 11M taxable, no NPWP → PPh 21 480k, leaving 520k.
+    expect(row.allowanceCap).toBe(520_000);
+  });
+
+  it('treats a structure with no basic component as the slip does: base untaxed', async () => {
+    // The generator prints no basic line and adds nothing to taxable income
+    // when there is no active basic component, so the engine must not tax it.
+    m.salaryComponent.findMany.mockResolvedValue([] as never);
+
+    const [row] = await attendanceDeductionService.computeForPeriod(PERIOD.id);
+
+    expect(row.allowanceCap).toBe(1_000_000);
+  });
+});

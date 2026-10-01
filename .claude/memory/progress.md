@@ -23,6 +23,18 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Waiting on the user
 
+- **Absensi pegawai — audited 2026-09-29, not implemented.** The user asked to
+  be reminded when it is time to build it (`roadmap.md` §0a, defects in
+  `known-issues.md`). Eight questions were put to them with a recommendation
+  each, none answered yet: night-shift attribution (recommended: the check-out
+  looks back for an open CHECK_IN); who fills the register (recommended: an
+  evening job marks ABSENT, the admin corrects); the overtime basis
+  (recommended: PP 35/2021 Ps. 32, mandatory by law); the selfie/location
+  default (recommended: required yayasan-wide); the device reality
+  (recommended: add a gate kiosk mode beside personal phones); retention
+  (recommended: one number in `RetentionPolicy`); consent (recommended: a
+  one-time page that can be proven); and whether to start now.
+
 - Approval for the next production release — deferred by the user on
   2026-09-27; ask again at the end of every report. (Which fixes production
   still lacks is for the machine-local memory, not here — see "Where things

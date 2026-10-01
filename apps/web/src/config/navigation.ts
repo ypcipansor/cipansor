@@ -6,6 +6,7 @@ import {
   GraduationCap,
   BookOpen,
   Calendar,
+  Camera,
   ClipboardCheck,
   BookMarked,
   Home,
@@ -253,6 +254,13 @@ const teacherNavigation: NavGroup[] = [
         icon: ClipboardCheck,
       },
       {
+        // Self-service clock-in for the employee themselves (selfie + geotag),
+        // distinct from recording a santri's attendance above.
+        title: "Absen Saya",
+        href: "/hr/attendance/me",
+        icon: Camera,
+      },
+      {
         // The same page: a TK guru writes a child's day for the wali
         // (buku penghubung); elsewhere it is the Mutabaah Yaumiyah.
         title: "Laporan Harian",
@@ -493,6 +501,13 @@ const staffNavigation: NavGroup[] = [
         title: "E-Office (Persuratan)",
         href: "/e-office",
         icon: Mail,
+      },
+      {
+        // Every employee clocks in for themselves, so this is on the staff
+        // menu too — not only on the admin one.
+        title: "Absen Saya",
+        href: "/hr/attendance/me",
+        icon: Camera,
       },
       {
         title: "Keuangan",
@@ -1267,12 +1282,22 @@ const adminNavigation: NavGroup[] = [
         icon: Clock,
         children: [
           {
-            title: "Staff Attendance",
+            title: "Absensi Pegawai",
             href: "/hr/attendance",
             icon: ClipboardCheck,
           },
           {
-            title: "Teacher Compliance",
+            title: "Absen Mandiri",
+            href: "/hr/attendance/me",
+            icon: Camera,
+          },
+          {
+            title: "Pengaturan Absensi",
+            href: "/hr/attendance/settings",
+            icon: Settings,
+          },
+          {
+            title: "Kepatuhan Guru",
             href: "/hr/teachers/compliance",
             icon: Shield,
           },

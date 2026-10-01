@@ -79,6 +79,7 @@ describe('HR Employee Service', () => {
 
     db.user.findUnique.mockResolvedValue(null);
     db.user.create.mockResolvedValue(mockUser);
+    db.staff.create.mockResolvedValue({ id: 'staff-1', userId: 'user-1' });
     db.teacher.create.mockResolvedValue({ id: 'teacher-1', userId: 'user-1' });
 
     // Act
@@ -95,14 +96,23 @@ describe('HR Employee Service', () => {
       }),
     });
 
+    // A teacher must get a Staff row too — attendance, leave and payroll key on
+    // Staff — and the Teacher row links back to it.
+    expect(db.staff.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: 'user-1',
+        unitId: 'unit-1',
+      }),
+    });
+
     expect(db.teacher.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         userId: 'user-1',
+        staffId: 'staff-1',
         nuptk: input.nuptk,
       }),
     });
 
-    expect(db.staff.create).not.toHaveBeenCalled();
     expect(result).toEqual(mockUser);
   });
 
@@ -173,6 +183,7 @@ describe('HR Employee Service', () => {
     };
     db.user.findUnique.mockResolvedValue(null);
     db.user.create.mockResolvedValue({ id: 'user-2' });
+    db.staff.create.mockResolvedValue({ id: 'staff-2', userId: 'user-2' });
     db.teacher.create.mockResolvedValue({ id: 'teacher-2', userId: 'user-2' });
 
     await createEmployee({

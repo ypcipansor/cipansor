@@ -36,6 +36,8 @@ the mechanical cases.
 - [public-site-photography](decisions/public-site-photography.md) — where real photos come from, what was left behind, claim only what a photo shows
 - [peran-dan-tugas-tambahan](decisions/peran-dan-tugas-tambahan.md) — a role code is a person's function; wakasek, wali kelas, guru wali, … are relations or timed assignments; guru wali runs at SMP IT/SMA Qur'an; who reads a confidential counselling session
 - [absensi-harian](decisions/absensi-harian.md) — the register is taken in class by the wali kelas or a teacher of the class; one page; automatic follow-up owned by the wali kelas or the musyrif; no guru piket; the pattern flag's four parameters (2026-09-28)
+- [absensi-pegawai](decisions/absensi-pegawai.md) — staff attendance: selfie + geotag, shift/hours/pay-rule/guard/leave all settings (never hardcoded), deductions from allowances never basic salary, night shift, holidays from a public API, 1-year selfie retention, manual edits only by admin with reason + audit (2026-09-29); **audited 2026-09-29 — built but defective, work in `roadmap.md` §0a, defects in `known-issues.md`**
+- [persetujuan-pengguna](decisions/persetujuan-pengguna.md) — one-time terms/privacy/regulation consent on a dedicated page after login, per version, decline = logout (2026-09-29)
 - [realtime-polling](decisions/realtime-polling.md) — no push channel; the web polls; Socket.IO removed (no client); Web Push first for phones, WebSocket only for a seconds-level need and after Model A, with its conditions
 - [autentikasi-2fa-dan-sandi](decisions/autentikasi-2fa-dan-sandi.md) — 2FA wajib: admin, organ, kepala unit; diajak sesudah login: staf + wali, "Nanti saja" tanpa batas; sandi diganti karena kejadian, bukan kalender; panjang + daftar terlarang lokal (NIST 800-63B-4); "Masuk dengan Google" hanya akun @cipansor.or.id (`hd`), peran wajib tetap kode Cipansor sesudahnya, tanpa jalur Microsoft; passkey Cipansor sebagai jalur masuk **pertama** (Model A), sandi+TOTP+kode pemulihan tetap fallback, satu passkey memenuhi kewajiban 2FA
 - [struktur-organisasi-dan-identitas](decisions/struktur-organisasi-dan-identitas.md) — audit 2026-09-29: unit Pesantren dibuat; satu pohon org maks 3 tingkat, jabatan terpisah dari pemegangnya; Model A bertahap tapi menyeluruh (baseline hanya menyusut); Google OU per kebijakan + grup otomatis; Cipansor → Google → Microsoft ditegaskan (hub Microsoft butuh P1)
@@ -68,6 +70,7 @@ the mechanical cases.
 - [mobile-layout-audit](lessons/mobile-layout-audit.md) — `scrollWidth` lies here; the ancestor-walk test that works
 - [radix-scrollarea-thumb-stalls](lessons/radix-scrollarea-thumb-stalls.md) — the thumb that stops at 3%; measuring at end of frame
 - [select-empty-value-sentinel](lessons/select-empty-value-sentinel.md) — `""` vs the wrapper's sentinel; never `value={x || undefined}`; build a form of Selects after its data, do not reset it
+- [attendance-system-traps](lessons/attendance-system-traps.md) — a policy read as `policy?.flag` fails open; a `datetime()` schema refuses a date picker's value; two codes for one concept; a derived counter never incremented; a retention setting with no job; "recorded" that no one records
 
 Update a file in place — one subject, one file — on a branch and through a PR,
 like any other change. Keep this index to one line per file.

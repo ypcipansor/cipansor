@@ -21,6 +21,22 @@ import { randomBytes } from 'crypto';
 import { hashPassword } from '../../lib/password';
 import { assertPasswordAllowed } from '../../lib/password-policy';
 import { Errors } from '../../middleware/error';
+import { ADMIN_ROLE_CODES } from '@cipansor/shared';
+import {
+  dayOf,
+  dayString,
+  todayWib,
+  wibMinutesOfDay,
+  wibTimeOnDay,
+  wibWeekday,
+} from '../../utils/wib';
+import {
+  holidaysInRange,
+  isHolidayDay,
+  isNonWorkingDay as sharedIsNonWorkingDay,
+  workWeekFor,
+} from '../../utils/work-calendar';
+import { deleteManagedUpload } from '../../utils/managed-upload';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -267,10 +283,24 @@ export async function createEmployee(data: CreateEmployeeInput) {
 
     // 2. Create Profile based on Role
     if (data.role === 'TEACHER') {
+      // A teacher needs a Staff row too: attendance, leave and payroll all key
+      // on Staff, and without one the person is told "Profil pegawai" and can
+      // neither clock in nor file leave. One Staff row per person, linked back.
+      const staff = await tx.staff.create({
+        data: {
+          userId: user.id,
+          unitId: data.unitId,
+          nip: data.nip,
+          position: data.specialization || 'Guru',
+          joinDate: data.joinDate ? new Date(data.joinDate) : undefined,
+          employmentStatus: data.employmentStatus,
+        },
+      });
       await tx.teacher.create({
         data: {
           userId: user.id,
           unitId: data.unitId,
+          staffId: staff.id,
           nip: data.nip,
           nuptk: data.nuptk,
           gender: data.gender,
@@ -431,6 +461,16 @@ export async function getStaffAttendance(params: {
       take: limit,
       orderBy: { date: 'desc' },
       include: {
+        shift: { select: { id: true, name: true, startTime: true, endTime: true } },
+        records: {
+          select: {
+            kind: true,
+            photoUrl: true,
+            latitude: true,
+            longitude: true,
+            isWithinRadius: true,
+          },
+        },
         staff: {
           include: {
             user: { select: { id: true, name: true, email: true } },
@@ -452,6 +492,8 @@ export async function getStaffAttendanceById(id: string) {
   return prisma.staffAttendance.findUnique({
     where: { id },
     include: {
+      shift: true,
+      records: { include: { site: true } },
       staff: {
         include: {
           user: { select: { id: true, name: true, email: true } },
@@ -462,25 +504,236 @@ export async function getStaffAttendanceById(id: string) {
   });
 }
 
-export async function createStaffAttendance(data: CreateStaffAttendanceInput) {
-  const date = new Date(data.date);
-  date.setHours(0, 0, 0, 0);
+/**
+ * Resolve the one Staff identity behind a staffId or a legacy teacherId. The
+ * attendance table keys on staffId; a teacher's Staff row is linked from
+ * Teacher.staffId. Throws when a teacher has no Staff row yet, rather than
+ * silently writing nothing.
+ */
+export async function resolveStaffId(input: {
+  staffId?: string;
+  teacherId?: string;
+}): Promise<string> {
+  if (input.staffId) return input.staffId;
+  if (input.teacherId) {
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: input.teacherId },
+      select: { staffId: true },
+    });
+    if (teacher?.staffId) return teacher.staffId;
+    throw Errors.badRequest('Guru belum memiliki data pegawai (Staff)');
+  }
+  throw Errors.badRequest('staffId atau teacherId wajib diisi');
+}
+
+/** The caller's own Staff row, reached directly or through their Teacher row. */
+export async function resolveStaffIdForUser(userId: string): Promise<string> {
+  const [staff, teacher] = await Promise.all([
+    prisma.staff.findUnique({ where: { userId }, select: { id: true } }),
+    prisma.teacher.findUnique({ where: { userId }, select: { staffId: true } }),
+  ]);
+  if (staff) return staff.id;
+  if (teacher?.staffId) return teacher.staffId;
+  throw Errors.notFound('Profil pegawai');
+}
+
+/**
+ * Resolve a staff id named by an administrator. Only a super admin or a unit
+ * admin may name someone else, and a unit admin is confined to their unit.
+ */
+export async function resolveDelegatedStaffId(
+  user: { roleCode?: string | null; role?: string | null; unitId?: string | null },
+  requested: string
+): Promise<string> {
+  if (!isUnitAdminUser(user) && !isSuperAdminUser(user)) {
+    throw Errors.forbidden('Hanya admin unit yang dapat mengabsen pegawai lain');
+  }
+  const staff = await prisma.staff.findUnique({
+    where: { id: requested },
+    select: { id: true, unitId: true },
+  });
+  if (!staff) throw Errors.notFound('Staff');
+  assertWithinScope(scopedUnitId(user, null), staff.unitId, 'Pegawai');
+  return staff.id;
+}
+
+/**
+ * Refuse a write on another person's HR record unless the caller administers
+ * them. Without this any signed-in staff member could edit a colleague's
+ * attendance or leave by naming their id.
+ */
+export async function assertMayManageStaff(
+  user: { sub?: string; roleCode?: string | null; role?: string | null; unitId?: string | null },
+  staffId: string
+): Promise<void> {
+  if (isSuperAdminUser(user)) return;
+  if (!isUnitAdminUser(user)) {
+    throw Errors.forbidden('Hanya admin yang dapat mengelola data pegawai lain');
+  }
+  if (!user.unitId) throw Errors.forbidden('Akun admin belum terhubung ke unit');
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: { unitId: true },
+  });
+  if (!staff) throw Errors.notFound('Staff');
+  if (staff.unitId !== user.unitId) {
+    throw Errors.forbidden('Pegawai berada di luar unit Anda');
+  }
+}
+
+/** The Staff identity a leave is filed for, reached through either id. */
+export async function leaveStaffId(input: {
+  staffId?: string | null;
+  teacherId?: string | null;
+}): Promise<string> {
+  return resolveStaffId({
+    staffId: input.staffId ?? undefined,
+    teacherId: input.teacherId ?? undefined,
+  });
+}
+
+/**
+ * Refuse a leave write on a record the caller neither owns nor administers.
+ * Admins are confined to their unit; everyone else to their own leave.
+ */
+export async function assertMayManageLeave(
+  user: { sub: string; roleCode?: string | null; role?: string | null; unitId?: string | null },
+  leave: { staffId: string | null; teacherId: string | null }
+): Promise<void> {
+  const target = await leaveStaffId(leave);
+  if (isSuperAdminUser(user) || isUnitAdminUser(user)) {
+    await assertMayManageStaff(user, target);
+    return;
+  }
+  const own = await resolveStaffIdForUser(user.sub);
+  if (target !== own) {
+    throw Errors.forbidden('Anda hanya dapat mengelola cuti milik sendiri');
+  }
+}
+
+/** The shift columns lateness is judged against. */
+export interface WorkShiftRow {
+  id: string;
+  startTime: string;
+  endTime: string;
+  graceMinutes: number;
+  crossesMidnight: boolean;
+}
+
+/**
+ * Minutes late on the WIB clock, 0 when on time. `policyGraceMinutes` overrides
+ * the shift's own grace when the unit policy sets one.
+ *
+ * A shift that crosses midnight still starts at its start time on the evening
+ * the shift begins, so lateness is measured as elapsed minutes since that
+ * instant — the WIB minute-of-day comparison is wrong across midnight. Without
+ * the shift's start day (`day`) the function cannot place the start, and it
+ * falls back to not judging lateness rather than judging it wrongly.
+ */
+export function computeLateMinutes(
+  checkIn: Date,
+  shift: WorkShiftRow | null | undefined,
+  policyGraceMinutes?: number | null,
+  day?: string
+): number | undefined {
+  if (!shift) return undefined;
+  const grace = policyGraceMinutes ?? shift.graceMinutes;
+  if (shift.crossesMidnight) {
+    if (!day) return 0;
+    const start = wibTimeOnDay(day, shift.startTime).getTime();
+    const diff = Math.floor((checkIn.getTime() - start) / 60_000) - grace;
+    return Math.max(0, diff);
+  }
+  const [h, m] = shift.startTime.split(':').map(Number);
+  const diff = wibMinutesOfDay(checkIn) - (h * 60 + m) - grace;
+  return Math.max(0, diff);
+}
+
+/**
+ * The shift that governs a staff member on a WIB day: a fixed assignment whose
+ * day-of-week list covers the day wins; otherwise the active rotation the
+ * person is a member of, by turn position. Null when nothing is configured.
+ */
+export async function resolveShiftForDate(staffId: string, day: string) {
+  const date = dayOf(day);
+  const dow = wibWeekday(day);
+  const assignment = await prisma.shiftAssignment.findFirst({
+    where: {
+      staffId,
+      effectiveFrom: { lte: date },
+      AND: [
+        { OR: [{ effectiveTo: null }, { effectiveTo: { gte: date } }] },
+        { OR: [{ daysOfWeek: { isEmpty: true } }, { daysOfWeek: { has: dow } }] },
+      ],
+    },
+    include: { shift: true },
+    orderBy: { effectiveFrom: 'desc' },
+  });
+  if (assignment) return assignment.shift;
+
+  const rotation = await prisma.shiftRotation.findFirst({
+    where: {
+      isActive: true,
+      memberIds: { has: staffId },
+      startDate: { lte: date },
+      OR: [{ endDate: null }, { endDate: { gte: date } }],
+    },
+    include: { shift: true },
+    orderBy: { startDate: 'desc' },
+  });
+  if (!rotation || rotation.memberIds.length === 0) return null;
+
+  const dayIndex = Math.floor((date.getTime() - new Date(rotation.startDate).getTime()) / 86400000);
+  const turn = Math.floor(dayIndex / rotation.cycleDays) % rotation.memberIds.length;
+  if (rotation.memberIds[turn] !== staffId) return null;
+  return rotation.shift;
+}
+
+/** The role codes a staff member's user holds, for role-based exemptions. */
+async function roleCodesOf(userId: string): Promise<string[]> {
+  const assignments = await prisma.userRoleAssignment.findMany({
+    where: { userId, isActive: true },
+    select: { role: { select: { code: true } } },
+  });
+  return assignments.map((a) => a.role.code);
+}
+
+export async function createStaffAttendance(
+  data: CreateStaffAttendanceInput,
+  recordedById?: string
+) {
+  const staffId = await resolveStaffId(data);
+  const date = dayOf(dayString(new Date(data.date)));
+
+  const shift = await resolveShiftForDate(staffId, dayString(date));
+  const lateMinutes =
+    data.checkIn && shift
+      ? computeLateMinutes(new Date(data.checkIn), shift, undefined, dayString(date))
+      : undefined;
 
   return prisma.staffAttendance.create({
     data: {
-      staffId: data.staffId,
-      teacherId: data.teacherId,
+      staffId,
       date,
       status: data.status,
+      shiftId: shift?.id,
       checkIn: data.checkIn ? new Date(data.checkIn) : undefined,
       checkOut: data.checkOut ? new Date(data.checkOut) : undefined,
+      lateMinutes,
       notes: data.notes,
+      recordedById,
     },
   });
 }
 
-export async function updateStaffAttendance(id: string, data: UpdateStaffAttendanceInput) {
-  return prisma.staffAttendance.update({
+export async function updateStaffAttendance(
+  id: string,
+  data: UpdateStaffAttendanceInput,
+  actorId?: string
+) {
+  const before = await prisma.staffAttendance.findUnique({ where: { id } });
+  if (!before) throw Errors.notFound('Absensi');
+  const updated = await prisma.staffAttendance.update({
     where: { id },
     data: {
       status: data.status,
@@ -489,36 +742,63 @@ export async function updateStaffAttendance(id: string, data: UpdateStaffAttenda
       notes: data.notes,
     },
   });
+  await prisma.auditLog.create({
+    data: {
+      userId: actorId ?? null,
+      action: 'UPDATE',
+      entity: 'StaffAttendance',
+      entityId: id,
+      oldValues: {
+        status: before.status,
+        checkIn: before.checkIn?.toISOString() ?? null,
+        checkOut: before.checkOut?.toISOString() ?? null,
+        notes: before.notes,
+      },
+      newValues: {
+        status: updated.status,
+        checkIn: updated.checkIn?.toISOString() ?? null,
+        checkOut: updated.checkOut?.toISOString() ?? null,
+        notes: updated.notes,
+        reason: data.reason,
+      },
+    },
+  });
+  return updated;
 }
 
-export async function recordBulkAttendance(data: BulkAttendanceInput) {
-  const date = new Date(data.date);
-  date.setHours(0, 0, 0, 0);
+export async function recordBulkAttendance(data: BulkAttendanceInput, recordedById?: string) {
+  // The day the admin picked is a WIB calendar day, stored as UTC midnight.
+  const date = dayOf(dayString(new Date(data.date)));
+
+  // Resolve every row to its Staff identity up front, so the transaction below
+  // cannot fail halfway through a list of teachers that lack Staff rows.
+  const rows = await Promise.all(
+    data.records.map(async (record) => ({
+      staffId: await resolveStaffId(record),
+      record,
+    }))
+  );
 
   const results = await prisma.$transaction(
-    data.records.map((record) => {
-      // Handle upsert with new composite key
-      // Must explicitly set the other ID to null for the unique constraint
-      const whereUnique = record.staffId
-        ? { staffId_teacherId_date: { staffId: record.staffId, teacherId: null, date } }
-        : { staffId_teacherId_date: { staffId: null, teacherId: record.teacherId!, date } };
-
+    rows.map(({ staffId, record }) => {
+      const checkIn = record.checkIn ? new Date(record.checkIn) : undefined;
       return prisma.staffAttendance.upsert({
-        where: whereUnique as any,
+        where: { staffId_date: { staffId, date } },
         update: {
           status: record.status,
-          checkIn: record.checkIn ? new Date(record.checkIn) : undefined,
+          checkIn,
           checkOut: record.checkOut ? new Date(record.checkOut) : undefined,
           notes: record.notes,
+          recordedById,
         },
         create: {
-          staffId: record.staffId,
-          teacherId: record.teacherId,
+          staffId,
           date,
           status: record.status,
-          checkIn: record.checkIn ? new Date(record.checkIn) : undefined,
+          checkIn,
           checkOut: record.checkOut ? new Date(record.checkOut) : undefined,
           notes: record.notes,
+          recordedById,
         },
       });
     })
@@ -527,7 +807,23 @@ export async function recordBulkAttendance(data: BulkAttendanceInput) {
   return { count: results.length, records: results };
 }
 
-export async function getStaffAttendanceSummary(staffId: string, month: number, year: number) {
+export async function getStaffAttendanceSummary(
+  staffId: string,
+  month: number,
+  year: number,
+  scopeUnitId?: string
+) {
+  // A unit admin may only read the summary of their own unit's staff.
+  if (scopeUnitId) {
+    const staff = await prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { unitId: true },
+    });
+    if (!staff || staff.unitId !== scopeUnitId) {
+      throw Errors.forbidden('Pegawai berada di luar unit Anda');
+    }
+  }
+
   const startDate = new Date(year, month - 1, 1);
   const endDate = new Date(year, month, 0);
 
@@ -556,8 +852,942 @@ export async function getStaffAttendanceSummary(staffId: string, month: number, 
   };
 }
 
-export async function deleteStaffAttendance(id: string) {
-  return prisma.staffAttendance.delete({ where: { id } });
+export async function deleteStaffAttendance(id: string, reason?: string, actorId?: string) {
+  const before = await prisma.staffAttendance.findUnique({ where: { id } });
+  if (!before) throw Errors.notFound('Absensi');
+  const deleted = await prisma.staffAttendance.delete({ where: { id } });
+  await prisma.auditLog.create({
+    data: {
+      userId: actorId ?? null,
+      action: 'DELETE',
+      entity: 'StaffAttendance',
+      entityId: id,
+      oldValues: {
+        staffId: before.staffId,
+        date: before.date.toISOString(),
+        status: before.status,
+        checkIn: before.checkIn?.toISOString() ?? null,
+        checkOut: before.checkOut?.toISOString() ?? null,
+      },
+      newValues: { reason: reason ?? null },
+    },
+  });
+  return deleted;
+}
+
+// =====================================
+// WORK CALENDAR & POLICY SERVICE
+// =====================================
+
+/** Distance between two points in metres (haversine). */
+export function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(a)));
+}
+
+/** The active policy for a unit, falling back to the yayasan-wide default. */
+export async function getAttendancePolicy(unitId?: string | null) {
+  if (unitId) {
+    const own = await prisma.attendancePolicy.findFirst({
+      where: { unitId, isActive: true },
+    });
+    if (own) return own;
+  }
+  return prisma.attendancePolicy.findFirst({ where: { unitId: null, isActive: true } });
+}
+
+/** The work-week for a unit, falling back to the default. */
+export async function getWorkWeekConfig(unitId?: string | null) {
+  if (unitId) {
+    const own = await prisma.workWeekConfig.findFirst({
+      where: { unitId, isActive: true },
+    });
+    if (own) return own;
+  }
+  return prisma.workWeekConfig.findFirst({ where: { unitId: null, isActive: true } });
+}
+
+/**
+ * Whether a staff member is exempt from clocking in. Kyai/pimpinan and kepala
+ * sekolah are exempt because their role or their person is listed; the check is
+ * data-driven so the list is a setting, not a hardcoded name.
+ */
+export async function isExemptFromAttendance(
+  staffId: string,
+  roleCodes: string[]
+): Promise<boolean> {
+  const exemption = await prisma.attendanceExemption.findFirst({
+    where: {
+      isActive: true,
+      OR: [{ staffId }, ...(roleCodes.length ? [{ roleCode: { in: roleCodes } }] : [])],
+    },
+  });
+  return Boolean(exemption);
+}
+
+/**
+ * Is a date a non-working day for a unit? A whole-unit holiday (a CalendarEvent
+ * of type HOLIDAY scoped to the unit or all units) or a day outside the unit's
+ * configured work week. This is the single answer the attendance jobs use, so a
+ * holiday is defined once.
+ */
+export async function isNonWorkingDay(day: string, unitId?: string | null): Promise<boolean> {
+  return sharedIsNonWorkingDay(day, unitId ?? null);
+}
+
+/** The work calendar for a month: each day and whether it is a work day. */
+export async function getWorkCalendar(month: number, year: number, unitId?: string | null) {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthStart = dayOf(`${year}-${String(month).padStart(2, '0')}-01`);
+  const monthEnd = new Date(monthStart.getTime() + daysInMonth * 86_400_000 - 1);
+  const week = await workWeekFor(unitId ?? null);
+  const holidays = await holidaysInRange(monthStart, monthEnd, unitId ?? null);
+
+  return Array.from({ length: daysInMonth }, (_, i) => {
+    const day = `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
+    const holiday = isHolidayDay(day, holidays);
+    const inWorkWeek = week.workDays.length === 0 || week.workDays.includes(wibWeekday(day));
+    return {
+      date: day,
+      isWorkDay: inWorkWeek && !holiday,
+      isHoliday: holiday,
+    };
+  });
+}
+
+// =====================================
+// SELF CHECK-IN / CHECK-OUT
+// =====================================
+
+export interface SelfAttendanceInput {
+  staffId: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  photoUrl?: string;
+  deviceInfo?: string;
+}
+
+/**
+ * The nearest active site for a unit (or yayasan-wide) and the distance to it.
+ * Null coordinates means location was not supplied.
+ */
+async function nearestSite(lat?: number, lon?: number, unitId?: string | null) {
+  if (lat === undefined || lon === undefined) return null;
+  const sites = await prisma.attendanceSite.findMany({
+    where: { isActive: true, OR: [{ unitId: null }, ...(unitId ? [{ unitId }] : [])] },
+  });
+  if (!sites.length) return null;
+  let best = sites[0];
+  let bestDistance = haversineMeters(lat, lon, best.latitude, best.longitude);
+  for (const site of sites.slice(1)) {
+    const d = haversineMeters(lat, lon, site.latitude, site.longitude);
+    if (d < bestDistance) {
+      best = site;
+      bestDistance = d;
+    }
+  }
+  return { site: best, distanceMeters: bestDistance };
+}
+
+export async function selfCheckIn(input: SelfAttendanceInput) {
+  const staff = await prisma.staff.findUnique({
+    where: { id: input.staffId },
+    select: { unitId: true, user: { select: { id: true } } },
+  });
+  if (!staff) throw Errors.notFound('Staff');
+
+  // A person exempt from clocking in is refused rather than recorded, so the
+  // register never shows a punch for someone the policy says is not on it.
+  const roleCodes = await roleCodesOf(staff.user.id);
+  if (await isExemptFromAttendance(input.staffId, roleCodes)) {
+    throw Errors.badRequest('Anda dikecualikan dari absensi harian');
+  }
+
+  const day = todayWib();
+  if (await isNonWorkingDay(day, staff.unitId)) {
+    throw Errors.badRequest('Hari ini bukan hari kerja');
+  }
+
+  const policy = await getAttendancePolicy(staff.unitId);
+  if (policy?.requireSelfie && !input.photoUrl) {
+    throw Errors.badRequest('Foto selfie wajib diambil untuk absen masuk');
+  }
+  if (policy?.requireLocation && (input.latitude === undefined || input.longitude === undefined)) {
+    throw Errors.badRequest('Lokasi wajib diaktifkan untuk absen masuk');
+  }
+
+  const now = new Date();
+  const date = dayOf(day);
+
+  const existing = await prisma.staffAttendance.findUnique({
+    where: { staffId_date: { staffId: input.staffId, date } },
+    select: { id: true, checkIn: true },
+  });
+  if (existing?.checkIn) {
+    throw Errors.badRequest('Anda sudah absen masuk hari ini');
+  }
+
+  const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
+  const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
+  if (policy?.outsideRadiusAction === 'REJECT' && withinRadius === false) {
+    throw Errors.badRequest('Anda berada di luar lokasi absen yang diizinkan');
+  }
+
+  const shift = await resolveShiftForDate(input.staffId, day);
+  const lateMinutes = shift ? computeLateMinutes(now, shift, policy?.graceMinutes, day) : undefined;
+  const status =
+    lateMinutes && lateMinutes > 0 ? StaffAttendanceStatus.LATE : StaffAttendanceStatus.PRESENT;
+
+  // The day row and its evidence are one write: if the evidence fails, the
+  // punch must not remain recorded without it (a retry would otherwise be
+  // refused as "already checked in", stranding the row).
+  const { attendance, record } = await prisma.$transaction(async (tx) => {
+    const attendance = await tx.staffAttendance.upsert({
+      where: { staffId_date: { staffId: input.staffId, date } },
+      update: { checkIn: now, shiftId: shift?.id, status, lateMinutes },
+      create: {
+        staffId: input.staffId,
+        date,
+        status,
+        shiftId: shift?.id,
+        checkIn: now,
+        lateMinutes,
+      },
+    });
+
+    // create, not upsert: an existing CHECK_IN row means a punch already
+    // happened, and the evidence for it must not be swapped out afterwards.
+    const record = await tx.attendanceRecord.create({
+      data: {
+        attendanceId: attendance.id,
+        kind: 'CHECK_IN',
+        photoUrl: input.photoUrl,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracyMeters: input.accuracyMeters,
+        siteId: match?.site.id,
+        distanceMeters: match?.distanceMeters,
+        isWithinRadius: withinRadius,
+        deviceInfo: input.deviceInfo,
+      },
+    });
+    return { attendance, record };
+  });
+
+  return { attendance, record, lateMinutes: lateMinutes ?? 0, withinRadius };
+}
+
+/**
+ * The row a checkout should attach to: today's open check-in, or — for a shift
+ * that crosses midnight — the previous day's row that is still open. Attendance
+ * rows key on the check-in day, so a 22:00–06:00 shift's checkout belongs to
+ * yesterday's row; looking only at today left such a shift unable to close.
+ */
+async function findOpenCheckInRow(staffId: string, today: string) {
+  const include = { records: { where: { kind: 'CHECK_OUT' }, select: { id: true } } } as const;
+  const current = await prisma.staffAttendance.findUnique({
+    where: { staffId_date: { staffId, date: dayOf(today) } },
+    include,
+  });
+  if (current?.checkIn && !current.checkOut) return current;
+
+  const yesterday = dayString(new Date(dayOf(today).getTime() - 86_400_000));
+  const previous = await prisma.staffAttendance.findUnique({
+    where: { staffId_date: { staffId, date: dayOf(yesterday) } },
+    include: { ...include, shift: true },
+  });
+  if (previous?.checkIn && !previous.checkOut && previous.shift?.crossesMidnight) {
+    return previous;
+  }
+  return current;
+}
+
+export async function selfCheckOut(input: SelfAttendanceInput) {
+  const staff = await prisma.staff.findUnique({
+    where: { id: input.staffId },
+    select: { unitId: true },
+  });
+  if (!staff) throw Errors.notFound('Staff');
+
+  const policy = await getAttendancePolicy(staff.unitId);
+  if (policy?.requireSelfie && !input.photoUrl) {
+    throw Errors.badRequest('Foto selfie wajib diambil untuk absen keluar');
+  }
+  if (policy?.requireLocation && (input.latitude === undefined || input.longitude === undefined)) {
+    throw Errors.badRequest('Lokasi wajib diaktifkan untuk absen keluar');
+  }
+
+  const now = new Date();
+  const day = todayWib();
+
+  const existing = await findOpenCheckInRow(input.staffId, day);
+  if (!existing?.checkIn) throw Errors.badRequest('Belum ada absen masuk hari ini');
+  if (existing.checkOut) throw Errors.badRequest('Anda sudah absen keluar hari ini');
+
+  const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
+  const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
+
+  // The checkout time and its evidence are one write, for the same reason as
+  // the check-in: a failure between them leaves the row closed with no evidence.
+  const { attendance, record } = await prisma.$transaction(async (tx) => {
+    const attendance = await tx.staffAttendance.update({
+      where: { id: existing.id },
+      data: { checkOut: now },
+    });
+
+    const record = await tx.attendanceRecord.create({
+      data: {
+        attendanceId: attendance.id,
+        kind: 'CHECK_OUT',
+        photoUrl: input.photoUrl,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracyMeters: input.accuracyMeters,
+        siteId: match?.site.id,
+        distanceMeters: match?.distanceMeters,
+        isWithinRadius: withinRadius,
+        deviceInfo: input.deviceInfo,
+      },
+    });
+    return { attendance, record };
+  });
+
+  return { attendance, record, withinRadius };
+}
+
+/** The caller's own attendance for a WIB day, with the evidence rows. */
+export async function getMyAttendance(staffId: string, day: string) {
+  const staff = await prisma.staff.findUnique({
+    where: { id: staffId },
+    select: { unitId: true, user: { select: { id: true } } },
+  });
+  if (!staff) throw Errors.notFound('Staff');
+
+  const roleCodes = staff.user ? await roleCodesOf(staff.user.id) : [];
+  const [attendance, exempt, shift, isWorkDay] = await Promise.all([
+    prisma.staffAttendance.findUnique({
+      where: { staffId_date: { staffId, date: dayOf(day) } },
+      include: { records: true, shift: true },
+    }),
+    isExemptFromAttendance(staffId, roleCodes),
+    resolveShiftForDate(staffId, day),
+    isNonWorkingDay(day, staff.unitId).then((nonWork) => !nonWork),
+  ]);
+
+  // An overnight shift checked in yesterday stays open into today; surface that
+  // row so the checkout button is available after midnight.
+  const openPrevious = await findOpenCheckInRow(staffId, day);
+  const overnight = openPrevious && openPrevious.id !== attendance?.id ? openPrevious : null;
+
+  return {
+    date: day,
+    attendance,
+    shift,
+    isWorkDay,
+    isExempt: exempt,
+    /** A still-open previous-day row, for a shift that crosses midnight. */
+    openAttendance: overnight,
+    canCheckIn: !exempt && isWorkDay && !attendance?.checkIn,
+    canCheckOut: !exempt && (!!overnight || (!!attendance?.checkIn && !attendance?.checkOut)),
+  };
+}
+
+// =====================================
+// ATTENDANCE SETTINGS SERVICE
+// =====================================
+
+/**
+ * The unit an admin may act on. A unit admin is pinned to their own unit; the
+ * super admin may name any (or none, meaning yayasan-wide). Prefers `roleCode`
+ * because the deprecated `role` bucket maps yayasan governance roles
+ * (Pembina/Ketua/Bendahara/Pengawas) to `UNIT_ADMIN`, which would have let them
+ * edit a school unit's settings.
+ */
+export function scopedUnitId(
+  user: { roleCode?: string | null; role?: string | null; unitId?: string | null },
+  requested?: string | null
+): string | null {
+  if (isUnitAdminUser(user)) {
+    if (!user.unitId) throw Errors.forbidden('Akun admin belum terhubung ke unit');
+    return user.unitId;
+  }
+  return requested ?? null;
+}
+
+export function isSuperAdminUser(user: {
+  roleCode?: string | null;
+  role?: string | null;
+}): boolean {
+  return user.roleCode === 'SUPER_ADMIN' || (!user.roleCode && user.role === 'SUPER_ADMIN');
+}
+
+export function isUnitAdminUser(user: { roleCode?: string | null; role?: string | null }): boolean {
+  if (isSuperAdminUser(user)) return false;
+  if (user.roleCode) return ADMIN_ROLE_CODES.includes(user.roleCode);
+  return user.role === 'UNIT_ADMIN';
+}
+
+/**
+ * Refuse a write on a row outside the caller's unit, or on a yayasan-wide row
+ * (`unitId` null) that only the super admin may change. Reads may include the
+ * yayasan default; writes may not reach it.
+ */
+function assertWithinScope(
+  scopeUnitId: string | null | undefined,
+  ownerUnitId: string | null | undefined,
+  what: string
+) {
+  if (!scopeUnitId) return;
+  if (ownerUnitId === null || ownerUnitId === undefined) {
+    throw Errors.forbidden(`${what} berlaku yayasan; hanya super admin dapat mengubahnya`);
+  }
+  if (ownerUnitId !== scopeUnitId) {
+    throw Errors.forbidden(`${what} berada di luar unit Anda`);
+  }
+}
+
+/**
+ * Refuse a scoped write whose payload would move the row to another unit. The
+ * ownership check reads the row's *current* unit, so without this a unit admin
+ * could pass the check and then persist `unitId` = someone else's — the row
+ * leaves their unit under their own hand. The scope is authoritative: the unit
+ * is pinned to it, and a different `unitId` in the body is a refusal.
+ */
+function assertNoUnitMove(
+  scopeUnitId: string | null | undefined,
+  incomingUnitId: unknown,
+  what: string
+): void {
+  if (!scopeUnitId) return;
+  if (incomingUnitId !== undefined && incomingUnitId !== null && incomingUnitId !== scopeUnitId) {
+    throw Errors.forbidden(`${what} tidak dapat dipindah ke unit lain`);
+  }
+}
+
+export async function listAttendanceSites(unitId?: string | null) {
+  return prisma.attendanceSite.findMany({
+    where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
+    orderBy: { label: 'asc' },
+  });
+}
+
+export async function createAttendanceSite(
+  data: Prisma.AttendanceSiteUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  if (scopeUnitId) data = { ...data, unitId: scopeUnitId };
+  return prisma.attendanceSite.create({ data });
+}
+
+export async function updateAttendanceSite(
+  id: string,
+  data: Prisma.AttendanceSiteUncheckedUpdateInput,
+  scopeUnitId?: string | null
+) {
+  const site = await prisma.attendanceSite.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!site) throw Errors.notFound('Lokasi absen');
+  assertWithinScope(scopeUnitId, site.unitId, 'Lokasi absen');
+  assertNoUnitMove(scopeUnitId, data.unitId, 'Lokasi absen');
+  const update = scopeUnitId ? { ...data, unitId: scopeUnitId } : data;
+  return prisma.attendanceSite.update({ where: { id }, data: update });
+}
+
+export async function deleteAttendanceSite(id: string, scopeUnitId?: string | null) {
+  const site = await prisma.attendanceSite.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!site) throw Errors.notFound('Lokasi absen');
+  assertWithinScope(scopeUnitId, site.unitId, 'Lokasi absen');
+  return prisma.attendanceSite.delete({ where: { id } });
+}
+
+export async function listWorkShifts(unitId?: string | null) {
+  return prisma.workShift.findMany({
+    where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
+    orderBy: { name: 'asc' },
+  });
+}
+
+export async function createWorkShift(
+  data: Prisma.WorkShiftUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  if (scopeUnitId) data = { ...data, unitId: scopeUnitId };
+  return prisma.workShift.create({ data });
+}
+
+export async function updateWorkShift(
+  id: string,
+  data: Prisma.WorkShiftUncheckedUpdateInput,
+  scopeUnitId?: string | null
+) {
+  const shift = await prisma.workShift.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!shift) throw Errors.notFound('Shift');
+  assertWithinScope(scopeUnitId, shift.unitId, 'Shift');
+  assertNoUnitMove(scopeUnitId, data.unitId, 'Shift');
+  const update = scopeUnitId ? { ...data, unitId: scopeUnitId } : data;
+  return prisma.workShift.update({ where: { id }, data: update });
+}
+
+export async function deleteWorkShift(id: string, scopeUnitId?: string | null) {
+  const shift = await prisma.workShift.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!shift) throw Errors.notFound('Shift');
+  assertWithinScope(scopeUnitId, shift.unitId, 'Shift');
+  return prisma.workShift.delete({ where: { id } });
+}
+
+export async function listShiftAssignments(staffId?: string, unitId?: string | null) {
+  return prisma.shiftAssignment.findMany({
+    where: {
+      ...(staffId ? { staffId } : {}),
+      ...(unitId ? { staff: { unitId } } : {}),
+    },
+    include: {
+      shift: true,
+      staff: { include: { user: { select: { name: true } } } },
+    },
+    orderBy: { effectiveFrom: 'desc' },
+  });
+}
+
+export async function createShiftAssignment(
+  data: {
+    staffId: string;
+    shiftId: string;
+    effectiveFrom: string;
+    effectiveTo?: string;
+    daysOfWeek: number[];
+  },
+  scopeUnitId?: string | null
+) {
+  const [staff, shift] = await Promise.all([
+    prisma.staff.findUnique({ where: { id: data.staffId }, select: { unitId: true } }),
+    prisma.workShift.findUnique({ where: { id: data.shiftId }, select: { unitId: true } }),
+  ]);
+  if (!staff) throw Errors.notFound('Staff');
+  if (!shift) throw Errors.notFound('Shift');
+  assertWithinScope(scopeUnitId, staff.unitId, 'Pegawai');
+  assertWithinScope(scopeUnitId, shift.unitId, 'Shift');
+  return prisma.shiftAssignment.create({
+    data: {
+      staffId: data.staffId,
+      shiftId: data.shiftId,
+      effectiveFrom: new Date(data.effectiveFrom),
+      effectiveTo: data.effectiveTo ? new Date(data.effectiveTo) : null,
+      daysOfWeek: data.daysOfWeek,
+    },
+  });
+}
+
+export async function deleteShiftAssignment(id: string, scopeUnitId?: string | null) {
+  const assignment = await prisma.shiftAssignment.findUnique({
+    where: { id },
+    select: { staff: { select: { unitId: true } } },
+  });
+  if (!assignment) throw Errors.notFound('Penugasan shift');
+  assertWithinScope(scopeUnitId, assignment.staff.unitId, 'Penugasan shift');
+  return prisma.shiftAssignment.delete({ where: { id } });
+}
+
+export async function listShiftRotations(unitId?: string | null) {
+  return prisma.shiftRotation.findMany({
+    where: unitId ? { shift: { OR: [{ unitId }, { unitId: null }] } } : {},
+    include: { shift: true },
+    orderBy: { startDate: 'desc' },
+  });
+}
+
+export async function createShiftRotation(
+  data: Prisma.ShiftRotationUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  const shift = await prisma.workShift.findUnique({
+    where: { id: data.shiftId },
+    select: { unitId: true },
+  });
+  if (!shift) throw Errors.notFound('Shift');
+  assertWithinScope(scopeUnitId, shift.unitId, 'Rotasi shift');
+  return prisma.shiftRotation.create({ data });
+}
+
+export async function updateShiftRotation(
+  id: string,
+  data: Prisma.ShiftRotationUncheckedUpdateInput,
+  scopeUnitId?: string | null
+) {
+  const rotation = await prisma.shiftRotation.findUnique({
+    where: { id },
+    select: { shift: { select: { unitId: true } } },
+  });
+  if (!rotation) throw Errors.notFound('Rotasi shift');
+  assertWithinScope(scopeUnitId, rotation.shift.unitId, 'Rotasi shift');
+  // A rotation is scoped by its shift, so a new `shiftId` must stay inside the
+  // caller's unit too — otherwise the rotation is silently moved to another
+  // unit's shift while the ownership check read the old one.
+  if (data.shiftId !== undefined && data.shiftId !== null) {
+    const target = await prisma.workShift.findUnique({
+      where: { id: data.shiftId as string },
+      select: { unitId: true },
+    });
+    if (!target) throw Errors.notFound('Shift');
+    assertWithinScope(scopeUnitId, target.unitId, 'Shift');
+  }
+  return prisma.shiftRotation.update({ where: { id }, data });
+}
+
+export async function deleteShiftRotation(id: string, scopeUnitId?: string | null) {
+  const rotation = await prisma.shiftRotation.findUnique({
+    where: { id },
+    select: { shift: { select: { unitId: true } } },
+  });
+  if (!rotation) throw Errors.notFound('Rotasi shift');
+  assertWithinScope(scopeUnitId, rotation.shift.unitId, 'Rotasi shift');
+  return prisma.shiftRotation.delete({ where: { id } });
+}
+
+export async function listWorkWeekConfigs(unitId?: string | null) {
+  return prisma.workWeekConfig.findMany({
+    where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
+    orderBy: { createdAt: 'asc' },
+  });
+}
+
+export async function upsertWorkWeekConfig(
+  data: Prisma.WorkWeekConfigUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  const unitId = scopeUnitId ?? data.unitId ?? null;
+  if (scopeUnitId && data.unitId && data.unitId !== scopeUnitId) {
+    throw Errors.forbidden('Hari kerja berada di luar unit Anda');
+  }
+  const existing = await prisma.workWeekConfig.findFirst({
+    where: { unitId, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) {
+    return prisma.workWeekConfig.update({ where: { id: existing.id }, data: { ...data, unitId } });
+  }
+  return prisma.workWeekConfig.create({ data: { ...data, unitId } });
+}
+
+export async function listAttendancePolicies(unitId?: string | null) {
+  return prisma.attendancePolicy.findMany({
+    where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
+    orderBy: { createdAt: 'asc' },
+  });
+}
+
+export async function upsertAttendancePolicy(
+  data: Prisma.AttendancePolicyUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  const unitId = scopeUnitId ?? data.unitId ?? null;
+  if (scopeUnitId && data.unitId && data.unitId !== scopeUnitId) {
+    throw Errors.forbidden('Kebijakan absen berada di luar unit Anda');
+  }
+  const existing = await prisma.attendancePolicy.findFirst({
+    where: { unitId, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) {
+    return prisma.attendancePolicy.update({
+      where: { id: existing.id },
+      data: { ...data, unitId },
+    });
+  }
+  return prisma.attendancePolicy.create({ data: { ...data, unitId } });
+}
+
+export async function listAttendanceExemptions(scopeUnitId?: string | null) {
+  if (!scopeUnitId) {
+    return prisma.attendanceExemption.findMany({ orderBy: { createdAt: 'desc' } });
+  }
+  // Role-based exemptions (staffId null) are yayasan-wide and every unit admin
+  // needs to see them; person-based ones are limited to their unit's staff.
+  const staffIds = (
+    await prisma.staff.findMany({ where: { unitId: scopeUnitId }, select: { id: true } })
+  ).map((s) => s.id);
+  return prisma.attendanceExemption.findMany({
+    where: { OR: [{ staffId: null }, { staffId: { in: staffIds } }] },
+    orderBy: { createdAt: 'desc' },
+  });
+}
+
+export async function createAttendanceExemption(
+  data: Prisma.AttendanceExemptionUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  if (data.staffId) {
+    const staff = await prisma.staff.findUnique({
+      where: { id: data.staffId },
+      select: { unitId: true },
+    });
+    if (!staff) throw Errors.notFound('Staff');
+    assertWithinScope(scopeUnitId, staff.unitId, 'Pengecualian pegawai');
+  } else if (scopeUnitId) {
+    throw Errors.forbidden('Pengecualian berbasis peran bersifat yayasan; hanya super admin');
+  }
+  return prisma.attendanceExemption.create({ data });
+}
+
+export async function deleteAttendanceExemption(id: string, scopeUnitId?: string | null) {
+  const exemption = await prisma.attendanceExemption.findUnique({ where: { id } });
+  if (!exemption) throw Errors.notFound('Pengecualian');
+  if (exemption.staffId) {
+    const staff = await prisma.staff.findUnique({
+      where: { id: exemption.staffId },
+      select: { unitId: true },
+    });
+    assertWithinScope(scopeUnitId, staff?.unitId, 'Pengecualian pegawai');
+  } else {
+    assertWithinScope(scopeUnitId, null, 'Pengecualian berbasis peran');
+  }
+  return prisma.attendanceExemption.delete({ where: { id } });
+}
+
+// =====================================
+// PAYROLL POLICY SERVICE
+// =====================================
+
+export async function listPayrollPolicyRules(unitId?: string | null) {
+  return prisma.payrollPolicyRule.findMany({
+    where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
+    orderBy: [{ priority: 'asc' }, { code: 'asc' }],
+  });
+}
+
+export async function upsertPayrollPolicyRule(
+  id: string | null,
+  data: Prisma.PayrollPolicyRuleUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  if (scopeUnitId && (data.unitId ?? null) !== scopeUnitId) {
+    throw Errors.forbidden('Aturan potongan berada di luar unit Anda');
+  }
+  if (id) {
+    const rule = await prisma.payrollPolicyRule.findUnique({
+      where: { id },
+      select: { unitId: true },
+    });
+    if (!rule) throw Errors.notFound('Aturan potongan');
+    assertWithinScope(scopeUnitId, rule.unitId, 'Aturan potongan');
+    return prisma.payrollPolicyRule.update({ where: { id }, data });
+  }
+  const existing = await prisma.payrollPolicyRule.findFirst({
+    where: { unitId: data.unitId ?? null, code: data.code },
+  });
+  if (existing) {
+    return prisma.payrollPolicyRule.update({ where: { id: existing.id }, data });
+  }
+  return prisma.payrollPolicyRule.create({ data });
+}
+
+export async function deletePayrollPolicyRule(id: string, scopeUnitId?: string | null) {
+  const rule = await prisma.payrollPolicyRule.findUnique({
+    where: { id },
+    select: { unitId: true },
+  });
+  if (!rule) throw Errors.notFound('Aturan potongan');
+  assertWithinScope(scopeUnitId, rule.unitId, 'Aturan potongan');
+  return prisma.payrollPolicyRule.delete({ where: { id } });
+}
+
+export async function getPayrollGuardConfig(unitId?: string | null) {
+  if (unitId) {
+    const own = await prisma.payrollGuardConfig.findFirst({
+      where: { unitId, isActive: true },
+    });
+    if (own) return own;
+  }
+  return prisma.payrollGuardConfig.findFirst({ where: { unitId: null, isActive: true } });
+}
+
+export async function upsertPayrollGuardConfig(
+  data: Prisma.PayrollGuardConfigUncheckedCreateInput,
+  scopeUnitId?: string | null
+) {
+  const unitId = scopeUnitId ?? data.unitId ?? null;
+  if (scopeUnitId && data.unitId && data.unitId !== scopeUnitId) {
+    throw Errors.forbidden('Batas potongan berada di luar unit Anda');
+  }
+  const existing = await prisma.payrollGuardConfig.findFirst({
+    where: { unitId, isActive: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (existing) {
+    return prisma.payrollGuardConfig.update({
+      where: { id: existing.id },
+      data: { ...data, unitId },
+    });
+  }
+  return prisma.payrollGuardConfig.create({ data: { ...data, unitId } });
+}
+
+// =====================================
+// RETENTION SERVICE
+// =====================================
+
+export async function listRetentionPolicies() {
+  return prisma.retentionPolicy.findMany({ orderBy: { dataType: 'asc' } });
+}
+
+export async function upsertRetentionPolicy(data: Prisma.RetentionPolicyUncheckedCreateInput) {
+  return prisma.retentionPolicy.upsert({
+    where: { dataType: data.dataType },
+    update: data,
+    create: data,
+  });
+}
+
+/**
+ * Enforce the attendance retention window. PDP (UU 27/2022 Ps. 42) requires
+ * processing to end when the retention period is reached, and a setting with no
+ * job behind it is not a policy — selfies were kept forever.
+ *
+ * The window comes from the unit's `AttendancePolicy` (`photoRetentionDays`,
+ * `recordRetentionDays`), falling back to the global `RetentionPolicy` row
+ * (`ATTENDANCE_PHOTO` / `ATTENDANCE_RECORD`) and then to the 1-year photo /
+ * 10-year record defaults. Photos are deleted from storage before their URLs
+ * are cleared, so clearing the URL cannot leave the bytes behind with nothing
+ * left to identify them by.
+ *
+ * A row still linked to an active approved leave is kept even past its record
+ * window: `cancelLeave` restores it (and its balance) on cancellation, and a
+ * purged row would leave that cancellation with nothing to restore. The row is
+ * removed once the leave is no longer APPROVED.
+ */
+export async function enforceAttendanceRetention(now = new Date()) {
+  const [policies, retention, units] = await Promise.all([
+    prisma.attendancePolicy.findMany({ where: { isActive: true } }),
+    prisma.retentionPolicy.findMany({ where: { isActive: true } }),
+    prisma.unit.findMany({ select: { id: true } }),
+  ]);
+  const globalPhotoDays =
+    retention.find((r) => r.dataType === 'ATTENDANCE_PHOTO')?.retentionDays ?? 365;
+  const globalRecordDays =
+    retention.find((r) => r.dataType === 'ATTENDANCE_RECORD')?.retentionDays ?? 3650;
+
+  let photosErased = 0;
+  let recordsDeleted = 0;
+
+  const photoDaysByUnit = new Map<string, number>();
+  for (const unit of units) {
+    const policy =
+      policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
+    photoDaysByUnit.set(unit.id, policy?.photoRetentionDays ?? globalPhotoDays);
+  }
+
+  // A selfie URL can be shared: a check-in and its check-out may store the same
+  // upload. Unlinking the file for one record therefore breaks the other, so a
+  // file is only removed once no *unexpired* record still references it. All
+  // rows are read up front so the decision does not depend on visit order.
+  const photoRows = await prisma.attendanceRecord.findMany({
+    where: { photoUrl: { not: null } },
+    select: {
+      id: true,
+      photoUrl: true,
+      capturedAt: true,
+      attendance: { select: { staff: { select: { unitId: true } } } },
+    },
+  });
+  const expiredPhotos: typeof photoRows = [];
+  const stillReferenced = new Set<string>();
+  for (const row of photoRows) {
+    if (!row.photoUrl) continue;
+    const unitId = row.attendance.staff.unitId;
+    const days = (unitId ? photoDaysByUnit.get(unitId) : undefined) ?? globalPhotoDays;
+    if (row.capturedAt < new Date(now.getTime() - days * 86_400_000)) expiredPhotos.push(row);
+    else stillReferenced.add(row.photoUrl);
+  }
+  for (const photo of expiredPhotos) {
+    if (!photo.photoUrl) continue;
+    // Another record that has not expired still points at this file: clearing
+    // this row's reference is safe, deleting the file is not.
+    if (stillReferenced.has(photo.photoUrl)) {
+      const cleared = await prisma.attendanceRecord.updateMany({
+        where: { id: photo.id, photoUrl: photo.photoUrl },
+        data: { photoUrl: null },
+      });
+      photosErased += cleared.count;
+      continue;
+    }
+    // Delete the bytes first; clear the URL only after they are gone (or were
+    // already gone). An external URL has no adapter to remove it, and clearing
+    // the field would lose the only reference to a photo still stored there.
+    const result = await deleteManagedUpload(photo.photoUrl);
+    if (result === 'unsupported') continue;
+    const cleared = await prisma.attendanceRecord.updateMany({
+      where: { id: photo.id, photoUrl: photo.photoUrl },
+      data: { photoUrl: null },
+    });
+    photosErased += cleared.count;
+  }
+
+  for (const unit of units) {
+    const policy =
+      policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
+    const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
+
+    // Rows still carrying an active approved leave are kept: cancelling that
+    // leave restores them, and a purged row would leave the cancellation with
+    // nothing to restore. `leaveRequestId` is a plain column, not a relation,
+    // so the protected ids are resolved first.
+    const activeLeaveIds = (
+      await prisma.leave.findMany({
+        where: { status: LeaveStatus.APPROVED },
+        select: { id: true },
+      })
+    ).map((l) => l.id);
+    const deleted = await prisma.staffAttendance.deleteMany({
+      where: {
+        date: { lt: new Date(now.getTime() - recordDays * 86_400_000) },
+        staff: { unitId: unit.id },
+        OR: [{ leaveRequestId: null }, { leaveRequestId: { notIn: activeLeaveIds } }],
+      },
+    });
+    recordsDeleted += deleted.count;
+  }
+
+  if (photosErased || recordsDeleted) {
+    await prisma.auditLog.create({
+      data: {
+        userId: null,
+        action: 'PURGE',
+        entity: 'AttendanceRetention',
+        newValues: { photosErased, recordsDeleted },
+      },
+    });
+  }
+  return { photosErased, recordsDeleted };
+}
+
+export async function listLeaveTypeConfigs() {
+  return prisma.leaveTypeConfig.findMany({ orderBy: { leaveType: 'asc' } });
+}
+
+export async function upsertLeaveTypeConfig(data: Prisma.LeaveTypeConfigUncheckedCreateInput) {
+  return prisma.leaveTypeConfig.upsert({
+    where: { leaveType: data.leaveType },
+    update: data,
+    create: data,
+  });
 }
 
 // =====================================
@@ -884,6 +2114,25 @@ export async function updateLeave(id: string, data: UpdateLeaveInput) {
 }
 
 export async function approveLeave(id: string, approverId: string, data: ApproveLeaveInput) {
+  const existing = await prisma.leave.findUnique({ where: { id } });
+  if (!existing) throw Errors.notFound('Leave request not found');
+
+  // Idempotent, and no silent state flip. Approving twice used to increment
+  // usedDays twice and re-upsert attendance; rejecting an approved leave would
+  // leave the balance spent with no way to tell. A decision on an already
+  // approved leave is refused — cancel it first, which reverts the balance.
+  if (existing.status === LeaveStatus.APPROVED) {
+    if (data.status === LeaveStatus.APPROVED) {
+      return prisma.leave.findUniqueOrThrow({
+        where: { id },
+        include: { staff: true, teacher: true },
+      });
+    }
+    throw Errors.badRequest(
+      'Cuti yang sudah disetujui tidak dapat diubah. Batalkan terlebih dahulu.'
+    );
+  }
+
   const updateData: Prisma.LeaveUpdateInput = {
     status: data.status,
     approvedBy: { connect: { id: approverId } },
@@ -937,70 +2186,163 @@ export async function approveLeave(id: string, approverId: string, data: Approve
       }
     }
 
-    const startDate = new Date(leave.startDate);
-    const endDate = new Date(leave.endDate);
+    // Mark each day of the leave. Keyed on staffId now, so a teacher's leave
+    // lands on the same row as their clock-ins.
+    const targetStaffId = await resolveStaffId({
+      staffId: leave.staffId ?? undefined,
+      teacherId: leave.teacherId ?? undefined,
+    });
 
     const dates: Date[] = [];
-    const currentDate = new Date(startDate);
-    while (currentDate <= endDate) {
+    const currentDate = new Date(leave.startDate);
+    while (currentDate <= leave.endDate) {
       dates.push(new Date(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    // Determine target ID (staff or teacher)
-    const staffId = leave.staffId;
-    const teacherId = leave.teacherId;
-
-    const transactionOperations = dates
-      .map((date) => {
-        // Construct upsert args carefully
-        // Note: For upsert to work with @@unique([staffId, teacherId, date]),
-        // we must explicitly set the other ID to null in the where clause
-        // AND ensure the type safety for Prisma client
-
-        if (staffId) {
-          return prisma.staffAttendance.upsert({
-            where: {
-              staffId_teacherId_date: { staffId: staffId, teacherId: null, date } as any,
-            },
-            update: { status: StaffAttendanceStatus.LEAVE, notes: `Cuti: ${leave.type}` },
-            create: {
-              staffId: staffId,
-              date,
+    // Mark each day LEAVE, but remember what the row held: a day the person
+    // already clocked in keeps its evidence, and a later cancellation restores
+    // it rather than deleting a day they actually attended.
+    await prisma.$transaction(async (tx) => {
+      for (const date of dates) {
+        const existing = await tx.staffAttendance.findUnique({
+          where: { staffId_date: { staffId: targetStaffId, date } },
+          select: { id: true, status: true, notes: true, leaveRequestId: true },
+        });
+        if (existing) {
+          // A day already carrying this leave is idempotent; a day carrying a
+          // *different* approved leave is left to that leave's own bookkeeping.
+          if (existing.leaveRequestId && existing.leaveRequestId !== id) continue;
+          await tx.staffAttendance.update({
+            where: { id: existing.id },
+            data: {
               status: StaffAttendanceStatus.LEAVE,
               notes: `Cuti: ${leave.type}`,
+              leaveRequestId: id,
+              leavePreviousStatus: existing.status,
+              // Keep the original explanation so cancelling restores it rather
+              // than wiping a recorded reason.
+              leavePreviousNotes: existing.notes,
             },
           });
-        } else if (teacherId) {
-          return prisma.staffAttendance.upsert({
-            where: {
-              staffId_teacherId_date: { staffId: null, teacherId: teacherId, date } as any,
-            },
-            update: { status: StaffAttendanceStatus.LEAVE, notes: `Cuti: ${leave.type}` },
-            create: {
-              teacherId: teacherId,
+        } else {
+          await tx.staffAttendance.create({
+            data: {
+              staffId: targetStaffId,
               date,
               status: StaffAttendanceStatus.LEAVE,
               notes: `Cuti: ${leave.type}`,
+              leaveRequestId: id,
             },
           });
         }
+      }
+    });
 
-        return null;
-      })
-      .filter((op): op is Prisma.Prisma__StaffAttendanceClient<any, never> => op !== null);
-
-    await prisma.$transaction(transactionOperations);
+    await prisma.auditLog.create({
+      data: {
+        userId: approverId,
+        action: 'APPROVE',
+        entity: 'Leave',
+        entityId: id,
+        newValues: { status: data.status, type: leave.type, totalDays: leave.totalDays },
+      },
+    });
   }
 
   return leave;
 }
 
 export async function cancelLeave(id: string) {
-  return prisma.leave.update({
+  const leave = await prisma.leave.findUnique({
     where: { id },
-    data: { status: LeaveStatus.CANCELLED },
+    include: { staff: true, teacher: true },
   });
+  if (!leave) throw Errors.notFound('Leave request not found');
+
+  const wasApproved = leave.status === LeaveStatus.APPROVED;
+
+  const cancelled = await prisma.$transaction(async (tx) => {
+    if (wasApproved) {
+      // Revert the balance the approval spent.
+      const userId = leave.staff?.userId || leave.teacher?.userId;
+      if (userId) {
+        const academicYear = await tx.academicYear.findFirst({
+          where: {
+            startDate: { lte: leave.startDate },
+            endDate: { gte: leave.endDate },
+          },
+        });
+        if (academicYear) {
+          const balance = await tx.leaveBalance.findUnique({
+            where: {
+              userId_academicYearId_leaveType: {
+                userId,
+                academicYearId: academicYear.id,
+                leaveType: leave.type,
+              },
+            },
+          });
+          if (balance) {
+            await tx.leaveBalance.update({
+              where: { id: balance.id },
+              data: {
+                usedDays: { decrement: leave.totalDays },
+                remainingDays: { increment: leave.totalDays },
+              },
+            });
+          }
+        }
+      }
+    }
+
+    return tx.leave.update({
+      where: { id },
+      data: { status: LeaveStatus.CANCELLED },
+    });
+  });
+
+  // Only the rows this leave wrote are touched, and they are matched by the
+  // leave id — not by a status and a generic note, which also matched a day the
+  // person actually clocked in. A row that pre-existed the leave is restored to
+  // what it held; a row the leave created is removed.
+  if (wasApproved) {
+    const rows = await prisma.staffAttendance.findMany({
+      where: { leaveRequestId: id },
+      select: { id: true, leavePreviousStatus: true, leavePreviousNotes: true },
+    });
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        if (row.leavePreviousStatus) {
+          await tx.staffAttendance.update({
+            where: { id: row.id },
+            data: {
+              status: row.leavePreviousStatus,
+              // Restore the pre-leave notes, not null: the row may have carried
+              // a recorded explanation that approval overwrote.
+              notes: row.leavePreviousNotes,
+              leaveRequestId: null,
+              leavePreviousStatus: null,
+              leavePreviousNotes: null,
+            },
+          });
+        } else {
+          await tx.staffAttendance.delete({ where: { id: row.id } });
+        }
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: null,
+          action: 'CANCEL',
+          entity: 'Leave',
+          entityId: id,
+          oldValues: { status: leave.status, type: leave.type, totalDays: leave.totalDays },
+        },
+      });
+    });
+  }
+
+  return cancelled;
 }
 
 export async function deleteLeave(id: string) {
@@ -1068,7 +2410,12 @@ export async function getLeaveBalance(employeeId: string, year: number) {
         usedByType[b.leaveType] = b.usedDays;
       });
 
-      const annualQuota = annualBalance?.totalDays || 12;
+      // The entitlement is a setting (LeaveTypeConfig), not a constant here;
+      // 12 days is only the last resort when no config row exists yet.
+      const annualConfig = await prisma.leaveTypeConfig.findUnique({
+        where: { leaveType: LeaveType.ANNUAL },
+      });
+      const annualQuota = annualBalance?.totalDays ?? annualConfig?.entitlementDays ?? 12;
       const usedAnnual = annualBalance?.usedDays || 0;
       const remainingAnnual = annualBalance?.remainingDays ?? annualQuota - usedAnnual;
 
@@ -1104,8 +2451,12 @@ export async function getLeaveBalance(employeeId: string, year: number) {
     {} as Record<string, number>
   );
 
-  // Default annual leave quota (can be configured per company policy)
-  const annualQuota = 12;
+  // A new employee has no stored balance rows yet; the entitlement is still the
+  // configured one (LeaveTypeConfig), and 12 is only the last resort.
+  const annualConfig = await prisma.leaveTypeConfig.findUnique({
+    where: { leaveType: LeaveType.ANNUAL },
+  });
+  const annualQuota = annualConfig?.entitlementDays ?? 12;
 
   return {
     employeeId,
