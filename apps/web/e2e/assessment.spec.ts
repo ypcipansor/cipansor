@@ -1,6 +1,6 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { LoginPage } from "./page-objects";
-import { loginAs } from "./helpers/auth-api";
+import { loginAs, apiRequest } from "./helpers/auth-api";
 import { settledContent } from "./helpers/page-state";
 
 /**
@@ -122,6 +122,46 @@ test.describe("Assessment - Transcript", () => {
       // Direct navigation if no link found
       await page.goto("/assessment/transcript");
       expect(page.url()).toMatch(/transcript/);
+    }
+  });
+});
+
+/**
+ * The report-card print view is reached from the detail page and is the one
+ * place the app must shed the sidebar and header. It used to wrap its own
+ * `<main id="main-content">` in `MainLayout`, which renders another one — two
+ * landmarks and a duplicate id, so the skip link and assistive tech picked
+ * whichever came first. The rbac guard test catches this in source; this spec
+ * proves it in the rendered document, against a real seeded card.
+ */
+test.describe("Assessment - Report Card Print", () => {
+  test("print view renders one main landmark and the report body", async ({
+    page,
+  }) => {
+    const session = await loginAs(page, "superAdmin");
+
+    const cards = await apiRequest<{ data: Array<{ id: string }> }>(
+      session,
+      "GET",
+      "/assessment/report-cards?limit=1",
+    );
+    const card = cards.data?.[0];
+    test.skip(!card, "no seeded report card to print");
+
+    for (const path of [
+      `/assessment/report-cards/${card!.id}/print`,
+      `/assessment/report-cards/${card!.id}/print-merdeka`,
+    ]) {
+      await page.goto(path, { waitUntil: "domcontentloaded" });
+      await expect(page.locator("main#main-content")).toHaveCount(1, {
+        timeout: 15000,
+      });
+      await expect(page.locator("main")).toHaveCount(1);
+
+      // The document itself, not a spinner or the empty state. The print page
+      // has no shell, so a body of text is the only signal it rendered.
+      const body = await settledContent(page);
+      expect(body.length).toBeGreaterThan(2000);
     }
   });
 });

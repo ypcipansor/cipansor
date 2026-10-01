@@ -55,4 +55,6 @@ e2e/temp/
 
 # per-role QA screenshot sweep output (scripts/screenshot-roles.ts)
 .qa-screens/
+.qa-all/
+.qa-verify/
 apps/web/
