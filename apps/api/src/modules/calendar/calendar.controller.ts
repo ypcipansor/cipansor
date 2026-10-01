@@ -9,6 +9,26 @@ import {
   updateHolidaySyncConfig,
 } from './holiday-sync.service';
 import { Errors } from '../../middleware/error';
+import { isFoundationScopedRole } from '../../utils/resolve-unit-id';
+
+/**
+ * The unit a holiday import may target. A foundation-scoped role (super admin
+ * and the yayasan board) may import yayasan-wide or name any unit; everyone
+ * else — a school's unit admin — is pinned to their own unit, and naming
+ * another unit is refused. Without this, a unit admin could seed another
+ * unit's calendar, or the foundation's, through the request body.
+ */
+function scopedHolidayUnit(
+  user: { roleCode?: string | null; unitId?: string | null },
+  requested: string | null
+): string | null {
+  if (isFoundationScopedRole(user.roleCode)) return requested;
+  if (!user.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
+  if (requested && requested !== user.unitId) {
+    throw Errors.forbidden('Tidak dapat mengimpor libur untuk unit lain');
+  }
+  return user.unitId;
+}
 
 export class CalendarController {
   async listEvents(req: Request, res: Response, next: NextFunction) {
@@ -211,7 +231,11 @@ export class CalendarController {
       if (!Number.isInteger(year) || year < 2000 || year > 2100) {
         throw Errors.badRequest('Tahun tidak valid');
       }
-      const unitId = (req.body?.unitId as string | undefined) ?? null;
+      const requestedUnitId = (req.body?.unitId as string | undefined) ?? null;
+      const unitId = scopedHolidayUnit(
+        { roleCode: req.user!.roleCode, unitId: req.user!.unitId },
+        requestedUnitId
+      );
       const result = await syncHolidaysForYear(year, {
         unitId,
         createdById: req.user!.sub,
@@ -224,7 +248,10 @@ export class CalendarController {
 
   async listHolidayDrafts(req: Request, res: Response, next: NextFunction) {
     try {
-      const unitId = (req.query.unitId as string | undefined) ?? null;
+      const unitId = scopedHolidayUnit(
+        { roleCode: req.user!.roleCode, unitId: req.user!.unitId },
+        (req.query.unitId as string | undefined) ?? null
+      );
       res.json({ data: await listHolidayDrafts(unitId) });
     } catch (error) {
       next(error);
@@ -233,7 +260,11 @@ export class CalendarController {
 
   async approveHolidayDraft(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json({ data: await approveHolidayDraft(req.params.id) });
+      const unitId = scopedHolidayUnit(
+        { roleCode: req.user!.roleCode, unitId: req.user!.unitId },
+        (req.body?.unitId as string | undefined) ?? null
+      );
+      res.json({ data: await approveHolidayDraft(req.params.id, unitId) });
     } catch (error) {
       next(error);
     }
@@ -241,7 +272,11 @@ export class CalendarController {
 
   async rejectHolidayDraft(req: Request, res: Response, next: NextFunction) {
     try {
-      res.json({ data: await rejectHolidayDraft(req.params.id) });
+      const unitId = scopedHolidayUnit(
+        { roleCode: req.user!.roleCode, unitId: req.user!.unitId },
+        (req.body?.unitId as string | undefined) ?? null
+      );
+      res.json({ data: await rejectHolidayDraft(req.params.id, unitId) });
     } catch (error) {
       next(error);
     }

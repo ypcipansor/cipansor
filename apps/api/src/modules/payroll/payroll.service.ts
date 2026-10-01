@@ -13,6 +13,7 @@
 import { prisma } from '../../lib/prisma';
 import { Prisma, SalaryComponentType, PayrollStatus } from '@prisma/client';
 import { attendanceDeductionService } from './attendance-deduction.service';
+import { calculateMonthlyPph21, effectiveItemAmount, isBasicSalaryComponent } from './payroll-tax';
 import { Errors } from '../../middleware/error';
 import { workDatesInRange } from '../../utils/work-calendar';
 import { JournalReferenceType } from '@cipansor/shared';
@@ -27,85 +28,6 @@ import {
   GeneratePayrollInput,
   PayrollItemAdjustmentInput,
 } from './payroll.schema';
-
-// ============================================
-// PPh 21 TAX CALCULATION (Simplified)
-// ============================================
-
-// PTKP 2024 (Penghasilan Tidak Kena Pajak)
-const PTKP: Record<string, number> = {
-  'TK/0': 54000000, // Tidak Kawin, 0 tanggungan
-  'TK/1': 58500000, // Tidak Kawin, 1 tanggungan
-  'TK/2': 63000000, // Tidak Kawin, 2 tanggungan
-  'TK/3': 67500000, // Tidak Kawin, 3 tanggungan
-  'K/0': 58500000, // Kawin, 0 tanggungan
-  'K/1': 63000000, // Kawin, 1 tanggungan
-  'K/2': 67500000, // Kawin, 2 tanggungan
-  'K/3': 72000000, // Kawin, 3 tanggungan
-  'K/I/0': 112500000, // Kawin, istri bekerja, 0 tanggungan
-  'K/I/1': 117000000, // Kawin, istri bekerja, 1 tanggungan
-  'K/I/2': 121500000, // Kawin, istri bekerja, 2 tanggungan
-  'K/I/3': 126000000, // Kawin, istri bekerja, 3 tanggungan
-};
-
-// Tarif progresif PPh 21 (2024)
-const TAX_BRACKETS = [
-  { limit: 60000000, rate: 0.05 },
-  { limit: 250000000, rate: 0.15 },
-  { limit: 500000000, rate: 0.25 },
-  { limit: 5000000000, rate: 0.3 },
-  { limit: Infinity, rate: 0.35 },
-];
-
-function calculateAnnualTax(annualTaxableIncome: number): number {
-  if (annualTaxableIncome <= 0) return 0;
-
-  let tax = 0;
-  let remaining = annualTaxableIncome;
-  let previousLimit = 0;
-
-  for (const bracket of TAX_BRACKETS) {
-    const bracketAmount = Math.min(remaining, bracket.limit - previousLimit);
-    if (bracketAmount <= 0) break;
-
-    tax += bracketAmount * bracket.rate;
-    remaining -= bracketAmount;
-    previousLimit = bracket.limit;
-  }
-
-  return tax;
-}
-
-function calculateMonthlyPph21(
-  monthlyGrossIncome: number,
-  taxStatus: string = 'TK/0',
-  hasNpwp: boolean = true
-): number {
-  const ptkp = PTKP[taxStatus] || PTKP['TK/0'];
-
-  // Annualized calculation
-  const annualGross = monthlyGrossIncome * 12;
-
-  // Biaya jabatan (5% max 6jt/tahun)
-  const biayaJabatan = Math.min(annualGross * 0.05, 6000000);
-
-  // Penghasilan Neto
-  const annualNet = annualGross - biayaJabatan;
-
-  // PKP (Penghasilan Kena Pajak)
-  const pkp = Math.max(0, annualNet - ptkp);
-
-  // Hitung pajak tahunan
-  let annualTax = calculateAnnualTax(pkp);
-
-  // Jika tidak punya NPWP, tambah 20%
-  if (!hasNpwp) {
-    annualTax *= 1.2;
-  }
-
-  // PPh 21 bulanan
-  return Math.round(annualTax / 12);
-}
 
 // ============================================
 // SALARY COMPONENT SERVICE
@@ -1090,8 +1012,13 @@ export const payrollService = {
 
           const payrollItems: Prisma.PayrollItemCreateManyInput[] = [];
 
-          // Add base salary as first item
-          const baseSalaryComponent = components.find((c) => c.code === 'GAJI_POKOK');
+          // Add base salary as first item. The base component is whichever
+          // earning is classified POKOK (or named GAJI_POKOK / BASIC_SALARY):
+          // the seed calls it BASIC_SALARY, so matching the literal GAJI_POKOK
+          // alone silently dropped the basic salary line from every slip.
+          const baseSalaryComponent = components.find(
+            (c) => c.type === 'EARNING' && isBasicSalaryComponent(c)
+          );
           if (baseSalaryComponent) {
             payrollItems.push({
               payrollId: '', // Will be set after payroll creation
@@ -1106,14 +1033,13 @@ export const payrollService = {
             }
           }
 
-          // Add employee-specific salary items
+          // Add employee-specific salary items. A basic-salary item is skipped:
+          // `EmployeeSalary.baseSalary` is the authoritative base and already
+          // printed above, so counting the item too would pay the base twice.
           for (const item of empSalary.items) {
             const comp = item.component;
-            let amount = Number(item.amount);
-
-            if (item.isPercentage && item.rate) {
-              amount = Number(empSalary.baseSalary) * Number(item.rate);
-            }
+            if (isBasicSalaryComponent(comp)) continue;
+            const amount = effectiveItemAmount(item, Number(empSalary.baseSalary));
 
             if (comp.type === 'EARNING') {
               totalEarnings += amount;

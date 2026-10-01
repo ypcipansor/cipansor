@@ -69,6 +69,7 @@ ADD COLUMN     "recorded_by_id" TEXT,
 ADD COLUMN     "shift_id" TEXT,
 ADD COLUMN     "leave_request_id" TEXT,
 ADD COLUMN     "leave_previous_status" "StaffAttendanceStatus",
+ADD COLUMN     "leave_previous_notes" TEXT,
 ALTER COLUMN "staff_id" SET NOT NULL;
 
 -- AlterTable

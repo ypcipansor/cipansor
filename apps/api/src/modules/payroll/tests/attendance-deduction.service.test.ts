@@ -3,6 +3,7 @@ import {
   evaluateRule,
   evaluateFormula,
   applyDeductionCap,
+  allowanceCapFor,
   deductionCapFor,
   guardCapFor,
 } from '../attendance-deduction.service';
@@ -128,6 +129,18 @@ describe('evaluateRule', () => {
     expect(line?.amount).toBeCloseTo(500_000 * 0.05 * 2, 5);
   });
 
+  it('prices an overtime hour at 1/173 of a month’s wage, not of the allowances', () => {
+    // PP 35/2021 Ps. 32: the base salary is part of "upah sebulan". Using only
+    // the allowance side (800k) paid 800000/173 instead of 3800000/173.
+    const line = evaluateRule(
+      rule({ kind: 'EARNING', trigger: 'OVERTIME', basis: 'UPAH_SEJAM', mode: 'PENGALI', rate: 1 }),
+      ctx,
+      { ...zeroCounts, overtimeMinutes: 1 }
+    );
+    expect(line?.amount).toBeCloseTo(3_800_000 / 173, 2);
+    expect(line?.amount).not.toBeCloseTo(800_000 / 173, 2);
+  });
+
   it('returns an EARNING line for an overtime bonus', () => {
     const line = evaluateRule(
       rule({
@@ -205,6 +218,13 @@ describe('deduction cap keeps the basic salary intact', () => {
     expect(() =>
       evaluateRule(rule({ basis: 'GAPOK' }), ctx, { ...zeroCounts, lateDays: 1 })
     ).toThrow(/gaji pokok/i);
+  });
+
+  it('spends only what the slip’s other deductions and PPh 21 leave of the allowance', () => {
+    // 800k allowances, 200k BPJS, 50k PPh 21 → 550k is all the engine may use.
+    expect(allowanceCapFor(800_000, 200_000, 50_000)).toBe(550_000);
+    // Never negative, even when the other deductions already exceed the side.
+    expect(allowanceCapFor(800_000, 900_000, 0)).toBe(0);
   });
 });
 

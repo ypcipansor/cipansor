@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { Errors } from '../../middleware/error';
+import { calculateMonthlyPph21, reconcileSalary } from './payroll-tax';
 import { dayOf, dayString, wibWeekday } from '../../utils/wib';
 import {
   holidaysInRange,
@@ -101,6 +102,21 @@ export function deductionCapFor(
   guard: GuardLimits | null
 ): number {
   return Math.max(0, Math.min(allowanceCap, guardCapFor(gross, guard)));
+}
+
+/**
+ * The allowance side still available to attendance deductions, after the
+ * slip's own deductions (BPJS, loans, …) and its PPh 21 have taken their share.
+ * Capping attendance against the *gross* allowance total let the combined
+ * deductions drop net pay below the basic salary — the attendance engine has
+ * to spend what the rest of the slip leaves, not what it started with.
+ */
+export function allowanceCapFor(
+  allowanceTotal: number,
+  existingDeductions: number,
+  pph21: number
+): number {
+  return Math.max(0, allowanceTotal - existingDeductions - pph21);
 }
 
 /**
@@ -535,26 +551,17 @@ export const attendanceDeductionService = {
 
     return staffList.map((staff) => {
       const salary = staff.employeeSalary;
-      // Basic salary is any earning classified POKOK (or, for older rows that
-      // predate the classification, the component literally named GAJI_POKOK or
-      // BASIC_SALARY). Matching only 'GAJI_POKOK' let the seeded BASIC_SALARY
-      // item count as an allowance, so a deduction could eat the base salary.
-      const isBasic = (c: { code: string; classification: string }) =>
-        c.classification === 'POKOK' || c.code === 'GAJI_POKOK' || c.code === 'BASIC_SALARY';
-      const earningItems = salary?.items.filter((i) => i.component.type === 'EARNING') ?? [];
-      const allowances = earningItems
-        .filter((i) => !isBasic(i.component))
-        .map((i) => ({
-          code: i.component.code,
-          name: i.component.name,
-          amount: Number(i.amount),
-          classification: i.component.classification,
-        }));
-
+      // Read the structure the same way the payslip charges it: base salary,
+      // the allowance side, and the other deduction lines (percentage items are
+      // stored as a rate, not a nominal). A month's wage (PP 35/2021 art. 32) is
+      // the base salary plus the fixed earning items — summing only the items
+      // left an employee whose salary is entirely `baseSalary` with a zero
+      // hourly rate, so every UPAH_SEJAM overtime rule paid nothing.
+      const reconciled = reconcileSalary(salary?.items ?? [], Number(salary?.baseSalary ?? 0));
       const ctx: StaffPayContext = {
-        baseSalary: Number(salary?.baseSalary ?? 0),
-        allowances,
-        monthlyWage: earningItems.reduce((s, i) => s + Number(i.amount), 0),
+        baseSalary: reconciled.baseSalary,
+        allowances: reconciled.allowances,
+        monthlyWage: reconciled.monthlyWage,
         workDays: workDates.length,
         hoursPerDay: week.hoursPerDay,
       };
@@ -582,17 +589,21 @@ export const attendanceDeductionService = {
         }
       }
 
-      const gross = ctx.baseSalary + allowances.reduce((s, a) => s + a.amount, 0);
+      const gross = reconciled.gross;
       // Deductions already on the slip (BPJS, PPh 21, loan repayments, …) come
       // out of the allowance side too, so the attendance engine may only spend
       // what is left of it. Capping attendance alone let the combined total
-      // reduce net pay below the basic salary.
-      const existingDeductions = (salary?.items ?? [])
-        .filter((i) => i.component.type === 'DEDUCTION')
-        .reduce((s, i) => s + Number(i.amount), 0);
-      const allowanceCap = Math.max(
-        0,
-        allowances.reduce((s, a) => s + a.amount, 0) - existingDeductions
+      // reduce net pay below the basic salary. PPh 21 is computed the same way
+      // the slip computes it, or the cap would not describe the real slip.
+      const pph21 = calculateMonthlyPph21(
+        reconciled.taxableIncome,
+        salary?.taxStatus ?? 'TK/0',
+        !!salary?.npwp
+      );
+      const allowanceCap = allowanceCapFor(
+        ctx.allowances.reduce((s, a) => s + a.amount, 0),
+        reconciled.configuredDeductions,
+        pph21
       );
       const cap = deductionCapFor(gross, allowanceCap, guard);
       const cappedResult = applyDeductionCap(lines, cap);

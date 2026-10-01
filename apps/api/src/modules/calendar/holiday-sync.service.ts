@@ -194,36 +194,48 @@ export async function syncHolidaysForYear(
   return { year, created, updated, skipped, entries: entries.length };
 }
 
-/** Draft holiday events awaiting review, for a unit or yayasan-wide. */
+/**
+ * Draft holiday events awaiting review. A unit-scoped caller sees only its own
+ * unit's drafts — a yayasan-wide draft changes every unit's work days, so it is
+ * the foundation's to review, not one school's.
+ */
 export async function listHolidayDrafts(unitId?: string | null) {
   return prisma.calendarEvent.findMany({
     where: {
       eventType: 'HOLIDAY',
       deletedAt: null,
       isDraft: true,
-      ...(unitId ? { OR: [{ unitId: null }, { unitId }] } : {}),
+      ...(unitId ? { unitId } : {}),
     },
     orderBy: { startDate: 'asc' },
   });
 }
 
-/** Approve a draft: it joins the live calendar and starts affecting work days. */
-export async function approveHolidayDraft(id: string) {
+/** The draft row, when it is still open and inside the caller's unit. */
+async function findReviewableDraft(id: string, unitId?: string | null) {
   const draft = await prisma.calendarEvent.findFirst({
-    where: { id, eventType: 'HOLIDAY', isDraft: true, deletedAt: null },
+    where: {
+      id,
+      eventType: 'HOLIDAY',
+      isDraft: true,
+      deletedAt: null,
+      ...(unitId ? { unitId } : {}),
+    },
     select: { id: true },
   });
   if (!draft) throw Errors.notFound('Draf libur');
+  return draft;
+}
+
+/** Approve a draft: it joins the live calendar and starts affecting work days. */
+export async function approveHolidayDraft(id: string, unitId?: string | null) {
+  await findReviewableDraft(id, unitId);
   return prisma.calendarEvent.update({ where: { id }, data: { isDraft: false } });
 }
 
 /** Reject a draft: drop it, so it never affects a work day or a payslip. */
-export async function rejectHolidayDraft(id: string) {
-  const draft = await prisma.calendarEvent.findFirst({
-    where: { id, eventType: 'HOLIDAY', isDraft: true, deletedAt: null },
-    select: { id: true },
-  });
-  if (!draft) throw Errors.notFound('Draf libur');
+export async function rejectHolidayDraft(id: string, unitId?: string | null) {
+  await findReviewableDraft(id, unitId);
   await prisma.calendarEvent.update({ where: { id }, data: { deletedAt: new Date() } });
   return { id };
 }

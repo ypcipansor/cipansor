@@ -36,6 +36,7 @@ import {
   isNonWorkingDay as sharedIsNonWorkingDay,
   workWeekFor,
 } from '../../utils/work-calendar';
+import { deleteManagedUpload } from '../../utils/managed-upload';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -1652,9 +1653,14 @@ export async function upsertRetentionPolicy(data: Prisma.RetentionPolicyUnchecke
  * The window comes from the unit's `AttendancePolicy` (`photoRetentionDays`,
  * `recordRetentionDays`), falling back to the global `RetentionPolicy` row
  * (`ATTENDANCE_PHOTO` / `ATTENDANCE_RECORD`) and then to the 1-year photo /
- * 10-year record defaults. Photos are cleared before the rows that hold them are
- * considered for deletion, so a photo can never outlive its own window because
- * the row it sits on has a longer one.
+ * 10-year record defaults. Photos are deleted from storage before their URLs
+ * are cleared, so clearing the URL cannot leave the bytes behind with nothing
+ * left to identify them by.
+ *
+ * A row still linked to an active approved leave is kept even past its record
+ * window: `cancelLeave` restores it (and its balance) on cancellation, and a
+ * purged row would leave that cancellation with nothing to restore. The row is
+ * removed once the leave is no longer APPROVED.
  */
 export async function enforceAttendanceRetention(now = new Date()) {
   const [policies, retention, units] = await Promise.all([
@@ -1675,20 +1681,45 @@ export async function enforceAttendanceRetention(now = new Date()) {
     const photoDays = policy?.photoRetentionDays ?? globalPhotoDays;
     const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
 
-    const erased = await prisma.attendanceRecord.updateMany({
+    // Identify the expired photos first: once the URL is cleared the file can
+    // no longer be found, so the storage delete has to precede the update.
+    const expiredPhotos = await prisma.attendanceRecord.findMany({
       where: {
         photoUrl: { not: null },
         capturedAt: { lt: new Date(now.getTime() - photoDays * 86_400_000) },
         attendance: { staff: { unitId: unit.id } },
       },
-      data: { photoUrl: null },
+      select: { id: true, photoUrl: true },
     });
-    photosErased += erased.count;
+    let erasedHere = 0;
+    for (const photo of expiredPhotos) {
+      // Delete the bytes first; clear the URL only after they are gone (or were
+      // already gone). A failed unlink leaves the row intact so the next run
+      // retries, instead of orphaning the file.
+      const removed = await deleteManagedUpload(photo.photoUrl);
+      const cleared = await prisma.attendanceRecord.updateMany({
+        where: { id: photo.id, photoUrl: photo.photoUrl },
+        data: { photoUrl: null },
+      });
+      if (removed || cleared.count > 0) erasedHere += cleared.count;
+    }
+    photosErased += erasedHere;
 
+    // Rows still carrying an active approved leave are kept: cancelling that
+    // leave restores them, and a purged row would leave the cancellation with
+    // nothing to restore. `leaveRequestId` is a plain column, not a relation,
+    // so the protected ids are resolved first.
+    const activeLeaveIds = (
+      await prisma.leave.findMany({
+        where: { status: LeaveStatus.APPROVED },
+        select: { id: true },
+      })
+    ).map((l) => l.id);
     const deleted = await prisma.staffAttendance.deleteMany({
       where: {
         date: { lt: new Date(now.getTime() - recordDays * 86_400_000) },
         staff: { unitId: unit.id },
+        OR: [{ leaveRequestId: null }, { leaveRequestId: { notIn: activeLeaveIds } }],
       },
     });
     recordsDeleted += deleted.count;
@@ -2136,7 +2167,7 @@ export async function approveLeave(id: string, approverId: string, data: Approve
       for (const date of dates) {
         const existing = await tx.staffAttendance.findUnique({
           where: { staffId_date: { staffId: targetStaffId, date } },
-          select: { id: true, status: true, leaveRequestId: true },
+          select: { id: true, status: true, notes: true, leaveRequestId: true },
         });
         if (existing) {
           // A day already carrying this leave is idempotent; a day carrying a
@@ -2149,6 +2180,9 @@ export async function approveLeave(id: string, approverId: string, data: Approve
               notes: `Cuti: ${leave.type}`,
               leaveRequestId: id,
               leavePreviousStatus: existing.status,
+              // Keep the original explanation so cancelling restores it rather
+              // than wiping a recorded reason.
+              leavePreviousNotes: existing.notes,
             },
           });
         } else {
@@ -2235,7 +2269,7 @@ export async function cancelLeave(id: string) {
   if (wasApproved) {
     const rows = await prisma.staffAttendance.findMany({
       where: { leaveRequestId: id },
-      select: { id: true, leavePreviousStatus: true },
+      select: { id: true, leavePreviousStatus: true, leavePreviousNotes: true },
     });
     await prisma.$transaction(async (tx) => {
       for (const row of rows) {
@@ -2244,9 +2278,12 @@ export async function cancelLeave(id: string) {
             where: { id: row.id },
             data: {
               status: row.leavePreviousStatus,
-              notes: null,
+              // Restore the pre-leave notes, not null: the row may have carried
+              // a recorded explanation that approval overwrote.
+              notes: row.leavePreviousNotes,
               leaveRequestId: null,
               leavePreviousStatus: null,
+              leavePreviousNotes: null,
             },
           });
         } else {

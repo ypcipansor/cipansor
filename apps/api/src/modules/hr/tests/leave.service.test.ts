@@ -139,10 +139,11 @@ describe('cancelLeave', () => {
     mocked.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
     mocked.leaveBalance.findUnique.mockResolvedValue({ id: 'bal-1' });
     mocked.leave.update.mockResolvedValue({ ...baseLeave, status: 'CANCELLED' });
-    // Day 1 already held PRESENT before the leave; day 2 was created by it.
+    // Day 1 already held PRESENT (with a note) before the leave; day 2 was
+    // created by it.
     mocked.staffAttendance.findMany.mockResolvedValue([
-      { id: 'att-1', leavePreviousStatus: 'PRESENT' },
-      { id: 'att-2', leavePreviousStatus: null },
+      { id: 'att-1', leavePreviousStatus: 'PRESENT', leavePreviousNotes: 'Hadir tepat waktu' },
+      { id: 'att-2', leavePreviousStatus: null, leavePreviousNotes: null },
     ]);
     mocked.staffAttendance.update.mockResolvedValue({});
     mocked.staffAttendance.delete.mockResolvedValue({});
@@ -158,6 +159,8 @@ describe('cancelLeave', () => {
     // The pre-existing day is restored; only the leave-only day is removed.
     expect(mocked.staffAttendance.update.mock.calls[0][0].where).toEqual({ id: 'att-1' });
     expect(mocked.staffAttendance.update.mock.calls[0][0].data.status).toBe('PRESENT');
+    // The original explanation comes back too, not null.
+    expect(mocked.staffAttendance.update.mock.calls[0][0].data.notes).toBe('Hadir tepat waktu');
     expect(mocked.staffAttendance.delete.mock.calls[0][0].where).toEqual({ id: 'att-2' });
     expect(mocked.auditLog.create).toHaveBeenCalledTimes(1);
   });

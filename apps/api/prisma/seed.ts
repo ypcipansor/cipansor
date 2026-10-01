@@ -7053,6 +7053,11 @@ async function main() {
       description: 'Komponen gaji pokok pokok',
       isFixed: true,
       isPercentage: false,
+      // POKOK: the attendance-deduction engine excludes basic salary from the
+      // allowance side by this classification (PP 36/2021 Ps. 65). Left at the
+      // default, a deduction could consume the base salary as if it were an
+      // allowance.
+      classification: 'POKOK',
       defaultAmount: new Prisma.Decimal(3000000.0),
       isTaxable: true,
       sortOrder: 1,

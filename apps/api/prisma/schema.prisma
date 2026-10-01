@@ -2073,6 +2073,9 @@ model StaffAttendance {
   /// The status this row held before an approved leave overwrote it; null means
   /// the leave created the row and a cancellation should remove it.
   leavePreviousStatus StaffAttendanceStatus? @map("leave_previous_status")
+  /// The notes this row held before an approved leave overwrote them, so a
+  /// cancellation restores the original explanation instead of erasing it.
+  leavePreviousNotes String? @map("leave_previous_notes")
   createdAt DateTime              @default(now()) @map("created_at")
   updatedAt DateTime              @updatedAt @map("updated_at")
 
