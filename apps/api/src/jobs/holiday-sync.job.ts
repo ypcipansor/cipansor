@@ -6,9 +6,11 @@ import { syncConfiguredHolidays } from '@/modules/calendar/holiday-sync.service'
  * Tarik libur nasional ke kalender — sebulan sekali, tanggal 1 pukul 05:00 WIB.
  *
  * Sumbernya API publik (pengaturan `HOLIDAY_SYNC`), jadi hasilnya DISIMPAN ke
- * `CalendarEvent`, bukan dibaca saat dibutuhkan. Absensi dan penggajian membaca
- * kalender itu; kalau sumbernya mati, kalender yang sudah ada tetap dipakai dan
- * tidak ada hari libur yang berubah menjadi Alpa.
+ * `CalendarEvent` sebagai **draf**, bukan dibaca saat dibutuhkan. Draf belum
+ * menjadi hari libur: absensi dan penggajian mengabaikannya sampai admin
+ * menyetujuinya, karena sumber pihak ketiga tidak boleh diam-diam mengubah hari
+ * kerja. Kalau sumbernya mati, kalender yang sudah ada tetap dipakai dan tidak
+ * ada hari libur yang berubah menjadi Alpa.
  *
  * Tanggal 1 dipilih karena `api-hari-libur` memperbarui datanya tiap tanggal 1:
  * menariknya lebih sering hanya membaca data yang sama. Idempoten — libur yang

@@ -217,6 +217,8 @@ interface StaffPayContext {
   baseSalary: number;
   /** Allowance lines by component code, with their classification. */
   allowances: { code: string; name: string; amount: number; classification: string }[];
+  /** The full monthly wage (base + allowances), for the 1/173 hourly rate. */
+  monthlyWage: number;
   workDays: number;
   hoursPerDay: number;
 }
@@ -242,8 +244,10 @@ function resolveBasis(basis: string, ctx: StaffPayContext): { amount: number; la
     return { amount, label: 'Total tunjangan' };
   }
   if (basis === 'UPAH_SEJAM') {
-    const total = ctx.allowances.reduce((s, a) => s + a.amount, 0);
-    return { amount: total / 173, label: 'Upah sejam (1/173 tunjangan)' };
+    // PP 35/2021 art. 32: an hour of overtime is 1/173 of a *month's* wage —
+    // base salary plus fixed allowances — not 1/173 of the allowances alone,
+    // which underpaid every overtime hour.
+    return { amount: ctx.monthlyWage / 173, label: 'Upah sejam (1/173 upah sebulan)' };
   }
   if (basis === 'UPAH_SEHARI') {
     const total = ctx.allowances.reduce((s, a) => s + a.amount, 0);
@@ -531,19 +535,26 @@ export const attendanceDeductionService = {
 
     return staffList.map((staff) => {
       const salary = staff.employeeSalary;
-      const allowances =
-        salary?.items
-          .filter((i) => i.component.type === 'EARNING' && i.component.code !== 'GAJI_POKOK')
-          .map((i) => ({
-            code: i.component.code,
-            name: i.component.name,
-            amount: Number(i.amount),
-            classification: i.component.classification,
-          })) ?? [];
+      // Basic salary is any earning classified POKOK (or, for older rows that
+      // predate the classification, the component literally named GAJI_POKOK or
+      // BASIC_SALARY). Matching only 'GAJI_POKOK' let the seeded BASIC_SALARY
+      // item count as an allowance, so a deduction could eat the base salary.
+      const isBasic = (c: { code: string; classification: string }) =>
+        c.classification === 'POKOK' || c.code === 'GAJI_POKOK' || c.code === 'BASIC_SALARY';
+      const earningItems = salary?.items.filter((i) => i.component.type === 'EARNING') ?? [];
+      const allowances = earningItems
+        .filter((i) => !isBasic(i.component))
+        .map((i) => ({
+          code: i.component.code,
+          name: i.component.name,
+          amount: Number(i.amount),
+          classification: i.component.classification,
+        }));
 
       const ctx: StaffPayContext = {
         baseSalary: Number(salary?.baseSalary ?? 0),
         allowances,
+        monthlyWage: earningItems.reduce((s, i) => s + Number(i.amount), 0),
         workDays: workDates.length,
         hoursPerDay: week.hoursPerDay,
       };
@@ -572,7 +583,17 @@ export const attendanceDeductionService = {
       }
 
       const gross = ctx.baseSalary + allowances.reduce((s, a) => s + a.amount, 0);
-      const allowanceCap = allowances.reduce((s, a) => s + a.amount, 0);
+      // Deductions already on the slip (BPJS, PPh 21, loan repayments, …) come
+      // out of the allowance side too, so the attendance engine may only spend
+      // what is left of it. Capping attendance alone let the combined total
+      // reduce net pay below the basic salary.
+      const existingDeductions = (salary?.items ?? [])
+        .filter((i) => i.component.type === 'DEDUCTION')
+        .reduce((s, i) => s + Number(i.amount), 0);
+      const allowanceCap = Math.max(
+        0,
+        allowances.reduce((s, a) => s + a.amount, 0) - existingDeductions
+      );
       const cap = deductionCapFor(gross, allowanceCap, guard);
       const cappedResult = applyDeductionCap(lines, cap);
       const totalDeductions = cappedResult.total;

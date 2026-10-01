@@ -7,13 +7,76 @@ import {
   Gender,
   EmploymentStatus,
 } from '@prisma/client';
+import {
+  attendanceDate,
+  attendanceExemptionSchema,
+  attendancePolicySchema,
+  attendanceSiteSchema,
+  createLeaveSchema,
+  leaveTypeConfigSchema,
+  retentionPolicySchema,
+  selfAttendanceSchema,
+  shiftAssignmentSchema,
+  shiftRotationSchema,
+  staffBulkAttendanceSchema,
+  workShiftSchema,
+  workWeekConfigSchema,
+} from '@cipansor/shared';
+import type {
+  AttendanceExemptionInput,
+  AttendancePolicyInput,
+  AttendanceSiteInput,
+  CreateLeaveInput,
+  LeaveTypeConfigInput,
+  RetentionPolicyInput,
+  SelfAttendanceInput,
+  ShiftAssignmentInput,
+  ShiftRotationInput,
+  StaffBulkAttendanceInput,
+  WorkShiftInput,
+  WorkWeekConfigInput,
+} from '@cipansor/shared';
+
+// The attendance-settings contracts live once, in `@cipansor/shared`, so the
+// form that posts a value and the API that validates it cannot drift. They are
+// re-exported here so this module's controllers and services keep one import site.
+export {
+  attendanceExemptionSchema,
+  attendancePolicySchema,
+  attendanceSiteSchema,
+  createLeaveSchema,
+  leaveTypeConfigSchema,
+  retentionPolicySchema,
+  selfAttendanceSchema,
+  shiftAssignmentSchema,
+  shiftRotationSchema,
+  workShiftSchema,
+  workWeekConfigSchema,
+};
+export type {
+  AttendanceExemptionInput,
+  AttendancePolicyInput,
+  AttendanceSiteInput,
+  CreateLeaveInput,
+  LeaveTypeConfigInput,
+  RetentionPolicyInput,
+  SelfAttendanceInput,
+  ShiftAssignmentInput,
+  ShiftRotationInput,
+  StaffBulkAttendanceInput,
+  WorkShiftInput,
+  WorkWeekConfigInput,
+};
+
+/** The staff bulk register the API validates is the shared contract. */
+export const bulkAttendanceSchema = staffBulkAttendanceSchema;
 
 // Staff Attendance schemas
 export const createStaffAttendanceSchema = z
   .object({
     staffId: z.string().uuid().optional(),
     teacherId: z.string().uuid().optional(),
-    date: z.string().datetime(),
+    date: attendanceDate,
     status: z.nativeEnum(StaffAttendanceStatus).default(StaffAttendanceStatus.PRESENT),
     checkIn: z.string().datetime().optional(),
     checkOut: z.string().datetime().optional(),
@@ -23,29 +86,18 @@ export const createStaffAttendanceSchema = z
     message: 'Either staffId or teacherId must be provided',
   });
 
+// A correction to a recorded day carries its reason; the service writes an
+// AuditLog entry with the old and new values alongside it.
 export const updateStaffAttendanceSchema = z.object({
   status: z.nativeEnum(StaffAttendanceStatus).optional(),
   checkIn: z.string().datetime().optional(),
   checkOut: z.string().datetime().optional(),
   notes: z.string().optional(),
+  reason: z.string().min(5, 'Alasan koreksi minimal 5 karakter'),
 });
 
-export const bulkAttendanceSchema = z.object({
-  date: z.string().datetime(),
-  records: z
-    .array(
-      z.object({
-        staffId: z.string().uuid().optional(),
-        teacherId: z.string().uuid().optional(),
-        status: z.nativeEnum(StaffAttendanceStatus),
-        checkIn: z.string().datetime().optional(),
-        checkOut: z.string().datetime().optional(),
-        notes: z.string().optional(),
-      })
-    )
-    .refine((records) => records.every((r) => r.staffId || r.teacherId), {
-      message: 'Each record must have either staffId or teacherId',
-    }),
+export const deleteStaffAttendanceSchema = z.object({
+  reason: z.string().min(5, 'Alasan penghapusan minimal 5 karakter'),
 });
 
 export const queryStaffAttendanceSchema = z.object({
@@ -58,88 +110,6 @@ export const queryStaffAttendanceSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
 });
-
-// Self check-in / check-out. Coordinates and a selfie are captured on the
-// device; the server decides whether they are required from the policy.
-export const selfAttendanceSchema = z.object({
-  staffId: z.string().uuid().optional(),
-  latitude: z.coerce.number().min(-90).max(90).optional(),
-  longitude: z.coerce.number().min(-180).max(180).optional(),
-  accuracyMeters: z.coerce.number().min(0).optional(),
-  photoUrl: z.string().min(1).optional(),
-  deviceInfo: z.string().max(500).optional(),
-});
-
-// ==================== ATTENDANCE SETTINGS ====================
-
-const timeString = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Format jam harus HH:mm');
-
-export const attendanceSiteSchema = z.object({
-  unitId: z.string().uuid().nullable().optional(),
-  label: z.string().min(2),
-  latitude: z.coerce.number().min(-90).max(90),
-  longitude: z.coerce.number().min(-180).max(180),
-  radiusMeters: z.coerce.number().int().min(10).max(5000).default(200),
-  isActive: z.boolean().default(true),
-});
-
-export const workShiftSchema = z.object({
-  unitId: z.string().uuid().nullable().optional(),
-  name: z.string().min(2),
-  startTime: timeString,
-  endTime: timeString,
-  graceMinutes: z.coerce.number().int().min(0).max(180).default(15),
-  crossesMidnight: z.boolean().default(false),
-  isActive: z.boolean().default(true),
-});
-
-export const shiftAssignmentSchema = z.object({
-  staffId: z.string().uuid(),
-  shiftId: z.string().uuid(),
-  effectiveFrom: z.string(),
-  effectiveTo: z.string().optional(),
-  daysOfWeek: z.array(z.coerce.number().int().min(0).max(6)).default([]),
-});
-
-export const shiftRotationSchema = z.object({
-  shiftId: z.string().uuid(),
-  name: z.string().min(2),
-  memberIds: z.array(z.string().uuid()).min(1),
-  startDate: z.string(),
-  endDate: z.string().optional(),
-  cycleDays: z.coerce.number().int().min(1).max(90).default(7),
-  isActive: z.boolean().default(true),
-});
-
-export const workWeekConfigSchema = z.object({
-  unitId: z.string().uuid().nullable().optional(),
-  workDays: z.array(z.coerce.number().int().min(0).max(6)).min(1),
-  hoursPerDay: z.coerce.number().int().min(1).max(12).default(7),
-  fridayEndTime: timeString.optional(),
-  isActive: z.boolean().default(true),
-});
-
-export const attendancePolicySchema = z.object({
-  unitId: z.string().uuid().nullable().optional(),
-  graceMinutes: z.coerce.number().int().min(0).max(180).default(15),
-  requireSelfie: z.boolean().default(true),
-  requireLocation: z.boolean().default(true),
-  outsideRadiusAction: z.enum(['FLAG', 'REJECT']).default('FLAG'),
-  photoRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
-  recordRetentionDays: z.coerce.number().int().min(30).max(36500).default(3650),
-  isActive: z.boolean().default(true),
-});
-
-export const attendanceExemptionSchema = z
-  .object({
-    roleCode: z.string().optional(),
-    staffId: z.string().uuid().optional(),
-    reason: z.string().max(500).optional(),
-    isActive: z.boolean().default(true),
-  })
-  .refine((d) => d.roleCode || d.staffId, {
-    message: 'roleCode atau staffId wajib diisi',
-  });
 
 // ==================== PAYROLL POLICY ====================
 
@@ -154,6 +124,9 @@ export const payrollComponentSchema = z.object({
   sortOrder: z.coerce.number().int().default(0),
 });
 
+// Every optional field is nullable: the settings form copies a saved row back
+// into the draft, and a database null (rate, cap, legal basis, dates) would
+// otherwise make an unchanged rule fail to save.
 export const payrollPolicyRuleSchema = z.object({
   unitId: z.string().uuid().nullable().optional(),
   code: z.string().min(2).max(60),
@@ -161,18 +134,18 @@ export const payrollPolicyRuleSchema = z.object({
   trigger: z.enum(['LATE', 'ABSENT', 'EARLY_LEAVE', 'PRESENT', 'OVERTIME']),
   basis: z.string().min(2),
   mode: z.enum(['NOMINAL', 'PERSENTASE', 'PRORATA', 'PENGALI', 'BERTINGKAT', 'FORMULA', 'MANUAL']),
-  rate: z.coerce.number().optional(),
+  rate: z.coerce.number().nullable().optional(),
   unit: z.enum(['PER_MENIT', 'PER_HARI', 'PER_KEJADIAN', 'PER_BULAN']).default('PER_KEJADIAN'),
-  tiersJson: z.record(z.string(), z.unknown()).optional(),
-  formulaExpr: z.string().max(500).optional(),
-  capPerDay: z.coerce.number().optional(),
-  capPerMonth: z.coerce.number().optional(),
+  tiersJson: z.record(z.string(), z.unknown()).nullable().optional(),
+  formulaExpr: z.string().max(500).nullable().optional(),
+  capPerDay: z.coerce.number().nullable().optional(),
+  capPerMonth: z.coerce.number().nullable().optional(),
   rounding: z.enum(['NONE', 'ROUND', 'FLOOR', 'CEIL']).default('NONE'),
   priority: z.coerce.number().int().default(0),
-  legalBasisDoc: z.string().max(500).optional(),
+  legalBasisDoc: z.string().max(500).nullable().optional(),
   isActive: z.boolean().default(false),
-  effectiveFrom: z.string().optional(),
-  effectiveTo: z.string().optional(),
+  effectiveFrom: z.string().nullable().optional(),
+  effectiveTo: z.string().nullable().optional(),
 });
 
 export const payrollGuardConfigSchema = z.object({
@@ -180,39 +153,12 @@ export const payrollGuardConfigSchema = z.object({
   maxDeductionPercent: z.coerce.number().int().min(0).max(100).default(50),
   minBasicSharePercent: z.coerce.number().int().min(0).max(100).default(75),
   mustStayAboveUmk: z.boolean().default(true),
-  umkNominal: z.coerce.number().optional(),
+  // An empty UMK input sends null; null means "no UMK bound configured".
+  umkNominal: z.coerce.number().nullable().optional(),
   isActive: z.boolean().default(true),
-});
-
-// ==================== RETENTION ====================
-
-export const retentionPolicySchema = z.object({
-  dataType: z.enum(['ATTENDANCE_PHOTO', 'ATTENDANCE_RECORD', 'LEAVE', 'PAYROLL', 'AUDIT_LOG']),
-  retentionDays: z.coerce.number().int().min(1).max(36500),
-  action: z.enum(['DELETE', 'ANONYMIZE', 'ARCHIVE']).default('DELETE'),
-  isActive: z.boolean().default(true),
-});
-
-export const leaveTypeConfigSchema = z.object({
-  leaveType: z.nativeEnum(LeaveType),
-  entitlementDays: z.coerce.number().int().min(0).max(365).nullable().optional(),
-  periodBasis: z.enum(['CALENDAR_YEAR', 'ACADEMIC_YEAR']).default('CALENDAR_YEAR'),
-  isPaid: z.boolean().default(true),
-  requiresDocument: z.boolean().default(false),
-  isActive: z.boolean().default(true),
-  notes: z.string().max(500).optional(),
 });
 
 // Leave schemas
-export const createLeaveSchema = z.object({
-  staffId: z.string().uuid().optional(),
-  teacherId: z.string().uuid().optional(),
-  type: z.nativeEnum(LeaveType),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
-  reason: z.string().min(5),
-});
-
 export const updateLeaveSchema = z.object({
   type: z.nativeEnum(LeaveType).optional(),
   startDate: z.string().datetime().optional(),
@@ -318,8 +264,8 @@ export type QueryTeachersInput = z.infer<typeof queryTeachersSchema>;
 
 export type CreateStaffAttendanceInput = z.infer<typeof createStaffAttendanceSchema>;
 export type UpdateStaffAttendanceInput = z.infer<typeof updateStaffAttendanceSchema>;
-export type BulkAttendanceInput = z.infer<typeof bulkAttendanceSchema>;
-export type CreateLeaveInput = z.infer<typeof createLeaveSchema>;
+/** The staff bulk register; the same shape the web posts. */
+export type BulkAttendanceInput = StaffBulkAttendanceInput;
 export type UpdateLeaveInput = z.infer<typeof updateLeaveSchema>;
 export type ApproveLeaveInput = z.infer<typeof approveLeaveSchema>;
 export type CreateEmployeeInput = z.infer<typeof createEmployeeSchema>;

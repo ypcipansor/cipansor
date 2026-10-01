@@ -282,10 +282,24 @@ export async function createEmployee(data: CreateEmployeeInput) {
 
     // 2. Create Profile based on Role
     if (data.role === 'TEACHER') {
+      // A teacher needs a Staff row too: attendance, leave and payroll all key
+      // on Staff, and without one the person is told "Profil pegawai" and can
+      // neither clock in nor file leave. One Staff row per person, linked back.
+      const staff = await tx.staff.create({
+        data: {
+          userId: user.id,
+          unitId: data.unitId,
+          nip: data.nip,
+          position: data.specialization || 'Guru',
+          joinDate: data.joinDate ? new Date(data.joinDate) : undefined,
+          employmentStatus: data.employmentStatus,
+        },
+      });
       await tx.teacher.create({
         data: {
           userId: user.id,
           unitId: data.unitId,
+          staffId: staff.id,
           nip: data.nip,
           nuptk: data.nuptk,
           gender: data.gender,
@@ -606,20 +620,30 @@ export interface WorkShiftRow {
 }
 
 /**
- * Minutes late on the WIB clock, 0 when on time. A shift that crosses midnight
- * starts late in the evening, so a punch the next morning is that shift's end,
- * not a next-day start — it is never late. `policyGraceMinutes` overrides the
- * shift's own grace when the unit policy sets one.
+ * Minutes late on the WIB clock, 0 when on time. `policyGraceMinutes` overrides
+ * the shift's own grace when the unit policy sets one.
+ *
+ * A shift that crosses midnight still starts at its start time on the evening
+ * the shift begins, so lateness is measured as elapsed minutes since that
+ * instant — the WIB minute-of-day comparison is wrong across midnight. Without
+ * the shift's start day (`day`) the function cannot place the start, and it
+ * falls back to not judging lateness rather than judging it wrongly.
  */
 export function computeLateMinutes(
   checkIn: Date,
   shift: WorkShiftRow | null | undefined,
-  policyGraceMinutes?: number | null
+  policyGraceMinutes?: number | null,
+  day?: string
 ): number | undefined {
   if (!shift) return undefined;
-  if (shift.crossesMidnight) return 0;
-  const [h, m] = shift.startTime.split(':').map(Number);
   const grace = policyGraceMinutes ?? shift.graceMinutes;
+  if (shift.crossesMidnight) {
+    if (!day) return 0;
+    const start = wibTimeOnDay(day, shift.startTime).getTime();
+    const diff = Math.floor((checkIn.getTime() - start) / 60_000) - grace;
+    return Math.max(0, diff);
+  }
+  const [h, m] = shift.startTime.split(':').map(Number);
   const diff = wibMinutesOfDay(checkIn) - (h * 60 + m) - grace;
   return Math.max(0, diff);
 }
@@ -682,7 +706,9 @@ export async function createStaffAttendance(
 
   const shift = await resolveShiftForDate(staffId, dayString(date));
   const lateMinutes =
-    data.checkIn && shift ? computeLateMinutes(new Date(data.checkIn), shift) : undefined;
+    data.checkIn && shift
+      ? computeLateMinutes(new Date(data.checkIn), shift, undefined, dayString(date))
+      : undefined;
 
   return prisma.staffAttendance.create({
     data: {
@@ -699,8 +725,14 @@ export async function createStaffAttendance(
   });
 }
 
-export async function updateStaffAttendance(id: string, data: UpdateStaffAttendanceInput) {
-  return prisma.staffAttendance.update({
+export async function updateStaffAttendance(
+  id: string,
+  data: UpdateStaffAttendanceInput,
+  actorId?: string
+) {
+  const before = await prisma.staffAttendance.findUnique({ where: { id } });
+  if (!before) throw Errors.notFound('Absensi');
+  const updated = await prisma.staffAttendance.update({
     where: { id },
     data: {
       status: data.status,
@@ -709,6 +741,28 @@ export async function updateStaffAttendance(id: string, data: UpdateStaffAttenda
       notes: data.notes,
     },
   });
+  await prisma.auditLog.create({
+    data: {
+      userId: actorId ?? null,
+      action: 'UPDATE',
+      entity: 'StaffAttendance',
+      entityId: id,
+      oldValues: {
+        status: before.status,
+        checkIn: before.checkIn?.toISOString() ?? null,
+        checkOut: before.checkOut?.toISOString() ?? null,
+        notes: before.notes,
+      },
+      newValues: {
+        status: updated.status,
+        checkIn: updated.checkIn?.toISOString() ?? null,
+        checkOut: updated.checkOut?.toISOString() ?? null,
+        notes: updated.notes,
+        reason: data.reason,
+      },
+    },
+  });
+  return updated;
 }
 
 export async function recordBulkAttendance(data: BulkAttendanceInput, recordedById?: string) {
@@ -797,8 +851,27 @@ export async function getStaffAttendanceSummary(
   };
 }
 
-export async function deleteStaffAttendance(id: string) {
-  return prisma.staffAttendance.delete({ where: { id } });
+export async function deleteStaffAttendance(id: string, reason?: string, actorId?: string) {
+  const before = await prisma.staffAttendance.findUnique({ where: { id } });
+  if (!before) throw Errors.notFound('Absensi');
+  const deleted = await prisma.staffAttendance.delete({ where: { id } });
+  await prisma.auditLog.create({
+    data: {
+      userId: actorId ?? null,
+      action: 'DELETE',
+      entity: 'StaffAttendance',
+      entityId: id,
+      oldValues: {
+        staffId: before.staffId,
+        date: before.date.toISOString(),
+        status: before.status,
+        checkIn: before.checkIn?.toISOString() ?? null,
+        checkOut: before.checkOut?.toISOString() ?? null,
+      },
+      newValues: { reason: reason ?? null },
+    },
+  });
+  return deleted;
 }
 
 // =====================================
@@ -967,41 +1040,72 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
   }
 
   const shift = await resolveShiftForDate(input.staffId, day);
-  const lateMinutes = shift ? computeLateMinutes(now, shift, policy?.graceMinutes) : undefined;
+  const lateMinutes = shift ? computeLateMinutes(now, shift, policy?.graceMinutes, day) : undefined;
   const status =
     lateMinutes && lateMinutes > 0 ? StaffAttendanceStatus.LATE : StaffAttendanceStatus.PRESENT;
 
-  const attendance = await prisma.staffAttendance.upsert({
-    where: { staffId_date: { staffId: input.staffId, date } },
-    update: { checkIn: now, shiftId: shift?.id, status, lateMinutes },
-    create: {
-      staffId: input.staffId,
-      date,
-      status,
-      shiftId: shift?.id,
-      checkIn: now,
-      lateMinutes,
-    },
+  // The day row and its evidence are one write: if the evidence fails, the
+  // punch must not remain recorded without it (a retry would otherwise be
+  // refused as "already checked in", stranding the row).
+  const { attendance, record } = await prisma.$transaction(async (tx) => {
+    const attendance = await tx.staffAttendance.upsert({
+      where: { staffId_date: { staffId: input.staffId, date } },
+      update: { checkIn: now, shiftId: shift?.id, status, lateMinutes },
+      create: {
+        staffId: input.staffId,
+        date,
+        status,
+        shiftId: shift?.id,
+        checkIn: now,
+        lateMinutes,
+      },
+    });
+
+    // create, not upsert: an existing CHECK_IN row means a punch already
+    // happened, and the evidence for it must not be swapped out afterwards.
+    const record = await tx.attendanceRecord.create({
+      data: {
+        attendanceId: attendance.id,
+        kind: 'CHECK_IN',
+        photoUrl: input.photoUrl,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracyMeters: input.accuracyMeters,
+        siteId: match?.site.id,
+        distanceMeters: match?.distanceMeters,
+        isWithinRadius: withinRadius,
+        deviceInfo: input.deviceInfo,
+      },
+    });
+    return { attendance, record };
   });
 
-  // create, not upsert: an existing CHECK_IN row means a punch already
-  // happened, and the evidence for it must not be swapped out afterwards.
-  await prisma.attendanceRecord.create({
-    data: {
-      attendanceId: attendance.id,
-      kind: 'CHECK_IN',
-      photoUrl: input.photoUrl,
-      latitude: input.latitude,
-      longitude: input.longitude,
-      accuracyMeters: input.accuracyMeters,
-      siteId: match?.site.id,
-      distanceMeters: match?.distanceMeters,
-      isWithinRadius: withinRadius,
-      deviceInfo: input.deviceInfo,
-    },
-  });
+  return { attendance, record, lateMinutes: lateMinutes ?? 0, withinRadius };
+}
 
-  return { attendance, lateMinutes: lateMinutes ?? 0, withinRadius };
+/**
+ * The row a checkout should attach to: today's open check-in, or — for a shift
+ * that crosses midnight — the previous day's row that is still open. Attendance
+ * rows key on the check-in day, so a 22:00–06:00 shift's checkout belongs to
+ * yesterday's row; looking only at today left such a shift unable to close.
+ */
+async function findOpenCheckInRow(staffId: string, today: string) {
+  const include = { records: { where: { kind: 'CHECK_OUT' }, select: { id: true } } } as const;
+  const current = await prisma.staffAttendance.findUnique({
+    where: { staffId_date: { staffId, date: dayOf(today) } },
+    include,
+  });
+  if (current?.checkIn && !current.checkOut) return current;
+
+  const yesterday = dayString(new Date(dayOf(today).getTime() - 86_400_000));
+  const previous = await prisma.staffAttendance.findUnique({
+    where: { staffId_date: { staffId, date: dayOf(yesterday) } },
+    include: { ...include, shift: true },
+  });
+  if (previous?.checkIn && !previous.checkOut && previous.shift?.crossesMidnight) {
+    return previous;
+  }
+  return current;
 }
 
 export async function selfCheckOut(input: SelfAttendanceInput) {
@@ -1021,40 +1125,40 @@ export async function selfCheckOut(input: SelfAttendanceInput) {
 
   const now = new Date();
   const day = todayWib();
-  const date = dayOf(day);
 
-  const existing = await prisma.staffAttendance.findUnique({
-    where: { staffId_date: { staffId: input.staffId, date } },
-    include: { records: { where: { kind: 'CHECK_OUT' }, select: { id: true } } },
-  });
-  if (!existing) throw Errors.badRequest('Belum ada absen masuk hari ini');
-  if (!existing.checkIn) throw Errors.badRequest('Belum ada absen masuk hari ini');
+  const existing = await findOpenCheckInRow(input.staffId, day);
+  if (!existing?.checkIn) throw Errors.badRequest('Belum ada absen masuk hari ini');
   if (existing.checkOut) throw Errors.badRequest('Anda sudah absen keluar hari ini');
 
   const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
   const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
 
-  const attendance = await prisma.staffAttendance.update({
-    where: { id: existing.id },
-    data: { checkOut: now },
+  // The checkout time and its evidence are one write, for the same reason as
+  // the check-in: a failure between them leaves the row closed with no evidence.
+  const { attendance, record } = await prisma.$transaction(async (tx) => {
+    const attendance = await tx.staffAttendance.update({
+      where: { id: existing.id },
+      data: { checkOut: now },
+    });
+
+    const record = await tx.attendanceRecord.create({
+      data: {
+        attendanceId: attendance.id,
+        kind: 'CHECK_OUT',
+        photoUrl: input.photoUrl,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracyMeters: input.accuracyMeters,
+        siteId: match?.site.id,
+        distanceMeters: match?.distanceMeters,
+        isWithinRadius: withinRadius,
+        deviceInfo: input.deviceInfo,
+      },
+    });
+    return { attendance, record };
   });
 
-  await prisma.attendanceRecord.create({
-    data: {
-      attendanceId: attendance.id,
-      kind: 'CHECK_OUT',
-      photoUrl: input.photoUrl,
-      latitude: input.latitude,
-      longitude: input.longitude,
-      accuracyMeters: input.accuracyMeters,
-      siteId: match?.site.id,
-      distanceMeters: match?.distanceMeters,
-      isWithinRadius: withinRadius,
-      deviceInfo: input.deviceInfo,
-    },
-  });
-
-  return { attendance, withinRadius };
+  return { attendance, record, withinRadius };
 }
 
 /** The caller's own attendance for a WIB day, with the evidence rows. */
@@ -1076,14 +1180,21 @@ export async function getMyAttendance(staffId: string, day: string) {
     isNonWorkingDay(day, staff.unitId).then((nonWork) => !nonWork),
   ]);
 
+  // An overnight shift checked in yesterday stays open into today; surface that
+  // row so the checkout button is available after midnight.
+  const openPrevious = await findOpenCheckInRow(staffId, day);
+  const overnight = openPrevious && openPrevious.id !== attendance?.id ? openPrevious : null;
+
   return {
     date: day,
     attendance,
     shift,
     isWorkDay,
     isExempt: exempt,
+    /** A still-open previous-day row, for a shift that crosses midnight. */
+    openAttendance: overnight,
     canCheckIn: !exempt && isWorkDay && !attendance?.checkIn,
-    canCheckOut: !exempt && !!attendance?.checkIn && !attendance?.checkOut,
+    canCheckOut: !exempt && (!!overnight || (!!attendance?.checkIn && !attendance?.checkOut)),
   };
 }
 
@@ -1141,6 +1252,24 @@ function assertWithinScope(
   }
 }
 
+/**
+ * Refuse a scoped write whose payload would move the row to another unit. The
+ * ownership check reads the row's *current* unit, so without this a unit admin
+ * could pass the check and then persist `unitId` = someone else's — the row
+ * leaves their unit under their own hand. The scope is authoritative: the unit
+ * is pinned to it, and a different `unitId` in the body is a refusal.
+ */
+function assertNoUnitMove(
+  scopeUnitId: string | null | undefined,
+  incomingUnitId: unknown,
+  what: string
+): void {
+  if (!scopeUnitId) return;
+  if (incomingUnitId !== undefined && incomingUnitId !== null && incomingUnitId !== scopeUnitId) {
+    throw Errors.forbidden(`${what} tidak dapat dipindah ke unit lain`);
+  }
+}
+
 export async function listAttendanceSites(unitId?: string | null) {
   return prisma.attendanceSite.findMany({
     where: unitId ? { OR: [{ unitId }, { unitId: null }] } : {},
@@ -1167,7 +1296,9 @@ export async function updateAttendanceSite(
   });
   if (!site) throw Errors.notFound('Lokasi absen');
   assertWithinScope(scopeUnitId, site.unitId, 'Lokasi absen');
-  return prisma.attendanceSite.update({ where: { id }, data });
+  assertNoUnitMove(scopeUnitId, data.unitId, 'Lokasi absen');
+  const update = scopeUnitId ? { ...data, unitId: scopeUnitId } : data;
+  return prisma.attendanceSite.update({ where: { id }, data: update });
 }
 
 export async function deleteAttendanceSite(id: string, scopeUnitId?: string | null) {
@@ -1206,7 +1337,9 @@ export async function updateWorkShift(
   });
   if (!shift) throw Errors.notFound('Shift');
   assertWithinScope(scopeUnitId, shift.unitId, 'Shift');
-  return prisma.workShift.update({ where: { id }, data });
+  assertNoUnitMove(scopeUnitId, data.unitId, 'Shift');
+  const update = scopeUnitId ? { ...data, unitId: scopeUnitId } : data;
+  return prisma.workShift.update({ where: { id }, data: update });
 }
 
 export async function deleteWorkShift(id: string, scopeUnitId?: string | null) {
@@ -1509,6 +1642,69 @@ export async function upsertRetentionPolicy(data: Prisma.RetentionPolicyUnchecke
     update: data,
     create: data,
   });
+}
+
+/**
+ * Enforce the attendance retention window. PDP (UU 27/2022 Ps. 42) requires
+ * processing to end when the retention period is reached, and a setting with no
+ * job behind it is not a policy — selfies were kept forever.
+ *
+ * The window comes from the unit's `AttendancePolicy` (`photoRetentionDays`,
+ * `recordRetentionDays`), falling back to the global `RetentionPolicy` row
+ * (`ATTENDANCE_PHOTO` / `ATTENDANCE_RECORD`) and then to the 1-year photo /
+ * 10-year record defaults. Photos are cleared before the rows that hold them are
+ * considered for deletion, so a photo can never outlive its own window because
+ * the row it sits on has a longer one.
+ */
+export async function enforceAttendanceRetention(now = new Date()) {
+  const [policies, retention, units] = await Promise.all([
+    prisma.attendancePolicy.findMany({ where: { isActive: true } }),
+    prisma.retentionPolicy.findMany({ where: { isActive: true } }),
+    prisma.unit.findMany({ select: { id: true } }),
+  ]);
+  const globalPhotoDays =
+    retention.find((r) => r.dataType === 'ATTENDANCE_PHOTO')?.retentionDays ?? 365;
+  const globalRecordDays =
+    retention.find((r) => r.dataType === 'ATTENDANCE_RECORD')?.retentionDays ?? 3650;
+
+  let photosErased = 0;
+  let recordsDeleted = 0;
+  for (const unit of units) {
+    const policy =
+      policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
+    const photoDays = policy?.photoRetentionDays ?? globalPhotoDays;
+    const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
+
+    const erased = await prisma.attendanceRecord.updateMany({
+      where: {
+        photoUrl: { not: null },
+        capturedAt: { lt: new Date(now.getTime() - photoDays * 86_400_000) },
+        attendance: { staff: { unitId: unit.id } },
+      },
+      data: { photoUrl: null },
+    });
+    photosErased += erased.count;
+
+    const deleted = await prisma.staffAttendance.deleteMany({
+      where: {
+        date: { lt: new Date(now.getTime() - recordDays * 86_400_000) },
+        staff: { unitId: unit.id },
+      },
+    });
+    recordsDeleted += deleted.count;
+  }
+
+  if (photosErased || recordsDeleted) {
+    await prisma.auditLog.create({
+      data: {
+        userId: null,
+        action: 'PURGE',
+        entity: 'AttendanceRetention',
+        newValues: { photosErased, recordsDeleted },
+      },
+    });
+  }
+  return { photosErased, recordsDeleted };
 }
 
 export async function listLeaveTypeConfigs() {
@@ -1933,20 +2129,51 @@ export async function approveLeave(id: string, approverId: string, data: Approve
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
-    const transactionOperations = dates.map((date) =>
-      prisma.staffAttendance.upsert({
-        where: { staffId_date: { staffId: targetStaffId, date } },
-        update: { status: StaffAttendanceStatus.LEAVE, notes: `Cuti: ${leave.type}` },
-        create: {
-          staffId: targetStaffId,
-          date,
-          status: StaffAttendanceStatus.LEAVE,
-          notes: `Cuti: ${leave.type}`,
-        },
-      })
-    );
+    // Mark each day LEAVE, but remember what the row held: a day the person
+    // already clocked in keeps its evidence, and a later cancellation restores
+    // it rather than deleting a day they actually attended.
+    await prisma.$transaction(async (tx) => {
+      for (const date of dates) {
+        const existing = await tx.staffAttendance.findUnique({
+          where: { staffId_date: { staffId: targetStaffId, date } },
+          select: { id: true, status: true, leaveRequestId: true },
+        });
+        if (existing) {
+          // A day already carrying this leave is idempotent; a day carrying a
+          // *different* approved leave is left to that leave's own bookkeeping.
+          if (existing.leaveRequestId && existing.leaveRequestId !== id) continue;
+          await tx.staffAttendance.update({
+            where: { id: existing.id },
+            data: {
+              status: StaffAttendanceStatus.LEAVE,
+              notes: `Cuti: ${leave.type}`,
+              leaveRequestId: id,
+              leavePreviousStatus: existing.status,
+            },
+          });
+        } else {
+          await tx.staffAttendance.create({
+            data: {
+              staffId: targetStaffId,
+              date,
+              status: StaffAttendanceStatus.LEAVE,
+              notes: `Cuti: ${leave.type}`,
+              leaveRequestId: id,
+            },
+          });
+        }
+      }
+    });
 
-    await prisma.$transaction(transactionOperations);
+    await prisma.auditLog.create({
+      data: {
+        userId: approverId,
+        action: 'APPROVE',
+        entity: 'Leave',
+        entityId: id,
+        newValues: { status: data.status, type: leave.type, totalDays: leave.totalDays },
+      },
+    });
   }
 
   return leave;
@@ -2001,28 +2228,40 @@ export async function cancelLeave(id: string) {
     });
   });
 
-  // Only the rows this leave wrote are cleared: a day that already held some
-  // other mark (a manual correction) keeps it. The note is what identifies the
-  // leave's own rows, so it is matched exactly.
+  // Only the rows this leave wrote are touched, and they are matched by the
+  // leave id — not by a status and a generic note, which also matched a day the
+  // person actually clocked in. A row that pre-existed the leave is restored to
+  // what it held; a row the leave created is removed.
   if (wasApproved) {
-    const dates: Date[] = [];
-    const cursor = new Date(leave.startDate);
-    while (cursor <= leave.endDate) {
-      dates.push(new Date(cursor));
-      cursor.setDate(cursor.getDate() + 1);
-    }
-    const note = `Cuti: ${leave.type}`;
-    const targetStaffId = await resolveStaffId({
-      staffId: leave.staffId ?? undefined,
-      teacherId: leave.teacherId ?? undefined,
+    const rows = await prisma.staffAttendance.findMany({
+      where: { leaveRequestId: id },
+      select: { id: true, leavePreviousStatus: true },
     });
-    await prisma.staffAttendance.deleteMany({
-      where: {
-        staffId: targetStaffId,
-        date: { in: dates },
-        status: StaffAttendanceStatus.LEAVE,
-        notes: note,
-      },
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        if (row.leavePreviousStatus) {
+          await tx.staffAttendance.update({
+            where: { id: row.id },
+            data: {
+              status: row.leavePreviousStatus,
+              notes: null,
+              leaveRequestId: null,
+              leavePreviousStatus: null,
+            },
+          });
+        } else {
+          await tx.staffAttendance.delete({ where: { id: row.id } });
+        }
+      }
+      await tx.auditLog.create({
+        data: {
+          userId: null,
+          action: 'CANCEL',
+          entity: 'Leave',
+          entityId: id,
+          oldValues: { status: leave.status, type: leave.type, totalDays: leave.totalDays },
+        },
+      });
     });
   }
 
@@ -2135,8 +2374,12 @@ export async function getLeaveBalance(employeeId: string, year: number) {
     {} as Record<string, number>
   );
 
-  // Default annual leave quota (can be configured per company policy)
-  const annualQuota = 12;
+  // A new employee has no stored balance rows yet; the entitlement is still the
+  // configured one (LeaveTypeConfig), and 12 is only the last resort.
+  const annualConfig = await prisma.leaveTypeConfig.findUnique({
+    where: { leaveType: LeaveType.ANNUAL },
+  });
+  const annualQuota = annualConfig?.entitlementDays ?? 12;
 
   return {
     employeeId,

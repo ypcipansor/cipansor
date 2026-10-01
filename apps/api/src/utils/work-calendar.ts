@@ -48,6 +48,9 @@ export async function holidaysInRange(
     where: {
       eventType: 'HOLIDAY',
       deletedAt: null,
+      // A draft is a holiday a third-party source suggested but nobody approved;
+      // it must not turn a work day into a holiday or a payslip into a blank one.
+      isDraft: false,
       startDate: { lte: end },
       OR: [{ endDate: null }, { endDate: { gte: start } }],
       AND: [{ OR: [{ unitId: null }, ...(unitId ? [{ unitId }] : [])] }],

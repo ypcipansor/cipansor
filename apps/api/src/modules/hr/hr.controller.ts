@@ -4,6 +4,7 @@ import * as service from './hr.service';
 import {
   createStaffAttendanceSchema,
   updateStaffAttendanceSchema,
+  deleteStaffAttendanceSchema,
   bulkAttendanceSchema,
   createLeaveSchema,
   updateLeaveSchema,
@@ -91,7 +92,7 @@ export async function updateStaffAttendance(req: Request, res: Response, next: N
     const existing = await service.getStaffAttendanceById(req.params.id);
     if (!existing) throw Errors.notFound('Attendance record not found');
     await service.assertMayManageStaff(req.user!, existing.staffId);
-    const attendance = await service.updateStaffAttendance(req.params.id, data);
+    const attendance = await service.updateStaffAttendance(req.params.id, data, req.user?.sub);
     res.json({ success: true, data: attendance });
   } catch (error) {
     next(error);
@@ -139,10 +140,13 @@ export async function getStaffAttendanceSummary(req: Request, res: Response, nex
 
 export async function deleteStaffAttendance(req: Request, res: Response, next: NextFunction) {
   try {
+    // A deletion of a recorded day is a correction: it needs a reason and
+    // leaves an audit trail, like an edit.
+    const { reason } = deleteStaffAttendanceSchema.parse(req.body ?? {});
     const existing = await service.getStaffAttendanceById(req.params.id);
     if (!existing) throw Errors.notFound('Attendance record not found');
     await service.assertMayManageStaff(req.user!, existing.staffId);
-    await service.deleteStaffAttendance(req.params.id);
+    await service.deleteStaffAttendance(req.params.id, reason, req.user?.sub);
     res.json({ success: true, message: 'Attendance record deleted successfully' });
   } catch (error) {
     next(error);

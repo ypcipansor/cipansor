@@ -2067,6 +2067,12 @@ model StaffAttendance {
   notes     String?
   /// Who recorded this row. Null for rows written before this column existed.
   recordedById String?            @map("recorded_by_id")
+  /// The approved leave that wrote this row, so cancelling that leave restores
+  /// the row instead of deleting a day the person actually attended.
+  leaveRequestId String?          @map("leave_request_id")
+  /// The status this row held before an approved leave overwrote it; null means
+  /// the leave created the row and a cancellation should remove it.
+  leavePreviousStatus StaffAttendanceStatus? @map("leave_previous_status")
   createdAt DateTime              @default(now()) @map("created_at")
   updatedAt DateTime              @updatedAt @map("updated_at")
 
@@ -4424,6 +4430,11 @@ model CalendarEvent {
   recurrenceRule String?    @map("recurrence_rule") // iCal RRULE format
   // Visibility
   isPublic       Boolean    @default(true) @map("is_public")
+  /// A draft is not yet part of the live calendar. A holiday import lands here
+  /// first (decisions/absensi-pegawai.md): a third-party source must be reviewed
+  /// before its dates can turn a work day into a holiday, or a payroll period
+  /// into one with no deductions.
+  isDraft        Boolean    @default(false) @map("is_draft")
   color          String? // Hex color for display
   // Meta
   createdById    String     @map("created_by_id")

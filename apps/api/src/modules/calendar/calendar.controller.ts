@@ -1,7 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { calendarService } from './calendar.service';
 import {
+  approveHolidayDraft,
   getHolidaySyncConfig,
+  listHolidayDrafts,
+  rejectHolidayDraft,
   syncHolidaysForYear,
   updateHolidaySyncConfig,
 } from './holiday-sync.service';
@@ -214,6 +217,31 @@ export class CalendarController {
         createdById: req.user!.sub,
       });
       res.json({ data: result });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async listHolidayDrafts(req: Request, res: Response, next: NextFunction) {
+    try {
+      const unitId = (req.query.unitId as string | undefined) ?? null;
+      res.json({ data: await listHolidayDrafts(unitId) });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async approveHolidayDraft(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json({ data: await approveHolidayDraft(req.params.id) });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async rejectHolidayDraft(req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json({ data: await rejectHolidayDraft(req.params.id) });
     } catch (error) {
       next(error);
     }

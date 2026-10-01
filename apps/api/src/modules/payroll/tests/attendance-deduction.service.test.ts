@@ -20,6 +20,9 @@ const ctx = {
   ],
   workDays: 22,
   hoursPerDay: 7,
+  // Base + allowances; the 1/173 overtime rate reads this, not the allowance
+  // side alone (PP 35/2021 Ps. 32).
+  monthlyWage: 3_800_000,
 };
 
 const zeroCounts = {

@@ -18,6 +18,7 @@ import { runAttendancePatternFlags } from './attendance-pattern.job';
 import { runAccreditationReminder } from './accreditation-reminder.job';
 import { runPermitNoteErasure } from './permit-note-erasure.job';
 import { runHolidaySync } from './holiday-sync.job';
+import { runAttendanceRetention } from './attendance-retention.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -435,6 +436,35 @@ export function initializeScheduler(): void {
   scheduledTasks.push(holidaySyncTask);
   logger.info('[Scheduler] Holiday sync scheduled at 05:00 WIB on the 1st of each month');
 
+  /**
+   * Retensi absensi pegawai (decisions/absensi-pegawai.md).
+   *
+   * Selfie dan koordinat adalah data pribadi spesifik (UU 27/2022 Ps. 4); Pasal
+   * 42 mewajibkan pemrosesan berakhir saat masa retensi tercapai. 03:15 WIB, di
+   * celah kosong antara pembersihan snapshot 03:00 dan pekerjaan pagi.
+   */
+  const attendanceRetentionTask = cron.schedule(
+    '15 3 * * *',
+    async () => {
+      try {
+        const result = await runAttendanceRetention();
+        if (result.photosErased || result.recordsDeleted) {
+          logger.info(
+            `[Scheduler] Attendance retention: ${result.photosErased} photo(s), ` +
+              `${result.recordsDeleted} record(s)`
+          );
+        }
+      } catch (error) {
+        logger.error('[Scheduler] Attendance retention failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(attendanceRetentionTask);
+  logger.info('[Scheduler] Attendance retention scheduled daily at 03:15 WIB');
+
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }
 
@@ -468,6 +498,7 @@ export async function runJob(
     | 'accreditation-reminder'
     | 'permit-note-erasure'
     | 'holiday-sync'
+    | 'attendance-retention'
 ): Promise<void> {
   logger.info(`[Scheduler] Manually running job: ${jobName}`);
 
@@ -519,6 +550,9 @@ export async function runJob(
       break;
     case 'holiday-sync':
       await runHolidaySync();
+      break;
+    case 'attendance-retention':
+      await runAttendanceRetention();
       break;
     default:
       throw new Error(`Unknown job: ${jobName}`);

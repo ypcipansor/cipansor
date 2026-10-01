@@ -92,6 +92,7 @@ export default function StaffAttendancePage() {
       SICK: "bg-purple-100 text-purple-800",
       REMOTE: "bg-sky-100 text-sky-800",
       DUTY: "bg-teal-100 text-teal-800",
+      HOLIDAY: "bg-gray-100 text-gray-800",
     };
     return (
       <Badge className={colors[status]}>
@@ -277,7 +278,7 @@ export default function StaffAttendancePage() {
                         <TableCell>{getStatusBadge(item.status)}</TableCell>
                         <TableCell
                           className="max-w-[200px] truncate"
-                          title={item.notes}
+                          title={item.notes ?? undefined}
                         >
                           {item.notes || "-"}
                         </TableCell>

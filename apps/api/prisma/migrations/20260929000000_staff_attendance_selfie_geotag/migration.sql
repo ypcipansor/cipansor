@@ -3,10 +3,8 @@
 --
 -- Guru dulu ditulis lewat `staff_attendance.teacher_id`; sejak ini kehadiran
 -- satu orang adalah satu baris `staff_id`, dan guru ditautkan lewat
--- `teachers.staff_id`. Database belum pernah production, jadi baris absensi
--- guru lama (staff_id NULL) dihapus, bukan dimigrasikan — tidak ada pasangan
--- Teacher<->Staff yang bisa dipakai untuk memindahkannya secara jujur.
-DELETE FROM "staff_attendance" WHERE "staff_id" IS NULL;
+-- `teachers.staff_id`. Baris absensi guru lama dipindahkan ke identitas Staff
+-- yang dibuat di sini — bukan dihapus, agar riwayat kehadiran tidak hilang.
 
 -- AlterEnum
 ALTER TYPE "StaffAttendanceStatus" ADD VALUE 'HOLIDAY';
@@ -26,11 +24,51 @@ ALTER TABLE "teachers" ADD COLUMN     "staff_id" TEXT;
 -- AlterTable
 ALTER TABLE "staff" ADD COLUMN     "employment_status" "EmploymentStatus";
 
+-- Backfill: give every teacher a Staff identity (reusing the teacher's id where
+-- the person has none), link it back from teachers, then move the teacher-only
+-- attendance rows onto it. A date collision is resolved by keeping the existing
+-- Staff row for that day; a teacher-only row with no Staff identity left is the
+-- only thing dropped, immediately before the NOT NULL below.
+INSERT INTO "staff" ("id", "user_id", "unit_id", "nip", "position", "join_date", "employment_status", "created_at", "updated_at")
+SELECT
+    t."id",
+    t."user_id",
+    t."unit_id",
+    t."nip",
+    COALESCE(NULLIF(t."specialization", ''), 'Guru'),
+    t."join_date",
+    t."employment_status",
+    t."created_at",
+    t."updated_at"
+FROM "teachers" t
+WHERE NOT EXISTS (SELECT 1 FROM "staff" s WHERE s."user_id" = t."user_id")
+  AND NOT EXISTS (SELECT 1 FROM "staff" s WHERE s."id" = t."id");
+
+UPDATE "teachers" t
+SET "staff_id" = s."id"
+FROM "staff" s
+WHERE s."user_id" = t."user_id" AND t."staff_id" IS NULL;
+
+UPDATE "staff_attendance" a
+SET "staff_id" = t."staff_id"
+FROM "teachers" t
+WHERE a."staff_id" IS NULL
+  AND a."teacher_id" = t."id"
+  AND t."staff_id" IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "staff_attendance" b
+    WHERE b."staff_id" = t."staff_id" AND b."date" = a."date"
+  );
+
+DELETE FROM "staff_attendance" WHERE "staff_id" IS NULL;
+
 -- AlterTable
 ALTER TABLE "staff_attendance" DROP COLUMN "teacher_id",
 ADD COLUMN     "late_minutes" INTEGER,
 ADD COLUMN     "recorded_by_id" TEXT,
 ADD COLUMN     "shift_id" TEXT,
+ADD COLUMN     "leave_request_id" TEXT,
+ADD COLUMN     "leave_previous_status" "StaffAttendanceStatus",
 ALTER COLUMN "staff_id" SET NOT NULL;
 
 -- AlterTable
@@ -316,4 +354,7 @@ ALTER TABLE "work_week_configs" ADD CONSTRAINT "work_week_configs_unit_id_fkey" 
 
 -- AddForeignKey
 ALTER TABLE "attendance_policies" ADD CONSTRAINT "attendance_policies_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AlterTable: holiday imports land as drafts for review before they affect payroll
+ALTER TABLE "calendar_events" ADD COLUMN "is_draft" BOOLEAN NOT NULL DEFAULT false;
 

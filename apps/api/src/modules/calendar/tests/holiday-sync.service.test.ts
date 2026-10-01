@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../lib/prisma', () => ({
   prisma: {
     setting: { findFirst: vi.fn(), update: vi.fn(), create: vi.fn() },
-    calendarEvent: { findFirst: vi.fn(), create: vi.fn() },
+    calendarEvent: { findFirst: vi.fn(), create: vi.fn(), findMany: vi.fn(), update: vi.fn() },
     unit: { findFirst: vi.fn() },
   },
 }));
@@ -11,9 +11,12 @@ vi.mock('../../../lib/prisma', () => ({
 import { prisma } from '../../../lib/prisma';
 import {
   DEFAULT_HOLIDAY_SOURCE_URL,
+  approveHolidayDraft,
   fetchHolidaysForYear,
   getHolidaySyncConfig,
+  listHolidayDrafts,
   parseHolidayResponse,
+  rejectHolidayDraft,
   syncHolidaysForYear,
 } from '../holiday-sync.service';
 
@@ -119,5 +122,47 @@ describe('syncHolidaysForYear', () => {
     expect(result.created).toBe(0);
     expect(result.skipped).toBe(2);
     expect(m.calendarEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('imports every holiday as a draft, not a live event', async () => {
+    await syncHolidaysForYear(2026, { createdById: 'user-1' });
+    expect(m.calendarEvent.create).toHaveBeenCalledTimes(2);
+    for (const call of m.calendarEvent.create.mock.calls) {
+      expect(call[0].data.isDraft).toBe(true);
+    }
+  });
+});
+
+describe('holiday drafts', () => {
+  it('lists only undecided, un-deleted drafts', async () => {
+    m.calendarEvent.findMany.mockResolvedValue([]);
+    await listHolidayDrafts('unit-1');
+    const where = m.calendarEvent.findMany.mock.calls[0][0].where;
+    expect(where.isDraft).toBe(true);
+    expect(where.deletedAt).toBeNull();
+    expect(where.eventType).toBe('HOLIDAY');
+  });
+
+  it('approves a draft by clearing the draft flag', async () => {
+    m.calendarEvent.findFirst.mockResolvedValue({ id: 'draft-1' });
+    m.calendarEvent.update.mockResolvedValue({ id: 'draft-1', isDraft: false });
+    await approveHolidayDraft('draft-1');
+    expect(m.calendarEvent.update).toHaveBeenCalledWith({
+      where: { id: 'draft-1' },
+      data: { isDraft: false },
+    });
+  });
+
+  it('rejects a draft by soft-deleting it', async () => {
+    m.calendarEvent.findFirst.mockResolvedValue({ id: 'draft-1' });
+    m.calendarEvent.update.mockResolvedValue({ id: 'draft-1' });
+    await rejectHolidayDraft('draft-1');
+    expect(m.calendarEvent.update.mock.calls[0][0].data.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses to approve something that is not a draft', async () => {
+    m.calendarEvent.findFirst.mockResolvedValue(null);
+    await expect(approveHolidayDraft('live-1')).rejects.toThrow(/draf libur/i);
+    expect(m.calendarEvent.update).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,8 +54,17 @@ import {
   useHolidaySyncConfig,
   useUpdateHolidaySyncConfig,
   useSyncHolidays,
+  useHolidayDrafts,
+  useApproveHolidayDraft,
+  useRejectHolidayDraft,
+  useRetentionPolicies,
+  useUpsertRetentionPolicy,
+  useLeaveTypeConfigs,
+  useUpsertLeaveTypeConfig,
+  LEAVE_TYPE_LABELS,
   type HolidaySyncConfig,
   type PayrollPolicyRule,
+  type LeaveType,
 } from "@/hooks";
 import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -141,6 +150,8 @@ export default function AttendanceSettingsPage() {
             <TabsTrigger value="holidays">Hari Libur</TabsTrigger>
             <TabsTrigger value="policy">Kebijakan</TabsTrigger>
             <TabsTrigger value="exempt">Pengecualian</TabsTrigger>
+            <TabsTrigger value="leave">Jenis Cuti</TabsTrigger>
+            <TabsTrigger value="retention">Retensi</TabsTrigger>
             <TabsTrigger value="payroll">Potongan Gaji</TabsTrigger>
           </TabsList>
 
@@ -164,6 +175,12 @@ export default function AttendanceSettingsPage() {
           </TabsContent>
           <TabsContent value="exempt">
             <ExemptionsTab />
+          </TabsContent>
+          <TabsContent value="leave">
+            <LeaveTypesTab />
+          </TabsContent>
+          <TabsContent value="retention">
+            <RetentionTab />
           </TabsContent>
           <TabsContent value="payroll">
             <PayrollTab scope={scope} />
@@ -765,6 +782,15 @@ function WorkWeekTab({ scope }: { scope: Scope }) {
     current?.fridayEndTime ?? "",
   );
 
+  // The form initialises before the query resolves; adopt the saved values once
+  // they arrive so Save cannot overwrite a unit's real settings with defaults.
+  useEffect(() => {
+    if (!current) return;
+    setWorkDays(current.workDays ?? [1, 2, 3, 4, 5]);
+    setHoursPerDay(String(current.hoursPerDay ?? 8));
+    setFridayEndTime(current.fridayEndTime ?? "");
+  }, [current?.id]);
+
   return (
     <Card>
       <CardHeader>
@@ -949,7 +975,7 @@ function HolidaySyncForm({
                 unitId: scope?.unitId,
               });
               toast.success(
-                `Sinkron selesai: ${result.created} baru, ${result.updated} diperbarui`,
+                `Sinkron selesai: ${result.created} draf baru, ${result.updated} diperbarui`,
               );
             }}
           >
@@ -960,7 +986,87 @@ function HolidaySyncForm({
           </Button>
         </CardContent>
       </Card>
+
+      <HolidayDraftsCard unitId={scope?.unitId} />
     </div>
+  );
+}
+
+/**
+ * Review queue for imported holidays. A third-party source's dates land here,
+ * not on the live calendar; until one is adopted it cannot turn a work day into
+ * a holiday or a payslip into one with no deductions.
+ */
+function HolidayDraftsCard({ unitId }: { unitId?: string }) {
+  const { data: drafts, isLoading } = useHolidayDrafts(unitId);
+  const approve = useApproveHolidayDraft();
+  const reject = useRejectHolidayDraft();
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Draf Libur Menunggu Tinjauan</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Hasil tarikan belum menjadi hari libur. Setujui yang benar; tolak yang
+          keliru. Hanya libur yang disetujui yang memengaruhi hari kerja dan
+          penggajian.
+        </p>
+        {isLoading ? (
+          <div className="flex justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : !drafts?.length ? (
+          <p className="text-sm text-muted-foreground">
+            Tidak ada draf yang menunggu.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Tanggal</TableHead>
+                <TableHead>Keterangan</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {drafts.map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell>
+                    {safeFormat(d.startDate, "dd MMM yyyy")}
+                  </TableCell>
+                  <TableCell>{d.title}</TableCell>
+                  <TableCell className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={approve.isPending || reject.isPending}
+                      onClick={async () => {
+                        await approve.mutateAsync(d.id);
+                        toast.success("Libur disetujui");
+                      }}
+                    >
+                      Setujui
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={approve.isPending || reject.isPending}
+                      onClick={async () => {
+                        await reject.mutateAsync(d.id);
+                        toast.success("Draf ditolak");
+                      }}
+                    >
+                      Tolak
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -977,6 +1083,18 @@ function PolicyTab({ scope }: { scope: Scope }) {
     photoRetentionDays: String(policy?.photoRetentionDays ?? 365),
     recordRetentionDays: String(policy?.recordRetentionDays ?? 3650),
   });
+
+  useEffect(() => {
+    if (!policy) return;
+    setForm({
+      graceMinutes: String(policy.graceMinutes ?? 15),
+      requireSelfie: policy.requireSelfie ?? true,
+      requireLocation: policy.requireLocation ?? true,
+      outsideRadiusAction: policy.outsideRadiusAction ?? "FLAG",
+      photoRetentionDays: String(policy.photoRetentionDays ?? 365),
+      recordRetentionDays: String(policy.recordRetentionDays ?? 3650),
+    });
+  }, [policy?.id]);
 
   return (
     <Card>
@@ -1192,6 +1310,185 @@ function ExemptionsTab() {
   );
 }
 
+/**
+ * LeaveTypeConfig — entitlement per leave kind, read by `getLeaveBalance`. A
+ * leave kind with no row falls back to the statutory floor; a row is how a
+ * unit raises it (UU 13/2003 Ps. 79: 12 is the floor, not a fixed number).
+ */
+function LeaveTypesTab() {
+  const { data: configs, isLoading } = useLeaveTypeConfigs();
+  const upsert = useUpsertLeaveTypeConfig();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!configs) return;
+    setDrafts(
+      Object.fromEntries(
+        configs.map((c) => [
+          c.leaveType,
+          c.entitlementDays ? String(c.entitlementDays) : "",
+        ]),
+      ),
+    );
+  }, [configs]);
+
+  const save = async (leaveType: LeaveType) => {
+    const raw = drafts[leaveType];
+    await upsert.mutateAsync({
+      leaveType,
+      entitlementDays: raw ? Number(raw) : null,
+    });
+    toast.success(`Jatah ${LEAVE_TYPE_LABELS[leaveType]} disimpan`);
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Jatah Cuti per Jenis</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p className="text-sm text-muted-foreground">
+          Kosongkan bila jenis cuti tidak berjatah (mis. cuti melahirkan
+          mengikuti UU). Cuti tahunan paling sedikit 12 hari kerja.
+        </p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Jenis</TableHead>
+              <TableHead>Jatah (hari)</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={3} className="py-6 text-center">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : (
+              configs?.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">
+                    {LEAVE_TYPE_LABELS[c.leaveType]}
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      className="w-28"
+                      inputMode="numeric"
+                      value={drafts[c.leaveType] ?? ""}
+                      onChange={(e) =>
+                        setDrafts({ ...drafts, [c.leaveType]: e.target.value })
+                      }
+                      placeholder="—"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={upsert.isPending}
+                      onClick={() => save(c.leaveType)}
+                    >
+                      Simpan
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * RetentionPolicy — how long a data type is kept, enforced by the nightly
+ * `attendance-retention` job. PDP (UU 27/2022 Ps. 42) requires the processing to
+ * end at the window's end, so a value here is not advisory.
+ */
+function RetentionTab() {
+  const { data: policies, isLoading } = useRetentionPolicies();
+  const upsert = useUpsertRetentionPolicy();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!policies) return;
+    setDrafts(
+      Object.fromEntries(
+        policies.map((p) => [p.dataType, String(p.retentionDays)]),
+      ),
+    );
+  }, [policies]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Retensi Data Absensi</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <p className="text-sm text-muted-foreground">
+          Selfie dan koordinat dihapus otomatis oleh pekerjaan retensi harian
+          setelah masa ini berakhir.
+        </p>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Jenis data</TableHead>
+              <TableHead>Disimpan (hari)</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={3} className="py-6 text-center">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : (
+              policies?.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="font-medium">{p.dataType}</TableCell>
+                  <TableCell>
+                    <Input
+                      className="w-28"
+                      inputMode="numeric"
+                      value={drafts[p.dataType] ?? ""}
+                      onChange={(e) =>
+                        setDrafts({ ...drafts, [p.dataType]: e.target.value })
+                      }
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={upsert.isPending}
+                      onClick={async () => {
+                        await upsert.mutateAsync({
+                          dataType: p.dataType,
+                          retentionDays: Number(
+                            drafts[p.dataType] ?? p.retentionDays,
+                          ),
+                        });
+                        toast.success(`Retensi ${p.dataType} disimpan`);
+                      }}
+                    >
+                      Simpan
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
 const emptyRule: Partial<PayrollPolicyRule> = {
   code: "",
   kind: "DEDUCTION",
@@ -1218,6 +1515,16 @@ function PayrollTab({ scope }: { scope: Scope }) {
     mustStayAboveUmk: guard?.mustStayAboveUmk ?? true,
     umkNominal: guard?.umkNominal ? String(guard.umkNominal) : "",
   });
+
+  useEffect(() => {
+    if (!guard) return;
+    setGuardForm({
+      maxDeductionPercent: String(guard.maxDeductionPercent ?? 50),
+      minBasicSharePercent: String(guard.minBasicSharePercent ?? 75),
+      mustStayAboveUmk: guard.mustStayAboveUmk ?? true,
+      umkNominal: guard.umkNominal ? String(guard.umkNominal) : "",
+    });
+  }, [guard?.id]);
 
   return (
     <div className="space-y-6">

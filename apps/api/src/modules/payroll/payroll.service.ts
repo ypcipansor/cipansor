@@ -1004,8 +1004,13 @@ export const payrollService = {
 
     // A payslip cannot be honest while the register it reads is incomplete:
     // a work day with no row means nobody knows whether the person was there,
-    // so no deduction can be derived from it. Generation stops here.
-    const unresolved = deductionRows.filter((row) => row.unresolvedDates.length > 0);
+    // so no deduction can be derived from it. Generation stops here — but only
+    // for the staff this request generates, so one employee's missing day does
+    // not block everyone else's slip.
+    const requestedStaffIds = new Set(staffList.map((s) => s.id));
+    const unresolved = deductionRows.filter(
+      (row) => row.unresolvedDates.length > 0 && requestedStaffIds.has(row.staffId)
+    );
     if (unresolved.length > 0) {
       const detail = unresolved
         .slice(0, 5)
@@ -1023,7 +1028,9 @@ export const payrollService = {
     // PP 36/2021 art. 32 bounds how far "upah" may be reduced. An admin may
     // still proceed, but only by saying so and leaving a reason on the record.
     // The attendance cap itself is enforced by the engine and never blocks.
-    const breached = deductionRows.filter((row) => row.guardBreaches.length > 0);
+    const breached = deductionRows.filter(
+      (row) => row.guardBreaches.length > 0 && requestedStaffIds.has(row.staffId)
+    );
     if (breached.length > 0 && !data.overrideGuardReason) {
       const detail = breached
         .slice(0, 5)

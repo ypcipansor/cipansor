@@ -1,5 +1,52 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
+import {
+  LeaveStatus,
+  LeaveType,
+  StaffAttendanceStatus,
+  type AttendanceEvidence,
+  type AttendanceExemption,
+  type AttendancePolicy,
+  type AttendanceSite,
+  type HolidayDraft,
+  type HolidaySyncConfig,
+  type HolidaySyncResult,
+  type LeaveTypeConfig,
+  type MyAttendance,
+  type MyAttendanceToday,
+  type RetentionPolicy,
+  type ShiftAssignment,
+  type ShiftRotation,
+  type StaffAttendance,
+  type WorkCalendarDay,
+  type WorkShift,
+  type WorkWeekConfig,
+} from "@cipansor/shared";
+
+// Re-exported so existing pages keep importing these from the hook module; the
+// contracts themselves live once, in `@cipansor/shared` (golden rule #8).
+export {
+  LeaveStatus,
+  LeaveType,
+  StaffAttendanceStatus,
+  type AttendanceEvidence,
+  type AttendanceExemption,
+  type AttendancePolicy,
+  type AttendanceSite,
+  type HolidayDraft,
+  type HolidaySyncConfig,
+  type HolidaySyncResult,
+  type LeaveTypeConfig,
+  type MyAttendance,
+  type MyAttendanceToday,
+  type RetentionPolicy,
+  type ShiftAssignment,
+  type ShiftRotation,
+  type StaffAttendance,
+  type WorkCalendarDay,
+  type WorkShift,
+  type WorkWeekConfig,
+};
 
 // Types
 export type EmployeeStatus =
@@ -165,16 +212,15 @@ export interface LeaveRequest {
   updatedAt: string;
 }
 
-export type LeaveType =
-  | "ANNUAL"
-  | "SICK"
-  | "MATERNITY"
-  | "PATERNITY"
-  | "MARRIAGE"
-  | "BEREAVEMENT"
-  | "UNPAID"
-  | "OTHER";
-export type LeaveStatus = "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+/** The payload the API's POST /hr/leaves accepts. */
+export interface CreateLeavePayload {
+  type: LeaveType;
+  staffId?: string;
+  teacherId?: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+}
 
 export const LEAVE_TYPES: LeaveType[] = [
   "ANNUAL",
@@ -609,7 +655,7 @@ export function useCreateLeaveRequest() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: FormData | Partial<LeaveRequest>) => {
+    mutationFn: async (data: FormData | CreateLeavePayload) => {
       const isFormData = data instanceof FormData;
       const response = await api.post("/hr/leaves", data, {
         headers: isFormData
@@ -983,16 +1029,6 @@ export function useDeleteSalaryComponent() {
 // STAFF ATTENDANCE
 // ============================================
 
-export enum StaffAttendanceStatus {
-  PRESENT = "PRESENT",
-  ABSENT = "ABSENT",
-  LATE = "LATE",
-  LEAVE = "LEAVE",
-  SICK = "SICK",
-  REMOTE = "REMOTE",
-  DUTY = "DUTY",
-}
-
 export const STAFF_ATTENDANCE_STATUS_LABELS: Record<
   StaffAttendanceStatus,
   string
@@ -1004,6 +1040,7 @@ export const STAFF_ATTENDANCE_STATUS_LABELS: Record<
   SICK: "Sakit",
   REMOTE: "WFH",
   DUTY: "Dinas Luar",
+  HOLIDAY: "Libur",
 };
 
 export interface Department {
@@ -1018,33 +1055,6 @@ export interface Department {
     id: string;
     name: string;
   };
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StaffAttendance {
-  id: string;
-  staffId?: string;
-  teacherId?: string;
-  staff?: {
-    id: string;
-    userId?: string;
-    /** The name lives on the user, not on Staff — `staff.fullName` is undefined. */
-    user?: { id: string; name: string; email?: string };
-    unitId?: string;
-    unit?: { id: string; name: string };
-  };
-  teacher?: {
-    id: string;
-    user?: { id: string; name: string; email?: string };
-    unit?: { id: string; name: string };
-  };
-  date: string;
-  status: StaffAttendanceStatus;
-  checkIn?: string;
-  checkOut?: string;
-  notes?: string;
-  recordedById?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -1421,44 +1431,7 @@ export function useAddPayrollAdjustment() {
 // SELF ATTENDANCE (clock in / out)
 // ============================================
 
-export interface AttendanceEvidence {
-  id: string;
-  kind: "CHECK_IN" | "CHECK_OUT";
-  photoUrl?: string;
-  latitude?: number;
-  longitude?: number;
-  distanceMeters?: number;
-  isWithinRadius?: boolean;
-  capturedAt: string;
-}
-
-export interface MyAttendance {
-  id: string;
-  date: string;
-  status: StaffAttendanceStatus;
-  checkIn?: string;
-  checkOut?: string;
-  lateMinutes?: number;
-  shift?: { id: string; name: string; startTime: string; endTime: string };
-  records: AttendanceEvidence[];
-}
-
 /** GET /hr/attendance/me — the day's row plus what the caller may do next. */
-export interface MyAttendanceToday {
-  date: string;
-  attendance: MyAttendance | null;
-  shift: {
-    id: string;
-    name: string;
-    startTime: string;
-    endTime: string;
-  } | null;
-  isWorkDay: boolean;
-  isExempt: boolean;
-  canCheckIn: boolean;
-  canCheckOut: boolean;
-}
-
 export interface SelfAttendancePayload {
   latitude?: number;
   longitude?: number;
@@ -1520,85 +1493,6 @@ export function useSelfCheckOut() {
 // ============================================
 // ATTENDANCE SETTINGS
 // ============================================
-
-export interface AttendanceSite {
-  id: string;
-  unitId?: string | null;
-  label: string;
-  latitude: number;
-  longitude: number;
-  radiusMeters: number;
-  isActive: boolean;
-}
-
-export interface WorkShift {
-  id: string;
-  unitId?: string | null;
-  name: string;
-  startTime: string;
-  endTime: string;
-  graceMinutes: number;
-  crossesMidnight: boolean;
-  isActive: boolean;
-}
-
-export interface ShiftAssignment {
-  id: string;
-  staffId: string;
-  shiftId: string;
-  effectiveFrom: string;
-  effectiveTo?: string | null;
-  daysOfWeek: number[];
-  shift?: WorkShift;
-  staff?: { id: string; user?: { name: string } };
-}
-
-export interface ShiftRotation {
-  id: string;
-  shiftId: string;
-  name: string;
-  memberIds: string[];
-  startDate: string;
-  endDate?: string | null;
-  cycleDays: number;
-  isActive: boolean;
-  shift?: WorkShift;
-}
-
-export interface WorkWeekConfig {
-  id: string;
-  unitId?: string | null;
-  workDays: number[];
-  hoursPerDay: number;
-  fridayEndTime?: string | null;
-  isActive: boolean;
-}
-
-export interface AttendancePolicy {
-  id: string;
-  unitId?: string | null;
-  graceMinutes: number;
-  requireSelfie: boolean;
-  requireLocation: boolean;
-  outsideRadiusAction: "FLAG" | "REJECT";
-  photoRetentionDays: number;
-  recordRetentionDays: number;
-  isActive: boolean;
-}
-
-export interface AttendanceExemption {
-  id: string;
-  roleCode?: string | null;
-  staffId?: string | null;
-  reason?: string | null;
-  isActive: boolean;
-}
-
-export interface WorkCalendarDay {
-  date: string;
-  isWorkDay: boolean;
-  isHoliday: boolean;
-}
 
 /** All settings endpoints take an optional unitId; unit admins are pinned. */
 type ScopedParams = { unitId?: string };
@@ -1677,6 +1571,50 @@ export function useAttendanceExemptions() {
   });
 }
 
+export function useRetentionPolicies() {
+  return useQuery({
+    queryKey: ["retention-policies"],
+    queryFn: async () => {
+      const response = await api.get("/hr/retention-policies");
+      return response.data.data as RetentionPolicy[];
+    },
+  });
+}
+
+export function useUpsertRetentionPolicy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<RetentionPolicy>) => {
+      const response = await api.put("/hr/retention-policies", data);
+      return response.data.data as RetentionPolicy;
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["retention-policies"] }),
+  });
+}
+
+export function useLeaveTypeConfigs() {
+  return useQuery({
+    queryKey: ["leave-type-configs"],
+    queryFn: async () => {
+      const response = await api.get("/hr/leave-type-configs");
+      return response.data.data as LeaveTypeConfig[];
+    },
+  });
+}
+
+export function useUpsertLeaveTypeConfig() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: Partial<LeaveTypeConfig>) => {
+      const response = await api.put("/hr/leave-type-configs", data);
+      return response.data.data as LeaveTypeConfig;
+    },
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["leave-type-configs"] }),
+  });
+}
+
 export function useWorkCalendar(month: number, year: number, unitId?: string) {
   return useQuery({
     queryKey: ["work-calendar", month, year, unitId],
@@ -1687,21 +1625,6 @@ export function useWorkCalendar(month: number, year: number, unitId?: string) {
       return response.data.data as WorkCalendarDay[];
     },
   });
-}
-
-export interface HolidaySyncConfig {
-  sourceUrl: string;
-  years: number[];
-  enabled: boolean;
-  lastSyncedAt: string | null;
-}
-
-export interface HolidaySyncResult {
-  year: number;
-  created: number;
-  updated: number;
-  skipped: number;
-  entries: number;
 }
 
 export function useHolidaySyncConfig() {
@@ -1735,8 +1658,52 @@ export function useSyncHolidays() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holiday-sync-config"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-drafts"] });
       queryClient.invalidateQueries({ queryKey: ["work-calendar"] });
       queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+}
+
+export function useHolidayDrafts(unitId?: string) {
+  return useQuery({
+    queryKey: ["holiday-drafts", unitId],
+    queryFn: async () => {
+      const response = await api.get("/calendar/holidays/drafts", {
+        params: { unitId },
+      });
+      return response.data.data as HolidayDraft[];
+    },
+  });
+}
+
+export function useApproveHolidayDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(
+        `/calendar/holidays/drafts/${id}/approve`,
+      );
+      return response.data.data as HolidayDraft;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["holiday-drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["work-calendar"] });
+      queryClient.invalidateQueries({ queryKey: ["calendar-events"] });
+    },
+  });
+}
+
+export function useRejectHolidayDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post(`/calendar/holidays/drafts/${id}/reject`);
+      return response.data.data as { id: string };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["holiday-drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["work-calendar"] });
     },
   });
 }

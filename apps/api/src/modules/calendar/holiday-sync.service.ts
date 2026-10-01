@@ -128,11 +128,15 @@ export async function fetchHolidaysForYear(
 }
 
 /**
- * Store a year's holidays as calendar events for a unit (null = all units).
- * Idempotent: a holiday already present by title and date is left alone, one
- * whose description changed is updated, and a holiday that no longer appears
- * in the source is kept — the yayasan may have added it by hand, and deleting
- * a holiday would silently turn it into an absence.
+ * Store a year's holidays as **draft** calendar events for a unit (null = all
+ * units). A draft is invisible to the attendance and payroll engines until an
+ * admin approves it: the source is third-party, and a holiday that silently
+ * arrives would change which days count as work days (decisions/absensi-pegawai.md).
+ *
+ * Idempotent: a holiday already present by title and date is left alone, and a
+ * holiday that no longer appears in the source is kept — the yayasan may have
+ * added it by hand, and deleting a holiday would silently turn it into an
+ * absence.
  */
 export async function syncHolidaysForYear(
   year: number,
@@ -180,6 +184,7 @@ export async function syncHolidaysForYear(
         startDate,
         isAllDay: true,
         isPublic: true,
+        isDraft: true,
         createdById: options.createdById,
       },
     });
@@ -187,6 +192,40 @@ export async function syncHolidaysForYear(
   }
 
   return { year, created, updated, skipped, entries: entries.length };
+}
+
+/** Draft holiday events awaiting review, for a unit or yayasan-wide. */
+export async function listHolidayDrafts(unitId?: string | null) {
+  return prisma.calendarEvent.findMany({
+    where: {
+      eventType: 'HOLIDAY',
+      deletedAt: null,
+      isDraft: true,
+      ...(unitId ? { OR: [{ unitId: null }, { unitId }] } : {}),
+    },
+    orderBy: { startDate: 'asc' },
+  });
+}
+
+/** Approve a draft: it joins the live calendar and starts affecting work days. */
+export async function approveHolidayDraft(id: string) {
+  const draft = await prisma.calendarEvent.findFirst({
+    where: { id, eventType: 'HOLIDAY', isDraft: true, deletedAt: null },
+    select: { id: true },
+  });
+  if (!draft) throw Errors.notFound('Draf libur');
+  return prisma.calendarEvent.update({ where: { id }, data: { isDraft: false } });
+}
+
+/** Reject a draft: drop it, so it never affects a work day or a payslip. */
+export async function rejectHolidayDraft(id: string) {
+  const draft = await prisma.calendarEvent.findFirst({
+    where: { id, eventType: 'HOLIDAY', isDraft: true, deletedAt: null },
+    select: { id: true },
+  });
+  if (!draft) throw Errors.notFound('Draf libur');
+  await prisma.calendarEvent.update({ where: { id }, data: { deletedAt: new Date() } });
+  return { id };
 }
 
 /** Sync the years the scheduled job covers: this year and the configured ones. */

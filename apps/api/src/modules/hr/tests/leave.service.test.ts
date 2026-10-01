@@ -14,10 +14,15 @@ vi.mock('../../../lib/prisma', () => ({
     academicYear: { findFirst: vi.fn() },
     staffAttendance: {
       upsert: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
       deleteMany: vi.fn(),
       findMany: vi.fn(),
+      findUnique: vi.fn(),
     },
     staff: { findUnique: vi.fn() },
+    auditLog: { create: vi.fn() },
     $transaction: vi.fn(),
   },
 }));
@@ -38,10 +43,15 @@ const mocked = prisma as unknown as {
   academicYear: { findFirst: ReturnType<typeof vi.fn> };
   staffAttendance: {
     upsert: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
     deleteMany: ReturnType<typeof vi.fn>;
     findMany: ReturnType<typeof vi.fn>;
+    findUnique: ReturnType<typeof vi.fn>;
   };
   staff: { findUnique: ReturnType<typeof vi.fn> };
+  auditLog: { create: ReturnType<typeof vi.fn> };
   $transaction: ReturnType<typeof vi.fn>;
 };
 
@@ -98,7 +108,14 @@ describe('approveLeave', () => {
     mocked.leave.update.mockResolvedValue({ ...baseLeave, status: 'APPROVED' });
     mocked.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
     mocked.leaveBalance.findUnique.mockResolvedValue({ id: 'bal-1' });
-    mocked.staffAttendance.upsert.mockResolvedValue({});
+    // A day the person already attended: the approval overwrites the status but
+    // remembers what it held, so a later cancellation can restore it.
+    mocked.staffAttendance.findUnique.mockResolvedValue({
+      id: 'att-1',
+      status: 'PRESENT',
+      leaveRequestId: null,
+    });
+    mocked.staffAttendance.update.mockResolvedValue({});
 
     await approveLeave('leave-1', 'approver-1', { status: 'APPROVED' } as never);
 
@@ -107,18 +124,28 @@ describe('approveLeave', () => {
       where: { id: 'bal-1' },
       data: { usedDays: { increment: 2 }, remainingDays: { decrement: 2 } },
     });
-    // One upsert per calendar day of the leave.
-    expect(mocked.staffAttendance.upsert).toHaveBeenCalledTimes(2);
+    // One attendance write per calendar day of the leave.
+    expect(mocked.staffAttendance.update).toHaveBeenCalledTimes(2);
+    expect(mocked.staffAttendance.update.mock.calls[0][0].data.leaveRequestId).toBe('leave-1');
+    expect(mocked.staffAttendance.update.mock.calls[0][0].data.leavePreviousStatus).toBe('PRESENT');
+    // The approval leaves an audit trail.
+    expect(mocked.auditLog.create).toHaveBeenCalledTimes(1);
   });
 });
 
 describe('cancelLeave', () => {
-  it('reverts the balance and clears only the leave rows it wrote', async () => {
+  it('restores a day the leave overwrote and removes a day it created', async () => {
     mocked.leave.findUnique.mockResolvedValue({ ...baseLeave, status: 'APPROVED' });
     mocked.academicYear.findFirst.mockResolvedValue({ id: 'ay-1' });
     mocked.leaveBalance.findUnique.mockResolvedValue({ id: 'bal-1' });
     mocked.leave.update.mockResolvedValue({ ...baseLeave, status: 'CANCELLED' });
-    mocked.staffAttendance.deleteMany.mockResolvedValue({ count: 2 });
+    // Day 1 already held PRESENT before the leave; day 2 was created by it.
+    mocked.staffAttendance.findMany.mockResolvedValue([
+      { id: 'att-1', leavePreviousStatus: 'PRESENT' },
+      { id: 'att-2', leavePreviousStatus: null },
+    ]);
+    mocked.staffAttendance.update.mockResolvedValue({});
+    mocked.staffAttendance.delete.mockResolvedValue({});
 
     await cancelLeave('leave-1');
 
@@ -126,11 +153,13 @@ describe('cancelLeave', () => {
       where: { id: 'bal-1' },
       data: { usedDays: { decrement: 2 }, remainingDays: { increment: 2 } },
     });
-    const deleteArgs = mocked.staffAttendance.deleteMany.mock.calls[0][0];
-    expect(deleteArgs.where.status).toBe('LEAVE');
-    expect(deleteArgs.where.notes).toBe('Cuti: ANNUAL');
-    // Keyed on the resolved Staff identity, not on staffId-or-teacherId.
-    expect(deleteArgs.where.staffId).toBe('staff-1');
+    // Matched by leave id, not by a status + generic note.
+    expect(mocked.staffAttendance.findMany.mock.calls[0][0].where.leaveRequestId).toBe('leave-1');
+    // The pre-existing day is restored; only the leave-only day is removed.
+    expect(mocked.staffAttendance.update.mock.calls[0][0].where).toEqual({ id: 'att-1' });
+    expect(mocked.staffAttendance.update.mock.calls[0][0].data.status).toBe('PRESENT');
+    expect(mocked.staffAttendance.delete.mock.calls[0][0].where).toEqual({ id: 'att-2' });
+    expect(mocked.auditLog.create).toHaveBeenCalledTimes(1);
   });
 
   it('does not touch the balance when cancelling a pending leave', async () => {

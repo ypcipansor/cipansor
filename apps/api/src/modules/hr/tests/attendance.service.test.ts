@@ -3,16 +3,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../lib/prisma', () => ({
   prisma: {
     staff: { findUnique: vi.fn() },
-    attendanceSite: { findMany: vi.fn() },
+    attendanceSite: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     attendancePolicy: { findFirst: vi.fn() },
     attendanceRecord: { create: vi.fn() },
     staffAttendance: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     shiftAssignment: { findFirst: vi.fn() },
     shiftRotation: { findFirst: vi.fn() },
+    workShift: { findUnique: vi.fn(), update: vi.fn() },
     workWeekConfig: { findFirst: vi.fn() },
     calendarEvent: { findFirst: vi.fn(), findMany: vi.fn() },
     attendanceExemption: { findFirst: vi.fn() },
     userRoleAssignment: { findMany: vi.fn() },
+    auditLog: { create: vi.fn() },
+    $transaction: vi.fn(),
   },
 }));
 
@@ -29,9 +32,14 @@ import {
   isExemptFromAttendance,
   resolveDelegatedStaffId,
   scopedUnitId,
+  updateAttendanceSite,
+  updateWorkShift,
 } from '../hr.service';
+import { bulkAttendanceSchema } from '../hr.schema';
 
-const m = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const m = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
+  $transaction: ReturnType<typeof vi.fn>;
+};
 
 /** A shift that starts at 07:00 WIB with a 15-minute grace. */
 const pagiShift = {
@@ -56,6 +64,11 @@ beforeEach(() => {
   m.attendanceExemption.findFirst.mockResolvedValue(null);
   m.attendancePolicy.findFirst.mockResolvedValue(null);
   m.userRoleAssignment.findMany.mockResolvedValue([]);
+  m.auditLog.create.mockResolvedValue({});
+  // The punch and its evidence are one write; run the callback against the mock.
+  m.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+    typeof fn === 'function' ? fn(prisma) : Promise.all(fn as unknown[])
+  );
 });
 
 describe('haversineMeters', () => {
@@ -361,5 +374,107 @@ describe('scopedUnitId', () => {
 
   it('does not pin a yayasan governance role to a unit', () => {
     expect(scopedUnitId({ roleCode: 'YAYASAN_KETUA', unitId: null }, 'unit-9')).toBe('unit-9');
+  });
+});
+
+describe('bulkAttendanceSchema', () => {
+  it('accepts a date picker’s calendar day, not only a datetime', () => {
+    // The bulk page posts "yyyy-MM-dd"; a datetime-only schema rejected it, so
+    // the button was a 400 and bulk attendance never saved.
+    const parsed = bulkAttendanceSchema.safeParse({
+      date: '2026-09-29',
+      records: [{ staffId: '11111111-1111-4111-8111-111111111111', status: 'ABSENT' }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('still accepts a full datetime', () => {
+    const parsed = bulkAttendanceSchema.safeParse({
+      date: '2026-09-29T00:00:00.000Z',
+      records: [{ staffId: '11111111-1111-4111-8111-111111111111', status: 'PRESENT' }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects a value that is neither a day nor a datetime', () => {
+    expect(bulkAttendanceSchema.safeParse({ date: '29/09/2026', records: [] }).success).toBe(false);
+  });
+});
+
+describe('overnight shifts', () => {
+  const malam = {
+    id: 'shift-malam',
+    startTime: '22:00',
+    endTime: '06:00',
+    graceMinutes: 15,
+    crossesMidnight: true,
+  };
+
+  it('counts a late arrival against the shift’s start day', () => {
+    // 23:00 WIB on 2026-09-29 = 16:00Z; 45 late after 15 minutes of grace.
+    const late = computeLateMinutes(
+      new Date('2026-09-29T16:00:00Z'),
+      malam,
+      undefined,
+      '2026-09-29'
+    );
+    expect(late).toBe(45);
+    // 22:05 WIB is within grace.
+    expect(
+      computeLateMinutes(new Date('2026-09-29T15:05:00Z'), malam, undefined, '2026-09-29')
+    ).toBe(0);
+  });
+
+  it('attaches a checkout after midnight to the previous day’s open row', async () => {
+    m.staff.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    // No row for today; yesterday holds an open check-in on a midnight-crossing
+    // shift. The checkout must find it.
+    m.staffAttendance.findUnique.mockImplementation(
+      async ({ where }: { where: { staffId_date: { date: Date } } }) =>
+        where.staffId_date.date.toISOString().slice(0, 10) === '2026-09-29'
+          ? { id: 'att-night', checkIn: new Date(), checkOut: null, records: [], shift: malam }
+          : null
+    );
+    m.staffAttendance.update.mockResolvedValue({ id: 'att-night' });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-30T00:00:00Z')); // 07:00 WIB on the 30th
+    try {
+      await selfCheckOut({ staffId: 'staff-1' });
+      expect(m.staffAttendance.update.mock.calls[0][0].where).toEqual({ id: 'att-night' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still refuses a checkout with no open row at all', async () => {
+    m.staff.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    m.staffAttendance.findUnique.mockResolvedValue(null);
+    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/absen masuk/i);
+  });
+});
+
+describe('scoped settings writes cannot change unit', () => {
+  it('refuses a site moved to another unit', async () => {
+    m.attendanceSite.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    await expect(
+      updateAttendanceSite('site-1', { unitId: 'unit-2' } as never, 'unit-1')
+    ).rejects.toThrow(/unit lain/i);
+    expect(m.attendanceSite.update).not.toHaveBeenCalled();
+  });
+
+  it('pins a site update to the admin’s own unit', async () => {
+    m.attendanceSite.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    m.attendanceSite.update.mockResolvedValue({ id: 'site-1' });
+    await updateAttendanceSite('site-1', { label: 'Gerbang' } as never, 'unit-1');
+    expect(m.attendanceSite.update.mock.calls[0][0].data.unitId).toBe('unit-1');
+  });
+
+  it('refuses a shift moved to another unit', async () => {
+    m.workShift.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+    await expect(
+      updateWorkShift('shift-1', { unitId: 'unit-2' } as never, 'unit-1')
+    ).rejects.toThrow(/unit lain/i);
+    expect(m.workShift.update).not.toHaveBeenCalled();
   });
 });
