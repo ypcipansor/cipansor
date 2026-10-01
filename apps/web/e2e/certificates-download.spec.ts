@@ -264,3 +264,72 @@ test.describe("Sertifikat — daftar dan detail mengunduh PDF", () => {
     expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
   });
 });
+
+/**
+ * The address a printed certificate's QR actually opens.
+ *
+ * `certificateVerificationUrl` embeds `config.publicSiteUrl`, so the recipient
+ * lands on the apex (`cipansor.or.id`) — a host this suite never otherwise
+ * visits. The other specs run on `localhost`, where `hostSplitActionFor`
+ * deliberately returns null, so a regression in the matcher or the host split
+ * would leave the printed link broken with every spec still green.
+ *
+ * The split is a `proxy.ts`/`middleware.ts` concern, and **`next dev` under
+ * Turbopack does not run it** — verified: on `pnpm dev` even `/dashboard` with
+ * no session answers 200, while a production build (`next start`, what CI runs)
+ * answers 404 for the apex and 307 for the session wall. A probe request tells
+ * the two apart, and the test skips where the split cannot run rather than
+ * asserting something that is not there.
+ */
+test.describe("Halaman verifikasi sanad publik — host publik", () => {
+  /** The split runs only when the proxy/middleware is active (production). */
+  async function splitIsActive(
+    request: import("@playwright/test").APIRequestContext,
+  ): Promise<boolean> {
+    const webUrl = process.env.WEB_URL || "http://localhost:3000";
+    // An unknown host is left alone by the split, so it hits the session wall
+    // and redirects to /login. With the proxy off it reaches the page and 200s.
+    const probe = await request.get(`${webUrl}/dashboard`, {
+      headers: { host: "__split_probe__.invalid" },
+      maxRedirects: 0,
+    });
+    return probe.status() >= 300 && probe.status() < 400;
+  }
+
+  test("the printed address resolves on the apex and the split holds", async ({
+    request,
+  }) => {
+    const webUrl = process.env.WEB_URL || "http://localhost:3000";
+    const splitActive = await splitIsActive(request);
+
+    // Locally, `pnpm dev` (Turbopack) does not run the proxy, so skip visibly
+    // rather than assert nothing. In CI `playwright.config.ts` runs `pnpm start`
+    // (a production build) where the split must be active — a skip there would
+    // hide the very regression this test exists to catch, so it fails instead.
+    test.skip(
+      !splitActive && !process.env.CI,
+      "host split inactive (next dev)",
+    );
+    expect(
+      splitActive,
+      "host split must be active in CI (production build)",
+    ).toBe(true);
+
+    // The printed QR's page answers on the apex with no session — the whole
+    // point of the host split.
+    const printed = await request.get(`${webUrl}/public/verify-sanad`, {
+      headers: { host: "cipansor.or.id" },
+      maxRedirects: 0,
+    });
+    expect(printed.status()).toBe(200);
+
+    // The control that proves the split is doing the work: an application path
+    // on the same host is a 404, not the login form (which is what the apex
+    // used to serve, and what got the Ad Grants application rejected).
+    const appPath = await request.get(`${webUrl}/dashboard`, {
+      headers: { host: "cipansor.or.id" },
+      maxRedirects: 0,
+    });
+    expect(appPath.status()).toBe(404);
+  });
+});
