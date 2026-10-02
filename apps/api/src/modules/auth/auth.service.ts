@@ -19,6 +19,11 @@ import {
 } from '@/middleware/auth';
 import { config } from '@/config';
 import { assertPasswordAllowed, passwordNeedsSecondFactor } from '@/lib/password-policy';
+import {
+  assertMayManageAccount,
+  activeAssignmentWhere,
+  type AccountActor,
+} from '@/utils/account-scope';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import type { TwoFactorStatus } from '@cipansor/shared';
 import { RoleCode, UnitType } from '@prisma/client';
@@ -825,7 +830,10 @@ export class AuthService {
    * hide the account's existence from, and an admin who mistypes deserves to be
    * told rather than left watching nothing happen.
    */
-  async issuePasswordResetToken(userId: string): Promise<{
+  async issuePasswordResetToken(
+    userId: string,
+    actor: AccountActor
+  ): Promise<{
     userId: string;
     email: string;
     name: string;
@@ -834,11 +842,27 @@ export class AuthService {
   }> {
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
-      select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        passwordHash: true,
+        isActive: true,
+        unitId: true,
+        userRoles: { where: activeAssignmentWhere(), select: { role: { select: { code: true } } } },
+      },
     });
 
     if (!user) {
       throw Errors.notFound('User');
+    }
+    // The link goes to the account's own email, but an admin still sends it
+    // only within their scope; one's own account is fine.
+    if (user.id !== actor.sub) {
+      assertMayManageAccount(
+        { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+        actor
+      );
     }
 
     if (!user.isActive) {

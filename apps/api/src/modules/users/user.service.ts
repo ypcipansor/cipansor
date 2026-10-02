@@ -2,7 +2,11 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { assertPasswordAllowed } from '@/lib/password-policy';
 import { Errors } from '@/middleware/error';
-import { requiresSecondFactor } from '@/middleware/auth';
+import {
+  assertMayManageAccount,
+  activeAssignmentWhere,
+  type AccountActor,
+} from '@/utils/account-scope';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
@@ -12,7 +16,7 @@ export class UserService {
    * Get all users with pagination and filters
    */
   async findAll(query: ListUsersQuery, currentUser: { roleCode: string; unitId: string | null }) {
-    const { page, limit, search, role, unitId } = query;
+    const { page, limit, search, role, unitId, realm } = query;
     const skip = (page - 1) * limit;
 
     // Build where clause
@@ -32,6 +36,10 @@ export class UserService {
 
     if (role) {
       where.role = role as UserRole;
+    }
+
+    if (realm) {
+      where.userRoles = { some: { ...activeAssignmentWhere(), role: { realm } } };
     }
 
     if (search) {
@@ -247,13 +255,12 @@ export class UserService {
   /**
    * Update user
    */
-  async update(
-    id: string,
-    input: UpdateUserInput,
-    currentUser: { roleCode: string; unitId: string | null; sub: string }
-  ) {
+  async update(id: string, input: UpdateUserInput, currentUser: AccountActor) {
     const user = await prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
+      },
     });
 
     if (!user) {
@@ -266,6 +273,19 @@ export class UserService {
     // Unit admins may only touch users of their own unit.
     if (!foundationWide && user.unitId !== currentUser.unitId) {
       throw Errors.forbidden('Unit admins can only manage users in their own unit');
+    }
+
+    // A new email is where the next reset link goes, and switching an account
+    // off locks its holder out: on someone else's account both follow the
+    // delete rule. A name can still be corrected within the unit.
+    const changesAccess =
+      (input.email !== undefined && input.email !== user.email) ||
+      (input.isActive !== undefined && input.isActive !== user.isActive);
+    if (changesAccess && id !== currentUser.sub) {
+      assertMayManageAccount(
+        { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+        currentUser
+      );
     }
 
     // Only Super Admin can change roles or move users between units.
@@ -312,10 +332,7 @@ export class UserService {
    * the line the admin path of turning 2FA off already draws. Ending someone's
    * sessions is not a thing a peer should be able to do to a peer.
    */
-  async requirePasswordChange(
-    id: string,
-    currentUser: { roleCode: string; unitId: string | null; sub: string }
-  ) {
+  async requirePasswordChange(id: string, currentUser: AccountActor) {
     if (id === currentUser.sub) {
       throw Errors.badRequest('Untuk akun Anda sendiri, ganti kata sandi di Profil → Keamanan.');
     }
@@ -325,10 +342,7 @@ export class UserService {
       omit: { passwordHash: false },
       where: { id, deletedAt: null },
       include: {
-        userRoles: {
-          where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-          include: { role: true },
-        },
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
       },
     });
     if (!user) {
@@ -337,17 +351,10 @@ export class UserService {
     if (!user.passwordHash) {
       throw Errors.badRequest('Data ini tidak memiliki akun login.');
     }
-
-    if (currentUser.roleCode !== 'SUPER_ADMIN') {
-      if (user.unitId !== currentUser.unitId) {
-        throw Errors.forbidden('Admin unit hanya dapat mengelola pengguna di unitnya sendiri.');
-      }
-      if (requiresSecondFactor(user.userRoles.map((r) => r.role.code))) {
-        throw Errors.forbidden(
-          'Hanya Super Admin yang dapat menandai kata sandi akun yang wajib memakai verifikasi dua langkah.'
-        );
-      }
-    }
+    assertMayManageAccount(
+      { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+      currentUser
+    );
 
     await prisma.user.update({ where: { id }, data: { mustChangePassword: true } });
     await prisma.refreshToken.deleteMany({ where: { userId: id } });
@@ -360,16 +367,27 @@ export class UserService {
   }
 
   /**
-   * Delete user (soft delete)
+   * Delete user (soft delete), within the admin's scope (`assertMayManageAccount`).
    */
-  async delete(id: string) {
+  async delete(id: string, currentUser: AccountActor) {
+    if (id === currentUser.sub) {
+      throw Errors.badRequest('Akun Anda sendiri tidak dapat dihapus.');
+    }
+
     const user = await prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
+      },
     });
 
     if (!user) {
       throw Errors.notFound('User');
     }
+    assertMayManageAccount(
+      { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+      currentUser
+    );
 
     // Soft delete
     await prisma.user.update({

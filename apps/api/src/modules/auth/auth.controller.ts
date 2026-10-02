@@ -345,7 +345,11 @@ export const getTwoFactorStatus = asyncHandler(async (req: Request, res: Respons
 export const sendPasswordReset = asyncHandler(async (req: Request, res: Response) => {
   const { userId }: SendPasswordResetInput = req.body;
 
-  const reset = await authService.issuePasswordResetToken(userId);
+  const reset = await authService.issuePasswordResetToken(userId, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+    sub: req.user!.sub,
+  });
 
   // Fire-and-forget: a mail outage must not roll back a token that has already
   // been recorded, and the admin gets told what to check instead.

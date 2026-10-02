@@ -148,12 +148,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   (`perencanaan.service.ts`, `createPlan`), so two concurrent requests can both
   pass. The real fix is a partial unique index — a schema change.
 
-- **Users & Roles never pages past the first page** (found 2026-10-02 while
-  photographing part B). `GET /users` answers `meta.pagination.{total,
-  totalPages}`, the page reads `meta.total` and `meta.totalPages`, so the
-  footer says "Showing 1 to 0 of 0 results" and offers one page: an admin
-  reaches users beyond the first 10 only by searching. Fix with the next
-  users-module PR (one shape, through the shared paginated type).
 - **An account created as a teacher from Users & Roles has no teacher record**
   (seen 2026-10-02): its dashboard says "Gagal memuat beberapa data" and
   "This account is not linked to a teacher record". HR employees creates both;
