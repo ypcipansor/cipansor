@@ -450,7 +450,10 @@ export default function SuratKeteranganPage() {
             <img
               src="/images/cipansor/logo-cipansor.webp"
               alt=""
-              className="w-16 h-16 object-contain"
+              width={64}
+              height={64}
+              // Inline: the print window carries none of the app's CSS.
+              style={{ width: 64, height: 64, objectFit: "contain" }}
             />
             <div>
               <p className="text-xs font-semibold tracking-wider">

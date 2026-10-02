@@ -65,6 +65,8 @@ test.describe("Penanda tangan dokumen cetak", () => {
     );
 
     await expect(page.getByTestId("rapor-head")).toContainText(KEPALA.name);
+    await expect(page.getByTestId("rapor-unit")).toContainText("SMP IT");
+    await expect(page.getByText(/KEMENTERIAN AGAMA|NSM:/)).toHaveCount(0);
     await expect(
       page.getByText(/Ahmad Fauzi|Bandung|Kepala Madrasah/),
     ).toHaveCount(0);

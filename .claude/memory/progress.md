@@ -114,8 +114,12 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   structure (Profil → Pimpinan, three languages), the seed's organs and the
   demo accounts. A guarded migration renames the demo accounts and sets the
   invented board rows aside. The portal's Organ Yayasan tab is grouped by organ,
-  and its add and edit forms work again. Then the hardcoded "Ahmad Fauzi" signer on print
-  pages; then the SPMB module itself; then the Pesantren unit.
+  and its add and edit forms work again (#637). Then printed documents signed
+  by the unit's real head (`GET /units/:id/head`), the tahfidz certificate
+  signed as the yayasan's own is, and every print window stamped on a test
+  copy through one `printDocument()`. #636 had missed the five pages that print
+  from a window of their own. Then the SPMB module itself; then the Pesantren
+  unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
