@@ -109,6 +109,9 @@ test.describe("Penanda tangan dokumen cetak", () => {
     const html = await popup.content();
 
     expect(html.includes(TEST_COPY_STAMP)).toBe(env.testCopy);
+    // Signed by the unit's head, under the yayasan's own name.
+    expect(html).toContain(KEPALA.name);
+    expect(html).not.toMatch(/Madrasah|PENDIDIKAN ISLAM/);
   });
 
   test("Pengaturan → Profil shows the signed-in account, not an invented one", async ({

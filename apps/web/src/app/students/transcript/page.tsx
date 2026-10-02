@@ -31,7 +31,7 @@ import {
 } from "@/hooks/use-tahfidz";
 import { useReportCards, useStudentGrades } from "@/hooks/use-assessment";
 import { ReportCard } from "@cipansor/shared";
-import { useUnits } from "@/hooks/use-units";
+import { useUnitHead, useUnits } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
 import { useAcademicYears } from "@/hooks/use-academic-years";
 import {
@@ -51,7 +51,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { LETTERHEAD, STUDENT_STATUS, unitDocumentName } from "@cipansor/shared";
 import { printDocument } from "@/lib/print-document";
 import { useEnvironment } from "@/hooks/use-environment";
 
@@ -64,6 +64,7 @@ export default function StudentTranscriptPage() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: units = [] } = useUnits();
+  const { data: head } = useUnitHead(selectedStudent?.unit?.id);
   const { data: classesData } = useClasses({
     unitId: selectedUnitId || undefined,
   });
@@ -206,10 +207,13 @@ export default function StudentTranscriptPage() {
           <h1 className="text-xl font-bold tracking-wide mb-1">
             TRANSKRIP AKADEMIK
           </h1>
-          <h2 className="text-lg font-semibold">
-            YAYASAN PENDIDIKAN ISLAM CIPANSOR
-          </h2>
-          <p className="text-sm">{selectedStudent.unit?.name}</p>
+          <h2 className="text-lg font-semibold">{LETTERHEAD.organisation}</h2>
+          <p className="text-sm">
+            {(() => {
+              const unit = units.find((u) => u.id === selectedStudent.unit?.id);
+              return unit ? unitDocumentName(unit) : selectedStudent.unit?.name;
+            })()}
+          </p>
         </div>
 
         {/* Student Info */}
@@ -456,10 +460,11 @@ export default function StudentTranscriptPage() {
               <p>Dokumen ini digenerate otomatis oleh sistem CIPANSOR.</p>
             </div>
             <div className="text-center">
-              <p className="text-sm mb-12">Kepala Madrasah</p>
+              <p className="text-sm mb-12">{head?.title ?? "Kepala Sekolah"}</p>
               <p className="text-sm font-semibold">
-                (.............................)
+                {head?.name ?? "(.............................)"}
               </p>
+              {head?.nip && <p className="text-sm">NIP. {head.nip}</p>}
             </div>
           </div>
         </div>
