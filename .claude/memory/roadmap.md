@@ -72,7 +72,9 @@ items before 2026-09-25 is in the history of this file and of
          leaked by an admin, 2FA turned off under a short password, and every
          account once at the release — by script, with part A in the same
          release); changing one's own password ends the *other* sessions
-         only (this change).
+         only (done, #632 — on staging; parts A and B go to production
+         together, and `scripts/require-password-change-all.ts` runs once
+         after that deploy).
        - **passkey (FIDO2/WebAuthn) as the first sign-in path** (decided
          2026-09-30, `decisions/autentikasi-2fa-dan-sandi.md`): a "Masuk
          dengan passkey" button above the password form; password + TOTP +
@@ -81,6 +83,23 @@ items before 2026-09-25 is in the history of this file and of
          user verification is provable, unlike Google's `amr`. After 4.A and
          passwords part B, as its own multi-PR track (schema + registration;
          sign-in ceremony; admin reset + recovery hardening + e2e).
+    10. **SPMB 2027/2028 in the portal and on the public site** (decided
+        2026-10-02, `decisions/spmb-2027-2028.md`; after the users-module
+        scope fix, before the Pesantren unit; target: released before wave 2
+        opens on 1 January 2027, which needs the user's approval). Each its
+        own PR, wired end to end:
+        - units: official name beside the short one, plus NPSN, operating
+          permit and email (Profil Unit), and the seed's address corrected;
+        - waves with four sessions (registration, test, results,
+          re-registration) and a pay-in-full discount per wave, with units
+          excluded;
+        - the fee breakdown per unit × ikhwan/akhwat × boarding, and per-unit
+          requirements, minimum age and contact person;
+        - the public `/public/spmb` page and the chatbot read all of it; the
+          brochure's programmes, facilities, extracurriculars and agenda on
+          the public site, in three languages;
+        - the full yayasan structure on the public site (names and
+          positions).
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
