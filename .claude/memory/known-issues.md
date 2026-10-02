@@ -18,12 +18,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
-- **Printed documents name a head who does not exist** (found 2026-10-02).
-  "H. Ahmad Fauzi, S.Pd.I., M.Pd." is typed into the signature block of
-  `students/documents/page.tsx` (twice), the Merdeka report card print
-  (`assessment/report-cards/[id]/print-merdeka/page.tsx`, twice) and
-  `settings/page.tsx`; the tahfidz certificate (`tahfidz/certificate/page.tsx`)
-  signs as "KH. Ahmad Fauzi". The signer is the unit's head, from the data.
 - **The web calls API paths that do not exist — 184 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
   in #569 and #571, mata pelajaran in #573, laporan harian in #577, the
@@ -232,6 +226,17 @@ decision.
    families side by side. The seed now has one per unit; the live data was not
    rechecked. Prefer `is_active = false` over deleting, so the audit trail
    survives.
+7. **Surat keterangan santri outside E-Office** (found 2026-10-02).
+   `students/documents` prints surat keterangan (aktif, kelakuan baik,
+   rekomendasi, …) with a number made up in the browser. Nothing registers it,
+   nothing signs it electronically, and nothing can verify it. E-Office already
+   has `SURAT_KETERANGAN` naskah with a register, TTE and verification by
+   upload. Its print window also carries no styles, because the app's CSS
+   does not reach it, so the letter prints as bare text. Neither that page nor
+   `tahfidz/certificate` is in any menu; both
+   open only by URL. Their signer is now the unit's head from the data
+   (`GET /units/:id/head`), and a test copy stamps their print. The open
+   question is whether to route the page through E-Office or remove it.
 
 ## Design gaps
 

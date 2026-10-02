@@ -1,7 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
 import { safeFormat } from "@/lib/date";
-import { escapeHtml } from "@/lib/string";
 import { MainLayout } from "@/components/layout/main-layout";
 import {
   Card,
@@ -53,7 +52,9 @@ import {
 import { toast } from "sonner";
 
 import { id as idLocale } from "date-fns/locale";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { LETTERHEAD, STUDENT_STATUS } from "@cipansor/shared";
+import { printDocument } from "@/lib/print-document";
+import { useEnvironment } from "@/hooks/use-environment";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   GraduationCap,
@@ -72,6 +73,7 @@ interface CertificateFormData {
 }
 
 export default function CertificateGeneratorPage() {
+  const { data: environment } = useEnvironment();
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,54 +150,38 @@ export default function CertificateGeneratorPage() {
       return;
     }
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
+    // React-rendered, so already escaped; printDocument escapes the title, a
+    // student name that comes from public SPMB registration.
+    const printContent = printRef.current?.innerHTML || "";
+
+    const printed = printDocument({
+      title: `Sertifikat - ${selectedStudent.name}`,
+      head: `
+        <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          @page {
+            size: A4 landscape;
+            margin: 0;
+          }
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Noto Serif', serif;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        </style>
+      `,
+      body: printContent,
+      testCopy: environment?.testCopy,
+    });
+    if (!printed) {
       toast.error("Popup diblokir. Izinkan popup untuk mencetak.");
       return;
     }
-
-    const printContent = printRef.current?.innerHTML || "";
-    // The print window is same-origin (`about:blank`), so anything written into
-    // it runs with the app's session. `printContent` is React-rendered and
-    // already escaped; the title is raw data — a student name comes from SPMB
-    // registration, i.e. from the public — so it must be escaped here.
-    const printTitle = escapeHtml(`Sertifikat - ${selectedStudent.name}`);
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${printTitle}</title>
-          <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
-          <style>
-            @page {
-              size: A4 landscape;
-              margin: 0;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Noto Serif', serif;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
 
     toast.success("Sertifikat siap dicetak");
   };
@@ -279,7 +265,8 @@ export default function CertificateGeneratorPage() {
           {/* Header */}
           <div className="text-center mb-4">
             <p className="text-sm tracking-[0.3em] uppercase opacity-80">
-              Yayasan Pendidikan Islam
+              {/* The yayasan's name, not a generic one. */}
+              {LETTERHEAD.organisation}
             </p>
             <h1
               className="text-3xl font-bold tracking-wide mt-1"

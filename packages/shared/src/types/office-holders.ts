@@ -199,3 +199,12 @@ export const ORGANISATION: OfficeGroup[] = [
 export const YAYASAN_ORGANS = ORGANISATION.filter(
   (g) => g.slug !== "pesantren",
 );
+
+/** The holder of one office, by its slug ("pimpinan-pesantren", …). */
+export function officeHolder(slug: string): OfficeHolder | undefined {
+  for (const group of ORGANISATION) {
+    const holder = group.holders.find((h) => h.slug === slug);
+    if (holder) return holder;
+  }
+  return undefined;
+}

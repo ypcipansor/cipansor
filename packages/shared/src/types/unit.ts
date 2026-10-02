@@ -55,3 +55,17 @@ export function unitPermitLine(unit: {
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
+
+/**
+ * Who signs for a unit: its head, as the active role assignments name them —
+ * the kepala sekolah, or the Pimpinan Pesantren. `GET /units/:id/head`
+ * answers null when the unit has none, or more than one, so a document leaves
+ * the line blank to sign by hand rather than print a guess.
+ */
+export interface UnitHead {
+  name: string;
+  /** Nomor Induk Pegawai from the head's teacher record, when one is kept. */
+  nip: string | null;
+  /** "Kepala SMP IT Pesantren Cipansor", "Pimpinan Pesantren". */
+  title: string;
+}

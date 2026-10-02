@@ -28,6 +28,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -164,6 +165,57 @@ function SystemChannelPolicyCard() {
             />
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The signed-in account, as the session knows it. This tab used to show the
+ * same invented person to everyone ("Dr. Ahmad Fauzi", Super Admin, SMA
+ * Al-Qur'an); editing lives on the Profil page.
+ */
+function SignedInProfileCard() {
+  const { user } = useAuthStore();
+  const roles = (user?.userRoles ?? []) as Array<{
+    isPrimary: boolean;
+    role: { name: string };
+    unit?: { name: string } | null;
+  }>;
+  const active = roles.find((r) => r.isPrimary) ?? roles[0];
+  const rows: Array<[string, string]> = [
+    ["Nama Lengkap", user?.name ?? "-"],
+    ["Email", user?.email ?? "-"],
+    ["Peran", active?.role.name ?? "-"],
+    ["Unit", active?.unit?.name ?? "Seluruh yayasan"],
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <User className="h-5 w-5" />
+          Profil Pengguna
+        </CardTitle>
+        <CardDescription>Akun yang sedang masuk</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div
+          className="grid gap-4 md:grid-cols-2"
+          data-testid="settings-profile"
+        >
+          {rows.map(([label, value]) => (
+            <div key={label} className="space-y-2">
+              <Label>{label}</Label>
+              <div className="p-3 rounded-md bg-muted/50 border break-all">
+                {value}
+              </div>
+            </div>
+          ))}
+        </div>
+        <Button asChild variant="outline">
+          <Link href="/profile">Ubah profil</Link>
+        </Button>
       </CardContent>
     </Card>
   );
@@ -542,43 +594,7 @@ function SettingsPageContent() {
         </TabsContent>
 
         <TabsContent value="profile" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="h-5 w-5" />
-                Profil Pengguna
-              </CardTitle>
-              <CardDescription>Kelola informasi profil Anda</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Nama Lengkap</Label>
-                  <div className="p-3 rounded-md bg-muted/50 border">
-                    Dr. Ahmad Fauzi, M.Pd.
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <div className="p-3 rounded-md bg-muted/50 border">
-                    admin@cipansor.or.id
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Peran</Label>
-                  <div className="p-3 rounded-md bg-muted/50 border">
-                    Super Admin
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>Unit</Label>
-                  <div className="p-3 rounded-md bg-muted/50 border">
-                    SMA Al-Qur'an Cipansor
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <SignedInProfileCard />
         </TabsContent>
 
         <TabsContent value="account" className="space-y-4">
@@ -589,14 +605,15 @@ function SettingsPageContent() {
                 Keamanan Akun
               </CardTitle>
               <CardDescription>
-                Update password dan keamanan akun
+                Kata sandi dan verifikasi dua langkah (2FA)
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-200 text-yellow-800">
-                Fitur keamanan akun dikelola oleh administrator pusat. Hubungi
-                IT Support untuk reset password.
-              </div>
+              <Button asChild variant="outline">
+                <Link href="/profile?tab=security">
+                  Ubah kata sandi dan 2FA di Profil
+                </Link>
+              </Button>
             </CardContent>
           </Card>
 
