@@ -125,8 +125,10 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   with their test, results and re-registration days and the discount for
   paying in full, and the unit's requirements, minimum age and contact. Wave
   statuses now follow their dates daily at 00:01 WIB; nothing had run that
-  update (S3a). Next: the fee breakdown (S3b), the public page and chatbot
-  (S4), then 2027/28 in the seed (S5). Then the Pesantren unit.
+  update (S3a, #640). Then each unit's fee table as the brochure's "Rincian
+  Biaya" prints it, with the totals computed from the lines (S3b). Next: the
+  public page and chatbot read it all, and registration goes to the chosen
+  unit's period (S4); then 2027/28 in the seed (S5). Then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

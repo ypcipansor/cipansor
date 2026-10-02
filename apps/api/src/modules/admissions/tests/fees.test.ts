@@ -190,7 +190,7 @@ describe('the migration', () => {
     expect(sql).toMatch(/btrim\("label"\) <> ''/);
   });
 
-  it("goes with the period it belongs to", () => {
+  it('goes with the period it belongs to', () => {
     expect(sql).toMatch(/REFERENCES "admission_periods"\("id"\)\s+ON DELETE CASCADE/);
   });
 });

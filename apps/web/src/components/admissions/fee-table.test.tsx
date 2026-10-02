@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import type { AdmissionFeeItemDTO } from "@cipansor/shared";
-import {
-  FeeTableView,
-  feeTableFormValues,
-  feeTablePayload,
-} from "./fee-table";
+import { FeeTableView, feeTableFormValues, feeTablePayload } from "./fee-table";
 
 /**
  * An intake's fee table on the period page, as the brochure's "Rincian Biaya"

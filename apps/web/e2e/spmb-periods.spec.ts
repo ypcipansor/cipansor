@@ -175,14 +175,19 @@ test.describe("Periode & Gelombang SPMB", () => {
       ["SPP Bulanan", "800000", "800000", "Mukim", true],
       ["SPP Bulanan", "350000", "350000", "Tidak mukim", true],
     ];
-    for (const [i, [label, male, female, residency, monthly]] of lines.entries()) {
+    for (const [
+      i,
+      [label, male, female, residency, monthly],
+    ] of lines.entries()) {
       await page.getByTestId("fee-add-line").click();
       await page.getByLabel(`Uraian baris ${i + 1}`).fill(label);
       await page.getByLabel(`Ikhwan baris ${i + 1}`).fill(male);
       await page.getByLabel(`Akhwat baris ${i + 1}`).fill(female);
       if (residency) {
         await page.getByLabel(`Berlaku untuk baris ${i + 1}`).click();
-        await page.getByRole("option", { name: residency, exact: true }).click();
+        await page
+          .getByRole("option", { name: residency, exact: true })
+          .click();
       }
       if (monthly) await page.getByLabel(`Bulanan baris ${i + 1}`).click();
     }

@@ -43,7 +43,9 @@ const TOTAL_LABELS: Record<AdmissionFeeTotal["residency"], string> = {
 /** "SPP Bulanan" for both, "… (mukim)" for one residency, "per bulan" for a monthly fee. */
 function lineNote(item: Pick<AdmissionFeeItemDTO, "residency" | "isMonthly">) {
   const notes = [
-    item.residency === "ALL" ? "" : FEE_RESIDENCY_LABELS[item.residency].toLowerCase(),
+    item.residency === "ALL"
+      ? ""
+      : FEE_RESIDENCY_LABELS[item.residency].toLowerCase(),
     item.isMonthly ? "per bulan" : "",
   ].filter(Boolean);
   return notes.length ? ` (${notes.join(", ")})` : "";
@@ -115,9 +117,7 @@ export function FeeTableView({ items }: { items: AdmissionFeeItemDTO[] }) {
   );
 }
 
-const amount = z
-  .string()
-  .regex(/^\d+$/, "Angka rupiah tanpa titik");
+const amount = z.string().regex(/^\d+$/, "Angka rupiah tanpa titik");
 
 const formSchema = z.object({
   items: z
