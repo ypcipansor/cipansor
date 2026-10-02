@@ -2389,13 +2389,13 @@ async function main() {
       quota: 50,
       registrationFee: new Prisma.Decimal(350000),
       isActive: true,
-      requirements: JSON.stringify([
+      requirements: [
         'Fotokopi Akta Kelahiran',
         'Fotokopi Kartu Keluarga',
         'Ijazah SD/MI atau Surat Keterangan Lulus',
         'Pas Foto 3x4 (4 lembar)',
         'Surat Keterangan Sehat',
-      ]),
+      ],
     },
   });
 
@@ -2409,13 +2409,13 @@ async function main() {
       quota: 20,
       registrationFee: new Prisma.Decimal(350000),
       isActive: true,
-      requirements: JSON.stringify([
+      requirements: [
         'Fotokopi Akta Kelahiran',
         'Fotokopi Kartu Keluarga',
         'Ijazah SD/MI atau Surat Keterangan Lulus',
         'Pas Foto 3x4 (4 lembar)',
         'Surat Keterangan Sehat',
-      ]),
+      ],
     },
   });
 

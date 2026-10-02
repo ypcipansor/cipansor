@@ -3,8 +3,41 @@ import { Prisma, WaveStatus } from '@prisma/client';
 import { Errors } from '@/middleware/error';
 import { CreateWaveInput, UpdateWaveInput } from './ppdb-wave.schema';
 import { readsAllUnits } from './admissions.access';
+import { admissionWaveDateIssues } from '@cipansor/shared';
+import { calendarDate, dayOf, wibDayEnd, wibDayOf, wibDayStart } from '@/utils/wib-day';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
+
+const SESSION_FIELDS = [
+  'testStartDate',
+  'testEndDate',
+  'resultsStartDate',
+  'resultsEndDate',
+  'reRegistrationStartDate',
+  'reRegistrationEndDate',
+] as const;
+type SessionField = (typeof SESSION_FIELDS)[number];
+
+/**
+ * A wave's sessions (calendar days) and full-payment discount as Prisma
+ * stores them. A field left out stays out, so an update keeps it; null clears.
+ */
+function waveSessionData(
+  input: Partial<Record<SessionField, string | null>> & { fullPaymentDiscount?: number | null }
+): Partial<Record<SessionField, Date | null>> & { fullPaymentDiscount?: Prisma.Decimal | null } {
+  const data: Partial<Record<SessionField, Date | null>> & {
+    fullPaymentDiscount?: Prisma.Decimal | null;
+  } = {};
+  for (const field of SESSION_FIELDS) {
+    const value = calendarDate(input[field]);
+    if (value !== undefined) data[field] = value;
+  }
+  if (input.fullPaymentDiscount !== undefined) {
+    data.fullPaymentDiscount =
+      input.fullPaymentDiscount === null ? null : new Prisma.Decimal(input.fullPaymentDiscount);
+  }
+  return data;
+}
 
 function isSuperAdmin(actor: AuthUser): boolean {
   return actor.roleCode === 'SUPER_ADMIN' || actor.role === 'SUPER_ADMIN';
@@ -198,7 +231,7 @@ export const waveService = {
     });
 
     if (existing) {
-      throw new Error(`Wave number ${input.waveNumber} already exists for this period`);
+      throw Errors.conflict(`Gelombang ${input.waveNumber} sudah ada di periode ini`);
     }
 
     return prisma.admissionWave.create({
@@ -206,12 +239,13 @@ export const waveService = {
         periodId: input.periodId,
         waveNumber: input.waveNumber,
         name: input.name,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
+        startDate: wibDayStart(input.startDate),
+        endDate: wibDayEnd(input.endDate),
         quota: input.quota,
         registrationFee: input.registrationFee,
         status: input.status ?? 'UPCOMING',
         notes: input.notes,
+        ...waveSessionData(input),
       },
       include: {
         period: { select: { id: true, name: true } },
@@ -224,7 +258,7 @@ export const waveService = {
    */
   async update(id: string, input: UpdateWaveInput, actor?: AuthUser) {
     await assertWaveUnitAccess(id, actor);
-    const data: any = {};
+    const data: Prisma.AdmissionWaveUncheckedUpdateInput = {};
 
     if (input.name !== undefined) data.name = input.name;
     if (input.waveNumber !== undefined) data.waveNumber = input.waveNumber;
@@ -239,12 +273,6 @@ export const waveService = {
       data.fullByCapacity = false;
     }
     if (input.notes !== undefined) data.notes = input.notes;
-    // Use `!== undefined` for consistency with the other fields above. An
-    // empty string would produce an Invalid Date, but Zod's `z.string()` does
-    // not emit empty strings by default for these fields, and this guard
-    // mirrors the "only touch explicitly provided fields" contract of a PATCH.
-    if (input.startDate !== undefined) data.startDate = new Date(input.startDate);
-    if (input.endDate !== undefined) data.endDate = new Date(input.endDate);
 
     // A new quota below the number of registrants already in the wave is
     // refused here so the caller gets a 400 that says what to do instead. The
@@ -254,7 +282,7 @@ export const waveService = {
     // cannot be un-registered by shrinking a number. Closing registration early
     // is a status change (FULL/CLOSED), which `full_by_capacity` already
     // distinguishes from a wave that filled up on its own.
-    if (data.quota !== undefined) {
+    if (input.quota !== undefined) {
       const current = await prisma.admissionWave.findUnique({
         where: { id },
         select: { registeredCount: true },
@@ -262,34 +290,40 @@ export const waveService = {
       if (!current) {
         throw Errors.notFound('Admission wave');
       }
-      if (data.quota < current.registeredCount) {
+      if (input.quota < current.registeredCount) {
         throw Errors.badRequest(
-          `Kuota ${data.quota} lebih kecil dari jumlah pendaftar yang sudah masuk ` +
+          `Kuota ${input.quota} lebih kecil dari jumlah pendaftar yang sudah masuk ` +
             `(${current.registeredCount}). Untuk menutup pendaftaran lebih awal, ubah ` +
             `status gelombang menjadi FULL atau CLOSED.`
         );
       }
     }
 
-    // Cross-check date ordering against the persisted record. The schema-level
-    // `.refine` in `updateWaveSchema` only runs when BOTH dates are provided
-    // in the same request, so a caller can otherwise send only `endDate` (or
-    // only `startDate`) that violates the existing record's invariant. Reject
-    // the update here before Prisma persists `endDate <= startDate`.
-    if (data.startDate !== undefined || data.endDate !== undefined) {
-      const existing = await prisma.admissionWave.findUnique({
-        where: { id },
-        select: { startDate: true, endDate: true },
-      });
-      if (!existing) {
-        throw new Error('Wave not found');
+    // When a date changes, check the dates as they will be stored: the change
+    // laid over the saved wave, so a new end is weighed against the start
+    // already there.
+    const touchesDates = (['startDate', 'endDate', ...SESSION_FIELDS] as const).some(
+      (field) => input[field] !== undefined
+    );
+    if (touchesDates) {
+      const stored = await prisma.admissionWave.findUnique({ where: { id } });
+      if (!stored) {
+        throw Errors.notFound('Admission wave');
       }
-      const effectiveStart = data.startDate ?? existing.startDate;
-      const effectiveEnd = data.endDate ?? existing.endDate;
-      if (effectiveEnd <= effectiveStart) {
-        throw new Error('endDate must be after startDate');
+      const issues = admissionWaveDateIssues({
+        startDate: input.startDate ?? wibDayOf(stored.startDate),
+        endDate: input.endDate ?? wibDayOf(stored.endDate),
+        ...Object.fromEntries(
+          SESSION_FIELDS.map((f) => [f, input[f] !== undefined ? input[f] : dayOf(stored[f])])
+        ),
+      });
+      if (issues.length) {
+        throw Errors.badRequest(issues[0].message);
       }
     }
+    if (input.startDate !== undefined) data.startDate = wibDayStart(input.startDate);
+    if (input.endDate !== undefined) data.endDate = wibDayEnd(input.endDate);
+    Object.assign(data, waveSessionData(input));
 
     return prisma.admissionWave.update({
       where: { id },
@@ -311,8 +345,9 @@ export const waveService = {
     });
 
     if (wave && wave.registeredCount > 0) {
-      throw new Error(
-        `Cannot delete wave with ${wave.registeredCount} registrants. Remove registrants first.`
+      throw Errors.conflict(
+        `Gelombang ini sudah punya ${wave.registeredCount} pendaftar, jadi tidak bisa ` +
+          `dihapus. Untuk menutupnya, ubah statusnya menjadi CLOSED.`
       );
     }
 

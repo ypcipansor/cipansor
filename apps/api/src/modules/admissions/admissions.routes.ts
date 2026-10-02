@@ -251,7 +251,7 @@ router.get(
 /**
  * @swagger
  * /api/admissions/periods/{id}:
- *   put:
+ *   patch:
  *     summary: Update admission period
  *     tags: [Admissions]
  *     security:
@@ -266,7 +266,7 @@ router.get(
  *       200:
  *         description: Admission period updated
  */
-router.put(
+router.patch(
   '/periods/:id',
   authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   controller.updateAdmissionPeriod

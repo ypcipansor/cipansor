@@ -3767,7 +3767,7 @@ async function spmb(ctx: Ctx): Promise<void> {
             quota: plan.quota[w],
             registrationFee: new Prisma.Decimal(plan.fee),
             isActive: true,
-            requirements: JSON.stringify(plan.requirements),
+            requirements: plan.requirements,
           },
         }));
       periods.push(period);

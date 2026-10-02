@@ -68,6 +68,13 @@ const nextConfig: NextConfig = {
         destination: "/public/spmb/:path*",
         permanent: true,
       },
+      // The waves page under /admissions listed waves with buttons that did
+      // nothing. An intake's waves are now entered on its period's page.
+      {
+        source: "/admissions/waves",
+        destination: "/spmb/periods",
+        permanent: true,
+      },
       // "Wakaf & Infaq" is the term the pesantren uses, and the donation page
       // now lives under that name instead of being a second, differently-named
       // copy of the same thing.

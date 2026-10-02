@@ -1,23 +1,15 @@
 import { z } from 'zod';
 import { AdmissionStatus } from '@prisma/client';
-import { partialUpdateSchema } from '@/lib/partial';
 
 // Admission Period schemas
-export const createAdmissionPeriodSchema = z.object({
-  unitId: z.string().uuid(),
-  academicYearId: z.string().uuid(),
-  name: z.string().min(3).max(200),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
-  quota: z.number().int().min(0).default(0),
-  registrationFee: z.number().min(0).default(0),
-  requirements: z.string().optional(),
-});
-
-export const updateAdmissionPeriodSchema = partialUpdateSchema(createAdmissionPeriodSchema).omit({
-  unitId: true,
-  academicYearId: true,
-});
+// The intake's own fields (period and waves) are a contract with the portal's
+// forms, so they live in @cipansor/shared.
+export {
+  createAdmissionPeriodSchema,
+  updateAdmissionPeriodSchema,
+  type CreateAdmissionPeriodInput,
+  type UpdateAdmissionPeriodInput,
+} from '@cipansor/shared';
 
 export const queryAdmissionPeriodSchema = z.object({
   page: z.coerce.number().min(1).default(1),
@@ -154,8 +146,6 @@ export const trackRegistrantQuerySchema = z.object({
   birthDate: z.coerce.date(),
 });
 
-export type CreateAdmissionPeriodInput = z.infer<typeof createAdmissionPeriodSchema>;
-export type UpdateAdmissionPeriodInput = z.infer<typeof updateAdmissionPeriodSchema>;
 export type CreateRegistrantInput = z.infer<typeof createRegistrantSchema>;
 export type UpdateRegistrantInput = z.infer<typeof updateRegistrantSchema>;
 export type UpdateRegistrantScoreInput = z.infer<typeof updateRegistrantScoreSchema>;

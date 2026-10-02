@@ -120,18 +120,8 @@ function describePeriod(
     fee ? `Biaya pendaftaran: ${fee}.` : '',
   ].filter(Boolean);
 
-  // `requirements` is stored as a JSON string array.
-  if (period.requirements) {
-    try {
-      const parsed: unknown = JSON.parse(period.requirements);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        parts.push(`Persyaratan: ${parsed.join('; ')}.`);
-      }
-    } catch {
-      // Malformed requirements must not cost the visitor the rest of the
-      // answer — the dates and the fee are the part they asked for.
-      logger.warn('Admission period requirements are not valid JSON', { periodId: period.id });
-    }
+  if (period.requirements.length > 0) {
+    parts.push(`Persyaratan: ${period.requirements.join('; ')}.`);
   }
 
   return {

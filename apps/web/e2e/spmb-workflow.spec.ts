@@ -149,8 +149,10 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
           unitId: basePeriod.unit.id,
           academicYearId: basePeriod.academicYear.id,
           name: `SPMB E2E Auto ${runId}`,
-          startDate: new Date(now - 86_400_000).toISOString(),
-          endDate: new Date(now + 30 * 86_400_000).toISOString(),
+          // Calendar days; the API opens the first at 00.00 WIB and closes
+          // the last at 24.00 WIB.
+          startDate: new Date(now - 2 * 86_400_000).toISOString().slice(0, 10),
+          endDate: new Date(now + 30 * 86_400_000).toISOString().slice(0, 10),
           quota: 50,
           registrationFee: 0,
         },

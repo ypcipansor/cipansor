@@ -1410,8 +1410,8 @@ const adminNavigation: NavGroup[] = [
         ],
       },
       {
-        // /spmb is the SPMB hub #439 introduced; /admissions keeps the two
-        // pages that hub has no equivalent of yet, so neither goes unreachable.
+        // /spmb is the SPMB hub #439 introduced; /admissions keeps the one
+        // page that hub has no equivalent of yet, so it does not go unreachable.
         title: "Penerimaan (SPMB)",
         href: "/spmb",
         icon: UserPlus,
@@ -1422,8 +1422,8 @@ const adminNavigation: NavGroup[] = [
             icon: Users,
           },
           {
-            title: "Gelombang",
-            href: "/admissions/waves",
+            title: "Periode & Gelombang",
+            href: "/spmb/periods",
             icon: Calendar,
           },
           {
