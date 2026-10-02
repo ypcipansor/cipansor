@@ -16,3 +16,4 @@ export * from "./attendance";
 export * from "./donation";
 export * from "./accreditation";
 export * from "./unit";
+export * from "./board-member";

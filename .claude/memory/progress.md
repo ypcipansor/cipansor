@@ -109,8 +109,13 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   (`decisions/spmb-2027-2028.md`, roadmap 00.10). Its first part: the units'
   official identity on every document, with the Rapor Merdeka PDF readable
   again (#635). Then every document of a test copy stamped "SALINAN UJI"
-  (staging), before the seed takes the real office holders' names; then the
-  SPMB module itself; then the Pesantren unit.
+  (staging, #636). Then the real office holders: one list in
+  `@cipansor/shared` (`office-holders.ts`) for the public site's full
+  structure (Profil → Pimpinan, three languages), the seed's organs and the
+  demo accounts. A guarded migration renames the demo accounts and sets the
+  invented board rows aside. The portal's Organ Yayasan tab is grouped by organ,
+  and its add and edit forms work again. Then the hardcoded "Ahmad Fauzi" signer on print
+  pages; then the SPMB module itself; then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

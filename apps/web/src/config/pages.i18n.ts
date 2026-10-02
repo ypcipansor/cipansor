@@ -1,4 +1,11 @@
 import type { Locale } from "@/locales";
+import { ORGANISATION, type OfficeGroupSlug } from "@cipansor/shared";
+
+/** The groups whose members show a position (see `structure.positions`). */
+export const STRUCTURE_POSITIONED: OfficeGroupSlug[] = [
+  "pengurus",
+  "pesantren",
+];
 
 /**
  * Page chrome for the public pages beyond the homepage — headings, standfirsts,
@@ -61,6 +68,17 @@ export interface PagesContent {
      * why. See config/content.i18n.ts.
      */
     mottoNotTranslated: string | null;
+    /** The full structure below the leaders, from office-holders.ts. */
+    structure: {
+      heading: string;
+      lead: string;
+      groups: Record<OfficeGroupSlug, string>;
+      /**
+       * Keyed by office slug, for the Pengurus and the pesantren only — under
+       * "Pembina" or "Pengawas" a position would repeat the heading.
+       */
+      positions: Record<string, string>;
+    };
   };
   contact: {
     title: string;
@@ -133,7 +151,7 @@ const ID: PagesContent = {
   leadership: {
     title: "Pimpinan Pesantren",
     metaDescription:
-      "Jajaran pimpinan Yayasan Pesantren Cipansor: ketua yayasan, pimpinan pesantren, bendahara, serta kepala SD IT, SMP IT, dan SMA Qur'an.",
+      "Jajaran pimpinan Yayasan Pesantren Cipansor dan struktur organisasinya: Pembina, Pengawas, Pengurus, pimpinan pesantren, serta kepala TK Qur'an, SD IT, SMP IT, dan SMA Qur'an.",
     lead: "Para pengasuh dan kepala unit yang memimpin penyelenggaraan pendidikan di Pesantren Cipansor.",
     photoAlt: (name) => `Foto ${name}`,
     positions: {
@@ -145,6 +163,22 @@ const ID: PagesContent = {
       "kepala-smaquran": "Kepala SMA Qur'an",
     },
     mottoNotTranslated: null,
+    structure: {
+      heading: "Struktur Organisasi",
+      lead: "Organ yayasan menurut Undang-Undang Yayasan dan struktur pesantren, sebagaimana diumumkan Yayasan Pesantren Cipansor.",
+      groups: {
+        pembina: "Pembina",
+        pengawas: "Pengawas",
+        pengurus: "Pengurus",
+        pesantren: "Pesantren Cipansor",
+      },
+      // Indonesian is the yayasan's own wording, so it is read from the list.
+      positions: Object.fromEntries(
+        ORGANISATION.filter((g) =>
+          STRUCTURE_POSITIONED.includes(g.slug),
+        ).flatMap((g) => g.holders.map((h) => [h.slug, h.position])),
+      ),
+    },
   },
   contact: {
     title: "Hubungi Kami",
@@ -214,7 +248,7 @@ const EN: PagesContent = {
   leadership: {
     title: "Pesantren Leadership",
     metaDescription:
-      "The leadership of Yayasan Pesantren Cipansor: the foundation chair, the head of the pesantren, the treasurer, and the heads of SD IT, SMP IT, and SMA Qur'an.",
+      "The leadership and organisational structure of Yayasan Pesantren Cipansor: its trustees, supervisors and executive board, the head of the pesantren, and the heads of TK Qur'an, SD IT, SMP IT, and SMA Qur'an.",
     lead: "The teachers and unit heads who lead the running of education at Pesantren Cipansor.",
     photoAlt: (name) => `Portrait of ${name}`,
     positions: {
@@ -227,6 +261,32 @@ const EN: PagesContent = {
     },
     mottoNotTranslated:
       "Each motto below is a hadith as the leader themselves rendered it in Indonesian, and is shown in the original wording rather than translated.",
+    structure: {
+      heading: "Organisational Structure",
+      lead: "The foundation's organs as Indonesian foundation law defines them, and the pesantren's own structure, as Yayasan Pesantren Cipansor has published them.",
+      groups: {
+        pembina: "Board of Trustees (Pembina)",
+        pengawas: "Board of Supervisors (Pengawas)",
+        pengurus: "Executive Board (Pengurus)",
+        pesantren: "The Pesantren's Own Structure",
+      },
+      positions: {
+        "ketua-yayasan": "Chair",
+        "sekretaris-yayasan": "Secretary",
+        "bendahara-yayasan": "Treasurer",
+        "pimpinan-pesantren": "Head of the Pesantren",
+        "sekretaris-pesantren": "Secretary",
+        "bendahara-pesantren": "Treasurer",
+        "direktur-tahfidz-ikhwan": "Director of Tahfidz, Boys",
+        "direktur-tahfidz-akhwat": "Director of Tahfidz, Girls",
+        "kepala-tkq": "Head of TK Qur'an",
+        "kepala-sdit": "Head of SD IT",
+        "kepala-smpit": "Head of SMP IT",
+        "kepala-smaquran": "Head of SMA Qur'an",
+        "kepengasuhan-ikhwan": "Boarding Care, Boys",
+        "kepengasuhan-akhwat": "Boarding Care, Girls",
+      },
+    },
   },
   contact: {
     title: "Contact Us",
@@ -306,7 +366,7 @@ const AR: PagesContent = {
   leadership: {
     title: "الهيئة القيادية للمعهد",
     metaDescription:
-      "الهيئة القيادية لمؤسسة معهد سيبانسور: رئيس المؤسسة، ومدير المعهد، وأمين الصندوق، ورؤساء المرحلة الابتدائية والإعدادية وثانوية القرآن.",
+      "الهيئة القيادية لمؤسسة معهد سيبانسور وهيكلها التنظيمي: مجلس الأمناء ومجلس الرقابة والمجلس التنفيذي، ومدير المعهد، ورؤساء روضة القرآن والمرحلة الابتدائية والإعدادية وثانوية القرآن.",
     lead: "المشايخ ورؤساء الوحدات الذين يقودون العملية التعليمية في معهد سيبانسور.",
     photoAlt: (name) => `صورة ${name}`,
     positions: {
@@ -319,6 +379,32 @@ const AR: PagesContent = {
     },
     mottoNotTranslated:
       "كل حكمة أدناه حديثٌ صاغه صاحبها بالإندونيسية، وتُعرَض بلفظها الأصلي دون ترجمة.",
+    structure: {
+      heading: "الهيكل التنظيمي",
+      lead: "أجهزة المؤسسة كما يحددها قانون المؤسسات الإندونيسي، وهيكل المعهد الخاص به، كما أعلنتها مؤسسة معهد سيبانسور.",
+      groups: {
+        pembina: "مجلس الأمناء (Pembina)",
+        pengawas: "مجلس الرقابة (Pengawas)",
+        pengurus: "المجلس التنفيذي (Pengurus)",
+        pesantren: "هيكل المعهد",
+      },
+      positions: {
+        "ketua-yayasan": "الرئيس",
+        "sekretaris-yayasan": "أمين السر",
+        "bendahara-yayasan": "أمين الصندوق",
+        "pimpinan-pesantren": "مدير المعهد",
+        "sekretaris-pesantren": "أمين السر",
+        "bendahara-pesantren": "أمينة الصندوق",
+        "direktur-tahfidz-ikhwan": "مدير التحفيظ للبنين",
+        "direktur-tahfidz-akhwat": "مديرة التحفيظ للبنات",
+        "kepala-tkq": "رئيسة روضة القرآن",
+        "kepala-sdit": "رئيس المرحلة الابتدائية",
+        "kepala-smpit": "رئيس المرحلة الإعدادية",
+        "kepala-smaquran": "رئيس ثانوية القرآن",
+        "kepengasuhan-ikhwan": "رعاية الطلاب المقيمين (البنين)",
+        "kepengasuhan-akhwat": "رعاية الطالبات المقيمات (البنات)",
+      },
+    },
   },
   contact: {
     title: "تواصل معنا",
