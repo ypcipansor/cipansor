@@ -4,13 +4,15 @@ import { escapeHtml } from "@/lib/string";
 /**
  * The test-copy stamp as markup for a page printed in a window of its own,
  * which the app's TestCopyWatermark never reaches. Fixed elements repeat on
- * every printed page. Nothing outside a test copy.
+ * every printed page; the note sits at the foot, clear of the document's own
+ * title. Nothing outside a test copy.
  */
 export function testCopyPrintMarkup(testCopy: boolean | undefined): string {
   if (!testCopy) return "";
   return (
     '<div data-test-copy-stamp aria-hidden="true" style="position:fixed;inset:0;pointer-events:none;z-index:9999">' +
-    `<p style="position:absolute;left:0;right:0;top:2mm;margin:0;text-align:center;font:8pt Arial,sans-serif;color:#b91c1c">${TEST_COPY_NOTE}</p>` +
+    // At the foot: these documents start their own title at the top edge.
+    `<p style="position:absolute;left:0;right:0;bottom:2mm;margin:0;text-align:center;font:8pt Arial,sans-serif;color:#b91c1c">${TEST_COPY_NOTE}</p>` +
     `<p style="position:absolute;left:50%;top:50%;margin:0;transform:translate(-50%,-50%) rotate(-45deg);white-space:nowrap;font:bold 34pt Arial,sans-serif;color:rgba(185,28,28,0.25)">${TEST_COPY_STAMP}</p>` +
     "</div>"
   );
