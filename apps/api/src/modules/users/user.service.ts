@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { assertPasswordAllowed } from '@/lib/password-policy';
 import { Errors } from '@/middleware/error';
+import { requiresSecondFactor } from '@/middleware/auth';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
@@ -221,6 +222,9 @@ export class UserService {
         name: input.name,
         email: input.email,
         passwordHash,
+        // Someone else chose it: replaced at the first sign-in (also the
+        // column default, stated here so the rule is read where it applies).
+        mustChangePassword: true,
         role: input.role as UserRole,
         unitId: input.unitId || null,
         isActive: true,
@@ -297,6 +301,62 @@ export class UserService {
 
     // No credential column is loaded: the client omits them (lib/prisma.ts).
     return updated;
+  }
+
+  /**
+   * Mark an account's password as leaked (decisions/autentikasi-2fa-dan-sandi.md):
+   * every session ends now, and the next sign-in asks for a new password.
+   *
+   * Super Admin: any account. A unit admin: accounts of their own unit, and not
+   * one that must use 2FA (another admin, a kepala, an organ of the yayasan) —
+   * the line the admin path of turning 2FA off already draws. Ending someone's
+   * sessions is not a thing a peer should be able to do to a peer.
+   */
+  async requirePasswordChange(
+    id: string,
+    currentUser: { roleCode: string; unitId: string | null; sub: string }
+  ) {
+    if (id === currentUser.sub) {
+      throw Errors.badRequest('Untuk akun Anda sendiri, ganti kata sandi di Profil → Keamanan.');
+    }
+
+    const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
+      where: { id, deletedAt: null },
+      include: {
+        userRoles: {
+          where: { isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+          include: { role: true },
+        },
+      },
+    });
+    if (!user) {
+      throw Errors.notFound('User');
+    }
+    if (!user.passwordHash) {
+      throw Errors.badRequest('Data ini tidak memiliki akun login.');
+    }
+
+    if (currentUser.roleCode !== 'SUPER_ADMIN') {
+      if (user.unitId !== currentUser.unitId) {
+        throw Errors.forbidden('Admin unit hanya dapat mengelola pengguna di unitnya sendiri.');
+      }
+      if (requiresSecondFactor(user.userRoles.map((r) => r.role.code))) {
+        throw Errors.forbidden(
+          'Hanya Super Admin yang dapat menandai kata sandi akun yang wajib memakai verifikasi dua langkah.'
+        );
+      }
+    }
+
+    await prisma.user.update({ where: { id }, data: { mustChangePassword: true } });
+    await prisma.refreshToken.deleteMany({ where: { userId: id } });
+
+    return {
+      // An access token already issued stays valid until it expires (15 minutes);
+      // the refresh that would extend it is refused from now on.
+      message: `Kata sandi ${user.name} wajib diganti. Sesinya berakhir paling lama 15 menit lagi, dan saat masuk berikutnya ia harus membuat kata sandi baru.`,
+    };
   }
 
   /**

@@ -12,6 +12,10 @@ export interface JwtPayload {
   permissions: string[]; // Permissions array from the Role record
   type: 'access' | 'refresh';
   isTemp?: boolean; // For 2FA temporary tokens
+  // What a temporary token may do. Absent on the 2FA step's token (verify the
+  // code, or set 2FA up); 'password-change' when the account must choose a new
+  // password before it gets a session, and that is all the token can do.
+  purpose?: 'password-change';
   // DEPRECATED: Legacy role field derived from roleCode at authentication time.
   // Kept so that unmigrated controllers/services that reference `req.user.role`
   // continue to work. Maps granular RoleCodes back to the legacy UserRole enum
