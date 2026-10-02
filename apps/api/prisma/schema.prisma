@@ -1912,18 +1912,29 @@ enum AdmissionStatus {
   CANCELLED // Dibatalkan
 }
 
-/// AdmissionPeriod - Periode Penerimaan Santri Baru
+/// AdmissionPeriod - one unit's SPMB intake for one academic year
+/// ("SPMB 2027/2028 SMP IT"), divided into waves (AdmissionWave). What the
+/// brochure prints per unit lives here: the requirements, the minimum age and
+/// the contact person.
 model AdmissionPeriod {
   id              String   @id @default(uuid())
   unitId          String   @map("unit_id")
   academicYearId  String   @map("academic_year_id")
-  name            String // e.g., "PSB 2024/2025 Gelombang 1"
+  name            String // e.g., "SPMB 2027/2028 SMP IT"
   startDate       DateTime @map("start_date")
   endDate         DateTime @map("end_date")
   quota           Int      @default(0)
   registrationFee Decimal  @default(0) @map("registration_fee") @db.Decimal(15, 2)
   isActive        Boolean  @default(true) @map("is_active")
-  requirements    String?  @db.Text // JSON atau teks persyaratan
+  /// One line per requirement, in the order the brochure prints them.
+  requirements    String[] @default([])
+  /// Minimum age in whole months, measured on `ageReferenceDate` (or on the
+  /// day of registration when that is empty). 84 = 7 years.
+  minAgeMonths    Int?     @map("min_age_months")
+  ageReferenceDate DateTime? @map("age_reference_date") @db.Date
+  /// The unit's contact person for this intake, entered by its admin.
+  contactName     String?  @map("contact_name")
+  contactPhone    String?  @map("contact_phone")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -3677,6 +3688,18 @@ model AdmissionWave {
   /// cancellation. NULL for rows migrated from before this flag existed.
   fullByCapacity   Boolean?  @default(false) @map("full_by_capacity")
   registrationFee Decimal?   @map("registration_fee") @db.Decimal(12, 2)
+  /// The wave's sessions after registration, as calendar days. An empty end
+  /// means a single day. The CHECKs that each end is not before its start are
+  /// in migration 20261003000000.
+  testStartDate           DateTime? @map("test_start_date") @db.Date
+  testEndDate             DateTime? @map("test_end_date") @db.Date
+  resultsStartDate        DateTime? @map("results_start_date") @db.Date
+  resultsEndDate          DateTime? @map("results_end_date") @db.Date
+  reRegistrationStartDate DateTime? @map("re_registration_start_date") @db.Date
+  reRegistrationEndDate   DateTime? @map("re_registration_end_date") @db.Date
+  /// Taken off the entry fees when they are paid in full in this wave. Empty
+  /// for a wave, or a unit, with no such discount.
+  fullPaymentDiscount     Decimal?  @map("full_payment_discount") @db.Decimal(12, 2)
   notes           String?
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")

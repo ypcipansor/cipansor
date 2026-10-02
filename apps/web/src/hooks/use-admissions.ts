@@ -1,10 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  AdmissionPeriodDTO,
+  AdmissionWaveDTO,
+  CreateAdmissionPeriodInput,
+  CreateAdmissionWaveInput,
   RegistrantDTO,
   OnboardRegistrantPayload,
   TrackedRegistrantDTO,
   RegistrationStatus,
+  UpdateAdmissionPeriodInput,
+  UpdateAdmissionWaveInput,
 } from "@cipansor/shared";
 export type { RegistrationStatus };
 
@@ -171,10 +177,100 @@ export function useAdmissionPeriod(id: string) {
   return useQuery({
     queryKey: ["admission-period", id],
     queryFn: async () => {
-      const response = await api.get(`/admissions/periods/${id}`);
+      const response = await api.get<{ data: AdmissionPeriodDTO }>(
+        `/admissions/periods/${id}`,
+      );
       return response.data.data;
     },
     enabled: !!id,
+  });
+}
+
+// --- An intake's period and waves, as the unit's admin enters them ---
+
+function useInvalidateIntake() {
+  const queryClient = useQueryClient();
+  return (periodId?: string) => {
+    queryClient.invalidateQueries({ queryKey: ["admission-periods"] });
+    queryClient.invalidateQueries({ queryKey: ["admission-waves"] });
+    queryClient.invalidateQueries({ queryKey: ["active-admission-waves"] });
+    if (periodId) {
+      queryClient.invalidateQueries({
+        queryKey: ["admission-period", periodId],
+      });
+    }
+  };
+}
+
+export function useCreateAdmissionPeriod() {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: CreateAdmissionPeriodInput) => {
+      const response = await api.post<{ data: AdmissionPeriodDTO }>(
+        "/admissions/periods",
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: (period) => invalidate(period.id),
+  });
+}
+
+export function useUpdateAdmissionPeriod(id: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: UpdateAdmissionPeriodInput) => {
+      const response = await api.patch<{ data: AdmissionPeriodDTO }>(
+        `/admissions/periods/${id}`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(id),
+  });
+}
+
+export function useCreateAdmissionWave() {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: CreateAdmissionWaveInput) => {
+      const response = await api.post<{ data: AdmissionWaveDTO }>(
+        "/admissions/waves",
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: (_, input) => invalidate(input.periodId),
+  });
+}
+
+export function useUpdateAdmissionWave(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: UpdateAdmissionWaveInput;
+    }) => {
+      const response = await api.patch<{ data: AdmissionWaveDTO }>(
+        `/admissions/waves/${id}`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(periodId),
+  });
+}
+
+export function useDeleteAdmissionWave(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/admissions/waves/${id}`);
+    },
+    onSuccess: () => invalidate(periodId),
   });
 }
 

@@ -170,3 +170,276 @@ export interface OnboardRegistrantPayload {
   nisn?: string;
   academicYearId?: string;
 }
+
+// ───────────────────────── An SPMB intake ─────────────────────────
+//
+// One unit's intake for one academic year (an admission period), divided into
+// waves. What the yayasan's brochure prints is data here, entered by the unit's
+// admin each year (decisions/spmb-2027-2028.md): per wave the sessions after
+// registration and the discount for paying in full; per unit the
+// requirements, the minimum age and the contact person.
+//
+// Every date is a calendar day (`2026-12-20`), the shape a date input gives.
+// The API reads a registration window as running from the first day's start to
+// the last day's end in WIB, so "1 Oktober – 20 Desember" closes at midnight
+// on 20 December in Tasikmalaya, wherever the server runs.
+
+const calendarDay = z.iso.date({ message: "Tanggal tidak valid" });
+
+/** Days are compared as strings: `YYYY-MM-DD` sorts as it reads. */
+const notBefore = (end?: string | null, start?: string | null) =>
+  !end || !start || end >= start;
+
+export const admissionPeriodFields = {
+  unitId: z.uuid({ message: "Unit wajib dipilih" }),
+  academicYearId: z.uuid({ message: "Tahun ajaran wajib dipilih" }),
+  name: z
+    .string()
+    .trim()
+    .min(3, "Nama minimal 3 karakter")
+    .max(200, "Nama maksimal 200 karakter"),
+  startDate: calendarDay,
+  endDate: calendarDay,
+  quota: z.number().int().min(0, "Kuota tidak boleh negatif"),
+  registrationFee: z.number().min(0, "Biaya tidak boleh negatif"),
+  isActive: z.boolean(),
+  requirements: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, "Persyaratan tidak boleh kosong")
+        .max(300, "Satu persyaratan maksimal 300 karakter"),
+    )
+    .max(30, "Maksimal 30 persyaratan"),
+  /** Whole months: 84 is 7 years. */
+  minAgeMonths: z
+    .number()
+    .int()
+    .min(0, "Usia minimal tidak boleh negatif")
+    .max(360, "Usia minimal tidak masuk akal")
+    .nullable(),
+  ageReferenceDate: calendarDay.nullable(),
+  contactName: z
+    .string()
+    .trim()
+    .max(100, "Nama kontak maksimal 100 karakter")
+    .nullable(),
+  contactPhone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9][0-9 -]{6,19}$/, "Nomor telepon tidak valid")
+    .nullable(),
+};
+
+export const createAdmissionPeriodSchema = z
+  .object({
+    ...admissionPeriodFields,
+    quota: admissionPeriodFields.quota.default(0),
+    registrationFee: admissionPeriodFields.registrationFee.default(0),
+    isActive: admissionPeriodFields.isActive.default(true),
+    requirements: admissionPeriodFields.requirements.default([]),
+    minAgeMonths: admissionPeriodFields.minAgeMonths.optional(),
+    ageReferenceDate: admissionPeriodFields.ageReferenceDate.optional(),
+    contactName: admissionPeriodFields.contactName.optional(),
+    contactPhone: admissionPeriodFields.contactPhone.optional(),
+  })
+  .refine((p) => notBefore(p.endDate, p.startDate), {
+    message: "Tanggal selesai tidak boleh sebelum tanggal mulai",
+    path: ["endDate"],
+  });
+
+/** PATCH /admissions/periods/:id — the unit and the year do not move. */
+export const updateAdmissionPeriodSchema = z
+  .object(admissionPeriodFields)
+  .omit({ unitId: true, academicYearId: true })
+  .partial()
+  .refine((p) => notBefore(p.endDate, p.startDate), {
+    message: "Tanggal selesai tidak boleh sebelum tanggal mulai",
+    path: ["endDate"],
+  });
+
+export type CreateAdmissionPeriodInput = z.infer<
+  typeof createAdmissionPeriodSchema
+>;
+export type UpdateAdmissionPeriodInput = z.infer<
+  typeof updateAdmissionPeriodSchema
+>;
+
+export const WAVE_STATUSES = ["UPCOMING", "OPEN", "CLOSED", "FULL"] as const;
+export type WaveStatusCode = (typeof WAVE_STATUSES)[number];
+
+/** A session of a wave: one day, or a range. An end needs a start. */
+const SESSIONS = [
+  ["testStartDate", "testEndDate", "tes"],
+  ["resultsStartDate", "resultsEndDate", "pengumuman"],
+  ["reRegistrationStartDate", "reRegistrationEndDate", "daftar ulang"],
+] as const;
+
+export const admissionWaveFields = {
+  name: z
+    .string()
+    .trim()
+    .min(3, "Nama minimal 3 karakter")
+    .max(100, "Nama maksimal 100 karakter"),
+  waveNumber: z
+    .number()
+    .int()
+    .min(1, "Nomor gelombang minimal 1")
+    .max(20, "Nomor gelombang maksimal 20"),
+  startDate: calendarDay,
+  endDate: calendarDay,
+  quota: z.number().int().min(1, "Kuota minimal 1"),
+  registrationFee: z.number().min(0, "Biaya tidak boleh negatif").nullable(),
+  status: z.enum(WAVE_STATUSES),
+  testStartDate: calendarDay.nullable(),
+  testEndDate: calendarDay.nullable(),
+  resultsStartDate: calendarDay.nullable(),
+  resultsEndDate: calendarDay.nullable(),
+  reRegistrationStartDate: calendarDay.nullable(),
+  reRegistrationEndDate: calendarDay.nullable(),
+  fullPaymentDiscount: z
+    .number()
+    .min(0, "Potongan tidak boleh negatif")
+    .nullable(),
+  notes: z
+    .string()
+    .trim()
+    .max(1000, "Catatan maksimal 1000 karakter")
+    .nullable(),
+};
+
+type WaveDates = Partial<
+  Record<
+    | "startDate"
+    | "endDate"
+    | (typeof SESSIONS)[number][0]
+    | (typeof SESSIONS)[number][1],
+    string | null
+  >
+>;
+
+/**
+ * What is wrong with a wave's dates, if anything. Run on a whole wave: on
+ * create, and on update after the change is laid over the stored wave, so a
+ * new end is checked against the start already saved.
+ */
+export function admissionWaveDateIssues(
+  w: WaveDates,
+): { path: string; message: string }[] {
+  const issues: { path: string; message: string }[] = [];
+  if (!notBefore(w.endDate, w.startDate)) {
+    issues.push({
+      path: "endDate",
+      message: "Tanggal tutup pendaftaran tidak boleh sebelum tanggal buka",
+    });
+  }
+  for (const [start, end, label] of SESSIONS) {
+    if (w[end] && !w[start]) {
+      issues.push({
+        path: start,
+        message: `Tanggal mulai ${label} wajib diisi bila tanggal selesainya diisi`,
+      });
+    } else if (!notBefore(w[end], w[start])) {
+      issues.push({
+        path: end,
+        message: `Tanggal selesai ${label} tidak boleh sebelum tanggal mulainya`,
+      });
+    }
+  }
+  return issues;
+}
+
+function checkWaveDates(w: WaveDates, ctx: z.RefinementCtx) {
+  for (const issue of admissionWaveDateIssues(w)) {
+    ctx.addIssue({
+      code: "custom",
+      message: issue.message,
+      path: [issue.path],
+    });
+  }
+}
+
+export const createAdmissionWaveSchema = z
+  .object({
+    periodId: z.uuid(),
+    ...admissionWaveFields,
+    registrationFee: admissionWaveFields.registrationFee.optional(),
+    // Left out, the API reads it from the dates: a wave created inside its
+    // window is open, not "upcoming".
+    status: admissionWaveFields.status.optional(),
+    testStartDate: admissionWaveFields.testStartDate.default(null),
+    testEndDate: admissionWaveFields.testEndDate.default(null),
+    resultsStartDate: admissionWaveFields.resultsStartDate.default(null),
+    resultsEndDate: admissionWaveFields.resultsEndDate.default(null),
+    reRegistrationStartDate:
+      admissionWaveFields.reRegistrationStartDate.default(null),
+    reRegistrationEndDate:
+      admissionWaveFields.reRegistrationEndDate.default(null),
+    fullPaymentDiscount: admissionWaveFields.fullPaymentDiscount.default(null),
+    notes: admissionWaveFields.notes.optional(),
+  })
+  .superRefine(checkWaveDates);
+
+/**
+ * PUT /admissions/waves/:id. Fields left out are kept. The dates are checked
+ * by the API once the change is laid over the stored wave
+ * (`admissionWaveDateIssues`), because a new end must be checked against the
+ * start already saved.
+ */
+export const updateAdmissionWaveSchema = z
+  .object(admissionWaveFields)
+  .partial();
+
+export type CreateAdmissionWaveInput = z.infer<
+  typeof createAdmissionWaveSchema
+>;
+export type UpdateAdmissionWaveInput = z.infer<
+  typeof updateAdmissionWaveSchema
+>;
+
+/** An admission period as the portal reads it (GET /admissions/periods/:id). */
+export interface AdmissionPeriodDTO {
+  id: string;
+  unitId: string;
+  academicYearId: string;
+  name: string;
+  /** ISO date-times: the first day's start and the last day's end, in WIB. */
+  startDate: string;
+  endDate: string;
+  quota: number;
+  registrationFee: string | number;
+  isActive: boolean;
+  requirements: string[];
+  minAgeMonths: number | null;
+  /** ISO date-time at midnight UTC of the day. */
+  ageReferenceDate: string | null;
+  contactName: string | null;
+  contactPhone: string | null;
+  unit?: { id: string; name: string; type?: string };
+  academicYear?: { id: string; name: string };
+  waves?: AdmissionWaveDTO[];
+  _count?: { registrants: number };
+}
+
+export interface AdmissionWaveDTO {
+  id: string;
+  periodId: string;
+  waveNumber: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+  quota: number;
+  registeredCount: number;
+  acceptedCount: number;
+  status: WaveStatusCode;
+  registrationFee: string | number | null;
+  testStartDate: string | null;
+  testEndDate: string | null;
+  resultsStartDate: string | null;
+  resultsEndDate: string | null;
+  reRegistrationStartDate: string | null;
+  reRegistrationEndDate: string | null;
+  fullPaymentDiscount: string | number | null;
+  notes: string | null;
+}

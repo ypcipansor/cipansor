@@ -17,6 +17,7 @@ import {
 } from './admissions.schema';
 import { Errors } from '../../middleware/error';
 import { readsAllUnits } from './admissions.access';
+import { calendarDate, wibDayEnd, wibDayStart } from '@/utils/wib-day';
 
 type AuthUser = { id: string; role: string; roleCode?: string; unitId?: string | null };
 
@@ -138,6 +139,7 @@ export async function getAdmissionPeriodById(id: string) {
     include: {
       unit: { select: { id: true, name: true, type: true } },
       academicYear: { select: { id: true, name: true } },
+      waves: { orderBy: { waveNumber: 'asc' } },
       _count: { select: { registrants: true } },
     },
   });
@@ -187,14 +189,15 @@ export async function createAdmissionPeriod(data: CreateAdmissionPeriodInput, ac
   // could manufacture a period in another unit's admissions.
   assertUnitMatchesActor(data.unitId, actor);
 
+  const { startDate, endDate, registrationFee, ageReferenceDate, ...fields } = data;
   return prisma.admissionPeriod.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
-      ...data,
-      startDate: new Date(data.startDate),
-      endDate: new Date(data.endDate),
-      registrationFee: new Prisma.Decimal(data.registrationFee),
-    } as any,
+      ...fields,
+      startDate: wibDayStart(startDate),
+      endDate: wibDayEnd(endDate),
+      registrationFee: new Prisma.Decimal(registrationFee),
+      ageReferenceDate: calendarDate(ageReferenceDate),
+    },
   });
 }
 
@@ -207,21 +210,30 @@ export async function updateAdmissionPeriod(
   // record being edited (a UNIT_ADMIN must not touch another unit's period).
   const existingPeriod = await prisma.admissionPeriod.findUnique({
     where: { id },
-    select: { unitId: true },
+    select: { unitId: true, startDate: true, endDate: true },
   });
   if (!existingPeriod) {
     throw Errors.notFound('Admission period');
   }
   assertUnitMatchesActor(existingPeriod.unitId, actor);
 
+  const { startDate, endDate, registrationFee, ageReferenceDate, ...fields } = data;
+  const start = startDate ? wibDayStart(startDate) : existingPeriod.startDate;
+  const end = endDate ? wibDayEnd(endDate) : existingPeriod.endDate;
+  // A new end is checked against the start already saved, and the other way.
+  if (end < start) {
+    throw Errors.badRequest('Tanggal selesai tidak boleh sebelum tanggal mulai');
+  }
+
   return prisma.admissionPeriod.update({
     where: { id },
     data: {
-      ...data,
-      startDate: data.startDate ? new Date(data.startDate) : undefined,
-      endDate: data.endDate ? new Date(data.endDate) : undefined,
+      ...fields,
+      startDate: startDate ? start : undefined,
+      endDate: endDate ? end : undefined,
       registrationFee:
-        data.registrationFee !== undefined ? new Prisma.Decimal(data.registrationFee) : undefined,
+        registrationFee !== undefined ? new Prisma.Decimal(registrationFee) : undefined,
+      ageReferenceDate: calendarDate(ageReferenceDate),
     },
   });
 }

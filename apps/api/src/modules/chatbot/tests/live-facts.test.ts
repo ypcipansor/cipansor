@@ -20,7 +20,7 @@ function period(overrides: Record<string, unknown> = {}) {
     startDate: new Date('2026-06-09T00:00:00.000Z'),
     endDate: new Date('2026-09-07T00:00:00.000Z'),
     registrationFee: '350000',
-    requirements: JSON.stringify(['Fotokopi Akta Kelahiran', 'Pas Foto 3x4']),
+    requirements: ['Fotokopi Akta Kelahiran', 'Pas Foto 3x4'],
     unit: { id: 'u1', name: 'SMP IT Cipansor', type: 'SMP_IT' },
     academicYear: { id: 'a1', name: '2027/2028' },
     ...overrides,
@@ -99,8 +99,8 @@ describe('collectLiveFacts rendering', () => {
     expect(fact.text).toContain('tidak ada gelombang pendaftaran');
   });
 
-  it('still answers the dates when requirements JSON is malformed', async () => {
-    mockFind.mockResolvedValue(period({ requirements: 'not json' }));
+  it('says nothing about requirements when the unit has listed none', async () => {
+    mockFind.mockResolvedValue(period({ requirements: [] }));
     const [fact] = await collectLiveFacts('syarat pendaftaran', NOW);
     expect(fact.text).toContain('DIBUKA');
     expect(fact.text).not.toContain('Persyaratan:');
