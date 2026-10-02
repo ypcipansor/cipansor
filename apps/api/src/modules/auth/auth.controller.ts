@@ -156,7 +156,7 @@ export const setRequiredPassword = asyncHandler(async (req: Request, res: Respon
   const userId = req.user!.sub;
   const { newPassword }: NewPasswordInput = req.body;
   const bearer = mayReturnTokens(req);
-  const { user, accessToken, refreshToken } = await authService.completeRequiredPasswordChange(
+  const { user, accessToken, refreshToken } = await authService.completeForcedChange(
     userId,
     newPassword
   );

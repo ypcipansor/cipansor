@@ -147,7 +147,7 @@ describe('choosing the new password', () => {
   it('saves it, clears the flag, ends the old sessions and starts one', async () => {
     prismaMock.user.findFirst.mockResolvedValue(account());
 
-    const result = await authService.completeRequiredPasswordChange('user-1', LONG);
+    const result = await authService.completeForcedChange('user-1', LONG);
 
     expect(prismaMock.user.update).toHaveBeenCalledWith({
       where: { id: 'user-1' },
@@ -171,7 +171,7 @@ describe('choosing the new password', () => {
     prismaMock.user.findFirst.mockResolvedValue(account());
     passwordMock.comparePassword.mockResolvedValue(true);
 
-    await expect(authService.completeRequiredPasswordChange('user-1', LONG)).rejects.toMatchObject({
+    await expect(authService.completeForcedChange('user-1', LONG)).rejects.toMatchObject({
       statusCode: 400,
       message: expect.stringContaining('berbeda'),
     });
@@ -181,9 +181,9 @@ describe('choosing the new password', () => {
   it('holds it to the same rules: 15 characters without 2FA', async () => {
     prismaMock.user.findFirst.mockResolvedValue(account());
 
-    await expect(
-      authService.completeRequiredPasswordChange('user-1', 'kopi-susu-12')
-    ).rejects.toMatchObject({ statusCode: 400 });
+    await expect(authService.completeForcedChange('user-1', 'kopi-susu-12')).rejects.toMatchObject({
+      statusCode: 400,
+    });
     expect(prismaMock.user.update).not.toHaveBeenCalled();
   });
 
@@ -192,7 +192,7 @@ describe('choosing the new password', () => {
       account({ isTwoFactorEnabled: true, twoFactorSecret: SECRET })
     );
 
-    await authService.completeRequiredPasswordChange('user-1', 'kopi-susu-12');
+    await authService.completeForcedChange('user-1', 'kopi-susu-12');
 
     expect(prismaMock.user.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -204,7 +204,7 @@ describe('choosing the new password', () => {
   it('is refused for an account that does not have to change', async () => {
     prismaMock.user.findFirst.mockResolvedValue(account({ mustChangePassword: false }));
 
-    await expect(authService.completeRequiredPasswordChange('user-1', LONG)).rejects.toMatchObject({
+    await expect(authService.completeForcedChange('user-1', LONG)).rejects.toMatchObject({
       statusCode: 400,
     });
     expect(prismaMock.user.update).not.toHaveBeenCalled();
@@ -214,7 +214,7 @@ describe('choosing the new password', () => {
   it('is refused for an account deactivated since the sign-in', async () => {
     prismaMock.user.findFirst.mockResolvedValue(account({ isActive: false }));
 
-    await expect(authService.completeRequiredPasswordChange('user-1', LONG)).rejects.toMatchObject({
+    await expect(authService.completeForcedChange('user-1', LONG)).rejects.toMatchObject({
       statusCode: 401,
     });
     expect(prismaMock.user.update).not.toHaveBeenCalled();

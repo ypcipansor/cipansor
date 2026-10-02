@@ -24,7 +24,7 @@ const { authServiceMock } = vi.hoisted(() => ({
     logout: vi.fn(),
     verifyTwoFactorLogin: vi.fn(),
     getTwoFactorStatus: vi.fn(),
-    completeRequiredPasswordChange: vi.fn(),
+    completeForcedChange: vi.fn(),
     changePassword: vi.fn(),
   },
 }));
@@ -317,7 +317,7 @@ describe('auth controller: a password that must change', () => {
   });
 
   it('saving the new password starts the session in cookies, not in the body', async () => {
-    authServiceMock.completeRequiredPasswordChange.mockResolvedValue({
+    authServiceMock.completeForcedChange.mockResolvedValue({
       user: USER,
       accessToken: 'access-3',
       refreshToken: 'refresh-3',
@@ -335,7 +335,7 @@ describe('auth controller: a password that must change', () => {
     );
 
     await vi.waitFor(() => expect(res.jsonPayload).toBeDefined());
-    expect(authServiceMock.completeRequiredPasswordChange).toHaveBeenCalledWith(
+    expect(authServiceMock.completeForcedChange).toHaveBeenCalledWith(
       'u-1',
       'tiga ekor kucing di serambi'
     );
