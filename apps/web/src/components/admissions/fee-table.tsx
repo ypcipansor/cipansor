@@ -265,6 +265,7 @@ export function FeeTableForm({
                     }
                   >
                     <SelectTrigger
+                      className="w-full"
                       aria-label={`Berlaku untuk baris ${index + 1}`}
                     >
                       <SelectValue />
