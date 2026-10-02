@@ -97,7 +97,11 @@ export const requirePasswordChange = asyncHandler(async (req: Request, res: Resp
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const result = await userService.delete(id);
+  const result = await userService.delete(id, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+    sub: req.user!.sub,
+  });
 
   res.json({
     success: true,

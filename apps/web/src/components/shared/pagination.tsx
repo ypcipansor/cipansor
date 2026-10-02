@@ -86,6 +86,7 @@ export function Pagination({
           size="icon"
           className="h-8 w-8"
           onClick={() => onPageChange(1)}
+          aria-label="Halaman pertama"
           disabled={page <= 1}
         >
           <ChevronsLeft className="h-4 w-4" />
@@ -95,6 +96,7 @@ export function Pagination({
           size="icon"
           className="h-8 w-8"
           onClick={() => onPageChange(page - 1)}
+          aria-label="Halaman sebelumnya"
           disabled={page <= 1}
         >
           <ChevronLeft className="h-4 w-4" />
@@ -107,6 +109,7 @@ export function Pagination({
           size="icon"
           className="h-8 w-8"
           onClick={() => onPageChange(page + 1)}
+          aria-label="Halaman berikutnya"
           disabled={page >= totalPages}
         >
           <ChevronRight className="h-4 w-4" />
@@ -116,6 +119,7 @@ export function Pagination({
           size="icon"
           className="h-8 w-8"
           onClick={() => onPageChange(totalPages)}
+          aria-label="Halaman terakhir"
           disabled={page >= totalPages}
         >
           <ChevronsRight className="h-4 w-4" />

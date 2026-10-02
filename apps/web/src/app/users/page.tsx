@@ -188,6 +188,8 @@ export default function UsersPage() {
     limit: pageSize,
     search: search || undefined,
     unitId: unitFilter || (!isSuperAdmin ? currentUser?.unitId : undefined),
+    // Filtered by the API across every page, not within the page shown.
+    realm: realmFilter || undefined,
   });
 
   const deleteMutation = useDeleteUser();
@@ -243,17 +245,15 @@ export default function UsersPage() {
     }
   };
 
-  // Filter users by realm if selected
-  const filteredData = useMemo(() => {
-    if (!data?.data || !realmFilter) return data?.data || [];
-
-    return data.data.filter((user) => {
-      const userRoles = user.userRoles as UserRole[] | undefined;
-      if (!userRoles) return false;
-      return userRoles.some((ur) => ur.role.realm === realmFilter);
-    });
-    // We explicitly only want to re-run when data or filter changes
-  }, [data, realmFilter]);
+  // Search and filters narrow the whole list, so they start again at page
+  // one: kept on page 2, a search with three results showed an empty table
+  // and "Page 2 of 1".
+  const narrow =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value);
+      setPage(1);
+    };
 
   const columns: ColumnDef<User>[] = [
     {
@@ -401,12 +401,12 @@ export default function UsersPage() {
             <SearchInput
               placeholder="Search by name or email..."
               value={search}
-              onChange={setSearch}
+              onChange={narrow(setSearch)}
             />
           </div>
           <Select
             value={realmFilter}
-            onValueChange={(v) => setRealmFilter(v === "ALL" ? "" : v)}
+            onValueChange={(v) => narrow(setRealmFilter)(v === "ALL" ? "" : v)}
           >
             <SelectTrigger className="w-full md:w-44">
               <SelectValue placeholder="All Realms" />
@@ -422,7 +422,7 @@ export default function UsersPage() {
           {isSuperAdmin && (
             <Select
               value={unitFilter}
-              onValueChange={(v) => setUnitFilter(v === "ALL" ? "" : v)}
+              onValueChange={(v) => narrow(setUnitFilter)(v === "ALL" ? "" : v)}
             >
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue placeholder="All Units" />
@@ -442,14 +442,14 @@ export default function UsersPage() {
         {/* Table */}
         <DataTable
           columns={columns}
-          data={filteredData}
+          data={data?.data ?? []}
           isLoading={isLoading}
           onRowClick={(row) => router.push(`/users/${row.id}`)}
           pagination={{
             page,
-            totalPages: data?.meta?.totalPages || 1,
+            totalPages: data?.meta?.pagination?.totalPages || 1,
             pageSize,
-            total: data?.meta?.total || 0,
+            total: data?.meta?.pagination?.total || 0,
             onPageChange: setPage,
             onPageSizeChange: (size) => {
               setPageSize(size);
