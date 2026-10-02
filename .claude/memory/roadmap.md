@@ -100,6 +100,11 @@ items before 2026-09-25 is in the history of this file and of
           the public site, in three languages;
         - the full yayasan structure on the public site (names and
           positions).
+    11. **Surat keterangan santri through E-Office** (decided 2026-10-02,
+        `decisions/surat-keterangan-lewat-eoffice.md`; after the SPMB track).
+        `students/documents` creates a `SURAT_KETERANGAN` draft filled from
+        the student's record, which then takes its agenda number, TTE and
+        verification like any naskah. Its menu place is Akademik → Students.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

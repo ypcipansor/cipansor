@@ -150,6 +150,15 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   Users & Roles creates only the login. Either the form says so and links to
   HR, or it creates the record — not decided.
 
+- **Surat keterangan santri are printed outside E-Office** (found
+  2026-10-02; to be routed through it,
+  [`decisions/surat-keterangan-lewat-eoffice.md`](decisions/surat-keterangan-lewat-eoffice.md)).
+  `students/documents` makes the letter's number in the browser. The letter is
+  not in the agenda, has no TTE, and cannot be verified. It also prints
+  unstyled, because the app's CSS does not reach its print window. The page
+  is in no menu. `tahfidz/certificate` is in no menu either; both open only by
+  URL.
+
 ## Access that is too narrow, or needs review
 
 - **The kepala sekolah cannot open a Raport Merdeka of their own unit**
@@ -226,17 +235,6 @@ decision.
    families side by side. The seed now has one per unit; the live data was not
    rechecked. Prefer `is_active = false` over deleting, so the audit trail
    survives.
-7. **Surat keterangan santri outside E-Office** (found 2026-10-02).
-   `students/documents` prints surat keterangan (aktif, kelakuan baik,
-   rekomendasi, …) with a number made up in the browser. Nothing registers it,
-   nothing signs it electronically, and nothing can verify it. E-Office already
-   has `SURAT_KETERANGAN` naskah with a register, TTE and verification by
-   upload. Its print window also carries no styles, because the app's CSS
-   does not reach it, so the letter prints as bare text. Neither that page nor
-   `tahfidz/certificate` is in any menu; both
-   open only by URL. Their signer is now the unit's head from the data
-   (`GET /units/:id/head`), and a test copy stamps their print. The open
-   question is whether to route the page through E-Office or remove it.
 
 ## Design gaps
 
