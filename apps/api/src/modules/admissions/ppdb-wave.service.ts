@@ -39,6 +39,13 @@ function waveSessionData(
   return data;
 }
 
+/** What a wave's dates say its status is now. FULL is for registrations to decide. */
+function statusByDates(start: Date, end: Date, now = new Date()): WaveStatus {
+  if (now < start) return 'UPCOMING';
+  if (now > end) return 'CLOSED';
+  return 'OPEN';
+}
+
 function isSuperAdmin(actor: AuthUser): boolean {
   return actor.roleCode === 'SUPER_ADMIN' || actor.role === 'SUPER_ADMIN';
 }
@@ -234,16 +241,18 @@ export const waveService = {
       throw Errors.conflict(`Gelombang ${input.waveNumber} sudah ada di periode ini`);
     }
 
+    const startDate = wibDayStart(input.startDate);
+    const endDate = wibDayEnd(input.endDate);
     return prisma.admissionWave.create({
       data: {
         periodId: input.periodId,
         waveNumber: input.waveNumber,
         name: input.name,
-        startDate: wibDayStart(input.startDate),
-        endDate: wibDayEnd(input.endDate),
+        startDate,
+        endDate,
         quota: input.quota,
         registrationFee: input.registrationFee,
-        status: input.status ?? 'UPCOMING',
+        status: input.status ?? statusByDates(startDate, endDate),
         notes: input.notes,
         ...waveSessionData(input),
       },

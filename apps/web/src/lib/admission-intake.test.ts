@@ -135,6 +135,17 @@ describe("the wave form", () => {
     });
   });
 
+  it("leaves a new wave's status to the API, which reads it from the dates", () => {
+    const values = {
+      ...waveFormValues(undefined, 1),
+      startDate: "2026-10-01",
+      endDate: "2026-12-20",
+      quota: "60",
+    };
+    expect(wavePayload(values, true).status).toBeUndefined();
+    expect(wavePayload(values).status).toBe("UPCOMING");
+  });
+
   it("fills an edit with the stored days and discount", () => {
     const form = waveFormValues(
       {

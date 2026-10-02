@@ -29,6 +29,8 @@ const KETUA = byRole("YAYASAN_KETUA");
 
 test.describe("Periode & Gelombang SPMB", () => {
   test.describe.configure({ mode: "serial" });
+  // A laptop screen, menu open: the width an admin enters the brochure on.
+  test.use({ viewport: { width: 1280, height: 800 } });
   let admin: AuthSession;
   let periodId = "";
 
@@ -121,6 +123,22 @@ test.describe("Periode & Gelombang SPMB", () => {
     await expect(row).toContainText("20–25 Des 2026");
     await expect(row).toContainText("28 Des 2026 – 3 Jan 2027");
     await expect(row).toContainText("Rp1.000.000");
+    // The row fits beside the menu: nothing, the delete button included,
+    // hides behind a sideways scroll on a laptop screen.
+    const overflow = await page
+      .locator("table")
+      .first()
+      .evaluate((t) => t.parentElement!.scrollWidth - t.parentElement!.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+    // A new wave's status is read from its dates, not left "Belum dibuka".
+    const today = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    await expect(row).toContainText(
+      today < "2026-10-01"
+        ? "Belum dibuka"
+        : today > "2026-12-20"
+          ? "Ditutup"
+          : "Dibuka",
+    );
 
     // Stored as the API's calendar days, closing at the end of the day in WIB.
     const { data } = await apiRequest<{

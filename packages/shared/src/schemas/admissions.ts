@@ -365,7 +365,9 @@ export const createAdmissionWaveSchema = z
     periodId: z.uuid(),
     ...admissionWaveFields,
     registrationFee: admissionWaveFields.registrationFee.optional(),
-    status: admissionWaveFields.status.default("UPCOMING"),
+    // Left out, the API reads it from the dates: a wave created inside its
+    // window is open, not "upcoming".
+    status: admissionWaveFields.status.optional(),
     testStartDate: admissionWaveFields.testStartDate.default(null),
     testEndDate: admissionWaveFields.testEndDate.default(null),
     resultsStartDate: admissionWaveFields.resultsStartDate.default(null),

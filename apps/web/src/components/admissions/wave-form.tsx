@@ -81,15 +81,18 @@ const formSchema = z
 
 export type WaveFormValues = z.infer<typeof formSchema>;
 
-/** What the API takes: an empty day or amount is "none". */
-export function wavePayload(values: WaveFormValues) {
+/**
+ * What the API takes: an empty day or amount is "none". A new wave leaves its
+ * status out, and the API reads it from the dates.
+ */
+export function wavePayload(values: WaveFormValues, isNew = false) {
   return {
     name: values.name,
     waveNumber: Number(values.waveNumber),
     startDate: values.startDate,
     endDate: values.endDate,
     quota: Number(values.quota),
-    status: values.status,
+    status: isNew ? undefined : values.status,
     ...Object.fromEntries(SESSION_DAYS.map((f) => [f, values[f] || null])),
     fullPaymentDiscount:
       values.fullPaymentDiscount === ""
@@ -102,7 +105,7 @@ export function wavePayload(values: WaveFormValues) {
     startDate: string;
     endDate: string;
     quota: number;
-    status: WaveStatusCode;
+    status: WaveStatusCode | undefined;
     fullPaymentDiscount: number | null;
     notes: string | null;
   } & Record<(typeof SESSION_DAYS)[number], string | null>;
@@ -158,11 +161,13 @@ const SESSIONS: Array<{
  */
 export function WaveForm({
   defaultValues,
+  isNew,
   isPending,
   onCancel,
   onSubmit,
 }: {
   defaultValues: WaveFormValues;
+  isNew: boolean;
   isPending: boolean;
   onCancel: () => void;
   onSubmit: (values: WaveFormValues) => void;
@@ -248,6 +253,7 @@ export function WaveForm({
               </FormItem>
             )}
           />
+          {!isNew && (
           <FormField
             control={form.control}
             name="status"
@@ -269,12 +275,14 @@ export function WaveForm({
                   </SelectContent>
                 </Select>
                 <FormDescription>
-                  Diperbarui otomatis menurut tanggal.
+                  Diperbarui menurut tanggal tiap pukul 00.01 WIB. Ubah di sini
+                  untuk menutup lebih awal.
                 </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
           />
+          )}
         </fieldset>
 
         {SESSIONS.map((s) => (

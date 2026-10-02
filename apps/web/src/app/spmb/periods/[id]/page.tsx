@@ -161,7 +161,7 @@ export default function AdmissionPeriodPage() {
                   <TableHead>Pengumuman</TableHead>
                   <TableHead>Daftar ulang</TableHead>
                   <TableHead className="text-right">Potongan lunas</TableHead>
-                  <TableHead className="text-right">Pendaftar/kuota</TableHead>
+                  <TableHead className="text-right">Pendaftar</TableHead>
                   <TableHead>Status</TableHead>
                   {canManage && <TableHead />}
                 </TableRow>
@@ -180,16 +180,18 @@ export default function AdmissionPeriodPage() {
                   waves.map((w) => (
                     <TableRow key={w.id} data-testid="wave-row">
                       <TableCell className="font-medium">{w.name}</TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      {/* The table's cells do not wrap by default; dates may,
+                          so the row fits beside the menu on a laptop. */}
+                      <TableCell className="whitespace-normal">
                         {formatDays(wibDay(w.startDate), wibDay(w.endDate))}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      <TableCell className="whitespace-normal">
                         {session(w.testStartDate, w.testEndDate)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      <TableCell className="whitespace-normal">
                         {session(w.resultsStartDate, w.resultsEndDate)}
                       </TableCell>
-                      <TableCell className="whitespace-nowrap">
+                      <TableCell className="whitespace-normal">
                         {session(
                           w.reRegistrationStartDate,
                           w.reRegistrationEndDate,
@@ -302,11 +304,12 @@ export default function AdmissionPeriodPage() {
             <WaveForm
               key={editing?.id ?? "new"}
               defaultValues={waveFormValues(editing ?? undefined, nextNumber)}
+              isNew={!editing}
               isPending={createWave.isPending || updateWave.isPending}
               onCancel={() => setEditing(undefined)}
               onSubmit={async (values) => {
                 try {
-                  const input = wavePayload(values);
+                  const input = wavePayload(values, !editing);
                   if (editing) {
                     await updateWave.mutateAsync({ id: editing.id, input });
                   } else {

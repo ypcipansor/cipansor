@@ -199,6 +199,38 @@ describe('creating and editing a wave', () => {
     expect(data.fullPaymentDiscount).toEqual(new Prisma.Decimal(1_000_000));
   });
 
+  it('reads a new wave\'s status from its dates, unless one is given', async () => {
+    // 2 October 2026, noon in Tasikmalaya: wave 1 (1 Oct – 20 Dec) is open.
+    vi.useFakeTimers({ now: new Date('2026-10-02T05:00:00.000Z'), toFake: ['Date'] });
+    try {
+      vi.mocked(prisma.admissionWave.findFirst).mockResolvedValue(null);
+      vi.mocked(prisma.admissionWave.create).mockResolvedValue({ id: 'w' } as never);
+      const status = async (wave: Record<string, unknown>) => {
+        vi.mocked(prisma.admissionWave.create).mockClear();
+        await waveService.create(createAdmissionWaveSchema.parse({ ...wave1, ...wave }), smpAdmin);
+        return vi.mocked(prisma.admissionWave.create).mock.calls[0][0].data.status;
+      };
+
+      expect(await status({})).toBe('OPEN');
+      expect(await status({ startDate: '2027-01-01', endDate: '2027-02-28' })).toBe('UPCOMING');
+      expect(
+        await status({
+          startDate: '2026-09-01',
+          endDate: '2026-10-01',
+          testStartDate: null,
+          testEndDate: null,
+          resultsStartDate: null,
+          resultsEndDate: null,
+          reRegistrationStartDate: null,
+          reRegistrationEndDate: null,
+        })
+      ).toBe('CLOSED');
+      expect(await status({ status: 'FULL' })).toBe('FULL');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('answers 409, not 500, for a wave number already used', async () => {
     vi.mocked(prisma.admissionWave.findFirst).mockResolvedValue({ id: 'w0' } as never);
 
