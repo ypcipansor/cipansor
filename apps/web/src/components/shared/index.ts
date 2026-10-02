@@ -19,6 +19,7 @@ export {
   LiveRegion,
 } from "./accessibility";
 export { OfflineBanner, ConnectionStatus } from "./offline-banner";
+export { TestCopyWatermark } from "./test-copy-watermark";
 export {
   Skeleton,
   TableSkeleton,

@@ -87,6 +87,7 @@ services:
       # runs the cron jobs nor sends e-mail/SMS/WhatsApp to real wali.
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       OUTBOUND_MESSAGES_ENABLED: ${OUTBOUND_MESSAGES_ENABLED:-true}
+      DOCUMENT_TEST_COPY: ${DOCUMENT_TEST_COPY:-false}
       # Apply pending migrations at container start (docker-entrypoint.sh). Off
       # here: releases on this VM run `prisma migrate deploy` by hand after the
       # pre-checks in the deploy runbook. Azure App Service sets it to true.
