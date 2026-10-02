@@ -21,7 +21,11 @@ vi.mock('@/lib/prisma', () => ({
   },
 }));
 
+// Who signs: the head of the unit that issues the rapor.
+vi.mock('@/modules/units', () => ({ findUnitHead: vi.fn() }));
+
 import { prisma } from '@/lib/prisma';
+import { findUnitHead } from '@/modules/units';
 import type { JwtPayload } from '@/lib/jwt';
 import { RaportMerdekaService } from '../raport-merdeka.service';
 
@@ -118,6 +122,29 @@ describe('isi rapor Merdeka tahun lalu untuk santri yang sudah pindah unit', () 
       nis: 'SD-0007',
     });
     expect(rapor.pimpinanUnit.jabatan).toBe('Kepala SD IT Cipansor');
+  });
+
+  it('ditandatangani kepala unit penerbit (SD IT), bukan kepala unit santri sekarang', async () => {
+    vi.mocked(findUnitHead).mockImplementation(async (unitId) =>
+      unitId === SD.id
+        ? { name: 'H. Dadan Ali Ridwan, S.Ag', nip: null, title: 'Kepala SD IT Pesantren Cipansor' }
+        : { name: 'Kepala SMP', nip: null, title: 'Kepala SMP IT' }
+    );
+
+    const rapor = await RaportMerdekaService.generateRaportMerdeka(
+      's1',
+      tahunLalu.id,
+      2,
+      undefined,
+      {
+        skipScopeValidation: true,
+      }
+    );
+
+    expect(rapor.pimpinanUnit).toEqual({
+      nama: 'H. Dadan Ali Ridwan, S.Ag',
+      jabatan: 'Kepala SD IT Pesantren Cipansor',
+    });
   });
 });
 

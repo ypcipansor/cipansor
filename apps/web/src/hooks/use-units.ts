@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { UnitOfficialIdentity, UnitSummary } from "@cipansor/shared";
+import type {
+  UnitHead,
+  UnitOfficialIdentity,
+  UnitSummary,
+} from "@cipansor/shared";
 import api, { ApiResponse } from "@/lib/api";
 
 /**
@@ -118,6 +122,24 @@ export function useUnitSummary(id: string) {
     queryFn: async () => {
       const response = await api.get<ApiResponse<UnitSummary>>(
         `/units/${id}/summary`,
+      );
+      return response.data.data;
+    },
+    enabled: !!id,
+  });
+}
+
+/**
+ * Who signs for the unit (GET /units/:id/head): its kepala sekolah or the
+ * Pimpinan Pesantren. Null when nobody, or more than one, holds the role — a
+ * document then leaves the line to sign by hand.
+ */
+export function useUnitHead(id: string | undefined) {
+  return useQuery({
+    queryKey: ["units", id, "head"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<UnitHead | null>>(
+        `/units/${id}/head`,
       );
       return response.data.data;
     },

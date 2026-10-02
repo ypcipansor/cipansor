@@ -27,7 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useStudents, Student as BaseStudent } from "@/hooks/use-students";
-import { useUnits } from "@/hooks/use-units";
+import { useUnitHead, useUnits } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
 
 // Extended Student type with additional fields for document generation
@@ -59,7 +59,9 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { LETTERHEAD, STUDENT_STATUS, unitDocumentName } from "@cipansor/shared";
+import { printDocument } from "@/lib/print-document";
+import { useEnvironment } from "@/hooks/use-environment";
 
 // ========================================
 // TYPES & TEMPLATES SURAT KETERANGAN
@@ -314,6 +316,7 @@ interface FormData {
 }
 
 export default function SuratKeteranganPage() {
+  const { data: environment } = useEnvironment();
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -327,6 +330,9 @@ export default function SuratKeteranganPage() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: units = [], isLoading: unitsLoading } = useUnits();
+  // Who signs: the head of the santri's unit, from the data — never a name
+  // typed into this page (it used to print an invented "H. Ahmad Fauzi").
+  const { data: head } = useUnitHead(selectedStudent?.unit?.id);
   const { data: classesData, isLoading: classesLoading } = useClasses({
     unitId: selectedUnitId || undefined,
   });
@@ -377,51 +383,38 @@ export default function SuratKeteranganPage() {
       return;
     }
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
+    const printContent = printRef.current?.innerHTML || "";
+
+    const printed = printDocument({
+      title: `Surat Keterangan - ${selectedStudent.name}`,
+      head: `
+        <style>
+          @page {
+            size: A4;
+            margin: 2cm;
+          }
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Times New Roman', Times, serif;
+            font-size: 12pt;
+            line-height: 1.5;
+            color: #000;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        </style>
+      `,
+      body: printContent,
+      testCopy: environment?.testCopy,
+    });
+    if (!printed) {
       toast.error("Popup diblokir. Izinkan popup untuk mencetak.");
       return;
     }
-
-    const printContent = printRef.current?.innerHTML || "";
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Surat Keterangan - ${selectedStudent.name}</title>
-          <style>
-            @page {
-              size: A4;
-              margin: 2cm;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Times New Roman', Times, serif;
-              font-size: 12pt;
-              line-height: 1.5;
-              color: #000;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
 
     toast.success("Surat siap dicetak");
   };
@@ -432,7 +425,11 @@ export default function SuratKeteranganPage() {
   const renderSuratPreview = () => {
     if (!selectedStudent || !selectedTemplate) return null;
 
-    const unitName = selectedStudent.unit?.name || siteConfig.legalName;
+    const unitRecord = units.find((u) => u.id === selectedStudent.unit?.id);
+    const unitName = unitRecord
+      ? unitDocumentName(unitRecord)
+      : selectedStudent.unit?.name || siteConfig.legalName;
+    const signerTitle = head?.title ?? `Kepala ${unitName}`;
     const unitAddress = addressLines.join(", ");
     const unitPhone = siteConfig.contact.phone;
     const unitEmail = siteConfig.contact.email;
@@ -449,21 +446,21 @@ export default function SuratKeteranganPage() {
         {/* KOP SURAT */}
         <div className="text-center border-b-2 border-black pb-4 mb-6">
           <div className="flex items-center justify-center gap-4">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-2xl">
-              🏫
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- copied into a print window */}
+            <img
+              src="/images/cipansor/logo-cipansor.webp"
+              alt=""
+              className="w-16 h-16 object-contain"
+            />
             <div>
               <p className="text-xs font-semibold tracking-wider">
-                KEMENTERIAN AGAMA REPUBLIK INDONESIA
+                {LETTERHEAD.organisation}
               </p>
               <h1 className="text-lg font-bold uppercase">{unitName}</h1>
               <p className="text-xs">{unitAddress}</p>
               <p className="text-xs">
                 Telp: {unitPhone} | Email: {unitEmail}
               </p>
-            </div>
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-xl">
-              ☪️
             </div>
           </div>
         </div>
@@ -485,17 +482,21 @@ export default function SuratKeteranganPage() {
               <tr>
                 <td className="pr-4 align-top">Nama</td>
                 <td className="pr-2 align-top">:</td>
-                <td>H. Ahmad Fauzi, S.Pd.I., M.Pd.</td>
+                <td data-testid="surat-signer-name">
+                  {head?.name ?? "(.................................)"}
+                </td>
               </tr>
-              <tr>
-                <td className="pr-4 align-top">NIP</td>
-                <td className="pr-2 align-top">:</td>
-                <td>196505121990031002</td>
-              </tr>
+              {head?.nip && (
+                <tr>
+                  <td className="pr-4 align-top">NIP</td>
+                  <td className="pr-2 align-top">:</td>
+                  <td>{head.nip}</td>
+                </tr>
+              )}
               <tr>
                 <td className="pr-4 align-top">Jabatan</td>
                 <td className="pr-2 align-top">:</td>
-                <td>Kepala {unitName}</td>
+                <td>{signerTitle}</td>
               </tr>
             </tbody>
           </table>
@@ -689,17 +690,17 @@ export default function SuratKeteranganPage() {
         <div className="flex justify-end mt-12">
           <div className="text-center">
             <p>
-              Bandung,{" "}
+              {LETTERHEAD.city},{" "}
               {safeFormat(new Date(formData.tanggalSurat), "d MMMM yyyy", {
                 locale: idLocale,
               })}
             </p>
-            <p className="mb-2">Kepala {unitName.split(" ").slice(-1)[0]}</p>
+            <p className="mb-2">{signerTitle}</p>
             <div className="h-20"></div>
             <p className="font-semibold underline">
-              H. Ahmad Fauzi, S.Pd.I., M.Pd.
+              {head?.name ?? "(.................................)"}
             </p>
-            <p className="text-sm">NIP. 196505121990031002</p>
+            {head?.nip && <p className="text-sm">NIP. {head.nip}</p>}
           </div>
         </div>
 

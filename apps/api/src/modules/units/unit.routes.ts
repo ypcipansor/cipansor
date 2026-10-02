@@ -123,6 +123,21 @@ router.get('/:id/summary', validateParams(unitIdParamSchema), controller.summary
 
 /**
  * @swagger
+ * /api/units/{id}/head:
+ *   get:
+ *     summary: Who signs for the unit — its kepala sekolah or Pimpinan Pesantren
+ *     description: Null when nobody, or more than one person, holds the unit's head role; a document then leaves the line to sign by hand. Same reach as the summary.
+ *     tags: [Units]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: UnitHead or null }
+ *       404: { description: No such unit, or not the caller's }
+ */
+router.get('/:id/head', validateParams(unitIdParamSchema), controller.head);
+
+/**
+ * @swagger
  * /api/units:
  *   post:
  *     summary: Create unit (Super Admin only)

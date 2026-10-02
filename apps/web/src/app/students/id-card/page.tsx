@@ -54,6 +54,8 @@ import { toast } from "sonner";
 import { QRCodeSVG } from "qrcode.react";
 import { StudentIdCardDetail } from "@cipansor/shared";
 import { STUDENT_STATUS } from "@cipansor/shared";
+import { printDocument } from "@/lib/print-document";
+import { useEnvironment } from "@/hooks/use-environment";
 
 /**
  * The QR printed on a student card.
@@ -256,6 +258,7 @@ function StudentIDCardBack({ student }: { student: Student }) {
 }
 
 export default function StudentIDCardPage() {
+  const { data: environment } = useEnvironment();
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -314,50 +317,38 @@ export default function StudentIDCardPage() {
     const printContent = printRef.current;
     if (!printContent) return;
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
+    const printed = printDocument({
+      title: "Cetak Kartu Pelajar",
+      head: `
+        <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+        <style>
+          @page {
+            size: A4;
+            margin: 10mm;
+          }
+          .card-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            page-break-inside: avoid;
+          }
+          .card {
+            width: 85.6mm;
+            height: 53.98mm;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+        </style>
+      `,
+      body: printContent.innerHTML,
+      bodyClass: "p-4",
+      testCopy: environment?.testCopy,
+    });
+    if (!printed) {
       toast.error("Popup diblokir. Izinkan popup untuk mencetak.");
       return;
     }
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Cetak Kartu Pelajar</title>
-          <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-          <style>
-            @page {
-              size: A4;
-              margin: 10mm;
-            }
-            .card-container {
-              display: grid;
-              grid-template-columns: repeat(2, 1fr);
-              gap: 16px;
-              page-break-inside: avoid;
-            }
-            .card {
-              width: 85.6mm;
-              height: 53.98mm;
-              border-radius: 8px;
-              overflow: hidden;
-              box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            }
-          </style>
-        </head>
-        <body class="p-4">
-          ${printContent.innerHTML}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
 
     toast.success(`${selectedStudents.length} kartu siap dicetak`);
   };

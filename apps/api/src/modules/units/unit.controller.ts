@@ -66,6 +66,19 @@ export const summary = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
+ * Who signs for the unit — null when nobody, or more than one, holds its head role
+ * GET /api/units/:id/head
+ */
+export const head = asyncHandler(async (req: Request, res: Response) => {
+  const data = await unitService.head(req.params.id, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+  });
+
+  res.json({ success: true, data });
+});
+
+/**
  * Update unit
  * PATCH /api/units/:id
  */

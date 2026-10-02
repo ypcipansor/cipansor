@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { RoleCode, UnitType, Prisma } from '@prisma/client';
-import { STUDENT_STATUS, type UnitSummary } from '@cipansor/shared';
+import { STUDENT_STATUS, type UnitHead, type UnitSummary } from '@cipansor/shared';
 import { isFoundationScopedRole } from '@/utils/resolve-unit-id';
 import type { ListUnitsQuery, CreateUnitInput, UpdateUnitInput } from './unit.schema';
+import { findUnitHead } from './unit-head';
 
 /** Who is asking: the role in use and the unit it is bound to. */
 export interface UnitActor {
@@ -209,6 +210,22 @@ export class UnitService {
     ]);
 
     return { activeStudents, teachers, classes };
+  }
+
+  /**
+   * Who signs for the unit (`findUnitHead`). The same reach as `summary`: the
+   * yayasan's organs and the Super Admin for every unit, everyone else for
+   * their own.
+   */
+  async head(id: string, actor: UnitActor): Promise<UnitHead | null> {
+    const unit = await prisma.unit.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!unit || (!isFoundationScopedRole(actor.roleCode) && actor.unitId !== id)) {
+      throw Errors.notFound('Unit');
+    }
+    return findUnitHead(id);
   }
 
   /**

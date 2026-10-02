@@ -19,6 +19,7 @@ import { P5ProjectService } from './p5-project.service';
 import { nisForUnit } from '../../utils/student-nis';
 import { getSemesterDateRange } from '@/utils/semester';
 import { unitDocumentName } from '@cipansor/shared';
+import { findUnitHead } from '@/modules/units';
 
 // Profil Pelajar Pancasila - 6 Dimensi
 export const PROFIL_PELAJAR_PANCASILA = [
@@ -484,6 +485,8 @@ export class RaportMerdekaService {
         enrollment.class.unitId
       )) ?? '-';
 
+    const head = await findUnitHead(unitRapor.id);
+
     return {
       raportFormat: 'KURIKULUM_MERDEKA',
       siswa: {
@@ -498,9 +501,11 @@ export class RaportMerdekaService {
         unit: unitDocumentName(unitRapor),
         unitType: unitRapor.type,
       },
+      // The head of the unit that issues the rapor; a blank line to sign by
+      // hand when it has none, or two.
       pimpinanUnit: {
-        nama: '',
-        jabatan: `Kepala ${unitDocumentName(unitRapor)}`,
+        nama: head?.name ?? '',
+        jabatan: head?.title ?? `Kepala ${unitDocumentName(unitRapor)}`,
       },
       tahunAjaran: {
         id: academicYear.id,
