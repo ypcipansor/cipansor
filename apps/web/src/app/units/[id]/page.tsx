@@ -163,6 +163,18 @@ export default function UnitDetailPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-muted-foreground">
+                    Nama Resmi
+                  </p>
+                  <p className="text-sm" data-testid="unit-official-name">
+                    {unit.officialName ?? (
+                      <span className="text-muted-foreground">
+                        Belum diisi — dokumen memakai Nama Unit
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground">
                     NPSN
                   </p>
                   <p className="text-sm" data-testid="unit-npsn">
@@ -171,6 +183,30 @@ export default function UnitDetailPage() {
                         Belum diisi
                         {canEdit ? " — isi lewat Edit Unit" : ""}
                       </span>
+                    )}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-sm font-medium text-muted-foreground">
+                    Izin Operasional
+                  </p>
+                  <p className="text-sm" data-testid="unit-permit">
+                    {unit.operatingPermitNumber ? (
+                      <>
+                        {unit.operatingPermitNumber}
+                        {unit.operatingPermitDate &&
+                          // The calendar day on the permit, read as local
+                          // midnight so no time zone moves it a day.
+                          `, ${safeFormat(
+                            new Date(
+                              `${unit.operatingPermitDate.slice(0, 10)}T00:00:00`,
+                            ),
+                            "d MMMM yyyy",
+                            { locale: localeId },
+                          )}`}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">Belum diisi</span>
                     )}
                   </p>
                 </div>

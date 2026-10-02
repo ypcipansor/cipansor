@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { LETTERHEAD } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import {
   Card,
@@ -752,12 +753,16 @@ export default function RaportMerdekaPage() {
                     <h2 className="font-bold text-lg uppercase tracking-wider">
                       Laporan Hasil Belajar
                     </h2>
-                    <h3 className="font-bold text-base uppercase">
-                      Sekolah Menengah Pertama (SMP) Cipansor
+                    {/* The school as the PDF names it: the unit's official
+                        name, from the raport data. This used to be a literal
+                        "SMP Cipansor, Jl. Pendidikan No. 123, Kabupaten
+                        Bogor" for every unit. */}
+                    <h3
+                      className="font-bold text-base uppercase"
+                      data-testid="raport-school"
+                    >
+                      {studentReportData?.siswa?.unit || "-"}
                     </h3>
-                    <p className="text-xs mt-1">
-                      Jl. Pendidikan No. 123, Kabupaten Bogor, Jawa Barat
-                    </p>
                   </div>
 
                   {/* Student Info */}
@@ -961,8 +966,8 @@ export default function RaportMerdekaPage() {
                     <div className="text-center">
                       <p>
                         {studentReportData?.tanggalCetak
-                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
-                          : "Bogor, ........................"}
+                          ? `${LETTERHEAD.city}, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : `${LETTERHEAD.city}, ........................`}
                       </p>
                       <p>Wali Kelas</p>
                       <br />
@@ -984,7 +989,7 @@ export default function RaportMerdekaPage() {
                       Laporan Perkembangan Pesantren
                     </h2>
                     <h3 className="font-bold text-base uppercase">
-                      SMP Islam Terpadu Cipansor
+                      {studentReportData?.siswa?.unit || "-"}
                     </h3>
                   </div>
 
@@ -1152,8 +1157,8 @@ export default function RaportMerdekaPage() {
                     <div className="text-center">
                       <p>
                         {studentReportData?.tanggalCetak
-                          ? `Bogor, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
-                          : "Bogor, ........................"}
+                          ? `${LETTERHEAD.city}, ${new Date(studentReportData.tanggalCetak).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                          : `${LETTERHEAD.city}, ........................`}
                       </p>
                       <p>Wali Kelas</p>
                       <br />

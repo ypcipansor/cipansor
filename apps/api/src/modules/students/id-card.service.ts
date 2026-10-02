@@ -13,7 +13,7 @@ import { ApiError, ErrorCode } from '../../middleware/error';
 import { config as appConfig } from '../../config';
 import { RoleCode, Prisma, StudentCardStatus } from '@prisma/client';
 import type { JwtPayload } from '../../lib/jwt';
-import type { StudentIdCardDetail } from '@cipansor/shared';
+import { unitDocumentName, type StudentIdCardDetail } from '@cipansor/shared';
 import * as crypto from 'crypto';
 import { nisForUnit } from '../../utils/student-nis';
 
@@ -461,7 +461,7 @@ export class StudentIdCardService {
           nisn: student.nisn ?? undefined,
           name: student.user.name,
           unitId: student.unit.id,
-          unitName: student.unit.name,
+          unitName: unitDocumentName(student.unit),
           validUntil,
           cardId: cardStateId,
         })
@@ -477,7 +477,7 @@ export class StudentIdCardService {
         // Institution info
         institution: {
           foundationName: student.unit.foundation?.name ?? 'Yayasan Pesantren',
-          unitName: student.unit.name,
+          unitName: unitDocumentName(student.unit),
           unitType: student.unit.type,
           address: student.unit.address,
           phone: student.unit.phone,
@@ -710,7 +710,7 @@ export class StudentIdCardService {
       where: { id: verification.studentId },
       include: {
         user: { select: { name: true } },
-        unit: { select: { name: true, type: true } },
+        unit: { select: { name: true, officialName: true, type: true } },
         enrollments: {
           where: { status: 'active' },
           take: 1,
@@ -743,7 +743,7 @@ export class StudentIdCardService {
         nis: student.nis,
         name: student.user.name,
         photoUrl: student.photoUrl,
-        unit: student.unit.name,
+        unit: unitDocumentName(student.unit),
         unitType: student.unit.type,
         currentClass: currentEnrollment?.class.name ?? '-',
         academicYear: currentEnrollment?.class.academicYear.name ?? '-',

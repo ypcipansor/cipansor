@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { UnitSummary } from "@cipansor/shared";
+import type { UnitOfficialIdentity, UnitSummary } from "@cipansor/shared";
 import api, { ApiResponse } from "@/lib/api";
 
 /**
@@ -33,7 +33,8 @@ export const UNIT_TYPE_VALUES = UNIT_TYPES.map((t) => t.value) as unknown as [
   ...UnitType[],
 ];
 
-export interface Unit {
+/** The official identity is absent from the public SPMB projection. */
+export interface Unit extends Partial<UnitOfficialIdentity> {
   id: string;
   name: string;
   type: UnitType;
@@ -140,6 +141,10 @@ export interface UpdateUnitData {
   phone?: string | null;
   email?: string | null;
   npsn?: string | null;
+  officialName?: string | null;
+  operatingPermitNumber?: string | null;
+  /** YYYY-MM-DD. */
+  operatingPermitDate?: string | null;
 }
 
 export function useCreateUnit() {

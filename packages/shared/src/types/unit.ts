@@ -16,3 +16,42 @@ export interface UnitSummary {
   /** Classes (rombel) of the active academic year; last year's stay for old report cards. */
   classes: number;
 }
+
+/**
+ * A unit's official identity (decided 2026-10-02, decisions/spmb-2027-2028.md
+ * item 6): the name on its operating permit and in the national reference
+ * data, and the permit itself. Documents print it — the naskah dinas
+ * letterhead, rapor, certificates, cards, the Dapodik export — while menus and
+ * screens keep the short `name`.
+ */
+export interface UnitOfficialIdentity {
+  officialName: string | null;
+  operatingPermitNumber: string | null;
+  /** As the API serialises a `@db.Date`: ISO, midnight UTC. */
+  operatingPermitDate: string | null;
+}
+
+/** The unit's name as a document prints it: the official one, else the short one. */
+export function unitDocumentName(unit: {
+  name: string;
+  officialName?: string | null;
+}): string {
+  return unit.officialName?.trim() || unit.name;
+}
+
+/**
+ * The line a unit's letterhead prints under its name, as the units' own
+ * letterheads do ("Izin Operasional No. 503/0671/… NPSN: 69988558"); null when
+ * the unit has recorded neither.
+ */
+export function unitPermitLine(unit: {
+  npsn?: string | null;
+  operatingPermitNumber?: string | null;
+}): string | null {
+  const parts = [
+    unit.operatingPermitNumber?.trim() &&
+      `Izin Operasional No. ${unit.operatingPermitNumber.trim()}`,
+    unit.npsn && `NPSN ${unit.npsn}`,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+}

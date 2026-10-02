@@ -220,7 +220,7 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
     expect(res.send).toHaveBeenCalled();
   });
 
-  it('keeps representative Arabic text and re-opens as a structurally valid PDF', async () => {
+  it('a field holding Arabic script still yields a valid PDF; the script is left out', async () => {
     const mockData = {
       siswa: {
         nama: 'Ahmad Fulan',
@@ -255,8 +255,9 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
             nilaiAkhir: 90,
             predikat: 'A',
             levelCapaian: 'SANGAT BAIK',
-            // Representative Arabic (Bismillah + a surah name) exercising the
-            // Unicode font embedding path used for tahfidz notes.
+            // Arabic script beside a transliterated surah name. The raport
+            // prints in WinAnsi Helvetica, so the script is dropped, not drawn
+            // as unshaped glyphs (generate-raport-merdeka-pdf.ts).
             deskripsi: 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ · QS. Al-Mulk',
           },
         ],
@@ -284,13 +285,10 @@ describe('RaportMerdekaController.exportStudentRaportPdf', () => {
     expect(pdfBuffer.length).toBeGreaterThan(1000);
     expect(pdfBuffer.toString('utf8', 0, 5)).toBe('%PDF-');
 
-    // Re-open the buffer: proves the embedded Amiri font subset for Arabic
-    // glyphs and the content stream are structurally valid (a corrupted font
-    // subset throws on load). NOTE: pdf-lib preserves code points but performs
-    // NO Arabic shaping/ligature/RTL shaping — the glyphs are the font's
-    // isolated forms ordered left-to-right. For report-grade Arabic the PDF
-    // must be generated through a shaping pipeline (harfbuzz) and RTL layout;
-    // this test guards against stripping/corruption, not against shaping.
+    // Re-opening proves only that the file is a PDF. That is all this ever
+    // proved: it passed while the embedded Amiri subset drew
+    // most letters as nothing. What a viewer draws is checked in
+    // utils/generate-raport-merdeka-pdf.test.ts.
     const reopened = await PDFDocument.load(pdfBuffer);
     expect(reopened.getPageCount()).toBeGreaterThanOrEqual(1);
   });

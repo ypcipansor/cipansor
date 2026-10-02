@@ -18,6 +18,7 @@ import type { JwtPayload } from '../../lib/jwt';
 import { P5ProjectService } from './p5-project.service';
 import { nisForUnit } from '../../utils/student-nis';
 import { getSemesterDateRange } from '@/utils/semester';
+import { unitDocumentName } from '@cipansor/shared';
 
 // Profil Pelajar Pancasila - 6 Dimensi
 export const PROFIL_PELAJAR_PANCASILA = [
@@ -339,7 +340,7 @@ export class RaportMerdekaService {
         nis: true,
         nisn: true,
         user: { select: { name: true } },
-        unit: { select: { id: true, name: true, type: true } },
+        unit: { select: { id: true, name: true, officialName: true, type: true } },
         enrollments: {
           where: {
             class: { academicYearId },
@@ -348,7 +349,7 @@ export class RaportMerdekaService {
             class: {
               include: {
                 academicYear: true,
-                unit: { select: { id: true, name: true, type: true } },
+                unit: { select: { id: true, name: true, officialName: true, type: true } },
                 homeroomTeacher: {
                   include: { user: { select: { name: true } } },
                 },
@@ -492,12 +493,14 @@ export class RaportMerdekaService {
         nama: student.user.name,
         kelas: enrollment.class.name,
         fase: computedFase,
-        unit: unitRapor.name,
+        // The name on the permit (`unitDocumentName`), printed as is: the PDF
+        // used to append " Cipansor" to a name that already ended with it.
+        unit: unitDocumentName(unitRapor),
         unitType: unitRapor.type,
       },
       pimpinanUnit: {
         nama: '',
-        jabatan: `Kepala ${unitRapor.name}`,
+        jabatan: `Kepala ${unitDocumentName(unitRapor)}`,
       },
       tahunAjaran: {
         id: academicYear.id,
