@@ -7,7 +7,11 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { NPSN_MESSAGE, NPSN_PATTERN } from "@cipansor/shared";
+import {
+  NPSN_MESSAGE,
+  NPSN_PATTERN,
+  unitOfficialIdentityFields,
+} from "@cipansor/shared";
 
 import { MainLayout } from "@/components/layout/main-layout";
 import { Button } from "@/components/ui/button";
@@ -50,6 +54,13 @@ const unitSchema = z.object({
   phone: z.string().trim(),
   email: z.string().trim().email("Email tidak valid").or(z.literal("")),
   npsn: z.string().trim().regex(NPSN_PATTERN, NPSN_MESSAGE).or(z.literal("")),
+  officialName: unitOfficialIdentityFields.officialName.or(z.literal("")),
+  operatingPermitNumber: unitOfficialIdentityFields.operatingPermitNumber.or(
+    z.literal(""),
+  ),
+  operatingPermitDate: unitOfficialIdentityFields.operatingPermitDate.or(
+    z.literal(""),
+  ),
 });
 
 type UnitFormData = z.infer<typeof unitSchema>;
@@ -113,6 +124,9 @@ function EditUnitForm({ unit }: { unit: Unit }) {
       phone: unit.phone || "",
       email: unit.email || "",
       npsn: unit.npsn || "",
+      officialName: unit.officialName || "",
+      operatingPermitNumber: unit.operatingPermitNumber || "",
+      operatingPermitDate: unit.operatingPermitDate?.slice(0, 10) || "",
     },
   });
 
@@ -128,6 +142,9 @@ function EditUnitForm({ unit }: { unit: Unit }) {
           phone: data.phone || null,
           email: data.email || null,
           npsn: data.npsn || null,
+          officialName: data.officialName || null,
+          operatingPermitNumber: data.operatingPermitNumber || null,
+          operatingPermitDate: data.operatingPermitDate || null,
         },
       });
       toast.success("Unit berhasil diperbarui");
@@ -169,6 +186,9 @@ function EditUnitForm({ unit }: { unit: Unit }) {
                     placeholder="Contoh: SMP IT Cipansor"
                     {...register("name")}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Nama pendek yang tampil di menu dan layar portal.
+                  </p>
                   {errors.name && (
                     <p className="text-sm text-destructive">
                       {errors.name.message}
@@ -204,27 +224,6 @@ function EditUnitForm({ unit }: { unit: Unit }) {
                   {errors.type && (
                     <p className="text-sm text-destructive">
                       {errors.type.message}
-                    </p>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="npsn">NPSN</Label>
-                  <Input
-                    id="npsn"
-                    inputMode="numeric"
-                    maxLength={8}
-                    placeholder="8 angka, dari Dapodik"
-                    {...register("npsn")}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Tampil di situs publik bersama akreditasi, dan dipakai
-                    ekspor EMIS/Dapodik serta SKHUN. Kosongkan bila unit ini
-                    tidak memilikinya.
-                  </p>
-                  {errors.npsn && (
-                    <p className="text-sm text-destructive">
-                      {errors.npsn.message}
                     </p>
                   )}
                 </div>
@@ -277,6 +276,89 @@ function EditUnitForm({ unit }: { unit: Unit }) {
                   {errors.email && (
                     <p className="text-sm text-destructive">
                       {errors.email.message}
+                    </p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Identitas Resmi</CardTitle>
+                <CardDescription>
+                  Sesuai izin operasional dan Data Referensi Kemendikdasmen.
+                  Dicetak di kop surat, rapor, sertifikat, kartu santri, dan
+                  ekspor Dapodik; menu dan layar portal tetap memakai Nama Unit.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="officialName">Nama Resmi</Label>
+                  <Input
+                    id="officialName"
+                    placeholder="Contoh: SMP IT Pesantren Cipansor"
+                    {...register("officialName")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Kosongkan bila sama dengan Nama Unit; dokumen lalu memakai
+                    Nama Unit.
+                  </p>
+                  {errors.officialName && (
+                    <p className="text-sm text-destructive">
+                      {errors.officialName.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="npsn">NPSN</Label>
+                  <Input
+                    id="npsn"
+                    inputMode="numeric"
+                    maxLength={8}
+                    placeholder="8 angka, dari Dapodik"
+                    {...register("npsn")}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Tampil di situs publik bersama akreditasi, dan dipakai
+                    ekspor EMIS/Dapodik serta SKHUN. Kosongkan bila unit ini
+                    tidak memilikinya.
+                  </p>
+                  {errors.npsn && (
+                    <p className="text-sm text-destructive">
+                      {errors.npsn.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="operatingPermitNumber">
+                    Nomor Izin Operasional
+                  </Label>
+                  <Input
+                    id="operatingPermitNumber"
+                    placeholder="Contoh: 503/0671/Kep.07/DPMPTSP/2019"
+                    {...register("operatingPermitNumber")}
+                  />
+                  {errors.operatingPermitNumber && (
+                    <p className="text-sm text-destructive">
+                      {errors.operatingPermitNumber.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="operatingPermitDate">
+                    Tanggal Izin Operasional
+                  </Label>
+                  <Input
+                    id="operatingPermitDate"
+                    type="date"
+                    {...register("operatingPermitDate")}
+                  />
+                  {errors.operatingPermitDate && (
+                    <p className="text-sm text-destructive">
+                      {errors.operatingPermitDate.message}
                     </p>
                   )}
                 </div>

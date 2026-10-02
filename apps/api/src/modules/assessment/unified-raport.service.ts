@@ -4,6 +4,7 @@ import RaportMerdekaService from './raport-merdeka.service';
 import { generateRaporPesantren } from '../rapor-pesantren/rapor-pesantren.service';
 import { AssessmentAnalyticsService } from './analytics.service';
 import type { JwtPayload } from '@/lib/jwt';
+import { unitDocumentName } from '@cipansor/shared';
 
 /**
  * Service to generate a unified report combining academic (Merdeka)
@@ -25,7 +26,9 @@ export class UnifiedRaportService {
       where: { id: studentId },
       include: {
         user: { select: { name: true } },
-        unit: { select: { id: true, name: true, logoUrl: true, address: true } },
+        unit: {
+          select: { id: true, name: true, officialName: true, logoUrl: true, address: true },
+        },
         enrollments: {
           where: { class: { academicYearId } },
           include: {
@@ -91,7 +94,7 @@ export class UnifiedRaportService {
         formatVersion: '1.1.0',
       },
       school: {
-        name: student.unit.name,
+        name: unitDocumentName(student.unit),
         address: student.unit.address,
         logo: student.unit.logoUrl,
       },

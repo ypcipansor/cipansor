@@ -218,15 +218,23 @@ async function main() {
   // PHASE 3: Foundation / Yayasan
   // ============================================
 
+  /**
+   * Every unit sits at the one campus. The address, the official names, NPSNs
+   * and permits are those of the permits and Kemendikdasmen's reference data
+   * (decisions/spmb-2027-2028.md item 6); TK Qur'an has no NPSN there.
+   */
+  const UNIT_ADDRESS =
+    'Jl. Raya Malangbong - Kadipaten RT 001 RW 001, Kp. Nyalindung, Desa Buniasih, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157';
+
   const foundation = await prisma.foundation.create({
     data: {
       name: 'Yayasan Pesantren Cipansor',
-      legalName: 'Yayasan Pendidikan Islam Cipansor',
-      foundingDate: new Date('1985-08-17'),
-      taxId: '01.234.567.8-901.000',
-      address: 'Jl. Cipansor No. 1, Kec. Sukabumi, Kota Sukabumi, Jawa Barat',
-      phone: '0266100001',
-      email: 'yayasan@cipansor.or.id',
+      legalName: 'Yayasan Pesantren Cipansor',
+      // Akta Notaris No. 01, 5 April 2012 (LETTERHEAD.legalBasis).
+      foundingDate: new Date('2012-04-05'),
+      address: UNIT_ADDRESS,
+      phone: '0811110400',
+      email: 'halo@cipansor.or.id',
       website: 'https://cipansor.or.id',
       vision:
         'Menjadi lembaga pendidikan Islam terdepan yang menghasilkan generasi Qurani berakhlak mulia',
@@ -292,8 +300,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: 'SMP IT Cipansor',
+      officialName: 'SMP IT Pesantren Cipansor',
+      npsn: '69988558',
+      operatingPermitNumber: '503/0671/Kep.07/DPMPTSP/2019',
+      operatingPermitDate: new Date('2019-05-02'),
       type: UnitType.SMP_IT,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'smpit@cipansor.or.id',
     },
@@ -303,8 +315,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: 'SD IT Cipansor',
+      officialName: 'SD IT Pesantren Cipansor',
+      npsn: '69888850',
+      operatingPermitNumber: '642.2/0131/Disdik',
+      operatingPermitDate: new Date('2015-01-16'),
       type: UnitType.SD_IT,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'sdit@cipansor.or.id',
     },
@@ -314,8 +330,9 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: "TK Qur'an Cipansor",
+      officialName: "TK Qur'an An Nur Pesantren Cipansor",
       type: UnitType.TK_QURAN,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'tkquran@cipansor.or.id',
     },
@@ -325,8 +342,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: "SMA Qur'an Cipansor",
+      officialName: "SMA Qur'an Pesantren Cipansor",
+      npsn: '70038414',
+      operatingPermitNumber: '5/011050/DPMPTSP/II/2023',
+      operatingPermitDate: new Date('2023-02-07'),
       type: UnitType.SMA_QURAN,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'smaquran@cipansor.or.id',
     },

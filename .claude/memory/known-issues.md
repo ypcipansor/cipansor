@@ -121,10 +121,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   different shape from what `report/completeness` returns; and the child's NIK
   is shown in full in the table, where UU 27/2022 Ps. 4 asks for minimal
   display of specific personal data.
-- **Raport Merdeka on-screen preview** prints a literal letterhead — "SMP
-  Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" — for every unit
-  (`assessment/raport-merdeka/page.tsx`, the preview header). The exported PDF
-  is generated server-side.
 - **"+ Tambah Sasaran" and "+ Tambah Kegiatan"** (`perencanaan/[id]/page.tsx`)
   show to every reader, including the Pembina, the Pengawas, and anyone on a
   ratified plan. The server refuses correctly; the buttons mislead.
@@ -156,6 +152,13 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Access that is too narrow, or needs review
 
+- **The kepala sekolah cannot open a Raport Merdeka of their own unit**
+  (found 2026-10-02). `assertRaportAccess` (`raport-merdeka.service`) admits a
+  unit's admin and a teacher who covers the class; a kepala who teaches none
+  of the classes gets 403 "Anda tidak memiliki akses ke siswa di unit lain"
+  for a santri of their own unit — the wrong reason, and the head who signs
+  the raport (`pimpinanUnit`). Whether a head reads every raport of the unit is
+  a scope decision for Model A.
 - **Who manages asrama — decided 2026-09-27, not built.** Adding asrama and
   kamar and placing santri still admits the super admin, every school's admin
   (TK's included, whose pupils never board) and the yayasan organs — the
@@ -226,6 +229,12 @@ decision.
 
 ## Design gaps
 
+- **No PDF here prints Arabic script.** The Raport Merdeka prints in the
+  built-in Helvetica (WinAnsi) and leaves Arabic out; it used to embed Amiri,
+  which drew nothing legible (lessons/guard-tests-that-measure-the-wrong-thing,
+  "A file that opens is not a page that reads"). Arabic needs a shaping
+  (harfbuzz) and right-to-left pipeline and a font that subsets correctly.
+  The raport's own text is Latin — surah names are transliterated.
 - **Names that say something other than what the module does** (audit
   2026-09-25, every module): `practicum` is Amaliyah Tadris, `research` is
   Fathul Kutub (shown as "Turats Lab"), `inventory` is fixed assets,

@@ -245,3 +245,31 @@ rejoined before counting.
 **A guard for "the whole thing arrived" has to measure the whole thing.** Both
 defects here share one shape: the assertion tested that a *representative*
 element was present rather than that the *entire* payload survived.
+
+## A file that opens is not a page that reads
+
+The Rapor Merdeka PDF test re-opened its output with `PDFDocument.load` and
+said that this proved the embedded Amiri font was "structurally valid (a
+corrupted font subset throws on load)". It does not throw. The font had been
+subset by pdf-lib/fontkit, and its glyph offsets pointed past the end of its
+own table. From 2026-09-12 every raport drew as "OR E R R OR" in Chrome's
+viewer, poppler and mupdf, and the test stayed green (found 2026-10-02).
+
+Measure what a reader sees:
+
+- **Render the page.** `pdftoppm` or `mutool draw`; mupdf prints FreeType's
+  `invalid outline` warning on a broken glyph.
+- **Parse every glyph.** Load the embedded program (`FontFile2`) with fontkit
+  and read each glyph's `path`. A broken one throws "Trying to access beyond
+  buffer".
+- **Spy on `PDFPage.prototype.drawText`** to assert what was drawn. An embedded
+  font writes glyph ids, not letters, so searching the PDF's bytes finds
+  nothing.
+
+**`pdftotext` is no check here.** It read the correct words out of the broken
+file through the font's `ToUnicode` map, while the glyphs themselves drew as
+nothing.
+
+The same font, embedded whole, drew Latin text with gaps ("( RAPORT)"). Amiri
+is an Arabic font, and its Latin advances depend on positioning rules that
+pdf-lib does not apply. Use a font designed for the script being printed.

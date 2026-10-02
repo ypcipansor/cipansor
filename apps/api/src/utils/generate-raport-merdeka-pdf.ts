@@ -1,7 +1,4 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage } from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
-import fs from 'fs';
-import path from 'path';
 import { RaportMerdekaPdfData } from '@cipansor/shared';
 
 export { RaportMerdekaPdfData };
@@ -11,97 +8,42 @@ const PAGE_HEIGHT = 841.89; // A4 height
 const MARGIN = 40;
 
 /**
- * ARABIC RENDERING (verified 2026-09): the raport is Indonesian/Latin prose,
- * and the only field that could carry Arabic — the tahfidz "surah last" value —
- * is stored and seeded TRANSLITERATED (e.g. "Al-Fatihah", "QS. Al-Mulk"; see
- * `prisma/seed.ts` and `schema.prisma` `TahfidzRecord.surahName`), so no Arabic
- * script is actually rendered today. The PDF therefore preserves code points in
- * `toSafeText` (kept verbatim when the Unicode font is embedded) WITHOUT a
- * Harfbuzz shaping / RTL-bidi pipeline. That is a deliberate, documented
- * limitation: if Arabic script data is ever introduced, the letters would
- * render in their isolated forms rather than connected, and RTL word order
- * would be wrong — adding `harfbuzzjs` shaping + RTL layout for the Arabic runs
- * would be the required follow-up then.
+ * The raport prints in the PDF's built-in Helvetica (WinAnsi).
+ *
+ * It used to embed Amiri, an Arabic font, for every string, and through
+ * pdf-lib that could not work: subset, its outlines pointed past the end of
+ * their own table and FreeType (Chrome's viewer, poppler, mupdf) drew a raport
+ * of "OR E R R OR"; whole, its Latin letters kept the widths Amiri gives them
+ * before its positioning rules run — rules pdf-lib does not apply — so "( RAPORT)"
+ * and "NIS / NISN" printed with gaps. The raport's text is Latin: surah names
+ * are stored transliterated. Arabic script would need a shaping (harfbuzz) and
+ * right-to-left pipeline, which no PDF here has; it was never printed legibly.
  */
 
 /**
- * Raw TTF bytes for the Unicode font, cached so we only read the file once.
- * The PDFFont instance itself must NOT be cached module-wide: a font embedded
- * into one PDFDocument is bound to that document, and re-using it in a later
- * document produces an invalid resource and drops the glyphs. We therefore
- * cache the bytes and call `embedFont` freshly for every PDFDocument.
+ * Prepare text for PDF drawing: control characters and runs of whitespace
+ * become one space, and whatever WinAnsi cannot encode is dropped, because
+ * the built-in fonts throw on it. Composed first (NFC), so "é" stays one
+ * WinAnsi letter instead of an "e" and a dropped accent.
  */
-let unicodeFontBytes: Buffer | null = null;
-
-const FONT_CANDIDATE_PATHS = [
-  // src/src, and dist/utils when the build copies assets
-  path.resolve(__dirname, '../assets/fonts/Amiri-Regular.ttf'),
-  // repo-root cwd (e.g. running vitest from apps/api or the monorepo root)
-  path.resolve(process.cwd(), 'src/assets/fonts/Amiri-Regular.ttf'),
-  path.resolve(process.cwd(), 'apps/api/src/assets/fonts/Amiri-Regular.ttf'),
-];
-
-async function loadUnicodeFont(pdfDoc: PDFDocument): Promise<PDFFont | null> {
-  // pdf-lib needs fontkit registered before it can subset/embed a custom TTF.
-  if (!(pdfDoc as unknown as { fontkit?: unknown }).fontkit) {
-    pdfDoc.registerFontkit(fontkit);
-  }
-  if (!unicodeFontBytes) {
-    for (const fontPath of FONT_CANDIDATE_PATHS) {
-      try {
-        if (fs.existsSync(fontPath)) {
-          unicodeFontBytes = fs.readFileSync(fontPath);
-          break;
-        }
-      } catch {
-        // Try the next candidate path.
-      }
-    }
-  }
-  if (unicodeFontBytes) {
-    return pdfDoc.embedFont(new Uint8Array(unicodeFontBytes), { subset: true });
-  }
-  return null;
-}
-
-/**
- * Prepare text for PDF drawing.
- *
- * When a Unicode font is loaded we KEEP every character (only control chars
- * and excess whitespace are normalised), so Arabic is not lost. When no
- * Unicode font could be loaded we fall back to the historical strip of
- * non-WinAnsi characters, because pdf-lib's built-in Helvetica cannot encode
- * them and would otherwise throw.
- *
- * `keepUnicode` must be `true` exactly when the drawing font is a custom
- * Unicode TTF for this document; it is passed per document because the font
- * is embedded per document.
- */
-function toSafeText(text: string | null | undefined, keepUnicode = false): string {
+function toSafeText(text: string | null | undefined): string {
   if (!text) return '';
   // Strip ASCII control chars (C0 + DEL) before collapsing whitespace. The
   // range must be a literal here so the \x00-\x1F control escapes are
   // explicit; eslint's no-control-regex flags them, hence the disable.
   /* eslint-disable no-control-regex */
   const normalized = text
-    .normalize('NFD')
+    .normalize('NFC')
     .replace(/[\x00-\x1F\x7F]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
   /* eslint-enable no-control-regex */
-  if (keepUnicode) return normalized;
   return normalized.replace(/[^\x20-\x7E\xA0-\xFF]/g, '').trim();
 }
 
-function wrapText(
-  text: string,
-  maxWidth: number,
-  font: PDFFont,
-  fontSize: number,
-  keepUnicode = false
-): string[] {
+function wrapText(text: string, maxWidth: number, font: PDFFont, fontSize: number): string[] {
   if (!text) return [];
-  const safeText = toSafeText(text, keepUnicode);
+  const safeText = toSafeText(text);
   if (!safeText) return [];
   const words = safeText.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
@@ -129,20 +71,12 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
   const fontHelvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontHelveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const fontHelveticaOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-  const fontUnicode = await loadUnicodeFont(pdfDoc);
 
-  // Body content font: prefer the Unicode font so Arabic/Unicode text is never
-  // stripped, falling back to the built-in fonts when no asset is bundled.
-  const bodyFont = fontUnicode ?? fontHelvetica;
-  const bodyFontBold = fontUnicode ?? fontHelveticaBold;
-  const bodyFontOblique = fontUnicode ?? fontHelveticaOblique;
-
-  // Per-document text sanitizer: the unicode font is embedded per document, so
-  // the "keep Arabic" flag also lives per document.
-  const hasUnicodeFont = !!fontUnicode;
-  const safeText = (text: string | null | undefined) => toSafeText(text, hasUnicodeFont);
-  const safeWrap = (text: string, maxWidth: number, font: PDFFont, fontSize: number) =>
-    wrapText(text, maxWidth, font, fontSize, hasUnicodeFont);
+  const bodyFont = fontHelvetica;
+  const bodyFontBold = fontHelveticaBold;
+  const bodyFontOblique = fontHelveticaOblique;
+  const safeText = toSafeText;
+  const safeWrap = wrapText;
 
   // Helper for drawing header on each page
   const drawHeader = (page: PDFPage, title: string, subtitle: string) => {
@@ -172,7 +106,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   // ---------------- PAGE 1: AKADEMIK ----------------
   const page1 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  let y = drawHeader(page1, 'Laporan Hasil Belajar (Raport)', `${data.siswa.unit} Cipansor`);
+  let y = drawHeader(page1, 'Laporan Hasil Belajar (Raport)', data.siswa.unit);
 
   // Student Info Box
   page1.drawRectangle({
@@ -287,11 +221,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     if (y - rowHeight < MARGIN + 80) {
       // Add new page for remaining subject rows
       currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      y = drawHeader(
-        currentPage,
-        'Laporan Hasil Belajar (Lanjutan)',
-        `${data.siswa.unit} Cipansor`
-      );
+      y = drawHeader(currentPage, 'Laporan Hasil Belajar (Lanjutan)', data.siswa.unit);
 
       // Redraw Table Header on new page
       currentPage.drawRectangle({
@@ -405,7 +335,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
     MARGIN + SIGNATURE_RESERVE
   ) {
     currentPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-    y = drawHeader(currentPage, 'Laporan Hasil Belajar (Lanjutan)', `${data.siswa.unit} Cipansor`);
+    y = drawHeader(currentPage, 'Laporan Hasil Belajar (Lanjutan)', data.siswa.unit);
   }
 
   // B. EKSTRAKURIKULER & KEHADIRAN
@@ -553,7 +483,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
 
   // ---------------- PAGE 2: PESANTREN (TAHFIDZ & P5) ----------------
   const page2 = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  let y2 = drawHeader(page2, 'Laporan Perkembangan Pesantren & P5', `${data.siswa.unit} Cipansor`);
+  let y2 = drawHeader(page2, 'Laporan Perkembangan Pesantren & P5', data.siswa.unit);
 
   page2.drawText(safeText(`Nama Peserta Didik: ${data.siswa.nama} (${data.siswa.kelas})`), {
     x: MARGIN,
@@ -674,7 +604,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
         y2 = drawHeader(
           currentP5Page,
           'Laporan Perkembangan Pesantren & P5 (Lanjutan)',
-          `${data.siswa.unit} Cipansor`
+          data.siswa.unit
         );
       }
 
@@ -699,7 +629,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
           y2 = drawHeader(
             currentP5Page,
             'Laporan Perkembangan Pesantren & P5 (Lanjutan)',
-            `${data.siswa.unit} Cipansor`
+            data.siswa.unit
           );
         }
         currentP5Page.drawText(safeText(dl), { x: MARGIN, y: y2, size: 7.5, font: bodyFont });
@@ -714,7 +644,7 @@ export async function generateRaportMerdekaPdfBuffer(data: RaportMerdekaPdfData)
             y2 = drawHeader(
               currentP5Page,
               'Laporan Perkembangan Pesantren & P5 (Lanjutan)',
-              `${data.siswa.unit} Cipansor`
+              data.siswa.unit
             );
           }
           currentP5Page.drawText(

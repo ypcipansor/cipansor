@@ -197,6 +197,14 @@ router.post('/', isSuperAdmin, validate(createUnitSchema), controller.create);
  *               npsn:
  *                 type: string
  *                 pattern: '^\d{8}$'
+ *               officialName:
+ *                 type: string
+ *                 description: The name on the operating permit; documents print it
+ *               operatingPermitNumber:
+ *                 type: string
+ *               operatingPermitDate:
+ *                 type: string
+ *                 format: date
  *     responses:
  *       200:
  *         description: Unit updated

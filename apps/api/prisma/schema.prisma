@@ -611,6 +611,14 @@ model Unit {
   email         String?
   logoUrl       String?   @map("logo_url")
   npsn          String?   @unique // Nomor Pokok Sekolah Nasional
+  /// The name on the operating permit and in the national reference data
+  /// ("SMP IT Pesantren Cipansor"). Documents print it — letterhead, rapor,
+  /// certificates, Dapodik — and screens keep the short `name`. Null: documents
+  /// print `name` (`unitDocumentName`).
+  officialName          String?   @map("official_name")
+  /// Izin operasional / izin pendirian: number and date as the permit gives them.
+  operatingPermitNumber String?   @map("operating_permit_number")
+  operatingPermitDate   DateTime? @map("operating_permit_date") @db.Date
   /// Superseded by `UnitAccreditation` (2026-09-28): nothing reads or writes it
   /// any more; the readiness self-assessment used to overwrite it. Drop it once
   /// a release has run without it.

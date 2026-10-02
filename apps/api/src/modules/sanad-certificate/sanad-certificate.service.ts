@@ -18,6 +18,7 @@ import {
 import { certificateVerificationUrl } from '@/utils/verification-url';
 import { escapeHtml } from '@/utils/html';
 import { Errors } from '@/middleware/error';
+import { unitDocumentName } from '@cipansor/shared';
 
 const JUZ_NAMES: Record<number, string> = {
   1: 'Juz Amma',
@@ -135,7 +136,7 @@ export async function findSanadById(id: string) {
               birthDate: true,
               birthPlace: true,
               user: { select: { name: true } },
-              unit: { select: { id: true, name: true, type: true } },
+              unit: { select: { id: true, name: true, officialName: true, type: true } },
             },
           },
           halaqoh: { select: { id: true, name: true } },
@@ -436,7 +437,9 @@ export async function generateCertificate(
     gradeLabel: GRADE_LABELS[sanad.grade as SanadGrade] || sanad.grade,
     teacherName: sanad.teacher.name,
     certifiedAt: sanad.certifiedAt,
-    unitName: sanad.enrollment.student.unit?.name || 'Pesantren',
+    unitName: sanad.enrollment.student.unit
+      ? unitDocumentName(sanad.enrollment.student.unit)
+      : 'Pesantren',
     halaqohName: sanad.enrollment.halaqoh?.name,
     signedBy: countersigned ? (certificate.signatoryName ?? undefined) : undefined,
     signedByTitle: countersigned ? (certificate.signatoryTitle ?? undefined) : undefined,
@@ -712,7 +715,7 @@ export async function verifyCertificate(input: VerifyCertificateInput) {
       student: {
         select: {
           user: { select: { name: true } },
-          unit: { select: { name: true } },
+          unit: { select: { name: true, officialName: true } },
         },
       },
     },
@@ -742,7 +745,7 @@ export async function verifyCertificate(input: VerifyCertificateInput) {
       studentName: certificate.student.user?.name ?? null,
       grade: certificate.grade,
       issueDate: certificate.issueDate,
-      unitName: certificate.student.unit?.name ?? null,
+      unitName: certificate.student.unit ? unitDocumentName(certificate.student.unit) : null,
       signatoryName: certificate.signatoryName,
       signatoryTitle: certificate.signatoryTitle,
     },

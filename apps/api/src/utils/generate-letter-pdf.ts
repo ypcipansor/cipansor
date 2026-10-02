@@ -7,6 +7,8 @@ import {
   letterTemplateFor,
   natureMarking,
   siteConfig,
+  unitDocumentName,
+  unitPermitLine,
   type LetterNature,
   type LetterType,
 } from '@cipansor/shared';
@@ -71,6 +73,10 @@ export interface LetterPdfInput {
   recipientInstance?: string | null;
   unit?: {
     name?: string | null;
+    /** Printed in place of `name` when recorded (`unitDocumentName`). */
+    officialName?: string | null;
+    npsn?: string | null;
+    operatingPermitNumber?: string | null;
     address?: string | null;
     phone?: string | null;
     email?: string | null;
@@ -370,9 +376,17 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
    * mencetak "YAYASAN PESANTREN CIPANSOR" dua kali bertumpuk. Baris unit
    * dilewati bila ia hanya mengulang baris di atasnya — kop surat sebuah unit
    * (MTs, TK Qur'an) tetap memakai dua baris sebagaimana mestinya.
+   *
+   * Yang dicetak adalah nama resmi unit — nama pada izin operasionalnya —
+   * bila sudah dicatat, bukan nama pendek yang dipakai menu.
    */
   const orgName = LETTERHEAD.organisation;
-  const rawUnitName = letter.unit?.name?.toUpperCase() ?? 'KANTOR YAYASAN';
+  const rawUnitName = letter.unit?.name
+    ? unitDocumentName({
+        name: letter.unit.name,
+        officialName: letter.unit.officialName,
+      }).toUpperCase()
+    : 'KANTOR YAYASAN';
   const unitName = rawUnitName === orgName ? null : rawUnitName;
 
   /**
@@ -393,8 +407,14 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
    *
    * Alamat dan kontak cadangannya juga diambil dari sumber yang sama; nomor
    * telepon `0265-123456` yang lama adalah contoh, bukan nomor yayasan.
+   *
+   * Naskah sebuah unit mencetak dasar hukum unit itu sendiri — izin
+   * operasional dan NPSN-nya — seperti kop surat unit yang sebenarnya (SMP IT:
+   * "Izin Operasional No. 503/0671/… NPSN: 69988558"). Unit yang belum
+   * mencatat keduanya, dan naskah yayasan, tetap mencetak akta yayasan.
    */
-  const legalBasis = LETTERHEAD.legalBasis;
+  const legalBasis =
+    (unitName && letter.unit && unitPermitLine(letter.unit)) || LETTERHEAD.legalBasis;
   const address = letter.unit?.address ?? `${LETTERHEAD.addressLine1}, ${LETTERHEAD.addressLine2}`;
   const contact = `Website: ${LETTERHEAD.website} | ${LETTERHEAD.phone} | Email: ${letter.unit?.email || 'halo@cipansor.or.id'}`;
 
@@ -407,27 +427,28 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
     cur.text(orgName, { x: centreOf(orgName, fontTimesBold, 14), size: 14, font: fontTimesBold });
     cur.down(16);
   }
-  cur.text(legalBasis, {
-    x: centreOf(legalBasis, fontTimesItalic, 8),
-    size: 8,
-    font: fontTimesItalic,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  cur.down(12);
-  cur.text(address, {
-    x: centreOf(address, fontTimes, 8),
-    size: 8,
-    font: fontTimes,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  cur.down(12);
-  cur.text(contact, {
-    x: centreOf(contact, fontTimes, 8),
-    size: 8,
-    font: fontTimes,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  cur.down(14);
+  /**
+   * Baris kecil di bawah nama dibungkus di dalam kolom antara lambang dan
+   * cerminannya di kanan. Alamat pada izin operasional lebih panjang daripada
+   * alamat yang dipakai ketika tata letak ini dibuat, dan barisnya menabrak
+   * lambang. Baris yang muat tetap dicetak persis seperti sebelumnya.
+   */
+  const headColumn = width - 2 * (MARGIN_X + 6 + logoWidth + 6);
+  const headLines = (text: string, font: PDFFont, after: number) => {
+    const lines = wrapText(text, headColumn, font, 8);
+    lines.forEach((line, i) => {
+      cur.text(line, {
+        x: centreOf(line, font, 8),
+        size: 8,
+        font,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      cur.down(i === lines.length - 1 ? after : 10);
+    });
+  };
+  headLines(legalBasis, fontTimesItalic, 12);
+  headLines(address, fontTimes, 12);
+  headLines(contact, fontTimes, 14);
 
   cur.page.drawLine({
     start: { x: MARGIN_X, y: cur.y },

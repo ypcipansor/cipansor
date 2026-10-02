@@ -171,6 +171,12 @@ export class UnitService {
         email: input.email,
         logoUrl: input.logoUrl,
         npsn: input.npsn,
+        officialName: input.officialName,
+        operatingPermitNumber: input.operatingPermitNumber,
+        operatingPermitDate:
+          input.operatingPermitDate === undefined || input.operatingPermitDate === null
+            ? input.operatingPermitDate
+            : new Date(`${input.operatingPermitDate}T00:00:00.000Z`),
       },
     });
 
