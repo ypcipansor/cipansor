@@ -67,12 +67,12 @@ items before 2026-09-25 is in the history of this file and of
        - passwords, part A: length 8 with 2FA / 15 without, a local list of
          common and leaked passwords plus the service's and the account's
          own name, no composition rules, one check wherever a password is set
-         (this change);
-       - passwords, part B: a must-change flag (first login, set by someone
-         else, marked compromised, and every account once at that release);
-         and changing one's own password should end the *other* sessions,
-         not this one — today every refresh token is revoked, the current
-         one included.
+         (done, #625);
+       - passwords, part B: a must-change flag (set by someone else, marked
+         leaked by an admin, 2FA turned off under a short password, and every
+         account once at the release — by script, with part A in the same
+         release); changing one's own password ends the *other* sessions
+         only (this change).
        - **passkey (FIDO2/WebAuthn) as the first sign-in path** (decided
          2026-09-30, `decisions/autentikasi-2fa-dan-sandi.md`): a "Masuk
          dengan passkey" button above the password form; password + TOTP +

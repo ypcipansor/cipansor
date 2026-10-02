@@ -10,7 +10,12 @@ import {
   SearchInput,
   ConfirmDialog,
 } from "@/components/shared";
-import { useUsers, useDeleteUser, useUnits } from "@/hooks";
+import {
+  useUsers,
+  useDeleteUser,
+  useUnits,
+  useRequirePasswordChange,
+} from "@/hooks";
 import { realmDisplayNames, realmColors } from "@/hooks/use-roles";
 import { User, UserRole, authApi } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +56,7 @@ import {
   Building2,
   ShieldAlert,
   KeyRound,
+  LockKeyhole,
 } from "lucide-react";
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 
@@ -58,6 +64,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
 import { authService } from "@/services/auth.service";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/api-error";
 
 // Realm filter options
 const realmOptions = [
@@ -165,6 +172,7 @@ export default function UsersPage() {
   const [deactivate2FAUserId, setDeactivate2FAUserId] = useState<string | null>(
     null,
   );
+  const [passwordChangeFor, setPasswordChangeFor] = useState<User | null>(null);
 
   // Get active role from current user
   const activeUserRole = useMemo(() => {
@@ -183,6 +191,24 @@ export default function UsersPage() {
   });
 
   const deleteMutation = useDeleteUser();
+  const requirePasswordChange = useRequirePasswordChange();
+
+  /**
+   * For a password that leaked or that someone else learned: the account
+   * chooses a new one at its next sign-in. The admin never learns it.
+   */
+  const handleRequirePasswordChange = async () => {
+    if (!passwordChangeFor) return;
+    try {
+      const result = await requirePasswordChange.mutateAsync(
+        passwordChangeFor.id,
+      );
+      toast.success(result.message);
+      setPasswordChangeFor(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
 
   /**
    * E-mail this user a password reset link.
@@ -323,6 +349,14 @@ export default function UsersPage() {
                   ? "Mengirim…"
                   : "Kirim tautan reset password"}
               </DropdownMenuItem>
+              {!isSelf && (
+                <DropdownMenuItem
+                  onClick={() => setPasswordChangeFor(row.original)}
+                >
+                  <LockKeyhole className="mr-2 h-4 w-4" />
+                  Wajibkan ganti kata sandi
+                </DropdownMenuItem>
+              )}
               {(row.original as any).isTwoFactorEnabled && (
                 <DropdownMenuItem
                   onClick={() => setDeactivate2FAUserId(row.original.id)}
@@ -436,6 +470,17 @@ export default function UsersPage() {
           variant="destructive"
         />
 
+        <ConfirmDialog
+          open={!!passwordChangeFor}
+          onOpenChange={(open) => !open && setPasswordChangeFor(null)}
+          title="Wajibkan ganti kata sandi?"
+          description={`Untuk kata sandi yang bocor atau diketahui orang lain. ${passwordChangeFor?.name ?? "Pengguna ini"} harus membuat kata sandi baru saat masuk berikutnya, dan sesinya yang sedang berjalan berakhir paling lama 15 menit lagi. Anda tidak akan mengetahui kata sandi barunya.`}
+          confirmLabel="Wajibkan"
+          cancelLabel="Batal"
+          onConfirm={handleRequirePasswordChange}
+          isLoading={requirePasswordChange.isPending}
+        />
+
         {/* Deactivate 2FA Dialog */}
         <Dialog
           open={!!deactivate2FAUserId}
@@ -448,7 +493,8 @@ export default function UsersPage() {
                 Untuk pengguna yang kehilangan ponsel dan kode pemulihannya.
                 Masukkan kode dari aplikasi autentikator <strong>Anda</strong>{" "}
                 untuk mengonfirmasi. Pengguna itu lalu masuk dengan kata sandi
-                saja, dan bisa mengaktifkannya lagi di Profil.
+                saja — bila kurang dari 15 karakter, ia diminta membuat yang
+                baru — dan bisa mengaktifkannya lagi di Profil.
               </DialogDescription>
             </DialogHeader>
             <TwoFactorVerify

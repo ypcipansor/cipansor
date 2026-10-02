@@ -8112,6 +8112,18 @@ async function main() {
 
   console.log('🔧 Phase 11, 12, 13 & 14 comprehensive demo data completed!\n');
 
+  // Demo accounts keep their published password. A new row is flagged to
+  // choose a new password at first sign-in (the column default: someone else
+  // set it), which is right for a real account and wrong for a demo account
+  // shared by every tester and by the e2e suite — the first person in would
+  // lock everyone else out. A real deployment flags every account once, at the
+  // release, with scripts/require-password-change-all.ts.
+  const unflagged = await prisma.user.updateMany({
+    where: { mustChangePassword: true },
+    data: { mustChangePassword: false },
+  });
+  console.log(`🔑 ${unflagged.count} demo account(s) keep their seeded password`);
+
   // ============================================
   // E2E: deterministic 2FA for admin accounts
   // ============================================

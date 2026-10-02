@@ -1,4 +1,9 @@
-import { normalizePassword, passwordLengthProblem } from '@cipansor/shared';
+import {
+  PASSWORD_MIN_LENGTH,
+  normalizePassword,
+  passwordLength,
+  passwordLengthProblem,
+} from '@cipansor/shared';
 import { Errors } from '@/middleware/error';
 import commonPasswords from './common-passwords.json';
 
@@ -92,4 +97,13 @@ export function passwordProblem(password: string, context: PasswordContext): str
 export function assertPasswordAllowed(password: string, context: PasswordContext): void {
   const problem = passwordProblem(password, context);
   if (problem) throw Errors.badRequest(problem);
+}
+
+/**
+ * Whether this password is acceptable only while 2FA stays on: shorter than
+ * the single-factor minimum. Recorded when a person sets their own password,
+ * so that turning 2FA off can ask for a longer one.
+ */
+export function passwordNeedsSecondFactor(password: string): boolean {
+  return passwordLength(password) < PASSWORD_MIN_LENGTH;
 }

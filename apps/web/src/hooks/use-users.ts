@@ -91,3 +91,21 @@ export function useDeleteUser() {
     },
   });
 }
+
+/**
+ * Make an account choose a new password at its next sign-in — when its
+ * password leaked or someone else learned it. Its sessions end within one
+ * access-token lifetime, since the refresh is refused from now on.
+ */
+export function useRequirePasswordChange() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post<ApiResponse<{ message: string }>>(
+        `/users/${id}/require-password-change`,
+        undefined,
+        { skipErrorToast: true },
+      );
+      return response.data.data;
+    },
+  });
+}

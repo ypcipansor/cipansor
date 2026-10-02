@@ -353,6 +353,16 @@ model User {
   passwordHash           String?   @map("password_hash")
   resetTokenHash         String?   @map("reset_token_hash")
   resetTokenExpiresAt    DateTime? @map("reset_token_expires_at")
+  /// Must choose a new password at the next sign-in
+  /// (decisions/autentikasi-2fa-dan-sandi.md): when someone else set it, when
+  /// an admin marks it leaked, when 2FA that a short password relied on is
+  /// turned off, and once for every account at the release that brought the
+  /// rules. On for a new row; only the paths where a person sets their own
+  /// password turn it off.
+  mustChangePassword     Boolean   @default(true) @map("must_change_password")
+  /// The current password is shorter than the single-factor minimum (15), so
+  /// it is acceptable only while 2FA stays on.
+  passwordNeedsSecondFactor Boolean @default(false) @map("password_needs_second_factor")
   phone                  String?
   role                   UserRole? // DEPRECATED: Legacy role field. Use UserRoleAssignment instead.
   unitId                 String?   @map("unit_id")
