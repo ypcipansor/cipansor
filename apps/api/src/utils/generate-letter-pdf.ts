@@ -14,6 +14,7 @@ import {
 } from '@cipansor/shared';
 import { LOGO_CIPANSOR_PNG_BASE64 } from '@/assets/logo-cipansor';
 import { letterVerificationUrl } from '@/utils/verification-url';
+import { stampIfTestCopy } from './test-copy-stamp';
 
 /** "KETUA YAYASAN …" → "Ketua Yayasan …", as it is written under a signature. */
 const DECIDING_OFFICIAL_TITLE_CASE = DECIDING_OFFICIAL.split(' ')
@@ -803,6 +804,7 @@ export async function generateLetterPdfBuffer(letter: LetterPdfInput): Promise<B
     });
   }
 
+  await stampIfTestCopy(pdfDoc);
   const pdfBytes = await pdfDoc.save();
   return Buffer.from(pdfBytes);
 }

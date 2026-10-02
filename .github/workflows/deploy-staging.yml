@@ -181,6 +181,11 @@ jobs:
               --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
               --target-port "${port[$c]}" -o none
           done
+          # Every document staging renders is a test copy, stamped "SALINAN UJI —
+          # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
+          # so a rebuilt app cannot come up without it; production never sets it.
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+            --settings DOCUMENT_TEST_COPY=true -o none
           az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
 
       # The api container applies pending migrations before it starts

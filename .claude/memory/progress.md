@@ -104,9 +104,13 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   2FA on (#623), and the realm badge beside a role name for every realm
   (#624). The session moved to HttpOnly cookies (#620, issue #523). The
   password rules (00.9, part A: #625), and the forced password change (part
-  B: #632). Next, in the order decided on 2026-10-02: a users-module scope
-  fix, then SPMB 2027/2028 in the portal and on the public site
-  (`decisions/spmb-2027-2028.md`, roadmap 00.10), then the Pesantren unit.
+  B: #632). Then, in the order decided on 2026-10-02: the users-module scope
+  fix (#634), and SPMB 2027/2028 in the portal and on the public site
+  (`decisions/spmb-2027-2028.md`, roadmap 00.10). Its first part: the units'
+  official identity on every document, with the Rapor Merdeka PDF readable
+  again (#635). Then every document of a test copy stamped "SALINAN UJI"
+  (staging), before the seed takes the real office holders' names; then the
+  SPMB module itself; then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

@@ -63,6 +63,28 @@ describe('Rapor Merdeka PDF header', () => {
   });
 });
 
+describe('Rapor Merdeka PDF signature place', () => {
+  // The wali kelas and the pimpinan signed "Bogor, …" on every raport; the
+  // yayasan is in Tasikmalaya (LETTERHEAD.city).
+  it("is the yayasan's city", async () => {
+    const drawn: string[] = [];
+    const original = PDFPage.prototype.drawText;
+    vi.spyOn(PDFPage.prototype, 'drawText').mockImplementation(function (
+      this: PDFPage,
+      text,
+      options
+    ) {
+      drawn.push(text);
+      return original.call(this, text, options);
+    });
+
+    await generateRaportMerdekaPdfBuffer(data);
+
+    expect(drawn.some((t) => t.startsWith('Tasikmalaya, '))).toBe(true);
+    expect(drawn.join('\n')).not.toMatch(/Bogor/);
+  });
+});
+
 describe('Rapor Merdeka PDF font', () => {
   /**
    * The raport prints in the built-in Helvetica, which every viewer carries.
