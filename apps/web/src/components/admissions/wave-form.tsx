@@ -232,7 +232,7 @@ export function WaveForm({
           />
         </div>
 
-        <fieldset className="grid gap-4 sm:grid-cols-2">
+        <fieldset className="grid items-start gap-4 sm:grid-cols-2">
           <legend className="mb-2 text-sm font-medium">Pendaftaran</legend>
           {dayField("startDate", "Dibuka")}
           {dayField("endDate", "Ditutup")}
@@ -254,39 +254,42 @@ export function WaveForm({
             )}
           />
           {!isNew && (
-          <FormField
-            control={form.control}
-            name="status"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Status</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent>
-                    {WAVE_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {WAVE_STATUS_LABELS[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <FormDescription>
-                  Diperbarui menurut tanggal tiap pukul 00.01 WIB. Ubah di sini
-                  untuk menutup lebih awal.
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+            <FormField
+              control={form.control}
+              name="status"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Status</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {WAVE_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {WAVE_STATUS_LABELS[s]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    Diperbarui menurut tanggal tiap pukul 00.01 WIB. Ubah di
+                    sini untuk menutup lebih awal.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           )}
         </fieldset>
 
         {SESSIONS.map((s) => (
-          <fieldset key={s.start} className="grid gap-4 sm:grid-cols-2">
+          <fieldset
+            key={s.start}
+            className="grid items-start gap-4 sm:grid-cols-2"
+          >
             <legend className="mb-2 text-sm font-medium">
               {s.label}{" "}
               <span className="font-normal text-muted-foreground">

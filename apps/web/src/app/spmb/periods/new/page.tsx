@@ -32,7 +32,7 @@ export default function NewAdmissionPeriodPage() {
       <div className="mx-auto max-w-3xl space-y-6">
         <PageHeader
           title="Tambah Periode SPMB"
-          description="Gelombang, persyaratan, dan narahubung ditambahkan sesudah periode tersimpan."
+          description="Gelombangnya ditambahkan di halaman periode sesudah tersimpan."
         />
         {!ready ? (
           <Loader2 className="mx-auto h-6 w-6 animate-spin" />

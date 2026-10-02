@@ -199,7 +199,7 @@ describe('creating and editing a wave', () => {
     expect(data.fullPaymentDiscount).toEqual(new Prisma.Decimal(1_000_000));
   });
 
-  it('reads a new wave\'s status from its dates, unless one is given', async () => {
+  it("reads a new wave's status from its dates, unless one is given", async () => {
     // 2 October 2026, noon in Tasikmalaya: wave 1 (1 Oct – 20 Dec) is open.
     vi.useFakeTimers({ now: new Date('2026-10-02T05:00:00.000Z'), toFake: ['Date'] });
     try {

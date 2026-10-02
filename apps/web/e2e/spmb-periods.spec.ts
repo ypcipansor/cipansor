@@ -128,10 +128,14 @@ test.describe("Periode & Gelombang SPMB", () => {
     const overflow = await page
       .locator("table")
       .first()
-      .evaluate((t) => t.parentElement!.scrollWidth - t.parentElement!.clientWidth);
+      .evaluate(
+        (t) => t.parentElement!.scrollWidth - t.parentElement!.clientWidth,
+      );
     expect(overflow).toBeLessThanOrEqual(0);
     // A new wave's status is read from its dates, not left "Belum dibuka".
-    const today = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
+    const today = new Date(Date.now() + 7 * 3_600_000)
+      .toISOString()
+      .slice(0, 10);
     await expect(row).toContainText(
       today < "2026-10-01"
         ? "Belum dibuka"

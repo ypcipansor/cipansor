@@ -159,7 +159,20 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   is in no menu. `tahfidz/certificate` is in no menu either; both open only by
   URL.
 
+- **The public SPMB form ignores the unit an applicant chooses** (found
+  2026-10-03). It posts every registration to the one "active period" that
+  `GET /admissions/public/active-period` returns. That is the first period of
+  any unit whose window holds today. The unit picked in the form is never
+  sent, so an SMA applicant can be filed under SMP IT's intake. To be fixed in
+  SPMB S4, when the public page reads each unit's period, waves,
+  requirements and contact.
+
 ## Access that is too narrow, or needs review
+
+- **The yayasan's organs have no SPMB item in their menu.** They read SPMB
+  (decided 2026-09-23: the panitia prepares, the kepala unit decides, the
+  board reads along), and the API and the pages let them. But they reach
+  `/spmb` and `/spmb/periods` only by typing the address.
 
 - **The kepala sekolah cannot open a Raport Merdeka of their own unit**
   (found 2026-10-02). `assertRaportAccess` (`raport-merdeka.service`) admits a
