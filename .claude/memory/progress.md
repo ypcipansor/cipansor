@@ -118,8 +118,9 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   by the unit's real head (`GET /units/:id/head`), the tahfidz certificate
   signed as the yayasan's own is, and every print window stamped on a test
   copy through one `printDocument()`. #636 had missed the five pages that print
-  from a window of their own. Then the SPMB module itself; then the Pesantren
-  unit.
+  from a window of their own (#638). The surat keterangan santri goes through
+  E-Office (decided 2026-10-02, `decisions/surat-keterangan-lewat-eoffice.md`;
+  not built). Then the SPMB module itself; then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

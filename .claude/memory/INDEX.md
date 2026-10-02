@@ -42,6 +42,7 @@ the mechanical cases.
 - [penyimpanan-berkas](decisions/penyimpanan-berkas.md) — satu tabel berkas (pemilik, status tertaut), Blob privat lewat managed identity + SAS delegasi pengguna, tanpa kunci akun atau kontainer publik; yang tak tertaut dihapus sesudah 24 jam; rancangan #441 ditolak
 - [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
 - [spmb-2027-2028](decisions/spmb-2027-2028.md) — 2027/28 registration runs in the portal (no bit.ly), target before wave 2 (1 Jan 2027); the brochure's waves, discounts, fees, requirements and contacts become SPMB module data; requirements follow the brochure (Permendikdasmen 3/2025 risk noted); "Ramram"; full structure on the public site; real names and photos in the seed and portal, every document of a test copy stamped "SALINAN UJI"; official + short unit names with NPSN/permit; order: users scope fix → SPMB → Pesantren unit
+- [surat-keterangan-lewat-eoffice](decisions/surat-keterangan-lewat-eoffice.md) — a santri's surat keterangan is an E-Office naskah filled from the student's record: agenda number, TTE by the unit's head, verifiable by upload; the browser-numbered print goes (2026-10-02)
 
 ## Lessons — traps that already cost time
 
