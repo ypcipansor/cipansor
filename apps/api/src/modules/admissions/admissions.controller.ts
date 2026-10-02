@@ -60,6 +60,12 @@ export const updateAdmissionPeriod = asyncHandler(async (req: Request, res: Resp
   res.json({ success: true, data: period });
 });
 
+export const replaceAdmissionFees = asyncHandler(async (req: Request, res: Response) => {
+  const user = requireUser(req);
+  const items = await service.replaceAdmissionFees(req.params.id, req.body, user);
+  res.json({ success: true, data: items });
+});
+
 export const deleteAdmissionPeriod = asyncHandler(async (req: Request, res: Response) => {
   const user = requireUser(req);
   await service.deleteAdmissionPeriod(req.params.id, user);

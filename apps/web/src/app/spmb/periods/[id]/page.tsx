@@ -48,9 +48,16 @@ import {
   wavePayload,
 } from "@/components/admissions/wave-form";
 import {
+  FeeTableForm,
+  FeeTableView,
+  feeTableFormValues,
+  feeTablePayload,
+} from "@/components/admissions/fee-table";
+import {
   useAdmissionPeriod,
   useCreateAdmissionWave,
   useDeleteAdmissionWave,
+  useReplaceAdmissionFees,
   useUpdateAdmissionWave,
 } from "@/hooks/use-admissions";
 import { useAuth } from "@/hooks/use-auth";
@@ -79,7 +86,9 @@ export default function AdmissionPeriodPage() {
   const createWave = useCreateAdmissionWave();
   const updateWave = useUpdateAdmissionWave(id);
   const deleteWave = useDeleteAdmissionWave(id);
+  const replaceFees = useReplaceAdmissionFees(id);
   const canManage = canManageIntake(user);
+  const [editingFees, setEditingFees] = useState(false);
 
   // undefined: closed; null: a new wave; a wave: editing it.
   const [editing, setEditing] = useState<AdmissionWaveDTO | null | undefined>();
@@ -235,6 +244,49 @@ export default function AdmissionPeriodPage() {
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+            <div className="space-y-1.5">
+              <CardTitle>Rincian biaya</CardTitle>
+              <CardDescription>
+                Yang dibayar saat masuk, untuk ikhwan dan akhwat, seperti tabel
+                &quot;Rincian Biaya&quot; di brosur. Jumlahnya dihitung dari
+                rinciannya.
+              </CardDescription>
+            </div>
+            {canManage && !editingFees && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditingFees(true)}
+                data-testid="fee-edit"
+              >
+                <Pencil className="mr-2 h-4 w-4" /> Ubah Rincian Biaya
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {editingFees ? (
+              <FeeTableForm
+                defaultValues={feeTableFormValues(period.feeItems ?? [])}
+                isPending={replaceFees.isPending}
+                onCancel={() => setEditingFees(false)}
+                onSubmit={async (values) => {
+                  try {
+                    await replaceFees.mutateAsync(feeTablePayload(values));
+                    toast.success("Rincian biaya tersimpan");
+                    setEditingFees(false);
+                  } catch (error) {
+                    toast.error(getErrorMessage(error));
+                  }
+                }}
+              />
+            ) : (
+              <FeeTableView items={period.feeItems ?? []} />
+            )}
           </CardContent>
         </Card>
 

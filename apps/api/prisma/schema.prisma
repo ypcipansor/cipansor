@@ -1943,6 +1943,7 @@ model AdmissionPeriod {
   academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
   registrants  Registrant[]
   waves        AdmissionWave[] // NEW: Gelombang pendaftaran
+  feeItems     AdmissionFeeItem[]
 
   @@index([unitId])
   @@index([academicYearId])
@@ -3655,6 +3656,37 @@ model Donation {
 // =====================================
 // PPDB ENHANCEMENT - Admission Waves
 // =====================================
+
+/// Who a line of an intake's fee table is for.
+enum FeeResidency {
+  ALL // mukim and tidak mukim
+  BOARDING // mukim (asrama)
+  NON_BOARDING // tidak mukim
+}
+
+/// One line of a unit's entry fees for an intake, as the brochure's "Rincian
+/// Biaya" table prints it: an amount for ikhwan and one for akhwat, for
+/// boarding, non-boarding or both. A monthly fee (SPP) is one line too: its
+/// first month is paid on entry, which is why the brochure's totals include
+/// "Infaq Juli". Totals are computed (admissionFeeTotals in @cipansor/shared),
+/// never stored.
+model AdmissionFeeItem {
+  id           String       @id @default(uuid())
+  periodId     String       @map("period_id")
+  sortOrder    Int          @default(0) @map("sort_order")
+  label        String
+  maleAmount   Decimal      @map("male_amount") @db.Decimal(12, 2)
+  femaleAmount Decimal      @map("female_amount") @db.Decimal(12, 2)
+  residency    FeeResidency @default(ALL)
+  isMonthly    Boolean      @default(false) @map("is_monthly")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  period AdmissionPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@index([periodId])
+  @@map("admission_fee_items")
+}
 
 enum WaveStatus {
   UPCOMING // Belum dibuka

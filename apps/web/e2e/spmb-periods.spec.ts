@@ -159,6 +159,49 @@ test.describe("Periode & Gelombang SPMB", () => {
     expect(Number(data.waves[0].fullPaymentDiscount)).toBe(1_000_000);
   });
 
+  test("the admin enters the fee table, and its totals follow the lines", async ({
+    page,
+  }) => {
+    test.skip(!periodId, "the period was not created");
+
+    await injectSession(page, admin);
+    await page.goto(`/spmb/periods/${periodId}`);
+    await expect(page.getByText("Rincian biaya belum diisi.")).toBeVisible();
+    await page.getByTestId("fee-edit").click();
+
+    const lines: Array<[string, string, string, string, boolean]> = [
+      ["Pendaftaran", "200000", "200000", "", false],
+      ["Seragam", "1250000", "1500000", "", false],
+      ["SPP Bulanan", "800000", "800000", "Mukim", true],
+      ["SPP Bulanan", "350000", "350000", "Tidak mukim", true],
+    ];
+    for (const [i, [label, male, female, residency, monthly]] of lines.entries()) {
+      await page.getByTestId("fee-add-line").click();
+      await page.getByLabel(`Uraian baris ${i + 1}`).fill(label);
+      await page.getByLabel(`Ikhwan baris ${i + 1}`).fill(male);
+      await page.getByLabel(`Akhwat baris ${i + 1}`).fill(female);
+      if (residency) {
+        await page.getByLabel(`Berlaku untuk baris ${i + 1}`).click();
+        await page.getByRole("option", { name: residency, exact: true }).click();
+      }
+      if (monthly) await page.getByLabel(`Bulanan baris ${i + 1}`).click();
+    }
+    // The totals follow as the lines are typed.
+    await expect(page.getByTestId("fee-form-total-BOARDING-male")).toHaveText(
+      "Rp2.250.000",
+    );
+    await page.getByTestId("fee-save").click();
+
+    const totals = page.getByTestId("fee-total");
+    await expect(totals).toHaveCount(2);
+    await expect(totals.nth(0)).toContainText("Jumlah mukim");
+    await expect(totals.nth(0)).toContainText("Rp2.250.000");
+    await expect(totals.nth(0)).toContainText("Rp2.500.000");
+    await expect(totals.nth(1)).toContainText("Jumlah tidak mukim");
+    await expect(totals.nth(1)).toContainText("Rp1.800.000");
+    await expect(totals.nth(1)).toContainText("Rp2.050.000");
+  });
+
   test("the admin edits the period, and removes a wave nobody registered in", async ({
     page,
   }) => {
