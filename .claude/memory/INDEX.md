@@ -41,6 +41,7 @@ the mechanical cases.
 - [struktur-organisasi-dan-identitas](decisions/struktur-organisasi-dan-identitas.md) — audit 2026-09-29: unit Pesantren dibuat; satu pohon org maks 3 tingkat, jabatan terpisah dari pemegangnya; Model A bertahap tapi menyeluruh (baseline hanya menyusut); Google OU per kebijakan + grup otomatis; Cipansor → Google → Microsoft ditegaskan (hub Microsoft butuh P1)
 - [penyimpanan-berkas](decisions/penyimpanan-berkas.md) — satu tabel berkas (pemilik, status tertaut), Blob privat lewat managed identity + SAS delegasi pengguna, tanpa kunci akun atau kontainer publik; yang tak tertaut dihapus sesudah 24 jam; rancangan #441 ditolak
 - [akreditasi-unit](decisions/akreditasi-unit.md) — each unit's accreditation on the public site from one official record in the portal (admin unit or Super Admin, with the PDF); shown once its certificate exists; hidden once expired; readiness never overwrites it; reminder 12 months before
+- [spmb-2027-2028](decisions/spmb-2027-2028.md) — 2027/28 registration runs in the portal (no bit.ly), target before wave 2 (1 Jan 2027); the brochure's waves, discounts, fees, requirements and contacts become SPMB module data; requirements follow the brochure (Permendikdasmen 3/2025 risk noted); "Ramram"; full structure on the public site; official + short unit names with NPSN/permit; order: users scope fix → SPMB → Pesantren unit
 
 ## Lessons — traps that already cost time
 

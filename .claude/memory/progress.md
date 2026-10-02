@@ -12,8 +12,8 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `5f879509` (#615) on
-  2026-09-29. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `b59a61b9` (#632) on
+  2026-10-02. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -24,7 +24,10 @@ backlog to [`roadmap.md`](roadmap.md).
 ## Waiting on the user
 
 - Approval for the next production release — deferred by the user on
-  2026-09-27; ask again at the end of every report. (Which fixes production
+  2026-09-27; ask again at the end of every report. Passwords parts A and B
+  must go out together, with `scripts/require-password-change-all.ts` run
+  once after that deploy; SPMB 2027/2028 needs a release before
+  1 January 2027 to take wave 2. (Which fixes production
   still lacks is for the machine-local memory, not here — see "Where things
   live".)
 - Role catalogue items decided but not built: wakasek per bidang as a
@@ -101,7 +104,10 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   2FA on (#623), and the realm badge beside a role name for every realm
   (#624). The session moved to HttpOnly cookies (#620, issue #523). The
   password rules (00.9, part A: #625), and the forced password change (part
-  B: this change). Then the wali's
+  B: #632). Next, in the order decided on 2026-10-02: a users-module scope
+  fix, then SPMB 2027/2028 in the portal and on the public site
+  (`decisions/spmb-2027-2028.md`, roadmap 00.10), then the Pesantren unit.
+  Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and
