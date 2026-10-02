@@ -18,6 +18,12 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **Printed documents name a head who does not exist** (found 2026-10-02).
+  "H. Ahmad Fauzi, S.Pd.I., M.Pd." is typed into the signature block of
+  `students/documents/page.tsx` (twice), the Merdeka report card print
+  (`assessment/report-cards/[id]/print-merdeka/page.tsx`, twice) and
+  `settings/page.tsx`; the tahfidz certificate (`tahfidz/certificate/page.tsx`)
+  signs as "KH. Ahmad Fauzi". The signer is the unit's head, from the data.
 - **The web calls API paths that do not exist — 184 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
   in #569 and #571, mata pelajaran in #573, laporan harian in #577, the

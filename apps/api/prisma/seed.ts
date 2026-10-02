@@ -137,6 +137,7 @@ import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permis
 // can't leave the seeded demo logins out of sync with what the web login page
 // lists. This is the single source of truth for the per-role demo accounts.
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../../packages/shared/src/types/demo-accounts';
+import { YAYASAN_ORGANS } from '../../../packages/shared/src/types/office-holders';
 import { SECOND_FACTOR_ROLE_CODES } from '../../../packages/shared/src/roles';
 
 // RoleCode comes straight from the generated Prisma client — do NOT keep a
@@ -245,52 +246,22 @@ async function main() {
 
   console.log('✅ Foundation created');
 
-  // Create Board Members
-  const boardMembersData = [
-    {
-      name: 'KH. Muhammad Yusuf',
-      position: 'Ketua',
-      phone: '081234567890',
-      email: 'ketua@cipansor.or.id',
-    },
-    {
-      name: 'H. Ahmad Fauzi',
-      position: 'Wakil Ketua',
-      phone: '081234567891',
-      email: 'wakil@cipansor.or.id',
-    },
-    {
-      name: 'Hj. Siti Fatimah',
-      position: 'Sekretaris',
-      phone: '081234567892',
-      email: 'sekretaris@cipansor.or.id',
-    },
-    {
-      name: 'H. Abdullah Rahman',
-      position: 'Bendahara',
-      phone: '081234567893',
-      email: 'bendahara@cipansor.or.id',
-    },
-    {
-      name: 'Ustadz Hasan Basri',
-      position: 'Anggota',
-      phone: '081234567894',
-      email: 'anggota1@cipansor.or.id',
-    },
-  ];
-
-  for (const member of boardMembersData) {
-    await prisma.boardMember.create({
-      data: {
-        foundationId: foundation.id,
-        name: member.name,
-        position: member.position,
-        phone: member.phone,
-        email: member.email,
-        startDate: new Date('2020-01-01'),
-        isActive: true,
-      },
-    });
+  // The yayasan's organs as the yayasan published them (office-holders.ts):
+  // names, positions and portraits. No phone numbers or e-mail — those are the
+  // person's, entered by an admin — and no start date, which nobody here knows;
+  // an invented "Sejak Jan 2020" beside a real name is a false statement.
+  for (const group of YAYASAN_ORGANS) {
+    for (const holder of group.holders) {
+      await prisma.boardMember.create({
+        data: {
+          foundationId: foundation.id,
+          name: holder.name,
+          position: holder.position,
+          photoUrl: holder.photo ?? null,
+          isActive: true,
+        },
+      });
+    }
   }
 
   console.log('✅ Board members created');
@@ -871,96 +842,6 @@ async function main() {
     },
   });
 
-  // Create Yayasan Users with multiple roles
-  const ketuaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'KH. Muhammad Yusuf',
-      email: 'ketua@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Ketua123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  // Ketua is Pengurus, and only Pengurus.
-  //
-  // This block used to give the same account YAYASAN_KETUA and
-  // YAYASAN_PEMBINA, under a comment reading "Ketua Yayasan has multiple
-  // roles". UU 16/2001 Pasal 29 forbids exactly that: an anggota Pembina may
-  // not concurrently be Pengurus or Pengawas, because the organ that appoints
-  // cannot also be the one that executes. The database now refuses it too (see
-  // the trg_yayasan_organ_exclusive migration), so this seed would fail loudly
-  // rather than reproduce the violation.
-  //
-  // Multi-role accounts are still demonstrated, and legitimately — see the
-  // komite members and staff who are also wali further down.
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: ketuaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_KETUA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  // Pembina is a separate person, as the law requires.
-  const pembinaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'KH. Abdurrahman Wahid Nurcholis',
-      email: 'pembina@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Pembina123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: pembinaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_PEMBINA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  const sekretarisYayasanUser = await prisma.user.create({
-    data: {
-      name: 'Hj. Siti Fatimah',
-      email: 'sekretaris@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Sekretaris123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: sekretarisYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_SEKRETARIS].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  const bendaharaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'H. Abdullah Rahman',
-      email: 'bendahara@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Bendahara123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: bendaharaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_BENDAHARA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
   // No "Admin Yayasan" user. Foundation-level administration belongs to
   // SUPER_ADMIN, so this account had no role left to hold.
 
@@ -1031,6 +912,17 @@ async function main() {
 
   const kepalaSmpItUser = demoUserOrThrow(RoleCode.SMPIT_KEPALA_SEKOLAH);
   const kepalaSdItUser = demoUserOrThrow(RoleCode.SDIT_KEPALA_SEKOLAH);
+
+  // The yayasan's organs, the same way. A second set of accounts used to be
+  // created here — ketua@, pembina@, sekretaris@ and bendahara@, with invented
+  // names and passwords of their own — beside the yayasan.*@ accounts that
+  // DEMO_ACCOUNTS creates with the real office holders' names. Ketua and
+  // Pembina are separate people (UU 16/2001 Ps. 29; the database enforces it
+  // with trg_yayasan_organ_exclusive), and DEMO_ACCOUNTS keeps them apart.
+  const ketuaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_KETUA);
+  const pembinaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_PEMBINA);
+  const sekretarisYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_SEKRETARIS);
+  const bendaharaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_BENDAHARA);
 
   // The SD IT head also teaches, mirroring the SMP IT pairing.
   await prisma.userRoleAssignment.create({
@@ -3953,7 +3845,7 @@ async function main() {
 
   console.log('\n📊 Seed Summary:');
   console.log(`   Foundation: 1`);
-  console.log(`   Board Members: ${boardMembersData.length}`);
+  console.log(`   Board Members: ${YAYASAN_ORGANS.flatMap((g) => g.holders).length}`);
   console.log(`   Units: 4`);
   console.log(`   Roles: 24`);
   console.log(`   Users: ${students.length + 15 + staffData.length + 1}`); // +1 for System User
@@ -4006,9 +3898,7 @@ async function main() {
   console.log('   Super Admin: superadmin@cipansor.or.id / SuperAdmin123!');
 
   console.log('\n   === YAYASAN ===');
-  console.log('   Ketua Yayasan: ketua@cipansor.or.id / Ketua123!');
-  console.log('   Pembina Yayasan: pembina@cipansor.or.id / Pembina123!');
-  console.log('   Pengawas Yayasan: pengawas@cipansor.or.id / Pengawas123!');
+  console.log('   The yayasan.*@ demo accounts (DEMO_ACCOUNTS) / the shared demo password');
 
   // No PAUD block is printed here on purpose. It used to advertise
   // admin@paud.sch.id / Admin123! and student4@paud.sch.id / Student123! —
@@ -4917,7 +4807,6 @@ async function main() {
       unitId: smpIt.id,
       donorName: 'H. Muhammad Yusuf',
       donorPhone: '081234567890',
-      donorEmail: 'ketua@cipansor.or.id',
       isAnonymous: false,
       type: PublicDonationType.WAKAF,
       amount: new Prisma.Decimal(50000000),
@@ -8156,7 +8045,7 @@ async function main() {
     const fixedSecret = process.env.E2E_2FA_SECRET || 'NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE';
     // Everyone login forces through 2FA: the legacy admin column, plus any
     // active assignment in SECOND_FACTOR_ROLE_CODES — admins, the organs (whose
-    // legacy column is STAFF on some accounts, e.g. ketua@) and the unit heads.
+    // legacy column is STAFF on some accounts, e.g. yayasan.ketua@) and the unit heads.
     const secondFactorCodes = [...SECOND_FACTOR_ROLE_CODES] as RoleCode[];
     const updated = await prisma.user.updateMany({
       where: {

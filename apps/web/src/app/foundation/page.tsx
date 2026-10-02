@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { authFileUrl } from "@/lib/files";
 import { safeFormat } from "@/lib/date";
 import { MainLayout } from "@/components/layout";
+import { BoardOrgans } from "@/components/foundation/board-organs";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -96,13 +98,19 @@ import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-export default function FoundationPage() {
-  const [activeTab, setActiveTab] = useState("info");
+const TABS = ["info", "documents", "board", "financial"] as const;
+
+function FoundationPageContent() {
+  // The organ forms come back to `/foundation?tab=board`.
+  const tabParam = useSearchParams().get("tab");
+  const [activeTab, setActiveTab] = useState<string>(
+    TABS.find((t) => t === tabParam) ?? "info",
+  );
   const [isEditing, setIsEditing] = useState(false);
 
   const { data: foundation, isLoading } = useFoundation();
   const { data: documents } = useFoundationDocuments();
-  const { data: boardMembers } = useFoundationBoardMembers();
+  const { data: boardMembers } = useFoundationBoardMembers({ isActive: true });
   // This used to call useFinancialSummary(foundation?.id) — the SPP/invoice
   // summary hook, passed a foundation id where it expects an academic year id.
   // Every read below was cast through `as any` because the shapes do not match
@@ -157,9 +165,9 @@ export default function FoundationPage() {
   const handleDeleteBoardMember = async (id: string) => {
     try {
       await deleteBoardMember.mutateAsync(id);
-      toast.success("Anggota pengurus berhasil dihapus");
+      toast.success("Anggota organ berhasil dihapus");
     } catch {
-      toast.error("Gagal menghapus anggota pengurus");
+      toast.error("Gagal menghapus anggota organ");
     }
   };
 
@@ -218,7 +226,7 @@ export default function FoundationPage() {
             </TabsTrigger>
             <TabsTrigger value="board" className="flex items-center gap-2">
               <Users className="h-4 w-4" />
-              Pengurus
+              Organ Yayasan
             </TabsTrigger>
             <TabsTrigger value="financial" className="flex items-center gap-2">
               <Banknote className="h-4 w-4" />
@@ -592,117 +600,27 @@ export default function FoundationPage() {
             </Card>
           </TabsContent>
 
-          {/* Board Members Tab */}
+          {/* Organs Tab — Pembina, Pengurus and Pengawas who hold office */}
           <TabsContent value="board" className="space-y-6">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">Pengurus Yayasan</h2>
+                <h2 className="text-xl font-semibold">Organ Yayasan</h2>
                 <p className="text-sm text-muted-foreground">
-                  Daftar pengurus aktif yayasan
+                  Pembina, Pengurus, dan Pengawas yang sedang menjabat
                 </p>
               </div>
               <Button asChild>
                 <Link href="/foundation/board/new">
                   <Plus className="mr-2 h-4 w-4" />
-                  Tambah Pengurus
+                  Tambah
                 </Link>
               </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {boardMembers?.length ? (
-                boardMembers.map((member) => (
-                  <Card key={member.id}>
-                    <CardContent className="pt-6">
-                      <div className="flex items-start gap-4">
-                        <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                          <Users className="h-6 w-6 text-muted-foreground" />
-                        </div>
-                        <div className="flex-1">
-                          <h3 className="font-semibold">{member.name}</h3>
-                          <p className="text-sm text-muted-foreground">
-                            {member.position}
-                          </p>
-                          <div className="mt-2 space-y-1 text-sm">
-                            {member.phone && (
-                              <p className="flex items-center gap-1 text-muted-foreground">
-                                <Phone className="h-3 w-3" />
-                                {member.phone}
-                              </p>
-                            )}
-                            {member.email && (
-                              <p className="flex items-center gap-1 text-muted-foreground">
-                                <Mail className="h-3 w-3" />
-                                {member.email}
-                              </p>
-                            )}
-                          </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <Badge
-                              variant={
-                                member.isActive ? "default" : "secondary"
-                              }
-                            >
-                              {member.isActive ? "Aktif" : "Non-Aktif"}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              Sejak{" "}
-                              {safeFormat(
-                                new Date(member.startDate),
-                                "MMM yyyy",
-                                {
-                                  locale: id,
-                                },
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex justify-end gap-2">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/foundation/board/${member.id}/edit`}>
-                            <Edit className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Hapus Pengurus?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Tindakan ini tidak dapat dibatalkan.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Batal</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() =>
-                                  handleDeleteBoardMember(member.id)
-                                }
-                              >
-                                Hapus
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))
-              ) : (
-                <Card className="col-span-full">
-                  <CardContent className="py-8 text-center text-muted-foreground">
-                    Belum ada data pengurus
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+            <BoardOrgans
+              members={boardMembers ?? []}
+              onDelete={handleDeleteBoardMember}
+            />
           </TabsContent>
 
           {/* Financial Tab */}
@@ -943,5 +861,13 @@ export default function FoundationPage() {
         </Tabs>
       </div>
     </MainLayout>
+  );
+}
+
+export default function FoundationPage() {
+  return (
+    <Suspense fallback={null}>
+      <FoundationPageContent />
+    </Suspense>
   );
 }

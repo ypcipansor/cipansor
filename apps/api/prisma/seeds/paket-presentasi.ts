@@ -83,7 +83,7 @@ import {
 } from '../../src/lib/academic-calendar';
 import { syncParentRoleAssignments, type ParentScopeClient } from '../../src/utils/parent-scope';
 import { QURAN_SURAHS } from '../../src/modules/tahfidz/quran-surahs';
-import { DEMO_ACCOUNTS } from '../../../../packages/shared/src/types/demo-accounts';
+import { YAYASAN_ORGANS } from '../../../../packages/shared/src/types/office-holders';
 import { siteConfig } from '../../../../packages/shared/src/public-site';
 import { randomUUID } from 'crypto';
 
@@ -1258,9 +1258,10 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
       data: {
         name: siteConfig.legalName,
         legalName: siteConfig.legalName,
-        // Hanya tahun berdirinya (1911) yang diketahui; tanggal lengkap dan
-        // NPWP tidak — lebih baik kosong daripada tebakan.
-        foundingDate: null,
+        // Tanggal akta pendirian badan hukumnya (Akta Notaris No. 01, 5 April
+        // 2012); pesantrennya sendiri berdiri 1911. NPWP tidak diketahui — lebih
+        // baik kosong daripada tebakan.
+        foundingDate: utcDate(2012, 3, 5),
         taxId: null,
         address,
         phone: siteConfig.contact.phone,
@@ -1271,45 +1272,28 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
       },
     });
 
-    // Susunan organ yayasan mengikuti akun demo (yang dipakai seluruh aplikasi),
-    // bukan daftar lama yang namanya tidak dikenal di mana pun.
-    const organ: Array<{ roleCode: string; position: string }> = [
-      { roleCode: 'YAYASAN_PEMBINA', position: 'Pembina' },
-      { roleCode: 'YAYASAN_PENGAWAS', position: 'Pengawas' },
-      { roleCode: 'YAYASAN_KETUA', position: 'Ketua' },
-      { roleCode: 'YAYASAN_SEKRETARIS', position: 'Sekretaris' },
-      { roleCode: 'YAYASAN_BENDAHARA', position: 'Bendahara' },
-      { roleCode: 'YAYASAN_ANGGOTA', position: 'Anggota' },
-    ];
+    // Susunan organ yayasan seperti yang diterbitkan yayasan (office-holders.ts):
+    // nama, jabatan, foto. Tanpa telepon dan email (milik pribadi, diisi admin)
+    // dan tanpa tanggal mulai menjabat, yang tidak diketahui.
     const names = new Set<string>();
-    for (const o of organ) {
-      const acc = DEMO_ACCOUNTS.find((d) => d.roleCode === o.roleCode);
-      if (!acc) continue;
-      names.add(acc.name);
-      const existing = await db.boardMember.findFirst({
-        where: { foundationId: foundation.id, name: acc.name },
-      });
-      const data = {
-        position: o.position,
-        email: acc.email,
-        photoUrl: acc.photo ?? null,
-        isActive: true,
-        endDate: null,
-      };
-      if (existing) await db.boardMember.update({ where: { id: existing.id }, data });
-      else
-        await db.boardMember.create({
-          data: {
-            ...data,
-            foundationId: foundation.id,
-            name: acc.name,
-            startDate: utcDate(2022, 0, 1),
-          },
+    for (const group of YAYASAN_ORGANS) {
+      for (const h of group.holders) {
+        names.add(h.name);
+        const existing = await db.boardMember.findFirst({
+          where: { foundationId: foundation.id, name: h.name, position: h.position },
         });
+        const data = { photoUrl: h.photo ?? null, isActive: true, endDate: null };
+        if (existing) await db.boardMember.update({ where: { id: existing.id }, data });
+        else
+          await db.boardMember.create({
+            data: { ...data, foundationId: foundation.id, name: h.name, position: h.position },
+          });
+      }
     }
+    // Nama lain bukan organ yang menjabat: dinonaktifkan, tidak dihapus.
     await db.boardMember.updateMany({
       where: { foundationId: foundation.id, name: { notIn: [...names] }, isActive: true },
-      data: { isActive: false, endDate: utcDate(2021, 11, 31) },
+      data: { isActive: false },
     });
   }
 
