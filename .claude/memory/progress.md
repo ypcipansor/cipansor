@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-09-29**. What a new session needs to pick up the thread, newest
+Updated **2026-10-03**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -12,8 +12,8 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `b59a61b9` (#632) on
-  2026-10-02. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `47776a67f` (#650) on
+  2026-10-03. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -84,14 +84,23 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 ## In flight
 
 - **Web Push and stored notification preferences — merged 2026-10-03
-  (#626).** The user chose to build the sender (`decisions/notifikasi-push.md`):
-  the notification table is the push outbox, preferences are stored for real,
-  lock-screen text per category, one VAPID pair per environment (staging's
-  set by the deploy job from the `staging` environment secret; production
-  needs its own pair with the release). Then hand-written notifications are
-  limited to the sender's scope, with the sender recorded (this PR). Next in
-  this area: broadcasts that reach no one (known-issues, "A broadcast reaches
-  no one") — the user decides who may send to whom first.
+  (#626), on staging and proven there** (a push delivered to a real browser
+  endpoint, decrypted). The user chose to build the sender
+  (`decisions/notifikasi-push.md`): the notification table is the push
+  outbox, preferences are stored for real, lock-screen text per category, one
+  VAPID pair per environment (staging's set by the deploy job from the
+  `staging` environment secret; production needs its own pair with the
+  release). Then hand-written notifications limited to the sender's scope
+  (#648), the setoran recorder skipped off Chromium (#649), and the CSP
+  without `upgrade-insecure-requests`, which WebKit applied to `http://localhost`
+  (#650, `lessons/webkit-seen-only-after-merge.md`).
+- **Pengumuman, the one way to broadcast** (decided 2026-10-03,
+  `decisions/siaran-pengumuman.md`; branch `feat/announcements-reach`).
+  Sending by relation (guru → their classes, musyrif → their santri mukim,
+  head/TU/admin → their unit, organs → the yayasan or a unit, Super Admin
+  writes nothing); bell + push only; no approval, recorded, the unit head
+  withdraws. Quick Send, *Buat Notifikasi* and the wali's separate
+  announcements page go, with permanent redirects to `/announcements`.
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru

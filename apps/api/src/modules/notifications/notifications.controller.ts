@@ -1,12 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import * as service from './notifications.service';
 import {
-  createNotificationSchema,
-  createBulkNotificationSchema,
   queryNotificationSchema,
-  createAnnouncementSchema,
-  updateAnnouncementSchema,
-  queryAnnouncementSchema,
   queryStatsSchema,
   createTemplateSchema,
   updateTemplateSchema,
@@ -18,7 +13,6 @@ import {
 } from './notifications.schema';
 import * as preferences from './preferences.service';
 import { webPushKeys } from './push-dispatch.service';
-import { assertRecipientsInScope } from './recipient-scope.service';
 import { Errors } from '../../middleware/error';
 import { whatsAppService } from './whatsapp.service';
 import { notificationScheduler } from './scheduler.service';
@@ -73,32 +67,6 @@ export async function getNotificationById(req: Request, res: Response, next: Nex
   }
 }
 
-export async function createNotification(req: Request, res: Response, next: NextFunction) {
-  try {
-    const sender = req.user;
-    if (!sender) throw Errors.unauthorized();
-    const data = createNotificationSchema.parse(req.body);
-    if (data.userId) await assertRecipientsInScope(sender, [data.userId]);
-    const notification = await service.createNotification(data, sender.sub);
-    res.status(201).json({ success: true, data: notification });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function createBulkNotifications(req: Request, res: Response, next: NextFunction) {
-  try {
-    const sender = req.user;
-    if (!sender) throw Errors.unauthorized();
-    const data = createBulkNotificationSchema.parse(req.body);
-    await assertRecipientsInScope(sender, data.userIds);
-    const result = await service.createBulkNotifications(data, sender.sub);
-    res.status(201).json({ success: true, data: { count: result.count } });
-  } catch (error) {
-    next(error);
-  }
-}
-
 export async function markAsRead(req: Request, res: Response, next: NextFunction) {
   try {
     await service.markAsRead(req.params.id, req.user!.sub);
@@ -124,29 +92,6 @@ export async function deleteNotification(req: Request, res: Response, next: Next
 
     await service.deleteNotification(req.params.id, req.user!.sub, isAdmin);
     res.json({ success: true, message: 'Notification deleted' });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function sendNotification(req: Request, res: Response, next: NextFunction) {
-  try {
-    await service.sendNotification(req.params.id);
-    res.json({ success: true, message: 'Notification queued for sending' });
-  } catch (error) {
-    next(error);
-  }
-}
-
-const scheduleNotificationSchema = z.object({
-  scheduledAt: z.string().datetime(),
-});
-
-export async function scheduleNotification(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { scheduledAt } = scheduleNotificationSchema.parse(req.body);
-    const result = await service.scheduleNotification(req.params.id, new Date(scheduledAt));
-    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
@@ -225,57 +170,6 @@ export async function deleteTemplate(req: Request, res: Response, next: NextFunc
 }
 
 // ==================== ANNOUNCEMENT ====================
-
-export async function getAnnouncements(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = queryAnnouncementSchema.parse(req.query);
-    const result = await service.getAnnouncements(query);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function getAnnouncementById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const announcement = await service.getAnnouncementById(req.params.id);
-    if (!announcement) {
-      throw Errors.notFound('Announcement not found');
-    }
-    res.json({ success: true, data: announcement });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function createAnnouncement(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createAnnouncementSchema.parse(req.body);
-    const announcement = await service.createAnnouncement(data, req.user!.sub);
-    res.status(201).json({ success: true, data: announcement });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function updateAnnouncement(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = updateAnnouncementSchema.parse(req.body);
-    const announcement = await service.updateAnnouncement(req.params.id, data);
-    res.json({ success: true, data: announcement });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function deleteAnnouncement(req: Request, res: Response, next: NextFunction) {
-  try {
-    await service.deleteAnnouncement(req.params.id);
-    res.json({ success: true, message: 'Announcement deleted' });
-  } catch (error) {
-    next(error);
-  }
-}
 
 // ==================== MOBILE PUSH (FCM) ====================
 

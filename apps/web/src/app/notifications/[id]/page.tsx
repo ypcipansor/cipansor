@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/table";
 import {
   useNotification,
-  useSendNotification,
   useDeleteNotification,
   NOTIFICATION_TYPE_LABELS,
   NOTIFICATION_PRIORITY_LABELS,
@@ -33,7 +32,6 @@ import {
 } from "@/hooks";
 import {
   ArrowLeft,
-  Send,
   Trash2,
   Loader2,
   Bell,
@@ -70,7 +68,6 @@ function NotificationDetailPageContent({ params }: PageProps) {
   const router = useRouter();
 
   const { data: notification, isLoading } = useNotification(notificationId);
-  const sendNotification = useSendNotification();
   const deleteNotification = useDeleteNotification();
 
   const getTypeBadge = (type: NotificationType) => {
@@ -102,15 +99,6 @@ function NotificationDetailPageContent({ params }: PageProps) {
         {NOTIFICATION_PRIORITY_LABELS[priority]}
       </Badge>
     );
-  };
-
-  const handleSend = async () => {
-    try {
-      await sendNotification.mutateAsync(notificationId);
-      toast.success("Notifikasi berhasil dikirim");
-    } catch {
-      toast.error("Gagal mengirim notifikasi");
-    }
   };
 
   const handleDelete = async () => {
@@ -163,21 +151,6 @@ function NotificationDetailPageContent({ params }: PageProps) {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!isSent && (
-            <>
-              <Button
-                onClick={handleSend}
-                disabled={sendNotification.isPending}
-              >
-                {sendNotification.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="mr-2 h-4 w-4" />
-                )}
-                Kirim Sekarang
-              </Button>
-            </>
-          )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="destructive">

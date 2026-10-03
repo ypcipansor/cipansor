@@ -168,7 +168,6 @@ export const ar = {
     laundry: "خدمة المغسلة",
     reception: "مكتب الاستقبال",
     wallet: "المحفظة الرقمية للطالب",
-    quickSend: "الإرسال الجماعي السريع",
     wilayah: "المناطق والمواقع",
     kurikulumMerdeka: "منهج ميرديكا التعليمي",
     studentCompliance: "انضباط الطلاب",

@@ -134,7 +134,6 @@
     "POST /notifications/mark-all-read  apps/web/src/services/notifications.service.ts",
     "POST /notifications/send  apps/web/src/services/notifications.service.ts",
     "POST /parent/messages  apps/web/src/hooks/use-parent-portal.ts",
-    "POST /parent/notifications/{id}/read  apps/web/src/app/parent/announcements/page.tsx",
     "POST /paud-assessment/assessments/{id}/evidences  apps/web/src/hooks/use-tk-assessment.ts",
     "POST /payroll/periods/{id}/close  apps/web/src/hooks/use-hr.ts",
     "POST /payroll/process  apps/web/src/hooks/use-hr.ts",

@@ -32,7 +32,6 @@ import {
   useNotifications,
   useNotificationStats,
   useNotificationTemplates,
-  useSendNotification,
   useDeleteNotification,
   NOTIFICATION_TYPES,
   NOTIFICATION_TYPE_LABELS,
@@ -84,19 +83,9 @@ export default function NotificationsPage() {
   });
   const { data: stats } = useNotificationStats();
   const { data: templates } = useNotificationTemplates();
-  const sendNotification = useSendNotification();
   const deleteNotification = useDeleteNotification();
 
   const notifications: AppNotification[] = notificationsData?.data || [];
-
-  const handleSend = async (id: string) => {
-    try {
-      await sendNotification.mutateAsync(id);
-      toast.success("Notifikasi berhasil dikirim");
-    } catch {
-      toast.error("Gagal mengirim notifikasi");
-    }
-  };
 
   const handleDelete = async (id: string) => {
     try {
@@ -156,10 +145,11 @@ export default function NotificationsPage() {
                 Template
               </Link>
             </Button>
+            {/* Broadcasting is Pengumuman (decisions/siaran-pengumuman.md). */}
             <Button asChild>
-              <Link href="/notifications/new">
+              <Link href="/announcements">
                 <Plus className="mr-2 h-4 w-4" />
-                Buat Notifikasi
+                Buat Pengumuman
               </Link>
             </Button>
           </div>
@@ -350,16 +340,6 @@ export default function NotificationsPage() {
                                 <Eye className="h-4 w-4" />
                               </Link>
                             </Button>
-                            {!notif.sentAt && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleSend(notif.id)}
-                                disabled={sendNotification.isPending}
-                              >
-                                <Send className="h-4 w-4" />
-                              </Button>
-                            )}
                             <AlertDialog>
                               <AlertDialogTrigger asChild>
                                 <Button variant="ghost" size="icon">

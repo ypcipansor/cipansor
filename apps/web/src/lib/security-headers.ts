@@ -132,16 +132,17 @@ export const STATIC_SECURITY_HEADERS: { key: string; value: string }[] = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Push notifications and the microphone are the permissions the portal
-  // needs: Web Push, and the E-Simaan setoran recorder (`AudioRecorder` calls
-  // `getUserMedia({ audio: true })`). Both are scoped to our own origin. The
-  // camera, geolocation and the payment request API are not used — the document
-  // capture field is a plain `<input type="file" capture>` (a file picker, not
-  // a `getUserMedia` camera) — so naming them denies the prompt to any injected
-  // script.
+  // The microphone is the one powerful feature the portal needs: the E-Simaan
+  // setoran recorder (`AudioRecorder` calls `getUserMedia({ audio: true })`),
+  // scoped to our own origin. The camera, geolocation and the payment request
+  // API are not used — the document capture field is a plain
+  // `<input type="file" capture>` (a file picker, not a `getUserMedia` camera)
+  // — so naming them denies the prompt to any injected script. Web Push is not
+  // a Permissions-Policy feature (its permission is the Notifications prompt);
+  // listing `push` only made Chromium log "Unrecognized feature" on every page.
   {
     key: "Permissions-Policy",
     value:
-      "push=(self), fullscreen=(self), camera=(), microphone=(self), geolocation=(), payment=()",
+      "fullscreen=(self), camera=(), microphone=(self), geolocation=(), payment=()",
   },
 ];

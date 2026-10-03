@@ -117,33 +117,6 @@ export const queryStatsSchema = z.object({
   endDate: z.coerce.date().optional(),
 });
 
-// ==================== ANNOUNCEMENT ====================
-
-export const createAnnouncementSchema = z.object({
-  unitId: z.string().uuid().optional(),
-  title: z.string().min(1).max(255),
-  content: z.string().min(1).max(MAX_NOTIFICATION_CONTENT_LENGTH),
-  type: NotificationTypeEnum.default('ANNOUNCEMENT'),
-  priority: z.coerce.number().int().min(0).max(2).default(0), // Keep int for existing logic
-  publishedAt: z.coerce.date().optional(),
-  expiresAt: z.coerce.date().optional(),
-  targetRoles: z.array(z.string()).optional(),
-  attachmentUrl: z.string().url().optional(),
-});
-
-export const updateAnnouncementSchema = partialUpdateSchema(createAnnouncementSchema);
-
-export const queryAnnouncementSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  unitId: z.string().uuid().optional(),
-  priority: z.coerce.number().int().min(0).max(2).optional(),
-  active: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((v) => v === 'true'),
-});
-
 // Use the INPUT type so fields with schema defaults (priority, channels,
 // recipientType, type) are optional for internal callers that build a
 // notification directly without re-parsing (e.g. permits, scheduler).
@@ -153,9 +126,6 @@ export type QueryNotificationInput = z.infer<typeof queryNotificationSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 export type QueryTemplateInput = z.infer<typeof queryTemplateSchema>;
-export type CreateAnnouncementInput = z.infer<typeof createAnnouncementSchema>;
-export type UpdateAnnouncementInput = z.infer<typeof updateAnnouncementSchema>;
-export type QueryAnnouncementInput = z.infer<typeof queryAnnouncementSchema>;
 
 // ==================== WEB PUSH ====================
 

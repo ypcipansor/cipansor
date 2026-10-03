@@ -1,71 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type {
+  AnnouncementComposeOptionsDTO,
+  AnnouncementDTO,
+  AnnouncementStatsDTO,
+  CreateAnnouncementInput,
+  UpdateAnnouncementInput,
+} from "@cipansor/shared";
 import { api } from "@/lib/api";
 
-export interface Announcement {
-  id: string;
-  unitId?: string;
-  title: string;
-  content: string;
-  type: string;
-  priority: number; // 0=normal, 1=important, 2=urgent
-  attachmentUrl?: string;
-  publishedAt?: string;
-  expiresAt?: string;
-  targetRoles: string[];
-  createdById: string;
-  createdAt: string;
-  updatedAt: string;
-  unit?: {
-    id: string;
-    name: string;
-    code: string;
-  };
-  createdBy?: {
-    id: string;
-    name: string;
-  };
-}
+/**
+ * Pengumuman — the one way to broadcast (`decisions/siaran-pengumuman.md`).
+ * Publishing fills the audience's bell; the API decides who may send to whom,
+ * and `useAnnouncementComposeOptions` tells the page what to offer.
+ */
 
-export interface AnnouncementStats {
-  total: number;
-  active: number;
-  urgent: number;
-  thisMonth: number;
-}
-
-interface CreateAnnouncementInput {
-  unitId?: string;
-  title: string;
-  content: string;
-  type?: string;
-  priority?: number;
-  attachmentUrl?: string;
-  publishedAt?: string;
-  expiresAt?: string;
-  targetRoles?: string[];
-}
+export type Announcement = AnnouncementDTO;
+export type AnnouncementStats = AnnouncementStatsDTO;
 
 interface AnnouncementQuery {
-  unitId?: string;
-  type?: string;
-  published?: boolean;
+  /** Only what is live now: published, not expired, not withdrawn. */
+  active?: boolean;
   page?: number;
   limit?: number;
 }
 
-// Get all announcements
+/** The caller's board. */
 export function useAnnouncements(params?: AnnouncementQuery) {
   return useQuery({
-    queryKey: ["announcements", params],
+    queryKey: ["announcements", "list", params],
     queryFn: async () => {
-      const searchParams = new URLSearchParams();
-      if (params?.unitId) searchParams.append("unitId", params.unitId);
-      if (params?.type) searchParams.append("type", params.type);
-      if (params?.published !== undefined)
-        searchParams.append("published", String(params.published));
-      if (params?.page) searchParams.append("page", String(params.page));
-      if (params?.limit) searchParams.append("limit", String(params.limit));
-
       const response = await api.get<{
         success: boolean;
         data: Announcement[];
@@ -75,31 +38,37 @@ export function useAnnouncements(params?: AnnouncementQuery) {
           total: number;
           totalPages: number;
         };
-      }>(`/announcements?${searchParams.toString()}`);
+      }>("/announcements", {
+        params: {
+          ...(params?.active ? { active: "true" } : {}),
+          ...(params?.page ? { page: params.page } : {}),
+          ...(params?.limit ? { limit: params.limit } : {}),
+        },
+      });
       return response.data;
     },
   });
 }
 
-// Get announcement stats
-export function useAnnouncementStats(unitId?: string) {
+/** Counts over what the caller oversees. */
+export function useAnnouncementStats(enabled = true) {
   return useQuery({
-    queryKey: ["announcements", "stats", unitId],
+    queryKey: ["announcements", "stats"],
     queryFn: async () => {
-      const params = unitId ? `?unitId=${unitId}` : "";
       const response = await api.get<{
         success: boolean;
         data: AnnouncementStats;
-      }>(`/announcements/stats${params}`);
+      }>("/announcements/stats");
       return response.data.data;
     },
+    enabled,
   });
 }
 
-// Get single announcement
-export function useAnnouncement(id: string) {
+/** One announcement — the bell's link opens the board on it (`?id=`). */
+export function useAnnouncement(id: string | null) {
   return useQuery({
-    queryKey: ["announcements", id],
+    queryKey: ["announcements", "one", id],
     queryFn: async () => {
       const response = await api.get<{ success: boolean; data: Announcement }>(
         `/announcements/${id}`,
@@ -107,10 +76,25 @@ export function useAnnouncement(id: string) {
       return response.data.data;
     },
     enabled: !!id,
+    retry: false,
   });
 }
 
-// Create announcement
+/** What the caller may publish, and to which units, classes or santri. */
+export function useAnnouncementComposeOptions() {
+  return useQuery({
+    queryKey: ["announcements", "compose"],
+    queryFn: async () => {
+      const response = await api.get<{
+        success: boolean;
+        data: AnnouncementComposeOptionsDTO;
+      }>("/announcements/compose");
+      return response.data.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function useCreateAnnouncement() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -127,7 +111,7 @@ export function useCreateAnnouncement() {
   });
 }
 
-// Update announcement
+/** New words; who received it stays as it was. */
 export function useUpdateAnnouncement() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -136,7 +120,7 @@ export function useUpdateAnnouncement() {
       data,
     }: {
       id: string;
-      data: Partial<CreateAnnouncementInput>;
+      data: UpdateAnnouncementInput;
     }) => {
       const response = await api.patch<{
         success: boolean;
@@ -150,15 +134,20 @@ export function useUpdateAnnouncement() {
   });
 }
 
-// Delete announcement
-export function useDeleteAnnouncement() {
+/** Off the board and out of every bell. */
+export function useWithdrawAnnouncement() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      await api.delete(`/announcements/${id}`);
+      const response = await api.post<{
+        success: boolean;
+        data: Announcement & { removedFromBells: number };
+      }>(`/announcements/${id}/withdraw`);
+      return response.data.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["announcements"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 }
