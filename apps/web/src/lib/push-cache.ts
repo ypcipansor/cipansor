@@ -206,3 +206,44 @@ export function forgetPushStatus(queryClient: {
   queryClient.removeQueries({ queryKey: ["web-push-status"] });
   clearDeliberatePushOff();
 }
+
+/**
+ * The account that turned push on in this browser.
+ *
+ * Notification permission and the `PushSubscription` belong to the browser, not
+ * to whoever is signed in, and both outlive a sign-out. Without a record of who
+ * said yes, the next person to sign in on a shared device (a family tablet, the
+ * office PC) was registered silently — receiving push they never asked for, or
+ * leaving the previous person's notifications pointed at a device they no
+ * longer hold. `useWebPush` keeps a subscription only for its owner and drops
+ * it for anyone else, who then decides for themselves.
+ *
+ * localStorage, because the owner must survive the sign-out it exists for; the
+ * value is an account id, nothing sensitive. Unreadable storage reads as "no
+ * owner", which drops the subscription — the cautious direction.
+ */
+const PUSH_OWNER_KEY = "cipansor-push-owner";
+
+export function pushOwner(): string | null {
+  try {
+    return localStorage.getItem(PUSH_OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setPushOwner(userId: string): void {
+  try {
+    localStorage.setItem(PUSH_OWNER_KEY, userId);
+  } catch {
+    // Storage blocked: the next visit finds no owner and asks again.
+  }
+}
+
+export function clearPushOwner(): void {
+  try {
+    localStorage.removeItem(PUSH_OWNER_KEY);
+  } catch {
+    // Nothing to clear.
+  }
+}

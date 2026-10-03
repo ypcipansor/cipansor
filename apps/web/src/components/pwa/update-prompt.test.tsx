@@ -126,4 +126,18 @@ describe("UpdatePrompt", () => {
     });
     expect(reload).toHaveBeenCalledTimes(1);
   });
+
+  it("can be put off with Nanti, without applying the update", () => {
+    installServiceWorker({});
+    const postMessage = vi.fn();
+    window.__swWaiting = { postMessage } as unknown as ServiceWorker;
+    render(<UpdatePrompt />);
+    expect(screen.getByText("Versi baru tersedia")).toBeInTheDocument();
+
+    act(() => {
+      screen.getByRole("button", { name: "Nanti" }).click();
+    });
+    expect(screen.queryByText("Versi baru tersedia")).toBeNull();
+    expect(postMessage).not.toHaveBeenCalled();
+  });
 });

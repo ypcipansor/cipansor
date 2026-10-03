@@ -102,11 +102,6 @@ jobs:
       ESIGN_RATE_LIMIT_MAX: '100000'
       # Baked into the web build: API base origin only (the app appends /api).
       NEXT_PUBLIC_API_URL: http://localhost:3001
-      # A VAPID *public* key is not a secret (only the private half is), and it
-      # is inlined into the web build at `next build`, so it must be present
-      # HERE, not only in the webServer env. Without it the push card reports
-      # "unconfigured" and the subscribe/disable e2e can never run.
-      NEXT_PUBLIC_VAPID_PUBLIC_KEY: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       # Used by the e2e test runner, which builds full paths — keep the /api.
       API_URL: http://localhost:3001/api
       BASE_URL: http://localhost:3000
@@ -180,6 +175,13 @@ jobs:
           # tsc on the full API surface exceeds Node's ~2GB default heap and
           # OOMs (exit 134); raise the limit (runners have plenty of RAM).
           NODE_OPTIONS: --max-old-space-size=4096
+
+      # Web Push needs a VAPID key pair on the API, or the settings card reports
+      # push unavailable and the subscribe/disable e2e cannot run. A pair made
+      # for this job and thrown away with it — never a stored secret.
+      - name: Generate a throwaway VAPID key pair
+        run: |
+          node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();console.log('VAPID_PUBLIC_KEY='+c.getPublicKey('base64url'));console.log('VAPID_PRIVATE_KEY='+c.getPrivateKey('base64url'))" >> "$GITHUB_ENV"
 
       - name: Start API and wait for health
         run: |
@@ -255,8 +257,6 @@ jobs:
       TWO_FACTOR_RATE_LIMIT_MAX: '100000'
       ESIGN_RATE_LIMIT_MAX: '100000'
       NEXT_PUBLIC_API_URL: http://localhost:3001
-      # Baked at build time (see the chromium job above for why it must be here).
-      NEXT_PUBLIC_VAPID_PUBLIC_KEY: BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB
       API_URL: http://localhost:3001/api
       BASE_URL: http://localhost:3000
 
@@ -326,6 +326,13 @@ jobs:
           pnpm --filter web build
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+      # Web Push needs a VAPID key pair on the API, or the settings card reports
+      # push unavailable and the subscribe/disable e2e cannot run. A pair made
+      # for this job and thrown away with it — never a stored secret.
+      - name: Generate a throwaway VAPID key pair
+        run: |
+          node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();console.log('VAPID_PUBLIC_KEY='+c.getPublicKey('base64url'));console.log('VAPID_PRIVATE_KEY='+c.getPrivateKey('base64url'))" >> "$GITHUB_ENV"
 
       - name: Start API and wait for health
         run: |

@@ -2,9 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
-    // `URL` is a global in both runtimes (Node >= 10 and every browser) but is
-    // typed only in the DOM lib; the push endpoint validator needs it.
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": "./src",
     "strict": true,

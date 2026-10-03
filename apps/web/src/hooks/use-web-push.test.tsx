@@ -6,8 +6,17 @@ import type { ReactNode } from "react";
 const subscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const unsubscribePush = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const pushStatus = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+// The server's VAPID public key now comes from the API, not a build variable.
+const pushConfig = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ publicKey: "B".repeat(87) }),
+);
 vi.mock("@/services/notifications.service", () => ({
-  notificationsService: { subscribePush, unsubscribePush, pushStatus },
+  notificationsService: {
+    subscribePush,
+    unsubscribePush,
+    pushStatus,
+    pushConfig,
+  },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -31,15 +40,13 @@ vi.mock("@/lib/api", async (importOriginal) => {
   };
 });
 
-// The hook reads this at module load, and ESM imports are hoisted above plain
-// statements — so it must be set in a hoisted block, not before the import.
-vi.hoisted(() => {
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "B".repeat(87);
-});
-
 import { useWebPush } from "./use-web-push";
 import { useAuthStore } from "@/stores/auth";
-import { clearDeliberatePushOff } from "@/lib/push-cache";
+import {
+  clearDeliberatePushOff,
+  pushOwner,
+  setPushOwner,
+} from "@/lib/push-cache";
 
 // Server calls now go through React Query, so every render needs a client. The
 // settings page and the shell share one client in the app, so the tests do too
@@ -66,9 +73,9 @@ function renderWebPush(client = makeClient()) {
 }
 
 const subscription = {
-  endpoint: "https://push.example.com/abc",
+  endpoint: "https://fcm.googleapis.com/fcm/send/abc",
   toJSON: () => ({
-    endpoint: "https://push.example.com/abc",
+    endpoint: "https://fcm.googleapis.com/fcm/send/abc",
     expirationTime: null,
     keys: { p256dh: "p", auth: "a" },
   }),
@@ -116,7 +123,11 @@ describe("useWebPush", () => {
     subscribePush.mockResolvedValue(undefined);
     unsubscribePush.mockResolvedValue(undefined);
     pushStatus.mockResolvedValue(true);
+    pushConfig.mockResolvedValue({ publicKey: "B".repeat(87) });
     subscription.unsubscribe.mockResolvedValue(true);
+    // This browser's subscription was turned on by the signed-in account.
+    localStorage.clear();
+    setPushOwner("user-1");
     // The deliberate-off set is module-level, so it outlives a test file; clear
     // it or the "does not re-register" test's marker leaks into the next run.
     clearDeliberatePushOff();
@@ -152,7 +163,9 @@ describe("useWebPush", () => {
 
     expect(subscribe).toHaveBeenCalledTimes(1);
     expect(subscribePush).toHaveBeenCalledWith(
-      expect.objectContaining({ endpoint: "https://push.example.com/abc" }),
+      expect.objectContaining({
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
+      }),
     );
     expect(result.current.state).toBe("subscribed");
   });
@@ -193,7 +206,7 @@ describe("useWebPush", () => {
     });
 
     expect(unsubscribePush).toHaveBeenCalledWith(
-      "https://push.example.com/abc",
+      "https://fcm.googleapis.com/fcm/send/abc",
     );
     expect(subscription.unsubscribe).toHaveBeenCalled();
     // The server row must be gone before the browser drops the endpoint, or a
@@ -229,9 +242,13 @@ describe("useWebPush", () => {
     const { result } = renderWebPush();
 
     await waitFor(() => expect(result.current.state).toBe("subscribed"));
-    expect(pushStatus).toHaveBeenCalledWith("https://push.example.com/abc");
+    expect(pushStatus).toHaveBeenCalledWith(
+      "https://fcm.googleapis.com/fcm/send/abc",
+    );
     expect(subscribePush).toHaveBeenCalledWith(
-      expect.objectContaining({ endpoint: "https://push.example.com/abc" }),
+      expect.objectContaining({
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
+      }),
     );
   });
 
@@ -309,7 +326,7 @@ describe("useWebPush", () => {
       const otherTab = new BroadcastChannel("cipansor-push");
       otherTab.postMessage({
         type: "push-off",
-        endpoint: "https://push.example.com/abc",
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       });
       await new Promise((r) => setTimeout(r, 30));
       otherTab.close();
@@ -332,7 +349,7 @@ describe("useWebPush", () => {
       const otherTab = new BroadcastChannel("cipansor-push");
       otherTab.postMessage({
         type: "push-off",
-        endpoint: "https://push.example.com/abc",
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       });
       await new Promise((r) => setTimeout(r, 30));
       otherTab.close();
@@ -346,7 +363,7 @@ describe("useWebPush", () => {
       const otherTab = new BroadcastChannel("cipansor-push");
       otherTab.postMessage({
         type: "push-on",
-        endpoint: "https://push.example.com/abc",
+        endpoint: "https://fcm.googleapis.com/fcm/send/abc",
       });
       await new Promise((r) => setTimeout(r, 30));
       otherTab.close();
@@ -372,24 +389,78 @@ describe("useWebPush", () => {
     expect(subscribePush).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps a fresh account's status out of another account's cache", async () => {
-    // Logging out and back in on the same browser reused a still-fresh result
-    // for the same endpoint, because the key excluded the account.
+  it("does not hand one account's subscription to the next person who signs in", async () => {
+    // A shared device: user-1 turned push on, then user-2 signs in. user-2 never
+    // pressed "Aktifkan"; registering the browser's subscription for them would
+    // be push on someone else's consent. The subscription is dropped instead.
     installPushEnv({ existing: subscription });
-    pushStatus.mockResolvedValueOnce(true);
-    const client = makeClient();
-    const first = renderWebPush(client);
-    await waitFor(() => expect(first.result.current.state).toBe("subscribed"));
-
-    // A different account signs in; the status must be re-probed, not reused.
-    act(() => {
-      useAuthStore.setState({
-        user: { id: "user-2", name: "Other", email: "o@example.com" } as never,
-        isAuthenticated: true,
-      });
+    useAuthStore.setState({
+      user: { id: "user-2", name: "Other", email: "o@example.com" } as never,
+      isAuthenticated: true,
     });
-    const second = renderWebPush(client);
-    await waitFor(() => expect(pushStatus).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(second.result.current.state).toBe("subscribed"));
+    const { result } = renderWebPush();
+
+    await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
+    expect(subscription.unsubscribe).toHaveBeenCalled();
+    expect(subscribePush).not.toHaveBeenCalled();
+    expect(pushOwner()).toBeNull();
+  });
+
+  it("drops a subscription nobody is recorded as owning", async () => {
+    installPushEnv({ existing: subscription });
+    localStorage.clear();
+    pushStatus.mockResolvedValue(false);
+    const { result } = renderWebPush();
+
+    await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
+    expect(subscribePush).not.toHaveBeenCalled();
+  });
+
+  it("records the account that turned push on", async () => {
+    installPushEnv({ existing: null });
+    localStorage.clear();
+    const { result } = renderWebPush();
+    await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
+
+    await act(async () => {
+      await result.current.enable();
+    });
+    expect(pushOwner()).toBe("user-1");
+    expect(result.current.state).toBe("subscribed");
+  });
+
+  it("replaces an endpoint the server still holds for another account", async () => {
+    // user-1 never signed out here, so the server row is theirs (409). The
+    // browser gets a subscription of its own; the old endpoint dies with it.
+    const { subscribe } = installPushEnv({ existing: subscription });
+    localStorage.clear();
+    const conflict = Object.assign(new Error("conflict"), {
+      isAxiosError: true,
+      response: { status: 409 },
+    });
+    subscribePush.mockRejectedValueOnce(conflict);
+    useAuthStore.setState({
+      user: { id: "user-2", name: "Other", email: "o@example.com" } as never,
+      isAuthenticated: true,
+    });
+    const { result } = renderWebPush();
+    await waitFor(() => expect(result.current.state).toBe("unsubscribed"));
+    subscription.unsubscribe.mockClear();
+
+    await act(async () => {
+      await result.current.enable();
+    });
+
+    expect(subscription.unsubscribe).toHaveBeenCalledTimes(1);
+    expect(subscribe).toHaveBeenCalled();
+    expect(subscribePush).toHaveBeenCalledTimes(2);
+    expect(pushOwner()).toBe("user-2");
+  });
+
+  it("reports push unavailable when the server has no key", async () => {
+    installPushEnv({ existing: null });
+    pushConfig.mockResolvedValue({ publicKey: null });
+    const { result } = renderWebPush();
+    await waitFor(() => expect(result.current.state).toBe("unconfigured"));
   });
 });

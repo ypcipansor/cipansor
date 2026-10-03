@@ -24,7 +24,12 @@ describe("static security headers", () => {
   });
 
   it("sets clickjacking and sniffing defences", () => {
-    expect(byKey["X-Frame-Options"]).toBe("SAMEORIGIN");
+    // DENY agrees with the CSP's `frame-ancestors 'none'`; SAMEORIGIN said
+    // otherwise to the browsers that still read only this header.
+    expect(byKey["X-Frame-Options"]).toBe("DENY");
+    expect(contentSecurityPolicy("n")).toContain("frame-ancestors 'none'");
+    // OWASP: switch the legacy XSS auditor off; the CSP is the defence.
+    expect(byKey["X-XSS-Protection"]).toBe("0");
     expect(byKey["X-Content-Type-Options"]).toBe("nosniff");
     expect(byKey["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
   });

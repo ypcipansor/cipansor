@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  type NotificationPreferencesInput,
+} from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
 import {
@@ -14,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -26,6 +31,10 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { notificationsService } from "@/services/notifications.service";
 import { useWebPush } from "@/hooks/use-web-push";
+import {
+  useNotificationPreferences,
+  useUpdateNotificationPreferences,
+} from "@/hooks/use-notification-preferences";
 import {
   Bell,
   Mail,
@@ -45,43 +54,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
-interface NotificationPreferences {
-  userId: string;
-  emailEnabled: boolean;
-  smsEnabled: boolean;
-  whatsappEnabled: boolean;
-  pushEnabled: boolean;
-  inAppEnabled: boolean;
-  paymentReminders: boolean;
-  attendanceAlerts: boolean;
-  academicUpdates: boolean;
-  tahfidzProgress: boolean;
-  announcements: boolean;
-  eventReminders: boolean;
-  monthlyReports: boolean;
-  quietHoursStart: string | null;
-  quietHoursEnd: string | null;
-  reminderFrequency: "DAILY" | "WEEKLY" | "NONE";
-}
-
-const DEFAULT_PREFERENCES: NotificationPreferences = {
-  userId: "",
-  emailEnabled: true,
-  smsEnabled: false,
-  whatsappEnabled: true,
-  pushEnabled: true,
-  inAppEnabled: true,
-  paymentReminders: true,
-  attendanceAlerts: true,
-  academicUpdates: true,
-  tahfidzProgress: true,
-  announcements: true,
-  eventReminders: true,
-  monthlyReports: true,
-  quietHoursStart: null,
-  quietHoursEnd: null,
-  reminderFrequency: "DAILY",
-};
+// The shape the API stores and validates (`@cipansor/shared`). This page used
+// to declare its own copy and "save" it into a 500 ms timer; nothing reached
+// the server, and every toggle came back on at the next visit.
+type NotificationPreferences = NotificationPreferencesInput;
+const DEFAULT_PREFERENCES = DEFAULT_NOTIFICATION_PREFERENCES;
 
 const CHANNEL_CONFIG = [
   {
@@ -106,13 +83,7 @@ const CHANNEL_CONFIG = [
     key: "pushEnabled",
     label: "Push",
     icon: Bell,
-    description: "Notifikasi browser/mobile",
-  },
-  {
-    key: "inAppEnabled",
-    label: "In-App",
-    icon: Bell,
-    description: "Notifikasi dalam aplikasi",
+    description: "Ke ponsel atau peramban yang Anda aktifkan di bawah",
   },
 ];
 
@@ -165,7 +136,6 @@ export default function NotificationSettingsPage() {
   const [preferences, setPreferences] =
     useState<NotificationPreferences>(DEFAULT_PREFERENCES);
   const [hasChanges, setHasChanges] = useState(false);
-  const queryClient = useQueryClient();
   const webPush = useWebPush();
 
   // What the server is actually configured to send with.
@@ -174,37 +144,19 @@ export default function NotificationSettingsPage() {
     queryFn: () => notificationsService.getEmailTransport(),
   });
 
-  // Fetch current preferences
-  const { isLoading, data: fetchedPreferences } = useQuery({
-    queryKey: ["notification-preferences"],
-    queryFn: async () => {
-      // In production, this would fetch from API
-      return DEFAULT_PREFERENCES;
-    },
-  });
+  // What the server has stored for this person (defaults until first saved).
+  const { isLoading, data: fetchedPreferences } = useNotificationPreferences();
 
   useEffect(() => {
     if (fetchedPreferences) {
-      setPreferences(fetchedPreferences);
+      // The DTO also carries `userId`; the form holds only the preferences.
+      const { userId: _userId, ...stored } = fetchedPreferences;
+      setPreferences(stored);
+      setHasChanges(false);
     }
   }, [fetchedPreferences]);
 
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: async (prefs: NotificationPreferences) => {
-      // In production, this would call the API
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return prefs;
-    },
-    onSuccess: () => {
-      toast.success("Pengaturan notifikasi berhasil disimpan");
-      setHasChanges(false);
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
-    },
-    onError: () => {
-      toast.error("Gagal menyimpan pengaturan");
-    },
-  });
+  const saveMutation = useUpdateNotificationPreferences();
 
   const handleToggle = (key: keyof NotificationPreferences) => {
     setPreferences((prev) => ({
@@ -222,13 +174,39 @@ export default function NotificationSettingsPage() {
     setHasChanges(true);
   };
 
+  const quietHoursOn = preferences.quietHoursStart !== null;
+
+  const handleQuietHoursToggle = (on: boolean) => {
+    setPreferences((prev) => ({
+      ...prev,
+      quietHoursStart: on ? "21:00" : null,
+      quietHoursEnd: on ? "05:00" : null,
+    }));
+    setHasChanges(true);
+  };
+
+  const handleQuietHoursChange = (
+    key: "quietHoursStart" | "quietHoursEnd",
+    value: string,
+  ) => {
+    setPreferences((prev) => ({ ...prev, [key]: value }));
+    setHasChanges(true);
+  };
+
   const handleReset = () => {
     setPreferences(DEFAULT_PREFERENCES);
     setHasChanges(true);
   };
 
   const handleSave = () => {
-    saveMutation.mutate(preferences);
+    saveMutation.mutate(preferences, {
+      onSuccess: () => {
+        toast.success("Pengaturan notifikasi berhasil disimpan");
+        setHasChanges(false);
+      },
+      // The API's reason (e.g. quiet hours that start and end at the same
+      // minute) is the useful part; the global handler toasts it.
+    });
   };
 
   const enabledChannelCount = CHANNEL_CONFIG.filter(
@@ -245,7 +223,10 @@ export default function NotificationSettingsPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link href="/notifications">
+            <Link
+              href="/notifications/me"
+              aria-label="Kembali ke Notifikasi Saya"
+            >
               <Button variant="ghost" size="icon">
                 <ArrowLeft className="h-5 w-5" />
               </Button>
@@ -470,22 +451,28 @@ export default function NotificationSettingsPage() {
               Notifikasi Push di Perangkat Ini
             </CardTitle>
             <CardDescription>
-              Daftarkan perangkat ini untuk notifikasi push. Perangkat akan siap
-              menerima begitu pengiriman dari server diaktifkan pengelola.
+              Terima notifikasi di ponsel atau peramban ini walau portal sedang
+              tertutup. Setiap perangkat diaktifkan sendiri-sendiri. Untuk
+              kesehatan, konseling, pelanggaran, dan aduan, layar kunci hanya
+              menampilkan &ldquo;Ada pemberitahuan baru&rdquo;; isinya dibaca
+              setelah membuka portal.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-muted-foreground">
+              {webPush.state === "checking" && "Memeriksa…"}
               {webPush.state === "unsupported" &&
                 "Browser ini tidak mendukung notifikasi push."}
               {webPush.state === "needs-install" &&
                 "Di iPhone/iPad, pasang dulu portal ini ke Layar Utama (Bagikan → Tambah ke Layar Utama) untuk mengaktifkan notifikasi push."}
               {webPush.state === "unconfigured" &&
-                "Notifikasi push belum diaktifkan oleh pengelola sistem."}
+                "Notifikasi push belum tersedia di server ini."}
               {webPush.state === "denied" &&
                 "Izin notifikasi diblokir. Buka pengaturan situs di browser untuk mengizinkan."}
               {webPush.state === "subscribed" &&
-                "Perangkat ini terdaftar. Pengiriman notifikasi dari server belum diaktifkan."}
+                (preferences.pushEnabled
+                  ? "Aktif. Perangkat ini menerima notifikasi push."
+                  : "Perangkat ini terdaftar, tetapi saluran Push di atas dimatikan, jadi tidak ada yang dikirim.")}
               {webPush.state === "unsubscribed" &&
                 "Belum aktif di perangkat ini."}
             </p>
@@ -502,6 +489,7 @@ export default function NotificationSettingsPage() {
                 onClick={webPush.enable}
                 disabled={
                   webPush.busy ||
+                  webPush.state === "checking" ||
                   webPush.state === "unsupported" ||
                   webPush.state === "needs-install" ||
                   webPush.state === "unconfigured" ||
@@ -570,7 +558,9 @@ export default function NotificationSettingsPage() {
               <Moon className="h-5 w-5" />
               Frekuensi & Waktu
             </CardTitle>
-            <CardDescription>Atur frekuensi pengingat</CardDescription>
+            <CardDescription>
+              Atur frekuensi pengingat dan jam tenang
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -594,6 +584,53 @@ export default function NotificationSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="quiet-hours" className="font-medium">
+                  Jam Tenang
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Selama jam ini notifikasi push tidak dikirim. Notifikasinya
+                  tetap ada di lonceng.
+                </p>
+              </div>
+              <Switch
+                id="quiet-hours"
+                checked={quietHoursOn}
+                onCheckedChange={handleQuietHoursToggle}
+              />
+            </div>
+            {quietHoursOn && (
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="quiet-start">Mulai (WIB)</Label>
+                  <Input
+                    id="quiet-start"
+                    type="time"
+                    className="w-32"
+                    value={preferences.quietHoursStart ?? ""}
+                    onChange={(e) =>
+                      handleQuietHoursChange("quietHoursStart", e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="quiet-end">Selesai (WIB)</Label>
+                  <Input
+                    id="quiet-end"
+                    type="time"
+                    className="w-32"
+                    value={preferences.quietHoursEnd ?? ""}
+                    onChange={(e) =>
+                      handleQuietHoursChange("quietHoursEnd", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

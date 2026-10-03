@@ -41,12 +41,6 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 # widget yang site key-nya salah.
 ARG NEXT_PUBLIC_TURNSTILE_SITE_KEY=
 ENV NEXT_PUBLIC_TURNSTILE_SITE_KEY=${NEXT_PUBLIC_TURNSTILE_SITE_KEY}
-# Web Push public (application server) key. NEXT_PUBLIC_* is inlined at build
-# time, so like the Turnstile site key it must be present here to reach the
-# client. Empty = the settings page shows push as unconfigured and never asks
-# for permission. The matching private key lives only on the push sender.
-ARG NEXT_PUBLIC_VAPID_PUBLIC_KEY=
-ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules

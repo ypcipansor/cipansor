@@ -103,7 +103,14 @@ Yang sudah ada di repo:
 - `useWebPush` (`hooks/use-web-push.ts`) + kartu "Notifikasi Push di Perangkat
   Ini" di `/notifications/settings` — langganan Web Push per perangkat, terhubung
   ke `POST /notifications/push/{subscribe,unsubscribe}` dan tabel
-  `push_subscriptions`.
+  `push_subscriptions`. Kunci publik VAPID dibaca dari
+  `GET /notifications/push/config`.
+- Pengiriman push: setiap notifikasi lonceng baru dikirim ke perangkat
+  penerima oleh `push-dispatch.service.ts` (tiap 15 detik), mengikuti
+  preferensi tersimpan (`GET/PATCH /notifications/preferences`) dan jam tenang
+  WIB. Kesehatan, konseling, pelanggaran, aduan, dan temuan
+  pengawasan/risiko tampil generik di layar kunci. Keputusan dan alasannya:
+  `.claude/memory/decisions/notifikasi-push.md`.
 - Metadata iOS (`appleWebApp`, apple-touch-icon) + `themeColor`.
 
 Portal Orang Tua (`/parent/*`) adalah target utama mobile dan sudah responsif
@@ -111,11 +118,9 @@ Portal Orang Tua (`/parent/*`) adalah target utama mobile dan sudah responsif
 
 **Langkah lanjut opsional (butuh kredensial/tooling di luar repo):**
 
-- **Push nyata:** server-side sender untuk langganan yang sudah tersimpan.
-  Klien sudah mendaftar (`POST /notifications/push/subscribe`) dan service
-  worker sudah menangani `push`/`notificationclick`; sender menunggu kredensial
-  VAPID (`NEXT_PUBLIC_VAPID_PUBLIC_KEY` di klien, kunci privat + `web-push` di
-  server). Selama kunci kosong, kontrol push menampilkan status "belum
-  diaktifkan" dan tidak meminta izin yang tidak bisa dipakai.
+- **Kunci VAPID per lingkungan:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`
+  (rahasia), dan `VAPID_SUBJECT` di API. Satu pasangan untuk tiap lingkungan,
+  tidak pernah dipakai bersama. Selama kunci kosong, push mati dan kartunya
+  berkata begitu.
 - **APK Play Store:** bungkus PWA yang sama dengan Capacitor (≈95% reuse) —
   butuh Android SDK/signing (dibangun di luar environment ini).

@@ -181,17 +181,6 @@ export default defineConfig({
     // `next start` honours the PORT env var. In CI the job sets PORT=3001 for
     // the API, which would make the web server try to bind 3001 too
     // (EADDRINUSE). Pin the web server to 3000 regardless of the inherited PORT.
-    env: {
-      PORT: "3000",
-      // A VAPID *public* key is not a secret (only the private half is), and the
-      // client only checks that it is non-empty before offering the enable
-      // control. In CI the web server runs the production build (`pnpm start`),
-      // where NEXT_PUBLIC_* is inlined at `next build` — so the value that
-      // matters there is the job env in .github/workflows/e2e-tests.yml. This
-      // one is what the *dev* server (`pnpm dev`) reads at runtime for local
-      // runs. Both keep the push subscribe/disable flow exercisable.
-      NEXT_PUBLIC_VAPID_PUBLIC_KEY:
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "B".repeat(87),
-    },
+    env: { PORT: "3000" },
   },
 });

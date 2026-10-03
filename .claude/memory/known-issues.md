@@ -113,11 +113,11 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   "Apply"; *Kurikulum Merdeka* raises a "Route GET /api/hr/employees not
   found" toast on load; `GET /parent/children` still uses
   `include: { student }` (see `lessons/prisma-include-leaks-pii.md`).
-- **Notification settings save nothing, and say they did.**
-  `apps/web/src/app/notifications/settings/page.tsx` loads a constant
-  (`DEFAULT_PREFERENCES`), and its save mutation waits 500 ms and toasts
-  "berhasil disimpan" without calling the API. The event bus reads the real
-  `preferences.service`, so what a wali sets here is not what is used.
+- **Some stored notification preferences have no reader yet.** Since #626 the
+  settings page saves for real (`notification_preferences`), and push and the
+  family e-mails read it. The SMS and WhatsApp switches are stored but the
+  WhatsApp sender does not consult them; "Laporan Bulanan" and "Frekuensi
+  Pengingat" have no producer at all. Wire each when its sender is touched.
 - **Every save error is shown twice, app-wide.** The axios interceptor in
   `apps/web/src/lib/api.ts` toasts every error response, and
   `components/providers/query-provider.tsx` sets `mutations.onError:
@@ -421,15 +421,14 @@ decision.
   `apple-touch-startup-image` splash (iOS shows a blank launch frame until the
   first paint), no `iarc_rating_id`. Add when the product wants the behaviour.
 - **Declarative Web Push is not used** (audit 2026-09-29). Safari 18.4+ accepts a
-  service-worker-free push JSON with an `app_badge` field; the existing `push`
-  handler is the backwards-compatible path every other browser needs, so
-  nothing changes until the sender exists and wants the extra field.
-- **The push sender does not exist yet.** Only the subscription half is wired
-  (register/unregister/status + the SW `push` handler); there is no server-side
-  `web-push` send, because it needs VAPID keys that are not in the repo. The
-  endpoint validation in `@cipansor/shared` is written for the sender to rely
-  on, and a DNS-resolving check belongs at send time (the edge schema only
-  refuses literal private IPs and localhost names).
+  service-worker-free push JSON with an `app_badge` field; the `push` handler
+  in `sw.js` is the path every browser needs, so add the field only when a
+  badge count is wanted.
+- **The manifest screenshots do not show what an installer gets.** The
+  richer-install sheet shows `public/screenshots/*`: a Super Admin dashboard
+  with English menu labels and a wali dashboard reading "Kehadiran: 0%" over
+  empty cards (seed data with nothing recorded). Retake from the presentation
+  data pack (`paket-presentasi`) as a wali and a teacher before release.
 - **A deliberate push-off is coordinated across tabs** (fixed 2026-09-29). The
   marker that stops the shell's `useWebPush` from re-registering an endpoint the
   user just turned off lives in a module-level set (`lib/push-cache.ts`) and is

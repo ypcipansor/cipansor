@@ -39,6 +39,14 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // The wali's own preferences page asked an API that never existed
+      // (`/notifications/preferences/{id}`) and showed nothing; parents now use
+      // the one settings page every role has.
+      {
+        source: "/parent/notifications/preferences",
+        destination: "/notifications/settings",
+        permanent: true,
+      },
       {
         source: "/ppdb",
         destination: "/spmb",

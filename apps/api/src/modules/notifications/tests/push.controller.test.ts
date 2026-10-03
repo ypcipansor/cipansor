@@ -12,12 +12,15 @@ vi.mock('../notifications.service', () => serviceMock);
 vi.mock('../whatsapp.service', () => ({ whatsAppService: {} }));
 vi.mock('../scheduler.service', () => ({ notificationScheduler: {} }));
 vi.mock('../email-transport', () => ({ describeEmailTransport: vi.fn() }));
+vi.mock('../preferences.service', () => ({}));
+vi.mock('../push-dispatch.service', () => ({ webPushKeys: vi.fn() }));
 
 import { subscribePush, unsubscribePush, getPushStatus } from '../notifications.controller';
 
 type Res = {
   status: ReturnType<typeof vi.fn>;
   json: ReturnType<typeof vi.fn>;
+  set: ReturnType<typeof vi.fn>;
 };
 
 function makeReq(body: unknown, user = { sub: 'user-1' }, query: unknown = {}) {
@@ -33,12 +36,13 @@ function makeRes(): Res {
   const res = {} as Res;
   res.status = vi.fn(() => res);
   res.json = vi.fn(() => res);
+  res.set = vi.fn(() => res);
   return res;
 }
 
 const VALID = {
   subscription: {
-    endpoint: 'https://push.example.com/abc123',
+    endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
     expirationTime: null,
     keys: { p256dh: 'p256dh-key', auth: 'auth-key' },
   },
@@ -91,7 +95,7 @@ describe('unsubscribePush', () => {
 
   it('removes the caller’s row for that endpoint', async () => {
     serviceMock.unsubscribePush.mockResolvedValue(1);
-    const req = makeReq({ endpoint: 'https://push.example.com/abc123' });
+    const req = makeReq({ endpoint: 'https://fcm.googleapis.com/fcm/send/abc123' });
     const res = makeRes();
     const next = vi.fn();
 
@@ -100,7 +104,7 @@ describe('unsubscribePush', () => {
     expect(next).not.toHaveBeenCalled();
     expect(serviceMock.unsubscribePush).toHaveBeenCalledWith(
       'user-1',
-      'https://push.example.com/abc123'
+      'https://fcm.googleapis.com/fcm/send/abc123'
     );
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
   });

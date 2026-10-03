@@ -5,7 +5,12 @@
 
 import { api } from "@/lib/api";
 import type { ApiResponse, PaginatedResponse, PaginationParams } from "./types";
-import type { WebPushSubscriptionPayload } from "@cipansor/shared";
+import type {
+  NotificationPreferencesDTO,
+  UpdateNotificationPreferencesInput,
+  WebPushConfigDTO,
+  WebPushSubscriptionPayload,
+} from "@cipansor/shared";
 
 export type NotificationType =
   | "INFO"
@@ -43,19 +48,6 @@ export interface CreateNotificationInput {
   data?: Record<string, any>;
   channels?: NotificationChannel[];
   scheduledAt?: string;
-}
-
-export interface NotificationPreferences {
-  inApp: boolean;
-  email: boolean;
-  sms: boolean;
-  push: boolean;
-  types: {
-    [key in NotificationType]?: {
-      enabled: boolean;
-      channels: NotificationChannel[];
-    };
-  };
 }
 
 export interface ListNotificationParams extends PaginationParams {
@@ -187,24 +179,35 @@ export const notificationsService = {
   },
 
   /**
-   * Get notification preferences
+   * The caller's notification preferences (the defaults until first saved).
    */
-  async getPreferences(): Promise<NotificationPreferences> {
-    const response = await api.get<ApiResponse<NotificationPreferences>>(
+  async getPreferences(): Promise<NotificationPreferencesDTO> {
+    const response = await api.get<ApiResponse<NotificationPreferencesDTO>>(
       "/notifications/preferences",
     );
     return response.data.data;
   },
 
   /**
-   * Update notification preferences
+   * Change any subset of the caller's preferences; returns what was stored.
    */
   async updatePreferences(
-    preferences: Partial<NotificationPreferences>,
-  ): Promise<NotificationPreferences> {
-    const response = await api.patch<ApiResponse<NotificationPreferences>>(
+    preferences: UpdateNotificationPreferencesInput,
+  ): Promise<NotificationPreferencesDTO> {
+    const response = await api.patch<ApiResponse<NotificationPreferencesDTO>>(
       "/notifications/preferences",
       preferences,
+    );
+    return response.data.data;
+  },
+
+  /**
+   * The server's VAPID public key, or null when it does not send push.
+   */
+  async pushConfig(): Promise<WebPushConfigDTO> {
+    const response = await api.get<ApiResponse<WebPushConfigDTO>>(
+      "/notifications/push/config",
+      { skipErrorToast: true },
     );
     return response.data.data;
   },

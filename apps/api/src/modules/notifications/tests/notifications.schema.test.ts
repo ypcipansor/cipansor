@@ -57,11 +57,10 @@ describe('notification content size cap', () => {
 });
 
 /**
- * The push endpoint is attacker-controlled and the (future) sender POSTs to it
- * from inside our network, so an unvalidated value is an SSRF primitive
- * (CWE-918). Real push services are public HTTPS hosts, so the guard rejects
- * nothing a browser produces while refusing loopback, link-local, private and
- * unique-local addresses.
+ * The push endpoint is chosen by the client and the sender POSTs to it from
+ * inside our network, so an unchecked value is an SSRF primitive (CWE-918).
+ * Only the push services browsers actually use are accepted (an allowlist),
+ * which also refuses every IP literal, internal name and lookalike host.
  */
 describe('push endpoint validation (SSRF guard)', () => {
   const keys = { p256dh: 'p', auth: 'a' };
@@ -70,9 +69,14 @@ describe('push endpoint validation (SSRF guard)', () => {
       subscription: { endpoint, expirationTime: null, keys },
     }).success;
 
-  it('accepts a public HTTPS push service', () => {
-    expect(withEndpoint('https://fcm.googleapis.com/fcm/send/abc')).toBe(true);
-    expect(withEndpoint('https://updates.push.services.mozilla.com/wpush/v2/abc')).toBe(true);
+  it.each([
+    'https://fcm.googleapis.com/fcm/send/abc',
+    'https://android.googleapis.com/gcm/send/abc',
+    'https://updates.push.services.mozilla.com/wpush/v2/abc',
+    'https://web.push.apple.com/QGl2/abc',
+    'https://wns2-sg2p.notify.windows.com/w/?token=abc',
+  ])('accepts a browser push service: %s', (endpoint) => {
+    expect(withEndpoint(endpoint)).toBe(true);
   });
 
   it('rejects a non-HTTPS endpoint', () => {
@@ -82,16 +86,18 @@ describe('push endpoint validation (SSRF guard)', () => {
   it.each([
     'https://127.0.0.1/x',
     'https://localhost/x',
-    'https://foo.localhost/x',
     'https://10.0.0.5/x',
-    'https://192.168.1.4/x',
-    'https://172.16.0.1/x',
     'https://169.254.169.254/latest/meta-data/',
-    'https://0.0.0.0/x',
     'https://[::1]/x',
-    'https://[fe80::1]/x',
-    'https://[fd00::1]/x',
-  ])('rejects a server-reachable host: %s', (endpoint) => {
+    'https://push.example.com/abc',
+    // Lookalikes: the real name as a prefix, or hidden in the userinfo.
+    'https://fcm.googleapis.com.evil.example/x',
+    'https://fcm.googleapis.com@evil.example/x',
+    'https://evilnotify.windows.com/x',
+    // Right host, wrong port, or credentials a browser never sends.
+    'https://fcm.googleapis.com:8443/fcm/send/abc',
+    'https://user:pass@fcm.googleapis.com/fcm/send/abc',
+  ])('rejects anything else: %s', (endpoint) => {
     expect(withEndpoint(endpoint)).toBe(false);
   });
 
@@ -101,7 +107,8 @@ describe('push endpoint validation (SSRF guard)', () => {
     );
     expect(pushStatusQuerySchema.safeParse({ endpoint: 'https://10.0.0.1/x' }).success).toBe(false);
     expect(
-      pushUnsubscribeSchema.safeParse({ endpoint: 'https://push.example.com/abc' }).success
+      pushUnsubscribeSchema.safeParse({ endpoint: 'https://fcm.googleapis.com/fcm/send/abc' })
+        .success
     ).toBe(true);
   });
 });

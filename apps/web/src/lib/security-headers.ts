@@ -111,8 +111,13 @@ export const STATIC_SECURITY_HEADERS: { key: string; value: string }[] = [
   // reference surface.
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
-  { key: "X-XSS-Protection", value: "1; mode=block" },
-  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  // "0", not "1; mode=block": the browsers' XSS auditor is gone, and where it
+  // survives its blocking mode was itself a cross-site leak. The CSP above is
+  // the protection now (OWASP HTTP Headers Cheat Sheet: "X-XSS-Protection: 0").
+  { key: "X-XSS-Protection", value: "0" },
+  // DENY, to say the same as the CSP's `frame-ancestors 'none'` (which modern
+  // browsers obey instead). SAMEORIGIN contradicted it for older ones.
+  { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Push notifications and the microphone are the permissions the portal

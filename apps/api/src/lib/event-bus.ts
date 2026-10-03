@@ -8,6 +8,7 @@
  */
 
 import { EventEmitter } from 'events';
+import type { NotificationType, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { invalidateDashboardCache } from '@/lib/dashboard-metrics';
 import { prisma } from '@/lib/prisma';
@@ -15,6 +16,7 @@ import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
 import {
   getChannelPolicy,
+  mapTypeToPrisma,
   deleteAllPushSubscriptions,
   deleteAllPushSubscriptionsExcept,
   unsubscribePush,
@@ -713,17 +715,25 @@ export function initializeEventBus(): void {
       broadcast: event.broadcast,
     });
 
-    // This would integrate with the notifications module
-    // For now, just log it - actual implementation in notifications module
+    // `event.type` is the app's vocabulary ('TAHFIDZ', 'ATTENDANCE', …), wider
+    // than the database enum. Writing it straight in failed Prisma's enum check
+    // for every such type, so the tahfidz milestone notification was never
+    // created — only an error in the log. Map it the way createNotification
+    // does, and keep the original in `data` (the push dispatcher reads it to
+    // pick the preference toggle).
     try {
       if (event.userId) {
+        const { dbType, originalType } = mapTypeToPrisma(event.type);
         await prisma.notification.create({
           data: {
             userId: event.userId,
-            type: event.type as any,
+            type: dbType as NotificationType,
             title: event.title,
             message: event.message,
-            data: event.data || {},
+            data: {
+              ...(event.data ?? {}),
+              ...(originalType ? { originalType } : {}),
+            } as Prisma.InputJsonValue,
             status: 'UNREAD',
           },
         });

@@ -78,6 +78,5 @@ export type {
   NotificationChannel,
   Notification,
   CreateNotificationInput,
-  NotificationPreferences,
   ListNotificationParams,
 } from "./notifications.service";

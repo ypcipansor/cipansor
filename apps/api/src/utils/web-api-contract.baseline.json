@@ -90,8 +90,6 @@
     "PATCH /duty-assignments/{id}/status  apps/web/src/hooks/use-duty-roster.ts",
     "PATCH /finance/invoices/{id}  apps/web/src/hooks/use-finance.ts",
     "PATCH /finance/invoices/{id}  apps/web/src/services/finance.service.ts",
-    "PATCH /notifications/preferences  apps/web/src/services/notifications.service.ts",
-    "PATCH /notifications/preferences/{id}  apps/web/src/hooks/use-whatsapp.ts",
     "PATCH /notifications/{id}/read  apps/web/src/services/notifications.service.ts",
     "PATCH /simaan/{id}/complete  apps/web/src/hooks/use-simaan.ts",
     "PATCH /students/{id}  apps/web/src/services/students.service.ts",

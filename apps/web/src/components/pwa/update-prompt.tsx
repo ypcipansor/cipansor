@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SW_UPDATE_RELOAD_FLAG } from "./service-worker-register";
 
@@ -79,6 +79,11 @@ export function UpdatePrompt() {
     setTimeout(() => window.location.reload(), 1500);
   }, []);
 
+  // "Nanti": the person may be halfway through a form. The update is not lost —
+  // the waiting worker takes over by itself once every tab of the portal has
+  // been closed — so declining only hides the banner for this tab.
+  const later = useCallback(() => setVisible(false), []);
+
   if (!visible) return null;
 
   return (
@@ -98,6 +103,15 @@ export function UpdatePrompt() {
         <RefreshCw className="mr-1 h-4 w-4" />
         Muat ulang
       </Button>
+      <button
+        type="button"
+        aria-label="Nanti"
+        title="Nanti"
+        onClick={later}
+        className="-m-2 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }

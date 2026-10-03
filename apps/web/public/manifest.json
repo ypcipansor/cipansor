@@ -108,9 +108,10 @@
   ],
   "shortcuts": [
     {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "url": "/dashboard",
+      "name": "Beranda",
+      "short_name": "Beranda",
+      "description": "Dasbor sesuai peran Anda",
+      "url": "/",
       "icons": [
         {
           "src": "/icons/icon-96.png",
@@ -120,21 +121,9 @@
       ]
     },
     {
-      "name": "Kehadiran",
-      "short_name": "Kehadiran",
-      "url": "/attendance",
-      "icons": [
-        {
-          "src": "/icons/icon-96.png",
-          "sizes": "96x96",
-          "type": "image/png"
-        }
-      ]
-    },
-    {
-      "name": "Santri",
-      "short_name": "Santri",
-      "url": "/students",
+      "name": "Notifikasi Saya",
+      "short_name": "Notifikasi",
+      "url": "/notifications/me",
       "icons": [
         {
           "src": "/icons/icon-96.png",

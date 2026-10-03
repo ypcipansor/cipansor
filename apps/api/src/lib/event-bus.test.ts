@@ -353,7 +353,7 @@ describe('Event bus — tahfidz milestones', () => {
   const milestoneNotifications = () =>
     (prisma.notification.create as ReturnType<typeof vi.fn>).mock.calls
       .map(([args]) => args.data)
-      .filter((data) => data.type === 'TAHFIDZ');
+      .filter((data) => data.data?.originalType === 'TAHFIDZ');
 
   it('notifies the santri’s USER when a setoran completes a juz', async () => {
     (
@@ -367,6 +367,12 @@ describe('Event bus — tahfidz milestones', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].userId).toBe('u-student'); // the User id, never the Student id
     expect(sent[0].message).toContain('Juz 30');
+    // The database enum has no TAHFIDZ: writing it raw failed Prisma's check on
+    // every milestone. The mock accepted anything, so this suite stayed green
+    // while no milestone notification was ever stored.
+    expect(['INFO', 'ANNOUNCEMENT', 'REMINDER', 'ALERT', 'PAYMENT', 'ACADEMIC']).toContain(
+      sent[0].type
+    );
   });
 
   it('says nothing for a setoran that leaves the juz incomplete, or for murojaah', async () => {

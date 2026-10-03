@@ -7,7 +7,7 @@
 -- than another column.
 --
 -- Additive: one table, no data moved. The server-side sender that consumes
--- these rows needs VAPID credentials and is not in this repo yet; the client can
+-- these rows is `push-dispatch.service.ts` (added with this table); the client can
 -- register and unregister subscriptions as soon as the table exists.
 BEGIN;
 

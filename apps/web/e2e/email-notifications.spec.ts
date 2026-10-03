@@ -106,15 +106,16 @@ test.describe("Browser push control", () => {
     ).toBeVisible();
 
     // Exactly one of the states must render, and headless Chromium never grants
-    // push, so the toggle is either offered or explains why it is not.
+    // push, so the toggle is either offered or explains why it is not. Wait out
+    // the moment the page is still asking the API for its key.
+    await expect(page.getByText("Memeriksa…")).toBeHidden();
     const states = [
       "Browser ini tidak mendukung notifikasi push.",
       /pasang dulu portal ini ke Layar Utama/,
-      "Notifikasi push belum diaktifkan oleh pengelola sistem.",
+      "Notifikasi push belum tersedia di server ini.",
       /Izin notifikasi diblokir/,
-      // The card reports the device as registered, not as "actively receiving":
-      // no sender is wired on the API yet, so claiming delivery would be a lie.
-      /Perangkat ini terdaftar/,
+      /Aktif\. Perangkat ini menerima notifikasi push\./,
+      /Perangkat ini terdaftar, tetapi saluran Push/,
       "Belum aktif di perangkat ini.",
     ];
     const visible = await Promise.all(
@@ -132,10 +133,11 @@ test.describe("Browser push control", () => {
     page,
     context,
   }) => {
-    // The card is only offered when a VAPID public key is configured. The
-    // webServer env sets one (see playwright.config.ts); a real key is not
-    // required because the client only checks non-emptiness and the API stores
-    // whatever endpoint/keys the browser hands it.
+    // The card is only offered when the API has a VAPID key pair; CI makes a
+    // throwaway one (e2e-tests.yml), and a local run must give the API one too
+    // (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY). The browser half below is a
+    // stand-in, so its keys need not be real: the API stores them as given, and
+    // the dispatcher cannot encrypt to them, so nothing ever leaves for FCM.
     await context.grantPermissions(["notifications"], {
       origin: "http://localhost:3000",
     });
@@ -165,7 +167,8 @@ test.describe("Browser push control", () => {
         configurable: true,
         writable: true,
       });
-      const endpoint = `https://push.example.com/e2e-${Date.now()}`;
+      // A push-service host the API accepts (it refuses any other: SSRF).
+      const endpoint = `https://fcm.googleapis.com/fcm/send/e2e-${Date.now()}`;
       const subscription = {
         endpoint,
         expirationTime: null,
@@ -217,9 +220,7 @@ test.describe("Browser push control", () => {
     ]);
     expect(subscribeRes.ok()).toBe(true);
     await expect(
-      page.getByText(
-        "Perangkat ini terdaftar. Pengiriman notifikasi dari server belum diaktifkan.",
-      ),
+      page.getByText("Aktif. Perangkat ini menerima notifikasi push."),
     ).toBeVisible();
 
     const [unsubscribeRes] = await Promise.all([

@@ -12,6 +12,7 @@
 
 // Core notification service functions
 export * from './notifications.service';
+export { dispatchPendingPush, webPushKeys } from './push-dispatch.service';
 
 // Email/SMS notification service
 export { notificationService, templates, smsTemplates } from './email-sms.service';

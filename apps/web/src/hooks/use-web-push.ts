@@ -6,12 +6,16 @@ import { toast } from "sonner";
 import type { WebPushSubscriptionPayload } from "@cipansor/shared";
 import { notificationsService } from "@/services/notifications.service";
 import { useAuthStore } from "@/stores/auth";
+import { isAxiosError } from "axios";
 import {
+  clearPushOwner,
   isPushDeliberatelyOff,
   listenForPushChanges,
   markPushDeliberatelyOff,
   onPushDeliberateChange,
+  pushOwner,
   pushStatusQueryKey,
+  setPushOwner,
   unmarkPushDeliberatelyOff,
 } from "@/lib/push-cache";
 
@@ -23,23 +27,29 @@ import {
  * service worker's `push` handler could never fire because no subscription
  * existed. This is the missing half.
  *
- * The server sender still needs VAPID credentials (they are not in the repo),
- * so the public key arrives as `NEXT_PUBLIC_VAPID_PUBLIC_KEY`. With it unset,
- * `supported` is false and the toggle explains that push is not configured
- * rather than failing silently.
+ * The server's VAPID public key comes from `GET /notifications/push/config`
+ * at run time — not from a variable baked into the web bundle — so a key
+ * installed on an environment reaches the browser without a rebuild. With no
+ * key on the server, the state is "unconfigured" and nothing is asked of the
+ * browser.
+ *
+ * A subscription belongs to the account that pressed "Aktifkan" on this
+ * browser (`push-owner.ts`). The browser's permission and its
+ * `PushSubscription` outlive a sign-out; without an owner, the next person to
+ * sign in on a shared device was registered for push silently, on someone
+ * else's consent.
  *
  * iOS only delivers Web Push to an *installed* PWA (Add to Home Screen), and
  * only in Safari — the same install path the InstallPrompt guides the user to.
  */
 export type WebPushState =
+  | "checking"
   | "unsupported"
   | "needs-install"
   | "unconfigured"
   | "denied"
   | "subscribed"
   | "unsubscribed";
-
-const VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "";
 
 /**
  * True on an iPhone/iPad whose Safari has no `PushManager` yet.
@@ -160,6 +170,17 @@ export function useWebPush() {
     "PushManager" in window &&
     "Notification" in window;
 
+  // The server's VAPID public key, null when it does not send push. One read
+  // per session is enough: a key changes only with a redeploy.
+  const configQuery = useQuery({
+    queryKey: ["web-push-config"],
+    queryFn: () => notificationsService.pushConfig(),
+    enabled: supported && !!userId,
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+  });
+  const publicKey = configQuery.data?.publicKey ?? null;
+
   useEffect(() => {
     // `browserSubscription` starts null, so an unsupported browser needs no
     // reset — writing it here would only be a cascading render.
@@ -239,7 +260,7 @@ export function useWebPush() {
   const statusQuery = useQuery({
     queryKey: pushStatusQueryKey(userId, endpoint),
     queryFn: () => notificationsService.pushStatus(endpoint as string),
-    enabled: supported && !!VAPID_PUBLIC_KEY && !!endpoint && !!userId,
+    enabled: supported && !!publicKey && !!endpoint && !!userId,
     retry: false,
   });
 
@@ -299,6 +320,17 @@ export function useWebPush() {
   } | null>(null);
   useEffect(() => {
     if (!browserSubscription || !userId) return;
+    // Someone else turned push on in this browser (or nobody we know of): the
+    // subscription is theirs, not this account's. Drop it from the browser —
+    // which also cuts off any row the previous person left behind, since the
+    // push service answers 410 for it from now on — and let this person decide.
+    if (pushOwner() !== userId) {
+      const foreign = browserSubscription;
+      setBrowserSubscription(null);
+      clearPushOwner();
+      foreign.unsubscribe().catch(() => undefined);
+      return;
+    }
     const { endpoint: currentEndpoint } = browserSubscription;
     // A deliberate unsubscribe must win over a stale status: never repair it.
     if (isPushDeliberatelyOff(currentEndpoint)) return;
@@ -329,7 +361,9 @@ export function useWebPush() {
     // On iOS the missing piece is the install, not the browser. Say so instead
     // of a flat "not supported" that hides the one step that fixes it.
     state = isIosNotInstalled() ? "needs-install" : "unsupported";
-  } else if (!VAPID_PUBLIC_KEY) {
+  } else if (configQuery.isPending && !!userId) {
+    state = "checking";
+  } else if (!publicKey) {
     state = "unconfigured";
   } else if (permission === "denied") {
     state = "denied";
@@ -340,7 +374,7 @@ export function useWebPush() {
   }
 
   const enable = useCallback(async () => {
-    if (!supported || !VAPID_PUBLIC_KEY) {
+    if (!supported || !publicKey || !userId) {
       toast.error("Notifikasi push belum tersedia di perangkat ini.");
       return;
     }
@@ -361,17 +395,35 @@ export function useWebPush() {
         toast.error("Notifikasi push belum siap di perangkat ini.");
         return;
       }
-      const subscription =
-        (await registration.pushManager.getSubscription()) ??
-        (await registration.pushManager.subscribe({
+      const fresh = () =>
+        registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-        }));
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        });
+      let subscription =
+        (await registration.pushManager.getSubscription()) ?? (await fresh());
+      // This account said yes. Recorded before the subscription is adopted, so
+      // the owner check never mistakes it for someone else's.
+      setPushOwner(userId);
       // A fresh, deliberate subscribe clears any earlier "turned off" marker so
       // reconciliation is free to keep the row alive again.
       unmarkPushDeliberatelyOff(subscription.endpoint);
       setBrowserSubscription(subscription);
-      await registerMutation.mutateAsync(subscription);
+      try {
+        await registerMutation.mutateAsync(subscription);
+      } catch (error) {
+        // 409: the server still holds this endpoint for another account (they
+        // never signed out here). Replace it with a subscription of our own;
+        // the old endpoint stops working, and its row goes with it.
+        if (!(isAxiosError(error) && error.response?.status === 409)) {
+          throw error;
+        }
+        await subscription.unsubscribe();
+        subscription = await fresh();
+        unmarkPushDeliberatelyOff(subscription.endpoint);
+        setBrowserSubscription(subscription);
+        await registerMutation.mutateAsync(subscription);
+      }
       toast.success("Notifikasi push aktif di perangkat ini.");
     } catch {
       // Deliberately leaves the browser subscription in place: the reconcile on
@@ -380,13 +432,14 @@ export function useWebPush() {
     } finally {
       setBusy(false);
     }
-  }, [supported, registerMutation]);
+  }, [supported, publicKey, userId, registerMutation]);
 
   const disable = useCallback(async () => {
     setBusy(true);
     try {
       const subscription = browserSubscription ?? (await currentSubscription());
       if (subscription) await unregisterMutation.mutateAsync(subscription);
+      clearPushOwner();
       toast.success("Notifikasi push dimatikan.");
     } catch {
       toast.error("Gagal mematikan notifikasi push.");

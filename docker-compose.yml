@@ -82,6 +82,12 @@ services:
       TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Web Push (VAPID). Both halves or neither: empty = push off and the
+      # settings page says so. The web reads the public half from the API
+      # (`GET /notifications/push/config`), so nothing is baked into the web image.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Staging switches (see config.scheduler / config.outboundMessages). ON for
       # this production stack; a staging copy sets both to false so it neither
       # runs the cron jobs nor sends e-mail/SMS/WhatsApp to real wali.
@@ -207,10 +213,6 @@ services:
         # image web dibangun ulang. Kosong = widget tidak dirender sama sekali,
         # yang berpasangan dengan TURNSTILE_SECRET_KEY kosong di sisi API.
         NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY-}
-        # Web Push public key. Baked into the client bundle at build time, so a
-        # value added later needs a rebuild of the web image, not just a restart.
-        # Empty = the push control reports itself unconfigured.
-        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY-}
     container_name: cipansor-web
     restart: unless-stopped
     logging: *default-logging

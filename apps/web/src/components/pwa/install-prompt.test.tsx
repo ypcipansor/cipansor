@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import { InstallPrompt } from "./install-prompt";
+import { useAuthStore } from "@/stores/auth";
 
 /**
  * iOS has no `beforeinstallprompt`, so the native banner never shows there.
@@ -30,6 +31,8 @@ describe("InstallPrompt — iOS guidance", () => {
   beforeEach(() => {
     localStorage.clear();
     window.__installPromptEvent = null;
+    window.__swWaiting = null;
+    useAuthStore.setState({ isAuthenticated: true });
     // matchMedia is absent in jsdom; isInstalled() guards with ?. so it is fine.
   });
   afterEach(() => {
@@ -42,6 +45,8 @@ describe("InstallPrompt — iOS guidance", () => {
     render(<InstallPrompt />);
     expect(screen.getByText("Pasang aplikasi Cipansor")).toBeInTheDocument();
     expect(screen.getByText(/Tambah ke Layar Utama/)).toBeInTheDocument();
+    // iOS 26 hides Share behind "⋯"; the copy names both routes.
+    expect(screen.getByText("⋯")).toBeInTheDocument();
     // No "Pasang" button — there is nothing programmatic to call on iOS.
     expect(screen.queryByRole("button", { name: /Pasang/ })).toBeNull();
   });
@@ -55,13 +60,13 @@ describe("InstallPrompt — iOS guidance", () => {
   it("stays quiet on desktop Chrome until the event fires", () => {
     setUA("Mozilla/5.0 (X11; Linux x86_64) Chrome/120", 0);
     render(<InstallPrompt />);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
   });
 
   it("switches to the native prompt when Chrome fires the event", () => {
     setUA("Mozilla/5.0 (Linux; Android 14) Chrome/120", 5);
     render(<InstallPrompt />);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
 
     act(() => {
       window.__installPromptEvent = {
@@ -85,6 +90,41 @@ describe("InstallPrompt — iOS guidance", () => {
       String(Date.now() + 1000 * 60 * 60),
     );
     render(<InstallPrompt />);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("complementary")).toBeNull();
+  });
+
+  it("waits until the person has signed in", () => {
+    // Not on the sign-in page: the banner would sit over the one form a first
+    // visit is for. It appears on the first page after sign-in instead.
+    useAuthStore.setState({ isAuthenticated: false });
+    setUA("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", 5);
+    render(<InstallPrompt />);
+    expect(screen.queryByRole("complementary")).toBeNull();
+
+    act(() => {
+      useAuthStore.setState({ isAuthenticated: true });
+    });
+    expect(
+      screen.getByRole("complementary", { name: "Pasang aplikasi Cipansor" }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives way while an update banner is up in the same corner", () => {
+    setUA("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", 5);
+    render(<InstallPrompt />);
+    expect(screen.getByRole("complementary")).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event("sw-update-ready"));
+    });
+    expect(screen.queryByRole("complementary")).toBeNull();
+  });
+
+  it("gives its close button a thumb-sized target", () => {
+    setUA("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)", 5);
+    render(<InstallPrompt />);
+    const close = screen.getByRole("button", { name: "Tutup" });
+    expect(close.className).toContain("h-9");
+    expect(close.className).toContain("w-9");
   });
 });
