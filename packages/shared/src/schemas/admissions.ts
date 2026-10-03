@@ -419,6 +419,7 @@ export interface AdmissionPeriodDTO {
   unit?: { id: string; name: string; type?: string };
   academicYear?: { id: string; name: string };
   waves?: AdmissionWaveDTO[];
+  feeItems?: AdmissionFeeItemDTO[];
   _count?: { registrants: number };
 }
 
@@ -442,4 +443,103 @@ export interface AdmissionWaveDTO {
   reRegistrationEndDate: string | null;
   fullPaymentDiscount: string | number | null;
   notes: string | null;
+}
+
+// ───────────────────────── An intake's fees ─────────────────────────
+//
+// The brochure's "Rincian Biaya" table, per unit: lines with an amount for
+// ikhwan and one for akhwat, for boarding (mukim), non-boarding or both. A
+// monthly fee (SPP) is a line too; its first month is paid on entry, which is
+// why the brochure's totals say "Termasuk Infaq Juli".
+
+export const FEE_RESIDENCIES = ["ALL", "BOARDING", "NON_BOARDING"] as const;
+export type FeeResidencyCode = (typeof FEE_RESIDENCIES)[number];
+
+export const FEE_RESIDENCY_LABELS: Record<FeeResidencyCode, string> = {
+  ALL: "Mukim dan tidak mukim",
+  BOARDING: "Mukim",
+  NON_BOARDING: "Tidak mukim",
+};
+
+const rupiah = z
+  .number()
+  .int("Rupiah tanpa sen")
+  .min(0, "Biaya tidak boleh negatif")
+  .max(1_000_000_000, "Biaya tidak masuk akal");
+
+export const admissionFeeItemSchema = z.object({
+  label: z
+    .string()
+    .trim()
+    .min(1, "Uraian wajib diisi")
+    .max(120, "Uraian maksimal 120 karakter"),
+  maleAmount: rupiah,
+  femaleAmount: rupiah,
+  residency: z.enum(FEE_RESIDENCIES),
+  isMonthly: z.boolean(),
+});
+
+/** PUT /admissions/periods/:id/fees — the whole table, in the order shown. */
+export const replaceAdmissionFeesSchema = z.object({
+  items: z.array(admissionFeeItemSchema).max(40, "Maksimal 40 baris"),
+});
+
+export type AdmissionFeeItemInput = z.infer<typeof admissionFeeItemSchema>;
+export type ReplaceAdmissionFeesInput = z.infer<
+  typeof replaceAdmissionFeesSchema
+>;
+
+export interface AdmissionFeeItemDTO {
+  id: string;
+  periodId: string;
+  sortOrder: number;
+  label: string;
+  /** Decimal as the API sends it: "1500000.00". */
+  maleAmount: string | number;
+  femaleAmount: string | number;
+  residency: FeeResidencyCode;
+  isMonthly: boolean;
+}
+
+export interface AdmissionFeeTotal {
+  /** ALL when the table has no line for one residency only. */
+  residency: FeeResidencyCode;
+  /** Paid on entry, the first month of monthly fees included. */
+  male: number;
+  female: number;
+  /** The monthly fees that follow. */
+  monthlyMale: number;
+  monthlyFemale: number;
+}
+
+type FeeLine = Pick<
+  AdmissionFeeItemDTO,
+  "maleAmount" | "femaleAmount" | "residency" | "isMonthly"
+>;
+
+/**
+ * The brochure's "Jumlah" rows: for each residency the table offers, what
+ * ikhwan and akhwat pay on entry. A line for both counts in each. A table
+ * with no line for one residency only has a single total, "ALL".
+ */
+export function admissionFeeTotals(items: FeeLine[]): AdmissionFeeTotal[] {
+  const offered = (["BOARDING", "NON_BOARDING"] as const).filter((r) =>
+    items.some((i) => i.residency === r),
+  );
+  const options: FeeResidencyCode[] = offered.length ? [...offered] : ["ALL"];
+  return options.map((residency) => {
+    const lines = items.filter(
+      (i) => i.residency === "ALL" || i.residency === residency,
+    );
+    const sum = (rows: FeeLine[], key: "maleAmount" | "femaleAmount") =>
+      rows.reduce((total, row) => total + Number(row[key]), 0);
+    const monthly = lines.filter((i) => i.isMonthly);
+    return {
+      residency,
+      male: sum(lines, "maleAmount"),
+      female: sum(lines, "femaleAmount"),
+      monthlyMale: sum(monthly, "maleAmount"),
+      monthlyFemale: sum(monthly, "femaleAmount"),
+    };
+  });
 }

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  AdmissionFeeItemDTO,
   AdmissionPeriodDTO,
   AdmissionWaveDTO,
   CreateAdmissionPeriodInput,
@@ -9,6 +10,7 @@ import type {
   OnboardRegistrantPayload,
   TrackedRegistrantDTO,
   RegistrationStatus,
+  ReplaceAdmissionFeesInput,
   UpdateAdmissionPeriodInput,
   UpdateAdmissionWaveInput,
 } from "@cipansor/shared";
@@ -227,6 +229,21 @@ export function useUpdateAdmissionPeriod(id: string) {
       return response.data.data;
     },
     onSuccess: () => invalidate(id),
+  });
+}
+
+/** Save an intake's whole fee table (the brochure's "Rincian Biaya"). */
+export function useReplaceAdmissionFees(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: ReplaceAdmissionFeesInput) => {
+      const response = await api.put<{ data: AdmissionFeeItemDTO[] }>(
+        `/admissions/periods/${periodId}/fees`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(periodId),
   });
 }
 

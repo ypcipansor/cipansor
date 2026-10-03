@@ -3,7 +3,10 @@ import bcrypt from 'bcryptjs';
 import { config } from '../../config';
 import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender } from '@prisma/client';
-import type { CreatePublicRegistrantDocumentRequest } from '@cipansor/shared';
+import type {
+  CreatePublicRegistrantDocumentRequest,
+  ReplaceAdmissionFeesInput,
+} from '@cipansor/shared';
 import * as financeService from '../finance/finance.service';
 import {
   CreateAdmissionPeriodInput,
@@ -140,6 +143,7 @@ export async function getAdmissionPeriodById(id: string) {
       unit: { select: { id: true, name: true, type: true } },
       academicYear: { select: { id: true, name: true } },
       waves: { orderBy: { waveNumber: 'asc' } },
+      feeItems: { orderBy: { sortOrder: 'asc' } },
       _count: { select: { registrants: true } },
     },
   });
@@ -235,6 +239,42 @@ export async function updateAdmissionPeriod(
         registrationFee !== undefined ? new Prisma.Decimal(registrationFee) : undefined,
       ageReferenceDate: calendarDate(ageReferenceDate),
     },
+  });
+}
+
+/**
+ * Replace an intake's fee table with the one the admin saved: the brochure's
+ * "Rincian Biaya" lines, in the order shown. One transaction, so a reader
+ * never sees half a table.
+ */
+export async function replaceAdmissionFees(
+  periodId: string,
+  data: ReplaceAdmissionFeesInput,
+  actor?: AuthUser
+) {
+  const period = await prisma.admissionPeriod.findUnique({
+    where: { id: periodId },
+    select: { unitId: true },
+  });
+  if (!period) {
+    throw Errors.notFound('Admission period');
+  }
+  assertUnitMatchesActor(period.unitId, actor);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.admissionFeeItem.deleteMany({ where: { periodId } });
+    await tx.admissionFeeItem.createMany({
+      data: data.items.map((item, sortOrder) => ({
+        periodId,
+        sortOrder,
+        label: item.label,
+        maleAmount: new Prisma.Decimal(item.maleAmount),
+        femaleAmount: new Prisma.Decimal(item.femaleAmount),
+        residency: item.residency,
+        isMonthly: item.isMonthly,
+      })),
+    });
+    return tx.admissionFeeItem.findMany({ where: { periodId }, orderBy: { sortOrder: 'asc' } });
   });
 }
 

@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { RoleCode } from '@prisma/client';
-import { parseDocumentSchema, createPublicRegistrantDocumentSchema } from '@cipansor/shared';
+import {
+  parseDocumentSchema,
+  createPublicRegistrantDocumentSchema,
+  replaceAdmissionFeesSchema,
+} from '@cipansor/shared';
 import { config } from '../../config';
 import * as controller from './admissions.controller';
 import { authenticate, authorize } from '../../middleware/auth';
@@ -246,6 +250,31 @@ router.get(
   '/periods/:id/stats',
   viewAdmissions(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   controller.getAdmissionPeriodStats
+);
+
+/**
+ * @swagger
+ * /api/admissions/periods/{id}/fees:
+ *   put:
+ *     summary: Replace an intake's fee table (the brochure's Rincian Biaya)
+ *     tags: [Admissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: The fee lines, in order
+ */
+router.put(
+  '/periods/:id/fees',
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
+  validate(replaceAdmissionFeesSchema),
+  controller.replaceAdmissionFees
 );
 
 /**
