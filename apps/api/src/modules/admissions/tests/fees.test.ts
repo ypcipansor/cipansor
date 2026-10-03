@@ -27,6 +27,7 @@ const { prismaMock } = vi.hoisted(() => {
 vi.mock('@/lib/prisma', () => ({ prisma: prismaMock }));
 
 import { replaceAdmissionFees } from '../admissions.service';
+import { BROCHURE_INTAKES } from '../../../../prisma/seeds/spmb-2027-2028.data';
 
 const line = (
   label: string,
@@ -41,46 +42,12 @@ const line = (
   residency,
   isMonthly,
 });
-
-/** The brochure's lines, per unit, in thousands of rupiah. */
 const k = 1000;
-const BROCHURE = {
-  TK_QURAN: [
-    line('Infaq Bangunan', 500 * k),
-    line('Seragam', 500 * k),
-    line('Buku Pelajaran Umum dan Kepesantrenan', 200 * k),
-    line('Pendaftaran', 200 * k),
-    line('SPP Bulanan (Non Boarding)', 200 * k, 200 * k, 'NON_BOARDING', true),
-  ],
-  SD_IT: [
-    line('Infaq Bangunan', 1500 * k),
-    line('Penyediaan Ranjang, Kasur, Lemari', 1750 * k, 1750 * k, 'BOARDING'),
-    line('Seragam', 500 * k),
-    line('Buku Pelajaran Umum dan Kepesantrenan', 600 * k),
-    line('Infaq Pendidikan 1 Tahun', 500 * k),
-    line('Pendaftaran', 200 * k),
-    line('SPP Bulanan (Boarding)', 800 * k, 800 * k, 'BOARDING', true),
-    line('SPP Bulanan (Non Boarding)', 350 * k, 350 * k, 'NON_BOARDING', true),
-  ],
-  SMP_IT: [
-    line('Infaq Bangunan', 3000 * k),
-    line('Penyediaan Ranjang, Kasur, Lemari', 1750 * k),
-    line('Seragam', 1250 * k, 1500 * k),
-    line('Buku Pelajaran Umum dan Kepesantrenan', 800 * k),
-    line('Infaq Pendidikan 1 Tahun', 600 * k),
-    line('Pendaftaran', 200 * k),
-    line('SPP Bulanan (Boarding)', 950 * k, 950 * k, 'BOARDING', true),
-  ],
-  SMA_QURAN: [
-    line('Infaq Bangunan', 3000 * k),
-    line('Penyediaan Ranjang, Kasur, Lemari', 1750 * k),
-    line('Seragam', 1250 * k, 1500 * k),
-    line('Buku Pelajaran Umum dan Kepesantrenan', 1000 * k),
-    line('Infaq Pendidikan 1 Tahun', 850 * k),
-    line('Pendaftaran', 200 * k),
-    line('SPP Bulanan (Boarding)', 950 * k, 950 * k, 'BOARDING', true),
-  ],
-};
+
+/** The brochure's lines, per unit — the same file the loader writes from. */
+const BROCHURE = Object.fromEntries(
+  Object.entries(BROCHURE_INTAKES).map(([unit, intake]) => [unit, intake.fees])
+) as Record<keyof typeof BROCHURE_INTAKES, AdmissionFeeItemInput[]>;
 
 describe("the brochure's totals, from its lines", () => {
   it.each([
