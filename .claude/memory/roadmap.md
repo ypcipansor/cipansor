@@ -98,9 +98,10 @@ items before 2026-09-25 is in the history of this file and of
           requirements, minimum age and contact person~~ (#640, #641);
         - ~~the public `/public/spmb` page and the chatbot read all of it,
           and a registration goes to the chosen unit's period~~ (#642);
-        - the brochure loaded by `db:seed:spmb-2027-2028` (S5): on staging
-          now, on production with a release; then the base seed's SPMB in
-          the module's shape (known-issues);
+        - ~~the brochure loaded by `db:seed:spmb-2027-2028`~~ (#644, on
+          staging 2026-10-03; production with a release);
+        - ~~the base seed's and the pack's SPMB in the module's shape~~
+          (S5b);
         - then: the SPMB form in three languages (known-issues), and the
           brochure's programmes, facilities, extracurriculars and agenda on
           the public site, in three languages;

@@ -159,17 +159,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   is in no menu. `tahfidz/certificate` is in no menu either; both open only by
   URL.
 
-- **The base seed's SPMB is not in the module's shape** (found 2026-10-03).
-  `seed.ts` makes SMP IT's 2027/2028 intake two periods, one per wave, and
-  then hangs three waves dated 2024 ("Gelombang 1 - Jalur Prestasi" …) on
-  whichever period `findMany` returns first. Since the public page reads the
-  waves, a freshly seeded local stack or CI shows SMP IT's registration
-  closed; the API refused a public registration there before, too. Staging
-  and production are not affected: the presentation pack dropped those waves,
-  and the brochure loader replaces the per-wave periods. Fix: one period per
-  unit with waves from `admissionWindows` (dates from today), the 2024 waves
-  on a 2024/2025 period.
-
 - **The public SPMB form speaks only Indonesian** (found 2026-10-03). The
   public site is trilingual on every page, and since SPMB S4 the intakes
   section of `/public/spmb` is (`config/spmb.i18n.ts`), but the hero, the
@@ -371,8 +360,8 @@ decision.
 
 - **`spmb-workflow.spec.ts` leaves an active admission period behind on every
   run** ("SPMB E2E Auto …"). On a fresh CI database that is one extra period;
-  on a local stack reused across runs they pile up, push the seeded
-  "Gelombang 1" out of the Admissions overview, and `admissions-funnel.spec.ts`
+  on a local stack reused across runs they pile up, push the seeded SMP IT
+  intake out of the Admissions overview, and `admissions-funnel.spec.ts`
   fails (seen after three full runs, 2026-09-28). The spec should delete what it
   creates, or the funnel test should look the seeded period up by name.
 - **About a hundred e2e heading assertions are unscoped** (103 by a plain grep,

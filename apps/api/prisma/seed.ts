@@ -79,7 +79,6 @@ import {
   ContractStatus,
   EmployeeDocumentType,
   EmploymentAction,
-  WaveStatus,
   PAUDAspect,
   PAUDAchievementLevel,
   PAUDReportPeriod,
@@ -127,11 +126,8 @@ import { seedPAUDIndicators } from './seeds/paud-indicators';
 import { syncParentRoleAssignments, type ParentScopeClient } from '../src/utils/parent-scope';
 import { seedImmunizationReference } from './seeds/immunization-reference';
 import { seedStrategicPlans } from './seeds/strategic-plan-cipansor';
-import {
-  admissionWindows,
-  currentAcademicYear,
-  nextAcademicYear,
-} from '../src/lib/academic-calendar';
+import { currentAcademicYear, nextAcademicYear } from '../src/lib/academic-calendar';
+import { ensureDemoIntake } from './seeds/spmb-demo';
 import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permissions';
 // Imported from source (not the built dist) so a stale @cipansor/shared build
 // can't leave the seeded demo logins out of sync with what the web login page
@@ -2366,60 +2362,23 @@ async function main() {
   console.log('✅ Leave requests created');
 
   // ============================================
-  // PHASE 3: PSB (Penerimaan Santri Baru)
+  // PHASE 3: SPMB (penerimaan santri baru)
   // ============================================
 
-  // Create Admission Period.
-  //
-  // Windows are anchored to the seed run, not written as literals: wave 1 is
-  // open today and wave 2 is still ahead of it, so a freshly seeded system
-  // always has a registration a visitor can actually complete. Both stay
-  // `isActive` — that flag records administrative intent, while whether the
-  // form opens is derived from the dates by `getPublicActiveAdmissionPeriod`
-  // and by `getPeriodWindow` on the web side.
-  const [wave1, wave2] = admissionWindows();
-
-  const admissionPeriod = await prisma.admissionPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: nextYear.id,
-      name: wave1.name,
-      startDate: wave1.startDate,
-      endDate: wave1.endDate,
-      quota: 50,
-      registrationFee: new Prisma.Decimal(350000),
-      isActive: true,
-      requirements: [
-        'Fotokopi Akta Kelahiran',
-        'Fotokopi Kartu Keluarga',
-        'Ijazah SD/MI atau Surat Keterangan Lulus',
-        'Pas Foto 3x4 (4 lembar)',
-        'Surat Keterangan Sehat',
-      ],
-    },
+  // SMP IT's intake for next year, in the module's shape: one period with two
+  // waves around today — wave 1 open, wave 2 still ahead — and the brochure's
+  // fees and requirements (seeds/spmb-demo.ts). Dates derive from the seed run,
+  // so a freshly seeded system always has a registration a visitor can
+  // complete.
+  const admissionPeriod = await ensureDemoIntake(prisma, {
+    unit: 'SMP_IT',
+    unitId: smpIt.id,
+    academicYear: nextYear,
+    quotas: [50, 20],
   });
+  const [admissionWave1] = admissionPeriod.waves;
 
-  const admissionPeriod2 = await prisma.admissionPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: nextYear.id,
-      name: wave2.name,
-      startDate: wave2.startDate,
-      endDate: wave2.endDate,
-      quota: 20,
-      registrationFee: new Prisma.Decimal(350000),
-      isActive: true,
-      requirements: [
-        'Fotokopi Akta Kelahiran',
-        'Fotokopi Kartu Keluarga',
-        'Ijazah SD/MI atau Surat Keterangan Lulus',
-        'Pas Foto 3x4 (4 lembar)',
-        'Surat Keterangan Sehat',
-      ],
-    },
-  });
-
-  console.log('✅ Admission periods created');
+  console.log('✅ Admission period created');
 
   // Create Registrants with various statuses
   const registrantData: Array<{
@@ -2477,6 +2436,7 @@ async function main() {
     const registrant = await prisma.registrant.create({
       data: {
         admissionPeriodId: admissionPeriod.id,
+        waveId: admissionWave1.id,
         // These are the applicants of the wave that is open right now, so the
         // number carries the intake year rather than the year the seed was written.
         registrationNo: `REG-${intakeYear.startYear}-${String(regCounter++).padStart(4, '0')}`,
@@ -2561,6 +2521,17 @@ async function main() {
       ],
     });
   }
+  // The wave's counters say what its registrants are, as a public registration
+  // keeps them.
+  await prisma.admissionWave.update({
+    where: { id: admissionWave1.id },
+    data: {
+      registeredCount: registrantData.length,
+      acceptedCount: registrantData.filter(
+        (r) => r.status === AdmissionStatus.ACCEPTED || r.status === AdmissionStatus.ENROLLED
+      ).length,
+    },
+  });
 
   console.log('✅ Registrants created');
 
@@ -3866,7 +3837,7 @@ async function main() {
   console.log(`   Payments: 6`);
   console.log(`   Staff Attendance: ${staffData.length * 7}`);
   console.log(`   Leave Requests: ${leaveData.length}`);
-  console.log(`   Admission Periods: 2`);
+  console.log(`   Admission Periods: 1 (SMP IT, ${admissionPeriod.waves.length} waves)`);
   console.log(`   Registrants: ${registrantData.length}`);
   console.log(`   Book Categories: ${bookCategoriesData.length}`);
   console.log(`   Books: ${booksData.length}`);
@@ -6019,54 +5990,6 @@ async function main() {
     });
   }
   console.log('   ✅ Extracurricular achievements created');
-
-  // --- Admission Wave ---
-  const admissionPeriods = await prisma.admissionPeriod.findMany();
-  if (admissionPeriods.length > 0) {
-    await prisma.admissionWave.createMany({
-      data: [
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 1,
-          name: 'Gelombang 1 - Jalur Prestasi',
-          startDate: new Date('2024-01-15'),
-          endDate: new Date('2024-03-15'),
-          quota: 60,
-          registeredCount: 55,
-          acceptedCount: 48,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(250000),
-          notes: 'Jalur prestasi akademik dan tahfidz.',
-        },
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 2,
-          name: 'Gelombang 2 - Jalur Reguler',
-          startDate: new Date('2024-04-01'),
-          endDate: new Date('2024-06-30'),
-          quota: 40,
-          registeredCount: 38,
-          acceptedCount: 32,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(300000),
-          notes: 'Jalur pendaftaran reguler.',
-        },
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 3,
-          name: 'Gelombang 3 - Sisa Kuota',
-          startDate: new Date('2024-07-01'),
-          endDate: new Date('2024-07-15'),
-          quota: 10,
-          registeredCount: 6,
-          acceptedCount: 6,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(350000),
-        },
-      ],
-    });
-  }
-  console.log('   ✅ Admission waves created');
 
   // --- Asset Assignment ---
   const allAssets = await prisma.asset.findMany({ take: 3 });
