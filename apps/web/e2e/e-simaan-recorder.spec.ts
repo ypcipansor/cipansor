@@ -17,6 +17,17 @@ import { test, expect } from "@playwright/test";
  * `pnpm dev`. That matches how every other CSP-sensitive test in this suite
  * behaves.
  */
+// The fake capture device is a Chromium launch flag; Firefox and WebKit have
+// no equivalent here, so on those engines getUserMedia rejects for want of a
+// device and the test would assert the sandbox, not the policy. Skipped at the
+// file level: `permissions: ["microphone"]` below is applied when the context
+// is built, before anything in the test body runs, and Firefox refuses that
+// permission outright — an in-test skip came too late and failed in 41 ms.
+test.skip(
+  ({ browserName }) => browserName !== "chromium",
+  "fake media device is Chromium-only",
+);
+
 test.use({
   storageState: ".auth/superAdmin.json",
   permissions: ["microphone"],
@@ -38,14 +49,7 @@ test.use({
   },
 });
 
-test("setoran recorder captures audio and plays it back", async ({
-  page,
-  browserName,
-}) => {
-  // The fake capture device is a Chromium launch flag; Firefox and WebKit have
-  // no equivalent here, so on those engines getUserMedia rejects for want of a
-  // device and the test would assert the sandbox, not the policy.
-  test.skip(browserName !== "chromium", "fake media device is Chromium-only");
+test("setoran recorder captures audio and plays it back", async ({ page }) => {
   test.setTimeout(90_000);
 
   const cspViolations: string[] = [];
