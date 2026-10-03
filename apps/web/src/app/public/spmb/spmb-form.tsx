@@ -28,16 +28,17 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
-  useActivePeriod,
+  usePublicIntakes,
   useCreateRegistration,
   Gender,
 } from "@/hooks/use-admissions";
-import { usePublicUnits } from "@/hooks/use-units";
+import { PublicIntakes } from "@/components/admissions/public-intakes";
+import { formatRupiah } from "@/lib/admission-intake";
+import type { Locale } from "@/locales";
 import {
   TurnstileWidget,
   useTurnstile,
 } from "@/components/security/turnstile-widget";
-import { getPeriodWindow } from "@/lib/admission-period";
 import { RegistrationTracker } from "@/components/admissions/registration-tracker";
 import { DocumentCaptureField } from "@/components/admissions/document-capture-field";
 import {
@@ -96,9 +97,8 @@ interface FormData {
   quranAbility: string;
   memorizedJuz: string;
 
-  // Unit
+  // Unit; its open intake decides the period.
   unitId: string;
-  periodId: string;
   source?: string;
   campaignId?: string;
 }
@@ -130,7 +130,6 @@ const initialFormData: FormData = {
   quranAbility: "",
   memorizedJuz: "",
   unitId: "",
-  periodId: "",
 };
 
 const QURAN_ABILITIES = [
@@ -156,6 +155,7 @@ const QURAN_ABILITIES = [
  */
 export function SpmbForm({
   photo,
+  locale,
 }: {
   /**
    * A photograph of the santri a prospective parent is being asked to join.
@@ -165,14 +165,33 @@ export function SpmbForm({
    * visitor's locale.
    */
   photo: { src: string; alt: string };
+  /** The reader's locale, for the intakes section's labels and dates. */
+  locale: Locale;
 }) {
-  const { data: activePeriod } = useActivePeriod();
-  const { data: units = [] } = usePublicUnits();
+  // Each unit's intake. A registration goes to the period of the unit the
+  // applicant chooses; the page used to read one "active period" for the whole
+  // yayasan and filed every registration under it, whatever unit was picked.
+  const { data: intakes = [], isLoading: intakesLoading } = usePublicIntakes();
   const createRegistration = useCreateRegistration();
   const turnstile = useTurnstile();
   const searchParams = useSearchParams();
 
-  const periodWindow = getPeriodWindow(activePeriod);
+  // `window` follows the waves: between two of them, or with every wave full,
+  // an intake is shut although its period runs on, because the API refuses a
+  // registration then. `opensAt` and `closesAt` are the days that changes.
+  const openIntakes = intakes.filter((i) => i.period.window === "open");
+  const nextIntake = [...intakes]
+    .filter((i) => i.period.window === "upcoming" && i.period.opensAt)
+    .sort((a, b) => a.period.opensAt!.localeCompare(b.period.opensAt!))[0];
+  const periodWindow = intakesLoading
+    ? "loading"
+    : openIntakes.length
+      ? "open"
+      : nextIntake
+        ? "upcoming"
+        : intakes.length
+          ? "closed"
+          : "none";
 
   const [activeTab, setActiveTab] = useState("info");
   const [currentStep, setCurrentStep] = useState(0);
@@ -182,6 +201,19 @@ export function SpmbForm({
     registrationNumber: string;
     name: string;
   } | null>(null);
+  const chosenIntake = openIntakes.find((i) => i.unit.id === formData.unitId);
+  // What the banner and the countdown speak of: the chosen unit's intake, or
+  // the open one that closes first — at the end of its running wave, when the
+  // wave's discount goes with it, not at the end of the period.
+  const closesOf = (i: (typeof intakes)[number]) =>
+    i.period.closesAt ?? i.period.endDate;
+  const bannerIntake =
+    chosenIntake ??
+    [...openIntakes].sort((a, b) => closesOf(a).localeCompare(closesOf(b)))[0];
+  const bannerCloses = bannerIntake ? closesOf(bannerIntake) : null;
+  const bannerWave = bannerIntake?.waves.find(
+    (w) => w.window === "open" && w.endDate === bannerCloses,
+  );
 
   // Capture source/campaign from URL
   useEffect(() => {
@@ -262,20 +294,6 @@ export function SpmbForm({
       }
     }
     // Quran step (3) is optional or has defaults
-
-    // Document step (4)
-    if (currentStep === 4) {
-      // Optional for now or mandatory? Let's make photo mandatory
-      const requirements = (activePeriod as any)?.requirements;
-      if (
-        typeof requirements === "string" &&
-        requirements.includes("photo") &&
-        !files.photo
-      ) {
-        toast.error("Pas foto wajib diupload");
-        return;
-      }
-    }
 
     setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
   };
@@ -398,9 +416,9 @@ export function SpmbForm({
     if (!turnstile.ready) return;
     setIsSubmitting(true);
     try {
-      const admissionPeriodId = formData.periodId || activePeriod?.id;
+      const admissionPeriodId = chosenIntake?.period.id;
       if (!admissionPeriodId) {
-        toast.error("Periode pendaftaran tidak ditemukan");
+        toast.error("Pendaftaran untuk unit ini sedang tidak dibuka");
         setIsSubmitting(false);
         return;
       }
@@ -595,7 +613,18 @@ export function SpmbForm({
 
           {/* Info & Registration Tab */}
           <TabsContent value="info" className="space-y-6">
-            {periodWindow !== "open" ? (
+            <PublicIntakes
+              locale={locale}
+              intakes={intakes}
+              onRegister={(unitId) => {
+                setFormData((prev) => ({ ...prev, unitId }));
+                setCurrentStep(0);
+                document
+                  .getElementById("spmb-form-start")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            />
+            {periodWindow === "loading" ? null : periodWindow !== "open" ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -615,31 +644,24 @@ export function SpmbForm({
                         : "Pendaftaran Belum Dibuka"}
                   </h2>
                   <p className="mx-auto mt-2 max-w-md text-muted-foreground text-pretty">
-                    {periodWindow === "upcoming" && activePeriod ? (
+                    {periodWindow === "upcoming" && nextIntake ? (
                       <>
-                        Pendaftaran {activePeriod.name} akan dibuka pada{" "}
+                        Pendaftaran {nextIntake.unit.name} akan dibuka pada{" "}
                         <strong>
                           {format(
-                            new Date(activePeriod.startDate),
+                            new Date(nextIntake.period.opensAt!),
                             "d MMMM yyyy",
                             { locale: idLocale },
                           )}
                         </strong>
                         . Silakan kembali pada tanggal tersebut.
                       </>
-                    ) : periodWindow === "closed" && activePeriod ? (
+                    ) : periodWindow === "closed" ? (
                       <>
-                        Periode {activePeriod.name} telah ditutup pada{" "}
-                        <strong>
-                          {format(
-                            new Date(activePeriod.endDate),
-                            "d MMMM yyyy",
-                            { locale: idLocale },
-                          )}
-                        </strong>
-                        . Informasi gelombang berikutnya akan diumumkan melalui
-                        halaman ini. Untuk menanyakan ketersediaan kuota,
-                        silakan hubungi panitia SPMB.
+                        Pendaftaran semua unit telah ditutup. Informasi
+                        gelombang berikutnya akan diumumkan melalui halaman ini.
+                        Untuk menanyakan ketersediaan kuota, silakan hubungi
+                        panitia SPMB.
                       </>
                     ) : (
                       <>
@@ -662,17 +684,27 @@ export function SpmbForm({
                 <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
                   <CardContent className="pt-6">
                     <div className="flex flex-col md:flex-row justify-between gap-4">
-                      <div>
+                      {/* Clear of the fixed navbar when "Daftar ke unit
+                          ini" scrolls here. */}
+                      <div id="spmb-form-start" className="scroll-mt-32">
                         <h2 className="text-2xl font-bold text-green-900">
-                          {activePeriod.name}
+                          Formulir Pendaftaran
                         </h2>
                         <p className="text-green-700 mt-1">
-                          Gelombang pendaftaran aktif hingga{" "}
-                          {format(
-                            new Date(activePeriod.endDate),
-                            "d MMMM yyyy",
-                            { locale: idLocale },
-                          )}
+                          {chosenIntake
+                            ? `${chosenIntake.period.name}: ${
+                                bannerWave ? `${bannerWave.name} ` : ""
+                              }dibuka hingga `
+                            : `Dibuka untuk ${openIntakes
+                                .map((i) => i.unit.name)
+                                .join(", ")}. ${
+                                bannerWave
+                                  ? `${bannerWave.name} ditutup`
+                                  : "Yang pertama ditutup"
+                              } `}
+                          {format(new Date(bannerCloses!), "d MMMM yyyy", {
+                            locale: idLocale,
+                          })}
                         </p>
                         {/*
                           Which unit this period admits to, and what it costs.
@@ -680,27 +712,30 @@ export function SpmbForm({
                           as fixed page copy contradicts the record as soon as
                           a different period becomes current.
                         */}
-                        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-green-800">
-                          {activePeriod.unit?.name && (
+                        {chosenIntake && (
+                          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-green-800">
                             <span>
-                              Unit: <strong>{activePeriod.unit.name}</strong>
+                              Unit: <strong>{chosenIntake.unit.name}</strong>
                             </span>
-                          )}
-                          <span>
-                            Biaya pendaftaran:{" "}
-                            <strong>
-                              {Number(activePeriod.registrationFee) > 0
-                                ? new Intl.NumberFormat("id-ID", {
-                                    style: "currency",
-                                    currency: "IDR",
-                                    minimumFractionDigits: 0,
-                                  }).format(
-                                    Number(activePeriod.registrationFee),
-                                  )
-                                : "Gratis"}
-                            </strong>
-                          </span>
-                        </div>
+                            {/* What is billed on registering. With no fee
+                                billed, "Gratis" only where the unit has no
+                                fee table above that could say otherwise. */}
+                            {(Number(chosenIntake.period.registrationFee) > 0 ||
+                              chosenIntake.fees.length === 0) && (
+                              <span data-testid="spmb-registration-fee">
+                                Biaya pendaftaran:{" "}
+                                <strong>
+                                  {Number(chosenIntake.period.registrationFee) >
+                                  0
+                                    ? formatRupiah(
+                                        chosenIntake.period.registrationFee,
+                                      )
+                                    : "Gratis"}
+                                </strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="bg-white/50 p-3 rounded-lg border border-green-100 backdrop-blur-sm self-start">
                         <div className="text-sm text-green-800 font-medium">
@@ -714,7 +749,7 @@ export function SpmbForm({
                         */}
                         <div className="text-2xl font-bold text-green-600">
                           {differenceInDays(
-                            new Date(activePeriod.endDate),
+                            new Date(bannerCloses!),
                             new Date(),
                           )}{" "}
                           Hari
@@ -784,9 +819,20 @@ export function SpmbForm({
                               <SelectValue placeholder="Pilih unit tujuan" />
                             </SelectTrigger>
                             <SelectContent>
-                              {units.map((unit) => (
-                                <SelectItem key={unit.id} value={unit.id}>
-                                  {unit.name} ({unit.type})
+                              {/* Every unit with an intake; only an open one
+                                  can be chosen. */}
+                              {intakes.map((i) => (
+                                <SelectItem
+                                  key={i.unit.id}
+                                  value={i.unit.id}
+                                  disabled={i.period.window !== "open"}
+                                >
+                                  {i.unit.officialName ?? i.unit.name}
+                                  {i.period.window === "upcoming"
+                                    ? " (belum dibuka)"
+                                    : i.period.window === "closed"
+                                      ? " (ditutup)"
+                                      : ""}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1302,10 +1348,8 @@ export function SpmbForm({
                             </p>
                             <p>
                               <strong>Unit:</strong>{" "}
-                              {
-                                units.find((u) => u.id === formData.unitId)
-                                  ?.name
-                              }
+                              {chosenIntake?.unit.officialName ??
+                                chosenIntake?.unit.name}
                             </p>
                           </CardContent>
                         </Card>

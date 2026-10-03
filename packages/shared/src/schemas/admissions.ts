@@ -543,3 +543,65 @@ export function admissionFeeTotals(items: FeeLine[]): AdmissionFeeTotal[] {
     };
   });
 }
+
+// ───────────────────────── The public view ─────────────────────────
+
+/** Where a period or a wave stands today, from its dates. */
+export type IntakeWindow = "upcoming" | "open" | "closed";
+/** A wave can also be closed early because its quota is full. */
+export type PublicWaveWindow = IntakeWindow | "full";
+
+export interface PublicIntakeWaveDTO {
+  waveNumber: number;
+  name: string;
+  /** ISO moments: the first day's start and the last day's end, in WIB. */
+  startDate: string;
+  endDate: string;
+  /** ISO calendar days (midnight UTC). */
+  testStartDate: string | null;
+  testEndDate: string | null;
+  resultsStartDate: string | null;
+  resultsEndDate: string | null;
+  reRegistrationStartDate: string | null;
+  reRegistrationEndDate: string | null;
+  fullPaymentDiscount: string | number | null;
+  window: PublicWaveWindow;
+}
+
+/**
+ * One unit's intake as the public SPMB page and the chatbot announce it
+ * (GET /admissions/public/intakes). No quota, no registrant counts.
+ */
+export interface PublicIntakeDTO {
+  unit: { id: string; name: string; officialName: string | null; type: string };
+  period: {
+    id: string;
+    name: string;
+    academicYear: string | null;
+    startDate: string;
+    endDate: string;
+    /**
+     * Whether one can register today. By the period's dates, and for a period
+     * with waves also by them: between two waves, or with every wave full,
+     * registration is shut although the period runs on (the API refuses it).
+     */
+    window: IntakeWindow;
+    /** When registration next opens, while `window` is "upcoming". */
+    opensAt: string | null;
+    /** When the registration open now closes: the open wave's end, else the period's. */
+    closesAt: string | null;
+    registrationFee: string | number;
+    requirements: string[];
+    minAgeMonths: number | null;
+    ageReferenceDate: string | null;
+    contactName: string | null;
+    contactPhone: string | null;
+  };
+  waves: PublicIntakeWaveDTO[];
+  fees: Array<
+    Pick<
+      AdmissionFeeItemDTO,
+      "label" | "maleAmount" | "femaleAmount" | "residency" | "isMonthly"
+    >
+  >;
+}

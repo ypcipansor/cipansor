@@ -201,14 +201,9 @@ export const deleteRegistrantDocument = asyncHandler(async (req: Request, res: R
 // PUBLIC CONTROLLERS (no authentication)
 // =====================================
 
-export const getPublicActiveAdmissionPeriod = asyncHandler(async (_req: Request, res: Response) => {
-  const period = await service.findPublicActivePeriod();
-  res.json(ApiResponse.success(period));
-});
-
-export const getPublicUnits = asyncHandler(async (_req: Request, res: Response) => {
-  const units = await service.getPublicUnitsService();
-  res.json(ApiResponse.success(units));
+/** GET /admissions/public/intakes — each unit's intake, for the public page. */
+export const getPublicIntakes = asyncHandler(async (_req: Request, res: Response) => {
+  res.json(ApiResponse.success(await service.findPublicIntakes()));
 });
 
 export const createPublicRegistrantDocument = asyncHandler(async (req: Request, res: Response) => {

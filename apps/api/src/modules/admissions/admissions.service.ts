@@ -5,6 +5,9 @@ import { prisma } from '../../lib/prisma';
 import { Prisma, AdmissionStatus, Gender } from '@prisma/client';
 import type {
   CreatePublicRegistrantDocumentRequest,
+  IntakeWindow,
+  PublicIntakeDTO,
+  PublicWaveWindow,
   ReplaceAdmissionFeesInput,
 } from '@cipansor/shared';
 import * as financeService from '../finance/finance.service';
@@ -1351,76 +1354,185 @@ export async function deleteRegistrantDocument(id: string, actor?: AuthUser) {
   return prisma.registrantDocument.delete({ where: { id } });
 }
 
-/**
- * Projection for anonymous callers.
- *
- * Keep this whitelist tight: id, name, startDate, endDate, registrationFee,
- * requirements, unit name and academic year name — never `quota`, registrant
- * counts, internal notes, or any PII. Anything added here is exposed to every
- * anonymous caller of the public SPMB form AND to the public chatbot.
- */
-const PUBLIC_PERIOD_SELECT = {
-  id: true,
-  name: true,
-  startDate: true,
-  endDate: true,
-  registrationFee: true,
-  requirements: true,
-  unit: { select: { id: true, name: true, type: true } },
-  academicYear: { select: { id: true, name: true } },
-} as const;
+/** Units in the order the brochure lists them; any other type after them. */
+const UNIT_ORDER = ['TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'PESANTREN'];
 
-export type PublicAdmissionPeriod = Prisma.AdmissionPeriodGetPayload<{
-  select: typeof PUBLIC_PERIOD_SELECT;
-}>;
-
-/**
- * The admission period the public should be told about.
- *
- * `isActive` is administrative intent, not a schedule, so it cannot decide this
- * on its own. The original query took the flagged period with the latest
- * `startDate`, which picks the wrong record as soon as more than one wave is
- * flagged: with wave 1 open now and wave 2 scheduled after it, the latest start
- * is the wave that has NOT begun — so the site announced "dibuka <future date>"
- * and withheld the form while registration was in fact open, and
- * `createPublicRegistrant` would have accepted a submission anyway.
- *
- * Prefer what is genuinely open, then what opens next, and only then the most
- * recently closed period so the page can say honestly when it ended. These are
- * the three states `getPeriodWindow` renders.
- *
- * Lives in the service rather than the controller because it now has a second
- * caller: the public chatbot reads admission facts live instead of from its
- * static knowledge base (a bot quoting last year's fee is a real harm). Two
- * copies of this three-tier fallback would drift, and the drift reintroduces
- * exactly the bug described above.
- */
-export async function getPublicUnitsService() {
-  return prisma.unit.findMany({
-    where: { deletedAt: null },
-    select: { id: true, name: true, type: true },
-    orderBy: { name: 'asc' },
-  });
+function windowOf(start: Date, end: Date, now: Date): IntakeWindow {
+  if (now < start) return 'upcoming';
+  if (now > end) return 'closed';
+  return 'open';
 }
 
-export async function findPublicActivePeriod(
-  now: Date = new Date()
-): Promise<PublicAdmissionPeriod | null> {
-  return (
-    (await prisma.admissionPeriod.findFirst({
-      where: { isActive: true, startDate: { lte: now }, endDate: { gte: now } },
-      orderBy: { endDate: 'asc' },
-      select: PUBLIC_PERIOD_SELECT,
-    })) ??
-    (await prisma.admissionPeriod.findFirst({
-      where: { isActive: true, startDate: { gt: now } },
-      orderBy: { startDate: 'asc' },
-      select: PUBLIC_PERIOD_SELECT,
-    })) ??
-    (await prisma.admissionPeriod.findFirst({
-      where: { isActive: true, endDate: { lt: now } },
-      orderBy: { endDate: 'desc' },
-      select: PUBLIC_PERIOD_SELECT,
-    }))
-  );
+/**
+ * Whether one can register today, and the day that changes.
+ *
+ * By the period's dates; for a period with waves, also by them, the way
+ * `createRegistrantOnce` decides — it claims only a wave open by its dates and
+ * not closed by an admin. Between two of the brochure's waves (21–31 December,
+ * 1–7 March) the period runs on but nothing can be claimed, so the page must
+ * not offer a form the API will refuse.
+ */
+function registrationWindow(
+  period: { startDate: Date; endDate: Date },
+  waves: Array<{ startDate: Date; endDate: Date; window: PublicWaveWindow }>,
+  now: Date
+): { window: IntakeWindow; opensAt: Date | null; closesAt: Date | null } {
+  const byDates = windowOf(period.startDate, period.endDate, now);
+  if (!waves.length || byDates === 'closed') {
+    return {
+      window: byDates,
+      opensAt: byDates === 'upcoming' ? period.startDate : null,
+      closesAt: byDates === 'open' ? period.endDate : null,
+    };
+  }
+  const open = waves
+    .filter((w) => w.window === 'open')
+    .sort((a, b) => a.endDate.getTime() - b.endDate.getTime())[0];
+  if (byDates === 'open' && open) {
+    const closesAt = open.endDate < period.endDate ? open.endDate : period.endDate;
+    return { window: 'open', opensAt: null, closesAt };
+  }
+  const next = waves
+    .filter((w) => w.window === 'upcoming' && w.startDate <= period.endDate)
+    .sort((a, b) => a.startDate.getTime() - b.startDate.getTime())[0];
+  if (next) {
+    const opensAt = next.startDate > period.startDate ? next.startDate : period.startDate;
+    return { window: 'upcoming', opensAt, closesAt: null };
+  }
+  return { window: 'closed', opensAt: null, closesAt: null };
+}
+
+/**
+ * Each unit's intake to announce, for the public SPMB page, the homepage badge
+ * and the chatbot.
+ *
+ * Per unit, among its active periods: the one running now (the first to
+ * close), else the next to open, else the last one closed. `isActive` is an
+ * admin's intent, not a schedule, so the dates decide. The projection is a
+ * whitelist: no quota, no registrant counts, nothing about anyone who
+ * registered — it is served to anyone, and read into the chatbot's prompt.
+ */
+export async function findPublicIntakes(now: Date = new Date()): Promise<PublicIntakeDTO[]> {
+  const periods = await prisma.admissionPeriod.findMany({
+    where: { isActive: true, unit: { deletedAt: null } },
+    select: {
+      id: true,
+      name: true,
+      startDate: true,
+      endDate: true,
+      registrationFee: true,
+      requirements: true,
+      minAgeMonths: true,
+      ageReferenceDate: true,
+      contactName: true,
+      contactPhone: true,
+      unit: { select: { id: true, name: true, officialName: true, type: true } },
+      academicYear: { select: { name: true } },
+      waves: {
+        orderBy: { waveNumber: 'asc' },
+        select: {
+          waveNumber: true,
+          name: true,
+          startDate: true,
+          endDate: true,
+          status: true,
+          testStartDate: true,
+          testEndDate: true,
+          resultsStartDate: true,
+          resultsEndDate: true,
+          reRegistrationStartDate: true,
+          reRegistrationEndDate: true,
+          fullPaymentDiscount: true,
+        },
+      },
+      feeItems: {
+        orderBy: { sortOrder: 'asc' },
+        select: {
+          label: true,
+          maleAmount: true,
+          femaleAmount: true,
+          residency: true,
+          isMonthly: true,
+        },
+      },
+    },
+  });
+
+  type Row = (typeof periods)[number];
+  const rank = (p: Row): [number, number] => {
+    const w = windowOf(p.startDate, p.endDate, now);
+    if (w === 'open') return [0, p.endDate.getTime()];
+    if (w === 'upcoming') return [1, p.startDate.getTime()];
+    return [2, -p.endDate.getTime()];
+  };
+  const chosen = new Map<string, Row>();
+  for (const period of periods) {
+    const current = chosen.get(period.unit.id);
+    if (!current) {
+      chosen.set(period.unit.id, period);
+      continue;
+    }
+    const [a, b] = [rank(period), rank(current)];
+    if (a[0] < b[0] || (a[0] === b[0] && a[1] < b[1])) chosen.set(period.unit.id, period);
+  }
+
+  const order = (type: string) => {
+    const i = UNIT_ORDER.indexOf(type);
+    return i === -1 ? UNIT_ORDER.length : i;
+  };
+  const iso = (d: Date | null) => (d ? d.toISOString() : null);
+
+  return [...chosen.values()]
+    .sort(
+      (a, b) => order(a.unit.type) - order(b.unit.type) || a.unit.name.localeCompare(b.unit.name)
+    )
+    .map((p) => {
+      const waves = p.waves.map(({ status, ...w }) => {
+        // An admin's early close outranks the calendar.
+        const window: PublicWaveWindow =
+          status === 'FULL'
+            ? 'full'
+            : status === 'CLOSED'
+              ? 'closed'
+              : windowOf(w.startDate, w.endDate, now);
+        return { ...w, window };
+      });
+      const registration = registrationWindow(p, waves, now);
+      return {
+        unit: p.unit,
+        period: {
+          id: p.id,
+          name: p.name,
+          academicYear: p.academicYear?.name ?? null,
+          startDate: p.startDate.toISOString(),
+          endDate: p.endDate.toISOString(),
+          window: registration.window,
+          opensAt: iso(registration.opensAt),
+          closesAt: iso(registration.closesAt),
+          registrationFee: p.registrationFee.toString(),
+          requirements: p.requirements,
+          minAgeMonths: p.minAgeMonths,
+          ageReferenceDate: iso(p.ageReferenceDate),
+          contactName: p.contactName,
+          contactPhone: p.contactPhone,
+        },
+        waves: waves.map((w) => ({
+          ...w,
+          startDate: w.startDate.toISOString(),
+          endDate: w.endDate.toISOString(),
+          testStartDate: iso(w.testStartDate),
+          testEndDate: iso(w.testEndDate),
+          resultsStartDate: iso(w.resultsStartDate),
+          resultsEndDate: iso(w.resultsEndDate),
+          reRegistrationStartDate: iso(w.reRegistrationStartDate),
+          reRegistrationEndDate: iso(w.reRegistrationEndDate),
+          fullPaymentDiscount: w.fullPaymentDiscount?.toString() ?? null,
+        })),
+        fees: p.feeItems.map((f) => ({
+          ...f,
+          maleAmount: f.maleAmount.toString(),
+          femaleAmount: f.femaleAmount.toString(),
+        })),
+      };
+    });
 }

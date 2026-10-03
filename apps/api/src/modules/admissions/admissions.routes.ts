@@ -63,13 +63,12 @@ const documentUploadLimiter = rateLimit({
 router.use('/waves', waveRoutes);
 
 // ==================== PUBLIC ENDPOINTS ====================
-// Mounted BEFORE `authenticate` so the unauthenticated public PPDB page
-// (`apps/web/src/app/public/spmb/page.tsx`) can bootstrap the registration
-// form and submit a new registrant without a session. The handlers return a
+// Mounted BEFORE `authenticate` so the unauthenticated public SPMB page
+// (`apps/web/src/app/public/spmb/page.tsx`) can show each unit's intake and
+// submit a new registrant without a session. The handlers return a
 // deliberately trimmed projection of the underlying records — see the JSDoc
-// on the corresponding controllers for the exact whitelist.
-router.get('/public/active-period', controller.getPublicActiveAdmissionPeriod);
-router.get('/public/units', controller.getPublicUnits);
+// on `findPublicIntakes` and on the registrant controllers for the whitelist.
+router.get('/public/intakes', controller.getPublicIntakes);
 router.post(
   '/public/registrants',
   publicRegistrantLimiter,
