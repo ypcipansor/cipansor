@@ -17,6 +17,7 @@ import { runAttendanceRegisterReminder } from './attendance-register-reminder.jo
 import { runAttendancePatternFlags } from './attendance-pattern.job';
 import { runAccreditationReminder } from './accreditation-reminder.job';
 import { runPermitNoteErasure } from './permit-note-erasure.job';
+import { runAdmissionWaveStatusUpdate } from './admission-wave-status.job';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -405,6 +406,24 @@ export function initializeScheduler(): void {
   );
   scheduledTasks.push(permitNoteErasureTask);
   logger.info("[Scheduler] Doctor's note erasure scheduled daily at 01:15 WIB");
+
+  // SPMB waves open and close by their dates; a minute past midnight WIB, when
+  // a day's windows have just opened or closed.
+  const admissionWaveStatusTask = cron.schedule(
+    '1 0 * * *',
+    async () => {
+      try {
+        await runAdmissionWaveStatusUpdate();
+      } catch (error) {
+        logger.error('[Scheduler] SPMB wave status update failed:', error);
+      }
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+  scheduledTasks.push(admissionWaveStatusTask);
+  logger.info('[Scheduler] SPMB wave statuses scheduled daily at 00:01 WIB');
 
   logger.info(`[Scheduler] ${scheduledTasks.length} jobs scheduled successfully`);
 }

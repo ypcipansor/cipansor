@@ -60,13 +60,10 @@ export default function SPMBPage() {
 
   const menuItems = [
     {
-      title: "Gelombang SPMB",
-      description: "Kelola periode dan gelombang penerimaan",
+      title: "Periode & Gelombang",
+      description: "Tanggal, gelombang, persyaratan, dan narahubung tiap unit",
       icon: Calendar,
-      // Halaman gelombangnya masih di bawah /admissions; menautkan /spmb/waves
-      // yang belum ada berarti 404 — dan Next memuat-awal tautan ini, jadi
-      // biayanya tertagih tiap kali halaman ini dirender, bukan saat diklik.
-      href: "/admissions/waves",
+      href: "/spmb/periods",
       color: "text-blue-600",
       bgColor: "bg-blue-50",
       count: String(totalPeriods),
@@ -220,10 +217,10 @@ export default function SPMBPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-3">
-                <Link href="/admissions/waves">
+                <Link href="/spmb/periods">
                   <Button className="w-full" variant="outline">
                     <Calendar className="mr-2 h-4 w-4" />
-                    Kelola Gelombang
+                    Periode & Gelombang
                   </Button>
                 </Link>
                 <Link href="/spmb/registrations">

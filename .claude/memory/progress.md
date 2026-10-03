@@ -12,8 +12,8 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `5f879509` (#615) on
-  2026-09-29. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `b59a61b9` (#632) on
+  2026-10-02. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -24,7 +24,10 @@ backlog to [`roadmap.md`](roadmap.md).
 ## Waiting on the user
 
 - Approval for the next production release — deferred by the user on
-  2026-09-27; ask again at the end of every report. (Which fixes production
+  2026-09-27; ask again at the end of every report. Passwords parts A and B
+  must go out together, with `scripts/require-password-change-all.ts` run
+  once after that deploy; SPMB 2027/2028 needs a release before
+  1 January 2027 to take wave 2. (Which fixes production
   still lacks is for the machine-local memory, not here — see "Where things
   live".)
 - Role catalogue items decided but not built: wakasek per bidang as a
@@ -100,8 +103,51 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   states its governance note once (#622). The post-login invitation to turn
   2FA on (#623), and the realm badge beside a role name for every realm
   (#624). The session moved to HttpOnly cookies (#620, issue #523). The
-  password rules (00.9, part A: this change); next, part B — a must-change
-  flag. Then the wali's
+  password rules (00.9, part A: #625), and the forced password change (part
+  B: #632). Then, in the order decided on 2026-10-02: the users-module scope
+  fix (#634), and SPMB 2027/2028 in the portal and on the public site
+  (`decisions/spmb-2027-2028.md`, roadmap 00.10). Its first part: the units'
+  official identity on every document, with the Rapor Merdeka PDF readable
+  again (#635). Then every document of a test copy stamped "SALINAN UJI"
+  (staging, #636). Then the real office holders: one list in
+  `@cipansor/shared` (`office-holders.ts`) for the public site's full
+  structure (Profil → Pimpinan, three languages), the seed's organs and the
+  demo accounts. A guarded migration renames the demo accounts and sets the
+  invented board rows aside. The portal's Organ Yayasan tab is grouped by organ,
+  and its add and edit forms work again (#637). Then printed documents signed
+  by the unit's real head (`GET /units/:id/head`), the tahfidz certificate
+  signed as the yayasan's own is, and every print window stamped on a test
+  copy through one `printDocument()`. #636 had missed the five pages that print
+  from a window of their own (#638). The surat keterangan santri goes through
+  E-Office (decided 2026-10-02, `decisions/surat-keterangan-lewat-eoffice.md`;
+  not built). Then the SPMB module itself. First, each unit's intake is
+  entered in the portal (Penerimaan (SPMB) → Periode & Gelombang): the waves
+  with their test, results and re-registration days and the discount for
+  paying in full, and the unit's requirements, minimum age and contact. Wave
+  statuses now follow their dates daily at 00:01 WIB; nothing had run that
+  update (S3a, #640). Then each unit's fee table as the brochure's "Rincian
+  Biaya" prints it, with the totals computed from the lines (S3b, #641).
+  Then the public page reads each unit's intake from
+  `GET /admissions/public/intakes` — one tab per unit, the open one first,
+  with its waves, fee table and totals, requirements and contact, labelled in
+  three languages — and a registration goes to the chosen unit's period. An
+  intake counts as open only while one of its waves is: between two waves
+  the API refused the form the page offered. The homepage badge and the
+  chatbot read the same intakes; `/public/active-period` and `/public/units`
+  are gone (#642). A new high advisory with no fixed release (`braces`,
+  dev-only) is accepted until 2026-11-03 by the Security job, and dompurify
+  moves to 3.4.16 (#643). Then the brochure itself: loaded by a script
+  (`db:seed:spmb-2027-2028`, decided 2026-10-03, #644), on staging since
+  2026-10-03 and on production with a release; each unit's admin still sets
+  the real wave quotas and the contact. Then the seeds make a unit's intake
+  in the module's shape too — one period, two waves around today, the
+  brochure's fees — named apart from the brochure's (S5b, #645). A
+  registrant's Qur'an ability got one vocabulary: the public form had sent
+  codes no score read (#646). Then the public SPMB form, its status lookup
+  and its document upload in Indonesian, English and Arabic, right to left in
+  Arabic (S6). Next: the brochure's programmes, facilities, extracurriculars
+  and agenda on the public site in three languages. Then the Pesantren unit.
+  Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher
   schedules, HR employees, Sertifikat, then the dead calls, `services/` and

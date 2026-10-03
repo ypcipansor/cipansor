@@ -11,8 +11,8 @@ import { DEMO_ACCOUNTS } from "../../../packages/shared/src/types/demo-accounts"
 import type { UnitSummary } from "../../../packages/shared/src/types/unit";
 
 /**
- * A unit's profile (*Sistem → Profil Unit*): the unit's admin records its NPSN
- * through Edit Unit — a form that could not save at all before: it opened with
+ * A unit's profile (*Sistem → Profil Unit*): the unit's admin records its NPSN,
+ * official name and operating permit through Edit Unit — a form that could not save at all before: it opened with
  * the type blank and refused itself, and past that it sent PATCH to an API
  * that only served PUT — and cannot change the unit's type; the statistics are the unit's counts, not a dash; the kepala sekolah
  * reads the page without an Edit button; another unit's admin reaches neither.
@@ -32,9 +32,19 @@ let admin: AuthSession;
 let kepala: AuthSession;
 let adminSd: AuthSession;
 let unitId = "";
-let before: { npsn: string | null; phone: string | null } = {
+type Identity = {
+  npsn: string | null;
+  phone: string | null;
+  officialName: string | null;
+  operatingPermitNumber: string | null;
+  operatingPermitDate: string | null;
+};
+let before: Identity = {
   npsn: null,
   phone: null,
+  officialName: null,
+  operatingPermitNumber: null,
+  operatingPermitDate: null,
 };
 
 const statusOf = (call: Promise<unknown>) =>
@@ -53,12 +63,27 @@ test.beforeAll(async () => {
   adminSd = await apiLogin(account("sdit.admin@cipansor.or.id"));
   unitId = (admin.user as { unitId: string }).unitId;
   expect(unitId, "the SMP admin belongs to a unit").toBeTruthy();
-  const { data } = await apiRequest<{
-    data: { npsn: string | null; phone: string | null };
-  }>(admin, "GET", `/units/${unitId}`);
-  before = { npsn: data.npsn, phone: data.phone };
-  // Start from a unit with no NPSN, so the page's empty state is what we see.
-  await apiRequest(admin, "PATCH", `/units/${unitId}`, { npsn: null });
+  const { data } = await apiRequest<{ data: Identity }>(
+    admin,
+    "GET",
+    `/units/${unitId}`,
+  );
+  before = {
+    npsn: data.npsn,
+    phone: data.phone,
+    officialName: data.officialName,
+    operatingPermitNumber: data.operatingPermitNumber,
+    // Sent back as the calendar day the API accepts.
+    operatingPermitDate: data.operatingPermitDate?.slice(0, 10) ?? null,
+  };
+  // Start from a unit with no NPSN and no official identity, so the page's
+  // empty states are what we see.
+  await apiRequest(admin, "PATCH", `/units/${unitId}`, {
+    npsn: null,
+    officialName: null,
+    operatingPermitNumber: null,
+    operatingPermitDate: null,
+  });
 });
 
 test.afterAll(async () => {
@@ -106,6 +131,57 @@ test("the unit's admin records the NPSN through Edit Unit (Sistem → Profil Uni
 
   await expect(page).toHaveURL(new RegExp(`/units/${unitId}$`));
   await expect(page.getByTestId("unit-npsn")).toHaveText(NPSN);
+});
+
+test("the unit's admin records the official name and operating permit, which documents print", async ({
+  page,
+}) => {
+  await injectSession(page, admin);
+  await page.goto(`/units/${unitId}`);
+  await waitForLoadingComplete(page);
+  await expect(page.getByTestId("unit-official-name")).toContainText(
+    "Belum diisi",
+  );
+  await expect(page.getByTestId("unit-permit")).toHaveText("Belum diisi");
+
+  await page.getByRole("link", { name: "Edit Unit" }).click();
+  await expect(page).toHaveURL(new RegExp(`/units/${unitId}/edit$`));
+
+  // Too short to be a name is caught before anything is sent.
+  await page.getByLabel("Nama Resmi").fill("SM");
+  await page.getByRole("button", { name: "Simpan Perubahan" }).click();
+  await expect(page.getByText("Nama resmi minimal 3 karakter")).toBeVisible();
+
+  await page.getByLabel("Nama Resmi").fill("SMP IT Pesantren Cipansor");
+  await page
+    .getByLabel("Nomor Izin Operasional")
+    .fill("503/0671/Kep.07/DPMPTSP/2019");
+  await page.getByLabel("Tanggal Izin Operasional").fill("2019-05-02");
+  await page.getByRole("button", { name: "Simpan Perubahan" }).click();
+  await waitForToast(page, /Unit berhasil diperbarui/);
+
+  await expect(page).toHaveURL(new RegExp(`/units/${unitId}$`));
+  await expect(page.getByTestId("unit-official-name")).toHaveText(
+    "SMP IT Pesantren Cipansor",
+  );
+  await expect(page.getByTestId("unit-permit")).toHaveText(
+    "503/0671/Kep.07/DPMPTSP/2019, 2 Mei 2019",
+  );
+  // The short name stays what the menus and the header show.
+  const { data: unit } = await apiRequest<{ data: { name: string } }>(
+    admin,
+    "GET",
+    `/units/${unitId}`,
+  );
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(unit.name);
+
+  // Cleared again from the form: an emptied field is sent as null.
+  await page.getByRole("link", { name: "Edit Unit" }).click();
+  await page.getByLabel("Nomor Izin Operasional").fill("");
+  await page.getByLabel("Tanggal Izin Operasional").fill("");
+  await page.getByRole("button", { name: "Simpan Perubahan" }).click();
+  await waitForToast(page, /Unit berhasil diperbarui/);
+  await expect(page.getByTestId("unit-permit")).toHaveText("Belum diisi");
 });
 
 test("the statistics are the unit's counts", async ({ page }) => {

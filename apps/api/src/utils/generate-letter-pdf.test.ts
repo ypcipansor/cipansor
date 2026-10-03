@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { PDFPage } from 'pdf-lib';
 import crypto from 'crypto';
 import zlib from 'zlib';
 import { generateLetterPdfBuffer, stampRevoked, LetterPdfInput } from './generate-letter-pdf';
+import { LETTERHEAD } from '@cipansor/shared';
 
 describe('generateLetterPdfBuffer determinism', () => {
   it('generates 100% byte-identical PDFs when called twice with the same letter data', async () => {
@@ -119,6 +121,84 @@ describe('kop surat', () => {
     );
     expect(countInPdf(pdf, 'YAYASAN PESANTREN CIPANSOR')).toBe(1);
     expect(countInPdf(pdf, 'MTS CIPANSOR')).toBe(1);
+  });
+
+  /**
+   * Kop surat unit yang sebenarnya mencetak nama pada izin operasionalnya dan,
+   * di bawahnya, nomor izin dan NPSN — bukan nama pendek di menu dan bukan
+   * akta yayasan.
+   */
+  it('naskah unit mencetak nama resmi, izin operasional, dan NPSN-nya', async () => {
+    const pdf = await generateLetterPdfBuffer(
+      letterWith({
+        unit: {
+          name: 'SMP IT Cipansor',
+          officialName: 'SMP IT Pesantren Cipansor',
+          npsn: '69988558',
+          operatingPermitNumber: '503/0671/Kep.07/DPMPTSP/2019',
+          address: 'Tasikmalaya',
+        },
+      })
+    );
+    const text = pdfText(pdf);
+    expect(text).toContain('SMP IT PESANTREN CIPANSOR');
+    expect(text).not.toContain('SMP IT CIPANSOR');
+    expect(text).toContain('Izin Operasional No. 503/0671/Kep.07/DPMPTSP/2019');
+    expect(text).toContain('NPSN 69988558');
+    expect(text).not.toContain(LETTERHEAD.legalBasis);
+  });
+
+  it('unit yang belum mencatat izin dan NPSN tetap mencetak akta yayasan', async () => {
+    const pdf = await generateLetterPdfBuffer(
+      letterWith({ unit: { name: "TK Qur'an Cipansor", address: 'Tasikmalaya' } })
+    );
+    expect(pdfText(pdf)).toContain(LETTERHEAD.legalBasis);
+    expect(pdfText(pdf)).not.toContain('Izin Operasional');
+  });
+
+  /**
+   * Alamat pada izin operasional lebih panjang daripada alamat seed, dan
+   * barisnya dulu menabrak lambang. Setiap baris kecil kop kini berada di
+   * kanan lambang dan di kiri cerminannya.
+   */
+  it('baris alamat yang panjang dibungkus di samping lambang, tidak menabraknya', async () => {
+    const texts: Array<{ text: string; left: number; right: number }> = [];
+    let crestRight = 0;
+    const drawText = PDFPage.prototype.drawText;
+    const drawImage = PDFPage.prototype.drawImage;
+    vi.spyOn(PDFPage.prototype, 'drawText').mockImplementation(function (this: PDFPage, text, o) {
+      if (o?.size === 8 && o.font && o.x !== undefined) {
+        texts.push({ text, left: o.x, right: o.x + o.font.widthOfTextAtSize(text, 8) });
+      }
+      return drawText.call(this, text, o);
+    });
+    vi.spyOn(PDFPage.prototype, 'drawImage').mockImplementation(function (this: PDFPage, img, o) {
+      if (!crestRight && o?.x !== undefined && o.width) crestRight = o.x + o.width;
+      return drawImage.call(this, img, o);
+    });
+
+    const address =
+      'Jl. Raya Malangbong - Kadipaten RT 001 RW 001, Kp. Nyalindung, Desa Buniasih, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157';
+    await generateLetterPdfBuffer(
+      letterWith({
+        unit: { name: 'SMP IT Cipansor', officialName: 'SMP IT Pesantren Cipansor', address },
+      })
+    );
+    vi.restoreAllMocks();
+
+    const addressLines = texts.filter((t) => address.includes(t.text));
+    expect(addressLines.length).toBeGreaterThan(1);
+    expect(addressLines.map((t) => t.text).join(' ')).toBe(address);
+    expect(crestRight).toBeGreaterThan(0);
+    for (const line of addressLines) {
+      expect(line.left).toBeGreaterThan(crestRight);
+      expect(line.right).toBeLessThan(595.28 - crestRight);
+    }
+  });
+
+  it('naskah yayasan mencetak aktanya', async () => {
+    const pdf = await generateLetterPdfBuffer(letterWith({}));
+    expect(pdfText(pdf)).toContain(LETTERHEAD.legalBasis);
   });
 });
 

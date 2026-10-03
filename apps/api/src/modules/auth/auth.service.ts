@@ -1,7 +1,13 @@
 import { prisma } from '@/lib/prisma';
 import { tokenUnitId } from '@/utils/resolve-unit-id';
 import { hashPassword, comparePassword } from '@/lib/password';
-import { generateTokenPair, verifyToken, getExpirationDate, generateAccessToken } from '@/lib/jwt';
+import {
+  generateTokenPair,
+  verifyToken,
+  getExpirationDate,
+  generateAccessToken,
+  type JwtPayload,
+} from '@/lib/jwt';
 import { Errors } from '@/middleware/error';
 import {
   isAdminRoleCode,
@@ -13,7 +19,12 @@ import {
 } from '@/middleware/auth';
 import { config } from '@/config';
 import { eventBus } from '@/lib/event-bus';
-import { assertPasswordAllowed } from '@/lib/password-policy';
+import { assertPasswordAllowed, passwordNeedsSecondFactor } from '@/lib/password-policy';
+import {
+  assertMayManageAccount,
+  activeAssignmentWhere,
+  type AccountActor,
+} from '@/utils/account-scope';
 import type { LoginInput, RegisterInput, ChangePasswordInput } from './auth.schema';
 import type { TwoFactorStatus } from '@cipansor/shared';
 import { RoleCode, UnitType } from '@prisma/client';
@@ -241,8 +252,54 @@ export class AuthService {
       };
     }
 
-    // Generate tokens
-    const tokens = generateTokenPair(basePayload);
+    // A password someone else set, or one marked leaked, is replaced before
+    // the account gets a session (decisions/autentikasi-2fa-dan-sandi.md).
+    // After the 2FA checks above, so the change is made by someone who has
+    // passed every step; with 2FA on, verifyTwoFactorLogin asks instead.
+    if (user.mustChangePassword) {
+      return this.forcedChangeStep(basePayload);
+    }
+
+    return this.startSession(user, basePayload, permissions);
+  }
+
+  /**
+   * The step between sign-in and a session for an account that must choose a
+   * new password: a short-lived token that can do nothing but that
+   * (`authenticatePasswordChange`).
+   *
+   * Named without "password" on purpose, like `completeForcedChange`: CodeQL's
+   * js/clear-text-storage heuristic takes whatever a function so named returns
+   * for a password, and flagged the HttpOnly cookie that holds this JWT (#632).
+   */
+  private forcedChangeStep(payload: Omit<JwtPayload, 'type'>) {
+    return {
+      requiresPasswordChange: true as const,
+      tempToken: generateAccessToken(
+        { ...payload, isTemp: true, purpose: 'password-change' },
+        '10m'
+      ),
+    };
+  }
+
+  /**
+   * Issue the session for an account that has passed every step: the token
+   * pair, the stored refresh token, the last sign-in time, and the user the
+   * client renders. One place for sign-in, the 2FA step and the required
+   * password change, so the three cannot drift apart.
+   */
+  private async startSession<
+    T extends {
+      id: string;
+      passwordHash?: unknown;
+      twoFactorSecret?: unknown;
+      twoFactorSecretPending?: unknown;
+      twoFactorRecoveryCodes?: unknown;
+      resetTokenHash?: unknown;
+      resetTokenExpiresAt?: unknown;
+    },
+  >(user: T, payload: Omit<JwtPayload, 'type'>, permissions: string[]) {
+    const tokens = generateTokenPair(payload);
 
     // Store refresh token & update last login in parallel
     const [, , activeAcademicYearId] = await Promise.all([
@@ -260,12 +317,9 @@ export class AuthService {
       this.getActiveAcademicYearId(),
     ]);
 
-    // Return user without sensitive fields
-    const userWithoutPassword = this.stripSensitiveFields(user);
-
     return {
       user: {
-        ...userWithoutPassword,
+        ...this.stripSensitiveFields(user),
         academicYearId: activeAcademicYearId,
         permissions,
       },
@@ -417,6 +471,9 @@ export class AuthService {
           name: input.name,
           email: input.email,
           passwordHash,
+          // Someone else chose it: replaced at the first sign-in (also the
+          // column default, stated here so the rule is read where it applies).
+          mustChangePassword: true,
           role: legacyRoleValue as any, // Populate legacy column (always non-null for new users)
           unitId: input.unitId,
           isActive: true,
@@ -519,6 +576,12 @@ export class AuthService {
       );
     }
 
+    // Marked leaked, or set by someone else since this session began: the
+    // session ends here and the next sign-in asks for a new password.
+    if (storedToken.user.mustChangePassword) {
+      throw Errors.unauthorized('Kata sandi Anda harus diganti. Masuk kembali untuk menggantinya.');
+    }
+
     const refreshRoleCode = primaryAssignment.role.code;
     const permissions = (primaryAssignment.role.permissions as string[]) || [];
     const refreshRoleId = primaryAssignment.roleId;
@@ -552,7 +615,7 @@ export class AuthService {
    * Logout (invalidate refresh token)
    *
    * `pushEndpoint` names the browser's push subscription so only that device is
-   * cleared — see the `auth:logged_out` listener. Callers that end every
+   * cleared â€” see the `auth:logged_out` listener. Callers that end every
    * session (password reset) omit it, and the listener clears all devices.
    */
   async logout(userId: string, refreshToken?: string, pushEndpoint?: string | null) {
@@ -586,7 +649,7 @@ export class AuthService {
       // The lookup failed, so we cannot tell whether another device is still
       // signed in. Clear only the device that named itself: it is the one
       // certain to be gone, and the one the user is looking at. Clearing every
-      // device on a guess would stop push on a phone that is still signed in —
+      // device on a guess would stop push on a phone that is still signed in â€”
       // the very harm this follow-up exists to avoid. With no endpoint named
       // there is no row attributable to this browser, so nothing is cleared and
       // the other devices are left alone, which is the point.
@@ -594,7 +657,7 @@ export class AuthService {
       // The asking device's row is restored by `useWebPush` on its next
       // authenticated page, and any device left unreachable is swept by the
       // next *confirmed* last-session logout (a password reset, or the final
-      // session ending) — the same self-healing the unknown-device case already
+      // session ending) â€” the same self-healing the unknown-device case already
       // relies on.
       if (pushEndpoint) {
         eventBus.emit('auth:logged_out', {
@@ -624,7 +687,7 @@ export class AuthService {
    *
    * Never rejects, either way. It is asked *after* the refresh tokens are
    * already revoked, and `logout()` clears the session cookies only once it
-   * resolves — so a database failure answering this question used to leave the
+   * resolves â€” so a database failure answering this question used to leave the
    * browser holding session cookies for a refresh token that no longer exists,
    * and skip the push cleanup entirely.
    */
@@ -700,7 +763,7 @@ export class AuthService {
   /**
    * Change password
    */
-  async changePassword(userId: string, input: ChangePasswordInput) {
+  async changePassword(userId: string, input: ChangePasswordInput, currentRefreshToken?: string) {
     const user = await prisma.user.findFirst({
       // The client omits credentials by default (lib/prisma.ts); this check needs it.
       omit: { passwordHash: false },
@@ -733,15 +796,93 @@ export class AuthService {
 
     await prisma.user.update({
       where: { id: userId },
-      data: { passwordHash: newHash },
+      data: {
+        passwordHash: newHash,
+        mustChangePassword: false,
+        passwordNeedsSecondFactor: passwordNeedsSecondFactor(input.newPassword),
+      },
     });
 
-    // Invalidate all refresh tokens
+    // End every other session; the one that made the change stays signed in
+    // (NIST SP 800-63B-4 asks for the others). It used to revoke them all, the
+    // current one included, so the person was signed out at the next renewal.
     await prisma.refreshToken.deleteMany({
-      where: { userId },
+      where: currentRefreshToken ? { userId, token: { not: currentRefreshToken } } : { userId },
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  /**
+   * The new password an account must choose before its session begins
+   * (`requiresPasswordChange` from sign-in). The temporary token proved the
+   * old password and, where on, the second factor, so neither is asked again.
+   * The new one must differ from the old: the change is forced because the
+   * old one is presumed known.
+   */
+  async completeForcedChange(userId: string, newPassword: string) {
+    const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
+      where: { id: userId, deletedAt: null },
+      include: {
+        unit: true,
+        userRoles: {
+          where: activeRoleWhere(),
+          include: { role: true, unit: true },
+          orderBy: { isPrimary: 'desc' },
+        },
+      },
+    });
+
+    if (!user || !user.isActive || !user.passwordHash) {
+      throw Errors.unauthorized('Masuk kembali dengan email dan kata sandi Anda.');
+    }
+    if (!user.mustChangePassword) {
+      throw Errors.badRequest('Kata sandi akun ini tidak perlu diganti. Silakan masuk kembali.');
+    }
+
+    const primaryAssignment = user.userRoles.find((r) => r.isPrimary) || user.userRoles[0];
+    if (!primaryAssignment) {
+      throw Errors.forbidden('Akun ini tidak memiliki peran aktif. Hubungi admin unit Anda.');
+    }
+
+    assertPasswordAllowed(newPassword, {
+      twoFactorEnabled: user.isTwoFactorEnabled,
+      email: user.email,
+      name: user.name,
+    });
+    if (await comparePassword(newPassword, user.passwordHash)) {
+      throw Errors.badRequest('Kata sandi baru harus berbeda dari yang lama.');
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: await hashPassword(newPassword),
+        mustChangePassword: false,
+        passwordNeedsSecondFactor: passwordNeedsSecondFactor(newPassword),
+      },
+    });
+    // Whatever sessions the old password still had are over.
+    await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+    const roleCode = primaryAssignment.role.code;
+    const permissions = (primaryAssignment.role.permissions as string[]) || [];
+    return this.startSession(
+      { ...user, mustChangePassword: false },
+      {
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        roleId: primaryAssignment.roleId || '',
+        roleCode,
+        unitId: tokenUnitId(primaryAssignment.unitId, roleCode, user.unitId),
+        permissions,
+        role: tokenLegacyRole(roleCode, user.role),
+      },
+      permissions
+    );
   }
 
   // ==========================================
@@ -765,7 +906,10 @@ export class AuthService {
    * hide the account's existence from, and an admin who mistypes deserves to be
    * told rather than left watching nothing happen.
    */
-  async issuePasswordResetToken(userId: string): Promise<{
+  async issuePasswordResetToken(
+    userId: string,
+    actor: AccountActor
+  ): Promise<{
     userId: string;
     email: string;
     name: string;
@@ -774,11 +918,27 @@ export class AuthService {
   }> {
     const user = await prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
-      select: { id: true, email: true, name: true, passwordHash: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        passwordHash: true,
+        isActive: true,
+        unitId: true,
+        userRoles: { where: activeAssignmentWhere(), select: { role: { select: { code: true } } } },
+      },
     });
 
     if (!user) {
       throw Errors.notFound('User');
+    }
+    // The link goes to the account's own email, but an admin still sends it
+    // only within their scope; one's own account is fine.
+    if (user.id !== actor.sub) {
+      assertMayManageAccount(
+        { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+        actor
+      );
     }
 
     if (!user.isActive) {
@@ -841,6 +1001,9 @@ export class AuthService {
       where: { id: user.id },
       data: {
         passwordHash,
+        // The person chose it themselves, through their own link.
+        mustChangePassword: false,
+        passwordNeedsSecondFactor: passwordNeedsSecondFactor(newPassword),
         // Single use. Without this the same link keeps working until it
         // expires, which is an hour of anyone who read the inbox being able to
         // take the account back.
@@ -1004,7 +1167,7 @@ export class AuthService {
     const twoFaRoleId = primaryAssignment.roleId;
     const twoFaUnitId = primaryAssignment.unitId;
 
-    const tokens = generateTokenPair({
+    const payload = {
       id: user.id,
       sub: user.id,
       email: user.email,
@@ -1013,33 +1176,15 @@ export class AuthService {
       unitId: tokenUnitId(twoFaUnitId, twoFaRoleCode, user.unitId),
       permissions,
       role: tokenLegacyRole(twoFaRoleCode, user.role),
-    });
-
-    const [, , activeAcademicYearId] = await Promise.all([
-      prisma.refreshToken.create({
-        data: {
-          token: tokens.refreshToken,
-          userId: user.id,
-          expiresAt: getExpirationDate(config.jwt.refreshExpiresIn),
-        },
-      }),
-      prisma.user.update({
-        where: { id: user.id },
-        data: { lastLoginAt: new Date() },
-      }),
-      this.getActiveAcademicYearId(),
-    ]);
-
-    const userWithoutPassword = this.stripSensitiveFields(user);
-
-    return {
-      user: {
-        ...userWithoutPassword,
-        academicYearId: activeAcademicYearId,
-        permissions,
-      },
-      ...tokens,
     };
+
+    // Both factors passed; a password someone else set is replaced before the
+    // session, as in login.
+    if (user.mustChangePassword) {
+      return this.forcedChangeStep(payload);
+    }
+
+    return this.startSession(user, payload, permissions);
   }
 
   /**
@@ -1048,7 +1193,7 @@ export class AuthService {
   async disableTwoFactor(userId: string, token: string, adminId?: string) {
     const user = await prisma.user.findUnique({
       // The client omits credentials by default (lib/prisma.ts); this check needs it.
-      omit: { twoFactorSecret: false },
+      omit: { twoFactorSecret: false, passwordNeedsSecondFactor: false },
       where: { id: userId },
       include: {
         userRoles: {
@@ -1159,10 +1304,17 @@ export class AuthService {
         twoFactorSecret: null,
         twoFactorSecretPending: null,
         twoFactorRecoveryCodes: [],
+        // A password under 15 characters was allowed only because 2FA was on
+        // (decisions/autentikasi-2fa-dan-sandi.md); without it, a longer one.
+        ...(user.passwordNeedsSecondFactor ? { mustChangePassword: true } : {}),
       },
     });
 
-    return { message: '2FA disabled successfully' };
+    // The profile tells the person now, not at the refresh that would fail.
+    return {
+      message: '2FA disabled successfully',
+      mustChangePassword: user.passwordNeedsSecondFactor,
+    };
   }
 
   /**

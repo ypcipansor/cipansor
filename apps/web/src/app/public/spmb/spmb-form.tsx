@@ -28,16 +28,18 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
-  useActivePeriod,
+  usePublicIntakes,
   useCreateRegistration,
   Gender,
 } from "@/hooks/use-admissions";
-import { usePublicUnits } from "@/hooks/use-units";
+import { PublicIntakes } from "@/components/admissions/public-intakes";
+import { formatRupiah } from "@/lib/admission-intake";
+import { QURAN_ABILITIES } from "@cipansor/shared";
+import type { Locale } from "@/locales";
 import {
   TurnstileWidget,
   useTurnstile,
 } from "@/components/security/turnstile-widget";
-import { getPeriodWindow } from "@/lib/admission-period";
 import { RegistrationTracker } from "@/components/admissions/registration-tracker";
 import { DocumentCaptureField } from "@/components/admissions/document-capture-field";
 import {
@@ -56,8 +58,10 @@ import {
   Calendar,
 } from "lucide-react";
 import { toast } from "sonner";
-import { format, differenceInDays } from "date-fns";
-import { id as idLocale } from "date-fns/locale";
+import { differenceInDays } from "date-fns";
+import { spmbFormContentFor } from "@/config/spmb-form.i18n";
+import { dateFormatterFor, formatNumber } from "@/lib/locale-format";
+import { dirFor } from "@/locales";
 import { api } from "@/lib/api";
 
 interface FormData {
@@ -96,9 +100,8 @@ interface FormData {
   quranAbility: string;
   memorizedJuz: string;
 
-  // Unit
+  // Unit; its open intake decides the period.
   unitId: string;
-  periodId: string;
   source?: string;
   campaignId?: string;
 }
@@ -130,16 +133,7 @@ const initialFormData: FormData = {
   quranAbility: "",
   memorizedJuz: "",
   unitId: "",
-  periodId: "",
 };
-
-const QURAN_ABILITIES = [
-  { value: "BELUM_BISA", label: "Belum bisa membaca" },
-  { value: "IQRO", label: "Masih Iqro" },
-  { value: "LANCAR", label: "Lancar membaca Al-Quran" },
-  { value: "TARTIL", label: "Tartil dan Tajwid baik" },
-  { value: "HAFIDZ", label: "Sudah hafal beberapa juz" },
-];
 
 /**
  * The page used to branch on the mere existence of a period, so an expired one
@@ -156,6 +150,7 @@ const QURAN_ABILITIES = [
  */
 export function SpmbForm({
   photo,
+  locale,
 }: {
   /**
    * A photograph of the santri a prospective parent is being asked to join.
@@ -165,14 +160,39 @@ export function SpmbForm({
    * visitor's locale.
    */
   photo: { src: string; alt: string };
+  /** The reader's locale: the form's words, its dates and its direction. */
+  locale: Locale;
 }) {
-  const { data: activePeriod } = useActivePeriod();
-  const { data: units = [] } = usePublicUnits();
+  const t = spmbFormContentFor(locale);
+  const dir = dirFor(locale);
+  const formatDay = (moment: string | Date) =>
+    dateFormatterFor(locale).format(new Date(moment));
+  // Punctuation follows the script: Arabic writes its own comma.
+  const comma = dir === "rtl" ? "، " : ", ";
+  // Each unit's intake. A registration goes to the period of the unit the
+  // applicant chooses; the page used to read one "active period" for the whole
+  // yayasan and filed every registration under it, whatever unit was picked.
+  const { data: intakes = [], isLoading: intakesLoading } = usePublicIntakes();
   const createRegistration = useCreateRegistration();
   const turnstile = useTurnstile();
   const searchParams = useSearchParams();
 
-  const periodWindow = getPeriodWindow(activePeriod);
+  // `window` follows the waves: between two of them, or with every wave full,
+  // an intake is shut although its period runs on, because the API refuses a
+  // registration then. `opensAt` and `closesAt` are the days that changes.
+  const openIntakes = intakes.filter((i) => i.period.window === "open");
+  const nextIntake = [...intakes]
+    .filter((i) => i.period.window === "upcoming" && i.period.opensAt)
+    .sort((a, b) => a.period.opensAt!.localeCompare(b.period.opensAt!))[0];
+  const periodWindow = intakesLoading
+    ? "loading"
+    : openIntakes.length
+      ? "open"
+      : nextIntake
+        ? "upcoming"
+        : intakes.length
+          ? "closed"
+          : "none";
 
   const [activeTab, setActiveTab] = useState("info");
   const [currentStep, setCurrentStep] = useState(0);
@@ -182,6 +202,20 @@ export function SpmbForm({
     registrationNumber: string;
     name: string;
   } | null>(null);
+  const chosenIntake = openIntakes.find((i) => i.unit.id === formData.unitId);
+  // What the banner and the countdown speak of: the chosen unit's intake, or
+  // the open one that closes first — at the end of its running wave, when the
+  // wave's discount goes with it, not at the end of the period.
+  const closesOf = (i: (typeof intakes)[number]) =>
+    i.period.closesAt ?? i.period.endDate;
+  const bannerIntake =
+    chosenIntake ??
+    [...openIntakes].sort((a, b) => closesOf(a).localeCompare(closesOf(b)))[0];
+  const bannerCloses = bannerIntake ? closesOf(bannerIntake) : null;
+  const bannerWave = bannerIntake?.waves.find(
+    (w) => w.window === "open" && w.endDate === bannerCloses,
+  );
+  const openUnits = openIntakes.map((i) => i.unit.name).join(comma);
 
   // Capture source/campaign from URL
   useEffect(() => {
@@ -219,12 +253,12 @@ export function SpmbForm({
   } | null>(null);
 
   const steps = [
-    { id: "student", title: "Data Calon Santri", icon: User },
-    { id: "parent", title: "Data Orang Tua", icon: Users },
-    { id: "address", title: "Alamat", icon: MapPin },
-    { id: "quran", title: "Kemampuan Quran", icon: BookOpen },
-    { id: "documents", title: "Dokumen", icon: Upload },
-    { id: "confirm", title: "Konfirmasi", icon: CheckCircle2 },
+    { id: "student", title: t.steps.student, icon: User },
+    { id: "parent", title: t.steps.parent, icon: Users },
+    { id: "address", title: t.steps.address, icon: MapPin },
+    { id: "quran", title: t.steps.quran, icon: BookOpen },
+    { id: "documents", title: t.steps.documents, icon: Upload },
+    { id: "confirm", title: t.steps.confirm, icon: CheckCircle2 },
   ];
 
   const handlePrev = () => {
@@ -241,7 +275,7 @@ export function SpmbForm({
         !formData.birthDate ||
         !formData.unitId
       ) {
-        toast.error("Lengkapi semua data yang wajib diisi");
+        toast.error(t.toasts.studentIncomplete);
         return;
       }
     }
@@ -251,31 +285,17 @@ export function SpmbForm({
         !formData.motherName ||
         !formData.fatherPhone
       ) {
-        toast.error("Lengkapi data orang tua yang wajib diisi");
+        toast.error(t.toasts.parentIncomplete);
         return;
       }
     }
     if (currentStep === 2) {
       if (!formData.address || !formData.city || !formData.province) {
-        toast.error("Lengkapi alamat yang wajib diisi");
+        toast.error(t.toasts.addressIncomplete);
         return;
       }
     }
     // Quran step (3) is optional or has defaults
-
-    // Document step (4)
-    if (currentStep === 4) {
-      // Optional for now or mandatory? Let's make photo mandatory
-      const requirements = (activePeriod as any)?.requirements;
-      if (
-        typeof requirements === "string" &&
-        requirements.includes("photo") &&
-        !files.photo
-      ) {
-        toast.error("Pas foto wajib diupload");
-        return;
-      }
-    }
 
     setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
   };
@@ -299,19 +319,29 @@ export function SpmbForm({
       type: string;
       label: string;
     }[] = [
-      { key: "photo", file: files.photo, type: "PHOTO", label: "Pas Foto" },
-      { key: "ktp", file: files.ktp, type: "ID_CARD", label: "KTP Orang Tua" },
+      {
+        key: "photo",
+        file: files.photo,
+        type: "PHOTO",
+        label: t.documents.photo,
+      },
+      {
+        key: "ktp",
+        file: files.ktp,
+        type: "ID_CARD",
+        label: t.documents.idCard,
+      },
       {
         key: "familyCard",
         file: files.familyCard,
         type: "FAMILY_CARD",
-        label: "Kartu Keluarga",
+        label: t.documents.familyCard,
       },
       {
         key: "birthCertificate",
         file: files.birthCertificate,
         type: "BIRTH_CERTIFICATE",
-        label: "Akte Kelahiran",
+        label: t.documents.birthCertificate,
       },
     ];
 
@@ -371,7 +401,7 @@ export function SpmbForm({
       });
 
       if (failedLabels.length === 0) {
-        toast.success("Seluruh berkas dokumen berhasil diunggah.");
+        toast.success(t.toasts.uploadsDone);
         setSuccessData({
           registrationNumber: activeRegistration.registrationNo,
           name: formData.fullName,
@@ -380,12 +410,10 @@ export function SpmbForm({
         setFormData(initialFormData);
         setCurrentStep(0);
       } else {
-        toast.error(
-          `Beberapa berkas masih gagal diunggah: ${failedLabels.join(", ")}`,
-        );
+        toast.error(t.toasts.uploadsStillFailing(failedLabels.join(comma)));
       }
     } catch (err) {
-      toast.error("Gagal mengunggah ulang berkas dokumen. Silakan coba lagi.");
+      toast.error(t.toasts.retryFailed);
     } finally {
       setIsSubmitting(false);
     }
@@ -398,9 +426,9 @@ export function SpmbForm({
     if (!turnstile.ready) return;
     setIsSubmitting(true);
     try {
-      const admissionPeriodId = formData.periodId || activePeriod?.id;
+      const admissionPeriodId = chosenIntake?.period.id;
       if (!admissionPeriodId) {
-        toast.error("Periode pendaftaran tidak ditemukan");
+        toast.error(t.toasts.unitNotOpen);
         setIsSubmitting(false);
         return;
       }
@@ -450,14 +478,14 @@ export function SpmbForm({
 
       if (turnstile.token) payload.turnstileToken = turnstile.token;
 
+      // POST /admissions/public/registrants answers with the registrant's id,
+      // number and upload token. The page used to fall back to a number of
+      // its own ("PSB-" + the time), which no record holds and the tracker
+      // could never find.
       const result = await createRegistration.mutateAsync(payload);
-      const createdRegistrantId = result?.id || result?.data?.id;
-      const registrationToken =
-        result?.registrationToken || result?.data?.registrationToken;
-      const registrationNo =
-        result?.registrationNo ||
-        result?.registrationNumber ||
-        "PSB-" + Date.now();
+      const createdRegistrantId: string = result.id;
+      const registrationToken: string = result.registrationToken;
+      const registrationNo: string = result.registrationNo;
 
       if (createdRegistrantId) {
         const { failedKeys, failedLabels } = await uploadSelectedDocuments(
@@ -477,7 +505,10 @@ export function SpmbForm({
 
         if (failedLabels.length > 0) {
           toast.error(
-            `Pendaftaran tersimpan (${registrationNo}), tetapi berkas gagal diunggah: ${failedLabels.join(", ")}`,
+            t.toasts.savedButUploadsFailed(
+              registrationNo,
+              failedLabels.join(comma),
+            ),
           );
           setActiveRegistration({
             registrantId: createdRegistrantId,
@@ -498,10 +529,13 @@ export function SpmbForm({
       setFormData(initialFormData);
       setCurrentStep(0);
     } catch (error: any) {
-      const msg =
-        error?.response?.data?.message ||
-        "Gagal mengirim pendaftaran. Silakan coba lagi.";
-      toast.error(msg);
+      // The API's own reason (a full wave, a closed period) is in Indonesian;
+      // it follows the reader's own sentence rather than replacing it.
+      const reason =
+        error?.response?.data?.error?.message ?? error?.response?.data?.message;
+      toast.error(
+        reason ? `${t.toasts.submitFailed} (${reason})` : t.toasts.submitFailed,
+      );
       // Token sekali pakai; percobaan berikutnya butuh tantangan baru.
       turnstile.refresh();
     } finally {
@@ -522,7 +556,7 @@ export function SpmbForm({
       <section className="border-b border-border bg-white pt-16">
         <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
-            Pendaftaran SPMB {siteConfig.name}
+            {t.hero.title(siteConfig.name)}
           </h1>
           <p className="mt-4 text-lg text-muted-foreground text-pretty">
             {/*
@@ -532,24 +566,21 @@ export function SpmbForm({
               and unit are period-scoped: they are now stated from the period
               itself, in the banner below, and not fixed here.
             */}
-            Sistem Penerimaan Murid Baru (SPMB) Yayasan Pesantren Cipansor
-            melayani seluruh unit pendidikan: TK Qur&rsquo;an, SD IT, SMP IT,
-            SMA Qur&rsquo;an, dan program Takhosus. Pendaftaran dilakukan secara
-            online. Unit dan biaya pendaftaran mengikuti gelombang yang sedang
-            dibuka.
+            {t.hero.intro}
           </p>
           <p className="mt-3 text-muted-foreground">
-            Isi formulir pada tab <strong>Informasi &amp; Pendaftaran</strong>,
-            lalu simpan nomor pendaftaran Anda untuk memantau perkembangan
-            seleksi melalui tab <strong>Cek Status</strong>. Bila ada
-            pertanyaan, hubungi kami di{" "}
+            {t.hero.fillIn} <strong>{t.tabs.info}</strong>
+            {t.hero.thenSave} <strong>{t.tabs.check}</strong>
+            {t.hero.askUs}{" "}
+            {/* A number reads left to right in every language. */}
             <a
               href={`tel:+${siteConfig.contact.phoneE164}`}
+              dir="ltr"
               className="font-medium text-primary underline underline-offset-4"
             >
               {siteConfig.contact.phone}
             </a>{" "}
-            atau melalui{" "}
+            {t.hero.or}{" "}
             <a
               href={siteConfig.contact.whatsapp}
               target="_blank"
@@ -583,19 +614,33 @@ export function SpmbForm({
         id="main-content"
         className="flex-1 max-w-3xl mx-auto px-4 py-8 w-full"
       >
+        {/* Radix sets its own `dir="ltr"` unless told otherwise
+            (lessons/radix-direction-defaults-ltr). */}
         <Tabs
+          dir={dir}
           value={activeTab}
           onValueChange={setActiveTab}
           className="space-y-6"
         >
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="info">Informasi & Pendaftaran</TabsTrigger>
-            <TabsTrigger value="check">Cek Status</TabsTrigger>
+            <TabsTrigger value="info">{t.tabs.info}</TabsTrigger>
+            <TabsTrigger value="check">{t.tabs.check}</TabsTrigger>
           </TabsList>
 
           {/* Info & Registration Tab */}
           <TabsContent value="info" className="space-y-6">
-            {periodWindow !== "open" ? (
+            <PublicIntakes
+              locale={locale}
+              intakes={intakes}
+              onRegister={(unitId) => {
+                setFormData((prev) => ({ ...prev, unitId }));
+                setCurrentStep(0);
+                document
+                  .getElementById("spmb-form-start")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+            />
+            {periodWindow === "loading" ? null : periodWindow !== "open" ? (
               <Card>
                 <CardContent className="py-12 text-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4 flex items-center justify-center">
@@ -608,46 +653,19 @@ export function SpmbForm({
                       this card replaces it, so the outline stays h1 -> h2 -> h3
                       whichever branch renders. */}
                   <h2 className="text-lg font-semibold">
-                    {periodWindow === "upcoming"
-                      ? "Pendaftaran Belum Dibuka"
-                      : periodWindow === "closed"
-                        ? "Pendaftaran Telah Ditutup"
-                        : "Pendaftaran Belum Dibuka"}
+                    {periodWindow === "closed"
+                      ? t.shut.closedTitle
+                      : t.shut.upcomingTitle}
                   </h2>
                   <p className="mx-auto mt-2 max-w-md text-muted-foreground text-pretty">
-                    {periodWindow === "upcoming" && activePeriod ? (
-                      <>
-                        Pendaftaran {activePeriod.name} akan dibuka pada{" "}
-                        <strong>
-                          {format(
-                            new Date(activePeriod.startDate),
-                            "d MMMM yyyy",
-                            { locale: idLocale },
-                          )}
-                        </strong>
-                        . Silakan kembali pada tanggal tersebut.
-                      </>
-                    ) : periodWindow === "closed" && activePeriod ? (
-                      <>
-                        Periode {activePeriod.name} telah ditutup pada{" "}
-                        <strong>
-                          {format(
-                            new Date(activePeriod.endDate),
-                            "d MMMM yyyy",
-                            { locale: idLocale },
-                          )}
-                        </strong>
-                        . Informasi gelombang berikutnya akan diumumkan melalui
-                        halaman ini. Untuk menanyakan ketersediaan kuota,
-                        silakan hubungi panitia SPMB.
-                      </>
-                    ) : (
-                      <>
-                        Mohon maaf, saat ini belum ada periode penerimaan murid
-                        baru yang dibuka. Silakan hubungi panitia untuk
-                        informasi lebih lanjut.
-                      </>
-                    )}
+                    {periodWindow === "upcoming" && nextIntake
+                      ? t.shut.upcomingBody(
+                          nextIntake.unit.name,
+                          formatDay(nextIntake.period.opensAt!),
+                        )
+                      : periodWindow === "closed"
+                        ? t.shut.closedBody
+                        : t.shut.noneBody}
                   </p>
                   {/*
                     No contact buttons here. A closed form needs to offer a way
@@ -662,17 +680,34 @@ export function SpmbForm({
                 <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
                   <CardContent className="pt-6">
                     <div className="flex flex-col md:flex-row justify-between gap-4">
-                      <div>
+                      {/* Clear of the fixed navbar when "Daftar ke unit
+                          ini" scrolls here. */}
+                      <div id="spmb-form-start" className="scroll-mt-32">
                         <h2 className="text-2xl font-bold text-green-900">
-                          {activePeriod.name}
+                          {t.banner.title}
                         </h2>
                         <p className="text-green-700 mt-1">
-                          Gelombang pendaftaran aktif hingga{" "}
-                          {format(
-                            new Date(activePeriod.endDate),
-                            "d MMMM yyyy",
-                            { locale: idLocale },
-                          )}
+                          {chosenIntake
+                            ? bannerWave
+                              ? t.banner.chosen(
+                                  chosenIntake.period.name,
+                                  bannerWave.name,
+                                  formatDay(bannerCloses!),
+                                )
+                              : t.banner.chosenNoWave(
+                                  chosenIntake.period.name,
+                                  formatDay(bannerCloses!),
+                                )
+                            : bannerWave
+                              ? t.banner.open(
+                                  openUnits,
+                                  bannerWave.name,
+                                  formatDay(bannerCloses!),
+                                )
+                              : t.banner.openNoWave(
+                                  openUnits,
+                                  formatDay(bannerCloses!),
+                                )}
                         </p>
                         {/*
                           Which unit this period admits to, and what it costs.
@@ -680,31 +715,35 @@ export function SpmbForm({
                           as fixed page copy contradicts the record as soon as
                           a different period becomes current.
                         */}
-                        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-green-800">
-                          {activePeriod.unit?.name && (
+                        {chosenIntake && (
+                          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-green-800">
                             <span>
-                              Unit: <strong>{activePeriod.unit.name}</strong>
+                              {t.banner.unit}:{" "}
+                              <strong>{chosenIntake.unit.name}</strong>
                             </span>
-                          )}
-                          <span>
-                            Biaya pendaftaran:{" "}
-                            <strong>
-                              {Number(activePeriod.registrationFee) > 0
-                                ? new Intl.NumberFormat("id-ID", {
-                                    style: "currency",
-                                    currency: "IDR",
-                                    minimumFractionDigits: 0,
-                                  }).format(
-                                    Number(activePeriod.registrationFee),
-                                  )
-                                : "Gratis"}
-                            </strong>
-                          </span>
-                        </div>
+                            {/* What is billed on registering. With no fee
+                                billed, "Gratis" only where the unit has no
+                                fee table above that could say otherwise. */}
+                            {(Number(chosenIntake.period.registrationFee) > 0 ||
+                              chosenIntake.fees.length === 0) && (
+                              <span data-testid="spmb-registration-fee">
+                                {t.banner.registrationFee}:{" "}
+                                <strong>
+                                  {Number(chosenIntake.period.registrationFee) >
+                                  0
+                                    ? formatRupiah(
+                                        chosenIntake.period.registrationFee,
+                                      )
+                                    : t.banner.free}
+                                </strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="bg-white/50 p-3 rounded-lg border border-green-100 backdrop-blur-sm self-start">
                         <div className="text-sm text-green-800 font-medium">
-                          Sisa Waktu
+                          {t.banner.timeLeft}
                         </div>
                         {/*
                           No `Math.max(0, …)` clamp here any more. This branch
@@ -713,11 +752,15 @@ export function SpmbForm({
                           expired period display a reassuring "0 Hari".
                         */}
                         <div className="text-2xl font-bold text-green-600">
-                          {differenceInDays(
-                            new Date(activePeriod.endDate),
-                            new Date(),
-                          )}{" "}
-                          Hari
+                          {t.banner.days(
+                            formatNumber(
+                              locale,
+                              differenceInDays(
+                                new Date(bannerCloses!),
+                                new Date(),
+                              ),
+                            ),
+                          )}
                         </div>
                       </div>
                     </div>
@@ -726,7 +769,7 @@ export function SpmbForm({
 
                 {/* Progress Steps */}
                 <div className="relative">
-                  <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gray-200 -z-10" />
+                  <div className="absolute top-1/2 start-0 w-full h-0.5 bg-gray-200 -z-10" />
                   <div className="flex justify-between">
                     {steps.map((step, index) => {
                       const Icon = step.icon;
@@ -764,29 +807,41 @@ export function SpmbForm({
                 <Card>
                   <CardHeader>
                     <CardTitle>{steps[currentStep].title}</CardTitle>
-                    <CardDescription>
-                      Lengkapi data berikut dengan benar
-                    </CardDescription>
+                    <CardDescription>{t.stepHint}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     {/* Step 1: Student Data */}
                     {currentStep === 0 && (
                       <div className="grid gap-4">
                         <div className="space-y-2">
-                          <Label>Pilih Unit Pendidikan</Label>
+                          <Label>{t.student.unit}</Label>
                           <Select
+                            dir={dir}
                             value={formData.unitId}
                             onValueChange={(v) =>
                               setFormData({ ...formData, unitId: v })
                             }
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Pilih unit tujuan" />
+                              <SelectValue
+                                placeholder={t.student.unitPlaceholder}
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              {units.map((unit) => (
-                                <SelectItem key={unit.id} value={unit.id}>
-                                  {unit.name} ({unit.type})
+                              {/* Every unit with an intake; only an open one
+                                  can be chosen. */}
+                              {intakes.map((i) => (
+                                <SelectItem
+                                  key={i.unit.id}
+                                  value={i.unit.id}
+                                  disabled={i.period.window !== "open"}
+                                >
+                                  {i.unit.officialName ?? i.unit.name}
+                                  {i.period.window === "upcoming"
+                                    ? ` (${t.student.notOpenYet})`
+                                    : i.period.window === "closed"
+                                      ? ` (${t.student.closed})`
+                                      : ""}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -795,7 +850,7 @@ export function SpmbForm({
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label>Nama Lengkap</Label>
+                            <Label>{t.student.fullName}</Label>
                             <Input
                               value={formData.fullName}
                               onChange={(e) =>
@@ -804,11 +859,11 @@ export function SpmbForm({
                                   fullName: e.target.value,
                                 })
                               }
-                              placeholder="Sesuai Akte Kelahiran"
+                              placeholder={t.student.fullNamePlaceholder}
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Nama Panggilan</Label>
+                            <Label>{t.student.nickname}</Label>
                             <Input
                               value={formData.nickname}
                               onChange={(e) =>
@@ -823,7 +878,7 @@ export function SpmbForm({
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label>Tempat Lahir</Label>
+                            <Label>{t.student.birthPlace}</Label>
                             <Input
                               value={formData.birthPlace}
                               onChange={(e) =>
@@ -835,7 +890,7 @@ export function SpmbForm({
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Tanggal Lahir</Label>
+                            <Label>{t.student.birthDate}</Label>
                             <Input
                               type="date"
                               value={formData.birthDate}
@@ -850,26 +905,33 @@ export function SpmbForm({
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Jenis Kelamin</Label>
+                          <Label>{t.student.gender}</Label>
                           <Select
+                            dir={dir}
                             value={formData.gender}
                             onValueChange={(v) =>
                               setFormData({ ...formData, gender: v as Gender })
                             }
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Pilih jenis kelamin" />
+                              <SelectValue
+                                placeholder={t.student.genderPlaceholder}
+                              />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="MALE">Laki-laki</SelectItem>
-                              <SelectItem value="FEMALE">Perempuan</SelectItem>
+                              <SelectItem value="MALE">
+                                {t.student.male}
+                              </SelectItem>
+                              <SelectItem value="FEMALE">
+                                {t.student.female}
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label>NIK</Label>
+                            <Label>{t.student.nationalId}</Label>
                             <Input
                               value={formData.nationalId}
                               onChange={(e) =>
@@ -882,7 +944,7 @@ export function SpmbForm({
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Nomor Kartu Keluarga</Label>
+                            <Label>{t.student.familyCard}</Label>
                             <Input
                               value={formData.familyCardNumber}
                               onChange={(e) =>
@@ -903,11 +965,12 @@ export function SpmbForm({
                       <div className="space-y-6">
                         <div className="space-y-4">
                           <h4 className="font-semibold flex items-center gap-2">
-                            <User className="h-4 w-4" /> Data Ayah
+                            <User className="h-4 w-4" />{" "}
+                            {t.parent.fatherHeading}
                           </h4>
                           <div className="grid gap-4">
                             <div className="space-y-2">
-                              <Label>Nama Ayah</Label>
+                              <Label>{t.parent.fatherName}</Label>
                               <Input
                                 value={formData.fatherName}
                                 onChange={(e) =>
@@ -920,7 +983,7 @@ export function SpmbForm({
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <Label>Pekerjaan</Label>
+                                <Label>{t.parent.occupation}</Label>
                                 <Input
                                   value={formData.fatherOccupation}
                                   onChange={(e) =>
@@ -932,7 +995,7 @@ export function SpmbForm({
                                 />
                               </div>
                               <div className="space-y-2">
-                                <Label>No. WhatsApp</Label>
+                                <Label>{t.parent.whatsapp}</Label>
                                 <Input
                                   value={formData.fatherPhone}
                                   onChange={(e) =>
@@ -949,11 +1012,12 @@ export function SpmbForm({
 
                         <div className="space-y-4">
                           <h4 className="font-semibold flex items-center gap-2">
-                            <User className="h-4 w-4" /> Data Ibu
+                            <User className="h-4 w-4" />{" "}
+                            {t.parent.motherHeading}
                           </h4>
                           <div className="grid gap-4">
                             <div className="space-y-2">
-                              <Label>Nama Ibu</Label>
+                              <Label>{t.parent.motherName}</Label>
                               <Input
                                 value={formData.motherName}
                                 onChange={(e) =>
@@ -966,7 +1030,7 @@ export function SpmbForm({
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="space-y-2">
-                                <Label>Pekerjaan</Label>
+                                <Label>{t.parent.occupation}</Label>
                                 <Input
                                   value={formData.motherOccupation}
                                   onChange={(e) =>
@@ -978,7 +1042,7 @@ export function SpmbForm({
                                 />
                               </div>
                               <div className="space-y-2">
-                                <Label>No. WhatsApp</Label>
+                                <Label>{t.parent.whatsapp}</Label>
                                 <Input
                                   value={formData.motherPhone}
                                   onChange={(e) =>
@@ -999,7 +1063,7 @@ export function SpmbForm({
                     {currentStep === 2 && (
                       <div className="grid gap-4">
                         <div className="space-y-2">
-                          <Label>Alamat Lengkap (Jalan, RT/RW)</Label>
+                          <Label>{t.address.street}</Label>
                           <Textarea
                             value={formData.address}
                             onChange={(e) =>
@@ -1013,7 +1077,7 @@ export function SpmbForm({
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label>Desa/Kelurahan</Label>
+                            <Label>{t.address.village}</Label>
                             <Input
                               value={formData.village}
                               onChange={(e) =>
@@ -1025,7 +1089,7 @@ export function SpmbForm({
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Kecamatan</Label>
+                            <Label>{t.address.district}</Label>
                             <Input
                               value={formData.district}
                               onChange={(e) =>
@@ -1039,7 +1103,7 @@ export function SpmbForm({
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div className="space-y-2">
-                            <Label>Kota/Kabupaten</Label>
+                            <Label>{t.address.city}</Label>
                             <Input
                               value={formData.city}
                               onChange={(e) =>
@@ -1051,7 +1115,7 @@ export function SpmbForm({
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Provinsi</Label>
+                            <Label>{t.address.province}</Label>
                             <Input
                               value={formData.province}
                               onChange={(e) =>
@@ -1063,7 +1127,7 @@ export function SpmbForm({
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Kode Pos</Label>
+                            <Label>{t.address.postalCode}</Label>
                             <Input
                               value={formData.postalCode}
                               onChange={(e) =>
@@ -1082,23 +1146,23 @@ export function SpmbForm({
                     {currentStep === 3 && (
                       <>
                         <div className="space-y-2">
-                          <Label>Kemampuan Membaca Al-Quran</Label>
+                          <Label>{t.quran.ability}</Label>
                           <Select
+                            dir={dir}
                             value={formData.quranAbility}
                             onValueChange={(v) =>
                               setFormData({ ...formData, quranAbility: v })
                             }
                           >
                             <SelectTrigger>
-                              <SelectValue placeholder="Pilih kemampuan" />
+                              <SelectValue
+                                placeholder={t.quran.abilityPlaceholder}
+                              />
                             </SelectTrigger>
                             <SelectContent>
                               {QURAN_ABILITIES.map((ability) => (
-                                <SelectItem
-                                  key={ability.value}
-                                  value={ability.value}
-                                >
-                                  {ability.label}
+                                <SelectItem key={ability} value={ability}>
+                                  {t.quran.abilities[ability]}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -1106,7 +1170,7 @@ export function SpmbForm({
                         </div>
 
                         <div className="space-y-2">
-                          <Label>Jumlah Hafalan (Juz)</Label>
+                          <Label>{t.quran.juz}</Label>
                           <Input
                             type="number"
                             value={formData.memorizedJuz}
@@ -1116,12 +1180,12 @@ export function SpmbForm({
                                 memorizedJuz: e.target.value,
                               })
                             }
-                            placeholder="Jika sudah hafal, tulis jumlah juz"
+                            placeholder={t.quran.juzPlaceholder}
                             min={0}
                             max={30}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Kosongkan jika belum memiliki hafalan
+                            {t.quran.juzHint}
                           </p>
                         </div>
 
@@ -1131,13 +1195,9 @@ export function SpmbForm({
                               <Info className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                               <div className="text-sm">
                                 <p className="font-medium text-amber-800">
-                                  Catatan:
+                                  {t.quran.noteTitle}
                                 </p>
-                                <p className="text-amber-700">
-                                  Kemampuan Al-Quran akan diuji saat tahap tes
-                                  masuk. Isilah dengan jujur sesuai kondisi
-                                  sebenarnya.
-                                </p>
+                                <p className="text-amber-700">{t.quran.note}</p>
                               </div>
                             </div>
                           </CardContent>
@@ -1155,15 +1215,12 @@ export function SpmbForm({
                                 <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                                 <div className="text-sm">
                                   <p className="font-medium text-amber-900">
-                                    Pendaftaran Tersimpan (
-                                    {activeRegistration.registrationNo})
+                                    {t.documents.savedTitle(
+                                      activeRegistration.registrationNo,
+                                    )}
                                   </p>
                                   <p className="text-amber-800">
-                                    Data formulir pendaftaran Anda sudah
-                                    tersimpan. Beberapa berkas dokumen gagal
-                                    diunggah. Silakan pilih kembali berkas yang
-                                    gagal dan tekan tombol di bawah untuk
-                                    mencoba mengunggah ulang.
+                                    {t.documents.savedBody}
                                   </p>
                                 </div>
                               </div>
@@ -1177,14 +1234,10 @@ export function SpmbForm({
                               <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
                               <div className="text-sm">
                                 <p className="font-medium text-blue-800">
-                                  Instruksi Unggah Dokumen:
+                                  {t.documents.instructionsTitle}
                                 </p>
                                 <p className="text-blue-700">
-                                  Anda dapat memilih file dari perangkat atau
-                                  mengambil foto langsung dari kamera HP/laptop.
-                                  Dokumen akan diverifikasi secara manual oleh
-                                  petugas SPMB untuk mencocokkan NIK & No. KK
-                                  dengan data formulir.
+                                  {t.documents.instructions}
                                 </p>
                               </div>
                             </div>
@@ -1193,7 +1246,8 @@ export function SpmbForm({
 
                         <div className="space-y-4">
                           <DocumentCaptureField
-                            label="Pas Foto Calon Santri (3x4 Latar Biru)"
+                            label={t.documents.photo}
+                            content={t.documents}
                             documentType="foto"
                             file={files.photo}
                             onFileSelect={(f) =>
@@ -1205,7 +1259,8 @@ export function SpmbForm({
                           />
 
                           <DocumentCaptureField
-                            label="KTP Orang Tua / Wali"
+                            label={t.documents.idCard}
+                            content={t.documents}
                             documentType="ktp"
                             file={files.ktp}
                             userInputData={{
@@ -1221,7 +1276,8 @@ export function SpmbForm({
                           />
 
                           <DocumentCaptureField
-                            label="Kartu Keluarga (KK)"
+                            label={t.documents.familyCard}
+                            content={t.documents}
                             documentType="kk"
                             file={files.familyCard}
                             userInputData={{
@@ -1252,7 +1308,8 @@ export function SpmbForm({
                           />
 
                           <DocumentCaptureField
-                            label="Akte Kelahiran"
+                            label={t.documents.birthCertificate}
+                            content={t.documents}
                             documentType="akta"
                             file={files.birthCertificate}
                             onFileSelect={(f) =>
@@ -1278,34 +1335,35 @@ export function SpmbForm({
                         <Card>
                           <CardHeader className="pb-2">
                             <CardTitle className="text-base">
-                              Data Calon Santri
+                              {t.confirm.studentHeading}
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="text-sm space-y-1">
                             <p>
-                              <strong>Nama:</strong> {formData.fullName}
+                              <strong>{t.confirm.name}:</strong>{" "}
+                              {formData.fullName}
                             </p>
                             <p>
-                              <strong>Jenis Kelamin:</strong>{" "}
+                              <strong>{t.confirm.gender}:</strong>{" "}
                               {formData.gender === "MALE"
-                                ? "Laki-laki"
-                                : "Perempuan"}
+                                ? t.student.male
+                                : t.student.female}
                             </p>
                             <p>
-                              <strong>TTL:</strong> {formData.birthPlace},{" "}
+                              <strong>{t.confirm.born}:</strong>{" "}
+                              {formData.birthPlace}
+                              {comma}
+                              {/* The day as typed, at noon WIB so no timezone
+                                  can move it to the day before. */}
                               {formData.birthDate &&
-                                format(
-                                  new Date(formData.birthDate),
-                                  "d MMMM yyyy",
-                                  { locale: idLocale },
+                                formatDay(
+                                  `${formData.birthDate}T12:00:00+07:00`,
                                 )}
                             </p>
                             <p>
-                              <strong>Unit:</strong>{" "}
-                              {
-                                units.find((u) => u.id === formData.unitId)
-                                  ?.name
-                              }
+                              <strong>{t.confirm.unit}:</strong>{" "}
+                              {chosenIntake?.unit.officialName ??
+                                chosenIntake?.unit.name}
                             </p>
                           </CardContent>
                         </Card>
@@ -1313,31 +1371,39 @@ export function SpmbForm({
                         <Card>
                           <CardHeader className="pb-2">
                             <CardTitle className="text-base">
-                              Data Orang Tua
+                              {t.confirm.parentHeading}
                             </CardTitle>
                           </CardHeader>
                           <CardContent className="text-sm space-y-1">
                             <p>
-                              <strong>Ayah:</strong> {formData.fatherName} (
-                              {formData.fatherPhone})
+                              <strong>{t.confirm.father}:</strong>{" "}
+                              {formData.fatherName} (
+                              <span dir="ltr">{formData.fatherPhone}</span>)
                             </p>
                             <p>
-                              <strong>Ibu:</strong> {formData.motherName}
+                              <strong>{t.confirm.mother}:</strong>{" "}
+                              {formData.motherName}
                             </p>
                           </CardContent>
                         </Card>
 
                         <Card>
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Alamat</CardTitle>
+                            <CardTitle className="text-base">
+                              {t.confirm.addressHeading}
+                            </CardTitle>
                           </CardHeader>
                           <CardContent className="text-sm">
                             <p>{formData.address}</p>
                             <p>
-                              {formData.village}, {formData.district}
+                              {[formData.village, formData.district]
+                                .filter(Boolean)
+                                .join(comma)}
                             </p>
                             <p>
-                              {formData.city}, {formData.province}{" "}
+                              {[formData.city, formData.province]
+                                .filter(Boolean)
+                                .join(comma)}{" "}
                               {formData.postalCode}
                             </p>
                           </CardContent>
@@ -1345,40 +1411,36 @@ export function SpmbForm({
 
                         <Card>
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-base">Dokumen</CardTitle>
+                            <CardTitle className="text-base">
+                              {t.confirm.documentsHeading}
+                            </CardTitle>
                           </CardHeader>
                           <CardContent className="text-sm space-y-1">
-                            <p className="flex items-center gap-2">
-                              {files.photo ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-gray-400" />
-                              )}
-                              Pas Foto:{" "}
-                              {files.photo ? "Terupload" : "Belum diupload"}
-                            </p>
-                            <p className="flex items-center gap-2">
-                              {files.birthCertificate ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-gray-400" />
-                              )}
-                              Akte Kelahiran:{" "}
-                              {files.birthCertificate
-                                ? "Terupload"
-                                : "Belum diupload"}
-                            </p>
-                            <p className="flex items-center gap-2">
-                              {files.familyCard ? (
-                                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-gray-400" />
-                              )}
-                              Kartu Keluarga:{" "}
-                              {files.familyCard
-                                ? "Terupload"
-                                : "Belum diupload"}
-                            </p>
+                            {/* All four the documents step asks for; the KTP
+                                was missing from this summary. */}
+                            {(
+                              [
+                                ["photo", t.documents.photo],
+                                ["ktp", t.documents.idCard],
+                                ["familyCard", t.documents.familyCard],
+                                [
+                                  "birthCertificate",
+                                  t.documents.birthCertificate,
+                                ],
+                              ] as const
+                            ).map(([key, label]) => (
+                              <p key={key} className="flex items-center gap-2">
+                                {files[key] ? (
+                                  <CheckCircle2 className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <AlertCircle className="h-4 w-4 text-gray-400" />
+                                )}
+                                {label}:{" "}
+                                {files[key]
+                                  ? t.confirm.uploaded
+                                  : t.confirm.notUploaded}
+                              </p>
+                            ))}
                           </CardContent>
                         </Card>
 
@@ -1388,12 +1450,10 @@ export function SpmbForm({
                               <CheckCircle2 className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
                               <div className="text-sm">
                                 <p className="font-medium text-blue-800">
-                                  Pernyataan:
+                                  {t.confirm.statementTitle}
                                 </p>
                                 <p className="text-blue-700">
-                                  Dengan mengirim formulir ini, saya menyatakan
-                                  bahwa data yang saya isikan adalah benar dan
-                                  dapat dipertanggungjawabkan.
+                                  {t.confirm.statement}
                                 </p>
                               </div>
                             </div>
@@ -1416,20 +1476,20 @@ export function SpmbForm({
                       onClick={handlePrev}
                       disabled={currentStep === 0}
                     >
-                      <ChevronLeft className="h-4 w-4 mr-2" />
-                      Sebelumnya
+                      <ChevronLeft className="h-4 w-4 me-2 rtl:rotate-180" />
+                      {t.actions.previous}
                     </Button>
                     {currentStep < steps.length - 1 ? (
                       <Button onClick={handleNext}>
-                        Selanjutnya
-                        <ChevronRight className="h-4 w-4 ml-2" />
+                        {t.actions.next}
+                        <ChevronRight className="h-4 w-4 ms-2 rtl:rotate-180" />
                       </Button>
                     ) : (
                       <Button
                         onClick={handleSubmit}
                         disabled={isSubmitting || !turnstile.ready}
                       >
-                        {isSubmitting ? "Mengirim..." : "Kirim Pendaftaran"}
+                        {isSubmitting ? t.actions.submitting : t.actions.submit}
                       </Button>
                     )}
                   </CardFooter>
@@ -1449,15 +1509,11 @@ export function SpmbForm({
             submitting.
           */}
           <TabsContent value="check">
-            <h2 className="mb-1 text-xl font-semibold">
-              Cek Status Pendaftaran
-            </h2>
+            <h2 className="mb-1 text-xl font-semibold">{t.checkTab.heading}</h2>
             <p className="mb-6 text-sm text-muted-foreground">
-              Masukkan nomor pendaftaran dan tanggal lahir calon santri. Nomor
-              pendaftaran ditampilkan setelah formulir berhasil dikirim — simpan
-              nomor tersebut untuk memantau proses seleksi.
+              {t.checkTab.body}
             </p>
-            <RegistrationTracker />
+            <RegistrationTracker locale={locale} />
           </TabsContent>
         </Tabs>
 
@@ -1468,10 +1524,8 @@ export function SpmbForm({
               <div>
                 {/* h3, not h4: the preceding heading is an h2, and skipping a
                     level breaks the document outline for screen readers. */}
-                <h3 className="font-semibold text-lg mb-2">Butuh Bantuan?</h3>
-                <p className="text-muted-foreground">
-                  Hubungi panitia SPMB untuk informasi lebih lanjut
-                </p>
+                <h3 className="font-semibold text-lg mb-2">{t.help.heading}</h3>
+                <p className="text-muted-foreground">{t.help.body}</p>
               </div>
               <div className="flex flex-col sm:flex-row gap-4">
                 <a
@@ -1479,7 +1533,7 @@ export function SpmbForm({
                   className="flex items-center gap-2 text-blue-600 hover:underline"
                 >
                   <Phone className="h-4 w-4" />
-                  {siteConfig.contact.phone}
+                  <span dir="ltr">{siteConfig.contact.phone}</span>
                 </a>
                 <a
                   href={`mailto:${siteConfig.contact.email}`}
@@ -1506,28 +1560,27 @@ export function SpmbForm({
             <div className="w-16 h-16 bg-green-100 rounded-full mx-auto mb-4 flex items-center justify-center">
               <CheckCircle2 className="h-8 w-8 text-green-600" />
             </div>
-            <h3 className="text-xl font-semibold mb-2">
-              Pendaftaran Berhasil!
-            </h3>
+            <h3 className="text-xl font-semibold mb-2">{t.success.heading}</h3>
             <p className="text-muted-foreground mb-4">
-              Terima kasih, <strong>{successData?.name}</strong>
+              {t.success.thanks(successData?.name ?? "")}
             </p>
             <Card className="bg-blue-50 mb-4">
               <CardContent className="pt-4">
                 <p className="text-sm text-muted-foreground">
-                  Nomor Pendaftaran:
+                  {t.success.numberLabel}
                 </p>
                 <p className="text-2xl font-mono font-bold text-blue-600">
                   {successData?.registrationNumber}
                 </p>
               </CardContent>
             </Card>
+            {/* It used to promise news "via WhatsApp/SMS", which nothing in
+                the system sends; the tracker is how a parent follows up. */}
             <p className="text-sm text-muted-foreground mb-6">
-              Simpan nomor pendaftaran ini. Informasi selanjutnya akan dikirim
-              via WhatsApp/SMS.
+              {t.success.keepNumber}
             </p>
             <Button onClick={() => setSuccessData(null)} className="w-full">
-              Tutup
+              {t.success.close}
             </Button>
           </div>
         </DialogContent>

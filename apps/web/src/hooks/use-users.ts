@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import api, { PaginatedResponse, ApiResponse, User } from "@/lib/api";
+import type { PaginatedResponse } from "@cipansor/shared";
+import api, { ApiResponse, User } from "@/lib/api";
 
 export interface UserListParams {
   page?: number;
@@ -7,6 +8,8 @@ export interface UserListParams {
   search?: string;
   role?: string;
   unitId?: string;
+  /** A realm of the account's active roles (`GLOBAL`, `SD_IT`, …). */
+  realm?: string;
   isActive?: boolean;
 }
 
@@ -31,6 +34,9 @@ export function useUsers(params: UserListParams = {}) {
   return useQuery({
     queryKey: ["users", params],
     queryFn: async () => {
+      // The API answers the shared contract, totals under `meta.pagination`.
+      // The web's own flat `PaginatedResponse` read `meta.total`, which is
+      // never sent, so the list showed "of 0" and one page.
       const response = await api.get<PaginatedResponse<User>>("/users", {
         params,
       });
@@ -88,6 +94,24 @@ export function useDeleteUser() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
+/**
+ * Make an account choose a new password at its next sign-in — when its
+ * password leaked or someone else learned it. Its sessions end within one
+ * access-token lifetime, since the refresh is refused from now on.
+ */
+export function useRequirePasswordChange() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const response = await api.post<ApiResponse<{ message: string }>>(
+        `/users/${id}/require-password-change`,
+        undefined,
+        { skipErrorToast: true },
+      );
+      return response.data.data;
     },
   });
 }

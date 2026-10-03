@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { settledContent } from "./helpers/page-state";
 
 /**
@@ -38,5 +38,25 @@ test.describe("e2e helper: settledContent", () => {
     await nav.catch(() => {});
 
     expect(html.length).toBeGreaterThan(100);
+  });
+
+  test("reports the last observation, not a stale navigation error", async ({
+    page,
+  }) => {
+    // A page.content() that throws once and then returns an empty document
+    // forever: the caller must see the empty document (the real final state),
+    // not the earlier "page is navigating" error the retry loop moved past.
+    const empty = "<html><head></head><body></body></html>";
+    let calls = 0;
+    const stub = page as Page & { content: Page["content"] };
+    stub.content = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("page is navigating");
+      return empty;
+    };
+
+    const html = await settledContent(page, 300);
+    expect(calls).toBeGreaterThan(1);
+    expect(html).toBe(empty);
   });
 });

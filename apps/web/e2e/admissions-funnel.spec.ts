@@ -11,7 +11,8 @@ test.describe("Unified Admissions Funnel", () => {
 
     await expect(page.getByText("Unified Admissions Management")).toBeVisible();
 
-    // Real seeded admission period and registrant.
+    // Real seeded admission period (SMP IT's intake, one period per unit and
+    // year) and registrant.
     //
     // Matched by shape, not by literal. The seed used to hardcode
     // "PSB 2024/2025 Gelombang 1", so this assertion pinned the test to the
@@ -24,7 +25,7 @@ test.describe("Unified Admissions Funnel", () => {
     // helper: a test that derives its expectation the same way the code does
     // passes happily when both are wrong.
     await expect(
-      page.getByText(/SPMB \d{4}\/\d{4} Gelombang 1/).first(),
+      page.getByText(/SPMB \d{4}\/\d{4} SMP IT/).first(),
     ).toBeVisible({
       timeout: 15000,
     });

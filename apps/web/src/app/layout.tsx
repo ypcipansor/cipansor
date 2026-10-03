@@ -7,7 +7,11 @@ import { QueryProvider } from "@/components/providers/query-provider";
 import { I18nProvider } from "@/providers/i18n-provider";
 import { dirFor, isLocale, LOCALE_COOKIE, type Locale } from "@/locales";
 import { Toaster } from "@/components/ui/sonner";
-import { SkipLink, OfflineBanner } from "@/components/shared";
+import {
+  SkipLink,
+  OfflineBanner,
+  TestCopyWatermark,
+} from "@/components/shared";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { UpdatePrompt } from "@/components/pwa/update-prompt";
@@ -168,6 +172,7 @@ export default async function RootLayout({
               source for it.
             */}
             <div id="app-root">{children}</div>
+            <TestCopyWatermark />
             <Toaster />
             {/*
               Always mounted, even where the PWA is off: on the public site its

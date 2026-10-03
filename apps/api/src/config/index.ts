@@ -100,6 +100,15 @@ export function switchEnabled(raw: string | undefined): boolean {
   return !['false', '0', 'off', 'no'].includes((raw ?? '').trim().toLowerCase());
 }
 
+/**
+ * An on/off switch that defaults to OFF: only `true`, `1`, `on` or `yes` turns
+ * it on. For behaviour production must never pick up by accident — a typo or
+ * a missing setting leaves production as it was.
+ */
+export function switchOn(raw: string | undefined): boolean {
+  return ['true', '1', 'on', 'yes'].includes((raw ?? '').trim().toLowerCase());
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
@@ -123,6 +132,20 @@ export const config = {
   },
   outboundMessages: {
     enabled: switchEnabled(process.env.OUTBOUND_MESSAGES_ENABLED),
+  },
+
+  /**
+   * `testCopy` — every document this copy produces is stamped "SALINAN UJI —
+   * BUKAN DOKUMEN SAH": naskah dinas (signed ones included), the Rapor Merdeka
+   * PDF, and through the web's print watermark everything printed from a
+   * browser. Staging turns it on (`DOCUMENT_TEST_COPY=true`): its demo accounts
+   * carry the names of the yayasan's real office holders and their passwords
+   * are in the public repository, so without the stamp anyone could produce a
+   * naskah "signed" by the real Ketua on the real letterhead (decided
+   * 2026-10-02, decisions/spmb-2027-2028.md item 5). Off unless set.
+   */
+  documents: {
+    testCopy: switchOn(process.env.DOCUMENT_TEST_COPY),
   },
 
   jwt: {

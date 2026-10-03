@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { boardMemberFields } from '@cipansor/shared';
 
 // Foundation schemas
 export const createFoundationSchema = z.object({
@@ -24,20 +25,30 @@ export const queryFoundationSchema = z.object({
 });
 
 // Board Member schemas
+// The portal's form sends calendar days and no foundationId — the yayasan has
+// one foundation record, which the service fills in. A start date nobody knows
+// stays empty (null) rather than being guessed.
 export const createBoardMemberSchema = z.object({
-  foundationId: z.string().uuid(),
-  name: z.string().min(2).max(100),
-  position: z.string().min(2).max(50),
-  phone: z.string().max(20).optional(),
-  email: z.string().email().optional(),
-  photoUrl: z.string().url().optional(),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime().optional(),
+  foundationId: z.string().uuid().optional(),
+  name: boardMemberFields.name,
+  position: boardMemberFields.position,
+  phone: boardMemberFields.phone.nullable().optional(),
+  email: boardMemberFields.email.nullable().optional(),
+  // A portrait on the site (`/images/people/…`) or an uploaded file's URL.
+  photoUrl: z
+    .string()
+    .max(500)
+    .regex(/^(\/[^/]|https:\/\/)/, 'A site path or an https URL')
+    .nullable()
+    .optional(),
+  startDate: boardMemberFields.startDate.nullable().optional(),
+  endDate: boardMemberFields.endDate.nullable().optional(),
+  isActive: z.boolean().optional(),
 });
 
 export const updateBoardMemberSchema = createBoardMemberSchema
-  .partial()
-  .omit({ foundationId: true });
+  .omit({ foundationId: true })
+  .partial();
 
 export const queryBoardMemberSchema = z.object({
   page: z.coerce.number().min(1).default(1),

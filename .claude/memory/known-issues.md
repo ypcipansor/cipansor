@@ -18,6 +18,17 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **The marketing dashboard's monthly attributed revenue always fails**
+  (found 2026-10-03). `getMonthlyAttributedRevenue` in
+  `marketing/roi.service.ts` filters `invoice.student.registrant`, a relation
+  that does not exist (`Student` has `registrants`), so Prisma refuses the
+  query and the endpoint answers 500 on every call: `/marketing`
+  ("Marketing & PSB") shows an error toast and an empty revenue chart. Its unit test
+  (`tests/funnel-trend.test.ts`) mocks Prisma, so it cannot see a wrong
+  relation name. Fix: `registrants: { some: { campaignId: { not: null }, … } }`,
+  with a test against a real query shape (or an e2e that opens the page and
+  expects no error).
+
 - **The web calls API paths that do not exist — 184 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
   in #569 and #571, mata pelajaran in #573, laporan harian in #577, the
@@ -121,10 +132,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   different shape from what `report/completeness` returns; and the child's NIK
   is shown in full in the table, where UU 27/2022 Ps. 4 asks for minimal
   display of specific personal data.
-- **Raport Merdeka on-screen preview** prints a literal letterhead — "SMP
-  Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" — for every unit
-  (`assessment/raport-merdeka/page.tsx`, the preview header). The exported PDF
-  is generated server-side.
 - **"+ Tambah Sasaran" and "+ Tambah Kegiatan"** (`perencanaan/[id]/page.tsx`)
   show to every reader, including the Pembina, the Pengawas, and anyone on a
   ratified plan. The server refuses correctly; the buttons mislead.
@@ -148,8 +155,42 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   (`perencanaan.service.ts`, `createPlan`), so two concurrent requests can both
   pass. The real fix is a partial unique index — a schema change.
 
+- **An account created as a teacher from Users & Roles has no teacher record**
+  (seen 2026-10-02): its dashboard says "Gagal memuat beberapa data" and
+  "This account is not linked to a teacher record". HR employees creates both;
+  Users & Roles creates only the login. Either the form says so and links to
+  HR, or it creates the record — not decided.
+
+- **Surat keterangan santri are printed outside E-Office** (found
+  2026-10-02; to be routed through it,
+  [`decisions/surat-keterangan-lewat-eoffice.md`](decisions/surat-keterangan-lewat-eoffice.md)).
+  `students/documents` makes the letter's number in the browser. The letter is
+  not in the agenda, has no TTE, and cannot be verified. It also prints
+  unstyled, because the app's CSS does not reach its print window. The page
+  is in no menu. `tahfidz/certificate` is in no menu either; both open only by
+  URL.
+
+- **A period's registration fee and its fee table are entered apart.**
+  `registrationFee` is what the applicant is billed on registering; the fee
+  table is what the public page and the chatbot show, and the brochure's
+  table has a "Pendaftaran" line of its own. Nothing checks that the two
+  agree, so an admin can announce one figure and bill another. The public
+  page shows the registration fee only for a period with no fee table.
+
 ## Access that is too narrow, or needs review
 
+- **The yayasan's organs have no SPMB item in their menu.** They read SPMB
+  (decided 2026-09-23: the panitia prepares, the kepala unit decides, the
+  board reads along), and the API and the pages let them. But they reach
+  `/spmb` and `/spmb/periods` only by typing the address.
+
+- **The kepala sekolah cannot open a Raport Merdeka of their own unit**
+  (found 2026-10-02). `assertRaportAccess` (`raport-merdeka.service`) admits a
+  unit's admin and a teacher who covers the class; a kepala who teaches none
+  of the classes gets 403 "Anda tidak memiliki akses ke siswa di unit lain"
+  for a santri of their own unit — the wrong reason, and the head who signs
+  the raport (`pimpinanUnit`). Whether a head reads every raport of the unit is
+  a scope decision for Model A.
 - **Who manages asrama — decided 2026-09-27, not built.** Adding asrama and
   kamar and placing santri still admits the super admin, every school's admin
   (TK's included, whose pupils never board) and the yayasan organs — the
@@ -220,6 +261,12 @@ decision.
 
 ## Design gaps
 
+- **No PDF here prints Arabic script.** The Raport Merdeka prints in the
+  built-in Helvetica (WinAnsi) and leaves Arabic out; it used to embed Amiri,
+  which drew nothing legible (lessons/guard-tests-that-measure-the-wrong-thing,
+  "A file that opens is not a page that reads"). Arabic needs a shaping
+  (harfbuzz) and right-to-left pipeline and a font that subsets correctly.
+  The raport's own text is Latin — surah names are transliterated.
 - **Names that say something other than what the module does** (audit
   2026-09-25, every module): `practicum` is Amaliyah Tadris, `research` is
   Fathul Kutub (shown as "Turats Lab"), `inventory` is fixed assets,
@@ -295,6 +342,16 @@ decision.
   registrant UI lives at `/spmb` (the API already has the
   `/admissions/registrants` routes).
 
+- **61 free-text columns keep their code vocabulary in a comment**
+  (measured 2026-10-03: `String` fields in `schema.prisma` whose comment lists
+  codes such as `// STUDENT, STAFF, TEACHER`). Nothing stops a writer that
+  never read the comment; that is how `students.status` (#492) and
+  `registrants.quran_ability` (2026-10-03) came to hold two spellings. Sweep
+  them one module at a time when the module is touched: measure what each
+  column holds (`select x, count(*) … group by x`), then a Prisma enum or a
+  CHECK, and `z.enum` at the edge
+  (`lessons/student-status-case-mismatch.md`).
+
 ## Performance
 
 - **`next/image` has never optimised anything.** Every `/_next/image` request
@@ -316,8 +373,8 @@ decision.
 
 - **`spmb-workflow.spec.ts` leaves an active admission period behind on every
   run** ("SPMB E2E Auto …"). On a fresh CI database that is one extra period;
-  on a local stack reused across runs they pile up, push the seeded
-  "Gelombang 1" out of the Admissions overview, and `admissions-funnel.spec.ts`
+  on a local stack reused across runs they pile up, push the seeded SMP IT
+  intake out of the Admissions overview, and `admissions-funnel.spec.ts`
   fails (seen after three full runs, 2026-09-28). The spec should delete what it
   creates, or the funnel test should look the seeded period up by name.
 - **About a hundred e2e heading assertions are unscoped** (103 by a plain grep,

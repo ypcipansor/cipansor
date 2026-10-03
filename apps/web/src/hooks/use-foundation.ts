@@ -1,5 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { FoundationFinancialOverview } from "@cipansor/shared";
+import type {
+  BoardMember,
+  FoundationFinancialOverview,
+} from "@cipansor/shared";
 import api from "@/lib/api";
 
 // Types
@@ -75,21 +78,18 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   OTHER: "Lainnya",
 };
 
-export interface FoundationBoardMember {
-  id: string;
-  foundationId: string;
+/** The API's board member — a member of the Pembina, Pengawas or Pengurus. */
+export type FoundationBoardMember = BoardMember;
+
+/** POST/PUT body of /foundation/board-members, as the portal's form sends it. */
+export interface FoundationBoardMemberInput {
   name: string;
   position: string;
-  phone?: string;
-  email?: string;
-  address?: string;
-  startDate: string;
-  endDate?: string;
+  phone: string | null;
+  email: string | null;
+  startDate: string | null;
+  endDate: string | null;
   isActive: boolean;
-  bio?: string;
-  photo?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 // Foundation queries
@@ -220,7 +220,7 @@ export function useCreateFoundationBoardMember() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: Partial<FoundationBoardMember>) => {
+    mutationFn: async (data: FoundationBoardMemberInput) => {
       const response = await api.post("/foundation/board-members", data);
       return response.data.data;
     },
@@ -239,7 +239,7 @@ export function useUpdateFoundationBoardMember() {
       data,
     }: {
       id: string;
-      data: Partial<FoundationBoardMember>;
+      data: Partial<FoundationBoardMemberInput>;
     }) => {
       const response = await api.put(`/foundation/board-members/${id}`, data);
       return response.data.data;

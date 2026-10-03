@@ -1,5 +1,6 @@
 "use client";
 
+import { LETTERHEAD } from "@cipansor/shared";
 import { useParams, useRouter } from "next/navigation";
 import { safeFormat } from "@/lib/date";
 import { Button } from "@/components/ui/button";
@@ -341,7 +342,7 @@ function SkhunPrintPageContent() {
               <div></div>
               <div className="text-center text-sm">
                 <p>
-                  {skhunData.school.address?.split(",")[0] ?? "Bandung"},{" "}
+                  {LETTERHEAD.city},{" "}
                   {safeFormat(new Date(skhunData.issuedDate), "d MMMM yyyy", {
                     locale: idLocale,
                   })}

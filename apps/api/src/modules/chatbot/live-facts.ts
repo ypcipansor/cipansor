@@ -8,16 +8,18 @@
  * and the failure lands on a family deciding where to send their child.
  *
  * These are read-only lookups against the same authorised projection the public
- * SPMB page uses — `findPublicActivePeriod` — so the whitelist that keeps quota,
+ * SPMB page uses — `findPublicIntakes` — so the whitelist that keeps quota,
  * registrant counts and PII out of anonymous responses covers the bot too, with
- * no second copy to keep in step.
+ * no second copy to keep in step. One fact per unit: the brochure's waves,
+ * fees, requirements and contact, as the unit's admin entered them.
  *
  * This is also the shape Phase 2 generalises: private data reached through
  * calls to existing authorised code, never a vector index over the database.
  * See docs/planning/chatbot-design.md §2.
  */
 
-import { findPublicActivePeriod } from '../admissions/admissions.service';
+import { admissionFeeTotals, type PublicIntakeDTO } from '@cipansor/shared';
+import { findPublicIntakes } from '../admissions/admissions.service';
 import { logger } from '@/lib/logger';
 import { closestTerm, tokenize } from './retrieval';
 
@@ -79,64 +81,125 @@ const currencyFormatter = new Intl.NumberFormat('id-ID', {
   maximumFractionDigits: 0,
 });
 
-function describePeriod(
-  period: Awaited<ReturnType<typeof findPublicActivePeriod>>,
-  now: Date
-): LiveFact {
-  if (!period) {
-    return {
-      id: 'spmb-status',
-      title: 'Status pendaftaran SPMB',
-      text: 'Saat ini tidak ada gelombang pendaftaran SPMB yang aktif.',
-    };
-  }
+const money = (value: string | number | null | undefined) =>
+  value === null || value === undefined ? null : currencyFormatter.format(Number(value));
 
-  const start = new Date(period.startDate);
+/** One day, or "first – last". Both are moments or calendar days; WIB decides the day. */
+function days(start: string | null, end?: string | null): string {
+  if (!start) return '';
+  const a = dateFormatter.format(new Date(start));
+  const b = end ? dateFormatter.format(new Date(end)) : a;
+  return a === b ? a : `${a} – ${b}`;
+}
+
+const WAVE_STATE = {
+  upcoming: 'belum dibuka',
+  open: 'SEDANG DIBUKA',
+  closed: 'sudah ditutup',
+  full: 'ditutup karena kuota penuh',
+} as const;
+
+const RESIDENCY = { ALL: '', BOARDING: 'mukim', NON_BOARDING: 'tidak mukim' } as const;
+
+function describeIntake(intake: PublicIntakeDTO, now: Date): LiveFact {
+  const { unit, period } = intake;
+  const unitName = unit.officialName ?? unit.name;
   const end = new Date(period.endDate);
-  // `registrationFee` is a Prisma Decimal — it serialises as a string, and
-  // Number() on it is exact at these magnitudes. Formatting it here rather than
-  // handing the raw value to the model matters: the model must never have to
-  // decide how to render money.
-  const fee =
-    period.registrationFee === null || period.registrationFee === undefined
-      ? null
-      : currencyFormatter.format(Number(period.registrationFee));
+  const on = (iso: string) => dateFormatter.format(new Date(iso));
+  const daysUntil = (iso: string) =>
+    Math.ceil((new Date(iso).getTime() - now.getTime()) / 86_400_000);
 
+  // The window the page shows: by the waves where there are any, because the
+  // API refuses a registration between two waves or once every wave is full.
   let status: string;
-  if (start <= now && end >= now) {
-    const daysLeft = Math.ceil((end.getTime() - now.getTime()) / 86_400_000);
-    status = `Pendaftaran DIBUKA sekarang dan ditutup pada ${dateFormatter.format(end)} (sekitar ${daysLeft} hari lagi).`;
-  } else if (start > now) {
-    status = `Pendaftaran BELUM dibuka. Gelombang ini dibuka pada ${dateFormatter.format(start)} dan ditutup ${dateFormatter.format(end)}.`;
+  if (period.window === 'open') {
+    const closesAt = period.closesAt ?? period.endDate;
+    status =
+      closesAt === period.endDate
+        ? `Pendaftaran DIBUKA sekarang dan ditutup pada ${on(closesAt)} (sekitar ${daysUntil(closesAt)} hari lagi).`
+        : `Pendaftaran DIBUKA sekarang; gelombang yang berjalan ditutup pada ${on(closesAt)} (sekitar ${daysUntil(closesAt)} hari lagi), dan periode pendaftaran berakhir ${dateFormatter.format(end)}.`;
+  } else if (period.window === 'upcoming') {
+    const opensAt = period.opensAt ?? period.startDate;
+    status =
+      now >= new Date(period.startDate)
+        ? `Pendaftaran sedang DITUTUP di antara dua gelombang; dibuka lagi pada ${on(opensAt)}.`
+        : `Pendaftaran BELUM dibuka; dibuka pada ${on(opensAt)} dan periode pendaftaran berakhir ${dateFormatter.format(end)}.`;
+  } else if (now <= end) {
+    status = 'Pendaftaran sedang DITUTUP: semua gelombang sudah penuh atau ditutup.';
   } else {
-    status = `Pendaftaran gelombang ini SUDAH DITUTUP pada ${dateFormatter.format(end)}.`;
+    status = `Pendaftaran SUDAH DITUTUP pada ${dateFormatter.format(end)}.`;
   }
 
   const parts = [
-    `Gelombang: ${period.name}.`,
-    period.academicYear?.name ? `Tahun ajaran: ${period.academicYear.name}.` : '',
-    period.unit?.name ? `Unit: ${period.unit.name}.` : '',
+    `${unitName}: SPMB ${period.academicYear ? `tahun ajaran ${period.academicYear}` : period.name}.`,
     status,
-    fee ? `Biaya pendaftaran: ${fee}.` : '',
-  ].filter(Boolean);
+  ];
 
-  // `requirements` is stored as a JSON string array.
-  if (period.requirements) {
-    try {
-      const parsed: unknown = JSON.parse(period.requirements);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        parts.push(`Persyaratan: ${parsed.join('; ')}.`);
-      }
-    } catch {
-      // Malformed requirements must not cost the visitor the rest of the
-      // answer — the dates and the fee are the part they asked for.
-      logger.warn('Admission period requirements are not valid JSON', { periodId: period.id });
+  for (const wave of intake.waves) {
+    const sessions = [
+      `pendaftaran ${days(wave.startDate, wave.endDate)} (${WAVE_STATE[wave.window]})`,
+      wave.testStartDate ? `tes ${days(wave.testStartDate, wave.testEndDate)}` : '',
+      wave.resultsStartDate ? `pengumuman ${days(wave.resultsStartDate, wave.resultsEndDate)}` : '',
+      wave.reRegistrationStartDate
+        ? `daftar ulang ${days(wave.reRegistrationStartDate, wave.reRegistrationEndDate)}`
+        : '',
+      Number(wave.fullPaymentDiscount) > 0
+        ? `potongan ${money(wave.fullPaymentDiscount)} bila dibayar lunas`
+        : '',
+    ].filter(Boolean);
+    parts.push(`${wave.name}: ${sessions.join('; ')}.`);
+  }
+
+  if (intake.fees.length) {
+    // Totals computed the way the page computes them, so the bot and the page
+    // can never quote different sums.
+    for (const total of admissionFeeTotals(intake.fees)) {
+      const who = RESIDENCY[total.residency];
+      const monthly =
+        total.monthlyMale || total.monthlyFemale
+          ? ` (termasuk biaya bulanan pertama; biaya bulanan ikhwan ${money(total.monthlyMale)}, akhwat ${money(total.monthlyFemale)})`
+          : '';
+      parts.push(
+        `Jumlah biaya masuk${who ? ` ${who}` : ''}: ikhwan ${money(total.male)}, akhwat ${money(total.female)}${monthly}.`
+      );
     }
+    parts.push(
+      `Rinciannya: ${intake.fees
+        .map((f) => {
+          const tags = [RESIDENCY[f.residency], f.isMonthly ? 'per bulan' : ''].filter(Boolean);
+          const amount =
+            Number(f.maleAmount) === Number(f.femaleAmount)
+              ? money(f.maleAmount)
+              : `ikhwan ${money(f.maleAmount)}, akhwat ${money(f.femaleAmount)}`;
+          return `${f.label}${tags.length ? ` (${tags.join(', ')})` : ''} ${amount}`;
+        })
+        .join('; ')}.`
+    );
+  } else if (Number(period.registrationFee) > 0) {
+    parts.push(`Biaya pendaftaran: ${money(period.registrationFee)}.`);
+  }
+
+  if (period.requirements.length > 0) {
+    parts.push(`Persyaratan: ${period.requirements.join('; ')}.`);
+  }
+  if (period.minAgeMonths !== null) {
+    const years = Math.floor(period.minAgeMonths / 12);
+    const months = period.minAgeMonths % 12;
+    parts.push(
+      `Usia minimal ${years} tahun${months ? ` ${months} bulan` : ''}${
+        period.ageReferenceDate ? ` pada ${days(period.ageReferenceDate)}` : ''
+      }.`
+    );
+  }
+  if (period.contactName || period.contactPhone) {
+    parts.push(
+      `Narahubung: ${[period.contactName, period.contactPhone].filter(Boolean).join(', ')}.`
+    );
   }
 
   return {
-    id: 'spmb-gelombang-aktif',
-    title: 'Informasi pendaftaran SPMB terkini',
+    id: `spmb-${unit.type.toLowerCase()}`,
+    title: `Informasi pendaftaran SPMB ${unitName}`,
     text: parts.join(' '),
   };
 }
@@ -160,8 +223,17 @@ export async function collectLiveFacts(
   if (!aboutAdmissions) return [];
 
   try {
-    const period = await findPublicActivePeriod(now);
-    return [describePeriod(period, now)];
+    const intakes = await findPublicIntakes(now);
+    if (!intakes.length) {
+      return [
+        {
+          id: 'spmb-status',
+          title: 'Status pendaftaran SPMB',
+          text: 'Saat ini tidak ada gelombang pendaftaran SPMB yang aktif.',
+        },
+      ];
+    }
+    return intakes.map((intake) => describeIntake(intake, now));
   } catch (error) {
     // A database hiccup must not turn into a fabricated answer. Returning no
     // live fact means the model has no admission figures in context, and the

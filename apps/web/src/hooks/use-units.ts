@@ -1,5 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { UnitSummary } from "@cipansor/shared";
+import type {
+  UnitHead,
+  UnitOfficialIdentity,
+  UnitSummary,
+} from "@cipansor/shared";
 import api, { ApiResponse } from "@/lib/api";
 
 /**
@@ -33,7 +37,8 @@ export const UNIT_TYPE_VALUES = UNIT_TYPES.map((t) => t.value) as unknown as [
   ...UnitType[],
 ];
 
-export interface Unit {
+/** The official identity is absent from the public SPMB projection. */
+export interface Unit extends Partial<UnitOfficialIdentity> {
   id: string;
   name: string;
   type: UnitType;
@@ -59,26 +64,6 @@ export function useUnits(params?: UseUnitsParams) {
       return response.data.data;
     },
     staleTime: 60 * 60 * 1000, // 1 hour
-  });
-}
-
-/**
- * Units for the unauthenticated SPMB form.
- *
- * `useUnits` hits `GET /units`, which requires a session — on the public
- * registration page that 401s and the "unit tujuan" dropdown renders empty.
- * This reads the deliberately trimmed public projection (id, name, type).
- */
-export function usePublicUnits() {
-  return useQuery({
-    queryKey: ["units", "public"],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Unit[]>>(
-        "/admissions/public/units",
-      );
-      return response.data.data;
-    },
-    staleTime: 60 * 60 * 1000,
   });
 }
 
@@ -124,6 +109,24 @@ export function useUnitSummary(id: string) {
   });
 }
 
+/**
+ * Who signs for the unit (GET /units/:id/head): its kepala sekolah or the
+ * Pimpinan Pesantren. Null when nobody, or more than one, holds the role — a
+ * document then leaves the line to sign by hand.
+ */
+export function useUnitHead(id: string | undefined) {
+  return useQuery({
+    queryKey: ["units", id, "head"],
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<UnitHead | null>>(
+        `/units/${id}/head`,
+      );
+      return response.data.data;
+    },
+    enabled: !!id,
+  });
+}
+
 export interface CreateUnitData {
   name: string;
   type: UnitType;
@@ -140,6 +143,10 @@ export interface UpdateUnitData {
   phone?: string | null;
   email?: string | null;
   npsn?: string | null;
+  officialName?: string | null;
+  operatingPermitNumber?: string | null;
+  /** YYYY-MM-DD. */
+  operatingPermitDate?: string | null;
 }
 
 export function useCreateUnit() {

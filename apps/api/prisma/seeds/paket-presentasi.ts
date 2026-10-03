@@ -16,13 +16,13 @@
  *   kedisiplinan & perizinan → SPMB tahun depan → kalender.
  *
  * Aturannya:
- * - **Aditif dan idempoten.** Tidak ada TRUNCATE dan tidak ada yang dihapus
- *   kecuali tiga gelombang SPMB bertanggal 2024 yang memang palsu. Data yang
- *   sudah ada dirapikan di tempat (kelas SMA "7A" jadi "10A", santri tanpa kelas
- *   dimasukkan ke rombel). Kalau paket sudah pernah dijalankan (SD IT punya
- *   rombel 6A di tahun ajaran aktif), ia berhenti tanpa menulis apa pun.
- *   Karena itu ia aman dijalankan di atas basis data yang sudah terisi, dan
- *   seed.ts memanggilnya di akhir supaya staging/dev/CI mendapat bentuk yang sama.
+ * - **Aditif dan idempoten.** Tidak ada TRUNCATE dan tidak ada yang dihapus.
+ *   Data yang sudah ada dirapikan di tempat (kelas SMA "7A" jadi "10A", santri
+ *   tanpa kelas dimasukkan ke rombel). Kalau paket sudah pernah dijalankan (SD
+ *   IT punya rombel 6A di tahun ajaran aktif), ia berhenti tanpa menulis apa
+ *   pun. Karena itu ia aman dijalankan di atas basis data yang sudah terisi.
+ *   Ia hanya jalan lewat `db:seed:presentasi`; `db:seed` sengaja tidak
+ *   memanggilnya (alasannya di prisma/AGENTS.md).
  * - **Tanggal diturunkan dari `now`**, seperti academic-calendar.ts: tahun
  *   ajaran berjalan, presensi sampai kemarin, ulangan yang tanggalnya belum
  *   lewat berstatus terjadwal. Seed yang dijalankan kapan pun tetap masuk akal.
@@ -64,6 +64,7 @@ import {
   PermitStatus,
   PermitType,
   Prisma,
+  QuranAbility,
   PrismaClient,
   StaffAttendanceStatus,
   SubjectType,
@@ -73,7 +74,6 @@ import {
   UnitType,
   UserRole,
   ViolationType,
-  WaveStatus,
 } from '@prisma/client';
 import {
   academicYearStarting,
@@ -81,9 +81,10 @@ import {
   currentAcademicYear,
   nextAcademicYear,
 } from '../../src/lib/academic-calendar';
+import { ensureDemoIntake } from './spmb-demo';
 import { syncParentRoleAssignments, type ParentScopeClient } from '../../src/utils/parent-scope';
 import { QURAN_SURAHS } from '../../src/modules/tahfidz/quran-surahs';
-import { DEMO_ACCOUNTS } from '../../../../packages/shared/src/types/demo-accounts';
+import { YAYASAN_ORGANS } from '../../../../packages/shared/src/types/office-holders';
 import { siteConfig } from '../../../../packages/shared/src/public-site';
 import { randomUUID } from 'crypto';
 
@@ -1258,9 +1259,10 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
       data: {
         name: siteConfig.legalName,
         legalName: siteConfig.legalName,
-        // Hanya tahun berdirinya (1911) yang diketahui; tanggal lengkap dan
-        // NPWP tidak — lebih baik kosong daripada tebakan.
-        foundingDate: null,
+        // Tanggal akta pendirian badan hukumnya (Akta Notaris No. 01, 5 April
+        // 2012); pesantrennya sendiri berdiri 1911. NPWP tidak diketahui — lebih
+        // baik kosong daripada tebakan.
+        foundingDate: utcDate(2012, 3, 5),
         taxId: null,
         address,
         phone: siteConfig.contact.phone,
@@ -1271,45 +1273,28 @@ async function rapikanIdentitas(ctx: Ctx): Promise<void> {
       },
     });
 
-    // Susunan organ yayasan mengikuti akun demo (yang dipakai seluruh aplikasi),
-    // bukan daftar lama yang namanya tidak dikenal di mana pun.
-    const organ: Array<{ roleCode: string; position: string }> = [
-      { roleCode: 'YAYASAN_PEMBINA', position: 'Pembina' },
-      { roleCode: 'YAYASAN_PENGAWAS', position: 'Pengawas' },
-      { roleCode: 'YAYASAN_KETUA', position: 'Ketua' },
-      { roleCode: 'YAYASAN_SEKRETARIS', position: 'Sekretaris' },
-      { roleCode: 'YAYASAN_BENDAHARA', position: 'Bendahara' },
-      { roleCode: 'YAYASAN_ANGGOTA', position: 'Anggota' },
-    ];
+    // Susunan organ yayasan seperti yang diterbitkan yayasan (office-holders.ts):
+    // nama, jabatan, foto. Tanpa telepon dan email (milik pribadi, diisi admin)
+    // dan tanpa tanggal mulai menjabat, yang tidak diketahui.
     const names = new Set<string>();
-    for (const o of organ) {
-      const acc = DEMO_ACCOUNTS.find((d) => d.roleCode === o.roleCode);
-      if (!acc) continue;
-      names.add(acc.name);
-      const existing = await db.boardMember.findFirst({
-        where: { foundationId: foundation.id, name: acc.name },
-      });
-      const data = {
-        position: o.position,
-        email: acc.email,
-        photoUrl: acc.photo ?? null,
-        isActive: true,
-        endDate: null,
-      };
-      if (existing) await db.boardMember.update({ where: { id: existing.id }, data });
-      else
-        await db.boardMember.create({
-          data: {
-            ...data,
-            foundationId: foundation.id,
-            name: acc.name,
-            startDate: utcDate(2022, 0, 1),
-          },
+    for (const group of YAYASAN_ORGANS) {
+      for (const h of group.holders) {
+        names.add(h.name);
+        const existing = await db.boardMember.findFirst({
+          where: { foundationId: foundation.id, name: h.name, position: h.position },
         });
+        const data = { photoUrl: h.photo ?? null, isActive: true, endDate: null };
+        if (existing) await db.boardMember.update({ where: { id: existing.id }, data });
+        else
+          await db.boardMember.create({
+            data: { ...data, foundationId: foundation.id, name: h.name, position: h.position },
+          });
+      }
     }
+    // Nama lain bukan organ yang menjabat: dinonaktifkan, tidak dihapus.
     await db.boardMember.updateMany({
       where: { foundationId: foundation.id, name: { notIn: [...names] }, isActive: true },
-      data: { isActive: false, endDate: utcDate(2021, 11, 31) },
+      data: { isActive: false },
     });
   }
 
@@ -3660,27 +3645,26 @@ async function kedisiplinan(ctx: Ctx, roster: StudentRef[], classes: ClassRef[])
 // 10. SPMB tahun ajaran berikutnya
 // ============================================================================
 
+/**
+ * Kuota gelombang 1 dan 2, jumlah pendaftar, usia termuda pada 1 Juli tahun
+ * masuk, dan asal sekolah per unit. Biaya, persyaratan, dan usia minimal
+ * diambil dari brosur (seeds/spmb-demo.ts), jadi `age` tidak boleh di bawah
+ * usia minimal brosur.
+ */
 const SPMB_PLAN: Record<
   SchoolUnit,
-  { quota: [number, number]; fee: number; count: number; requirements: string[]; from: string[] }
+  { quota: [number, number]; count: number; age: number; from: string[] }
 > = {
   TK_QURAN: {
     quota: [20, 10],
-    fee: 150_000,
     count: 8,
-    requirements: ['Fotokopi Akta Kelahiran', 'Fotokopi Kartu Keluarga', 'Pas foto 3x4 (2 lembar)'],
+    age: 5,
     from: ['Belum bersekolah', 'PAUD di lingkungan tempat tinggal'],
   },
   SD_IT: {
     quota: [28, 12],
-    fee: 250_000,
     count: 12,
-    requirements: [
-      'Fotokopi Akta Kelahiran',
-      'Fotokopi Kartu Keluarga',
-      'Surat keterangan dari TK/RA',
-      'Pas foto 3x4 (2 lembar)',
-    ],
+    age: 7,
     from: [
       "TK Qur'an Cipansor",
       "TK Qur'an Cipansor",
@@ -3690,15 +3674,8 @@ const SPMB_PLAN: Record<
   },
   SMP_IT: {
     quota: [50, 20],
-    fee: 350_000,
     count: 14,
-    requirements: [
-      'Fotokopi Akta Kelahiran',
-      'Fotokopi Kartu Keluarga',
-      'Ijazah SD/MI atau Surat Keterangan Lulus',
-      'Pas foto 3x4 (4 lembar)',
-      'Surat keterangan sehat',
-    ],
+    age: 12,
     from: [
       'SD IT Cipansor',
       'SD IT Cipansor',
@@ -3709,15 +3686,8 @@ const SPMB_PLAN: Record<
   },
   SMA_QURAN: {
     quota: [32, 16],
-    fee: 350_000,
     count: 12,
-    requirements: [
-      'Ijazah SMP/MTs atau Surat Keterangan Lulus',
-      'Rapor SMP/MTs kelas 7–9',
-      'Syahadah hafalan (bila ada)',
-      'Pas foto 3x4 (4 lembar)',
-      'Surat keterangan sehat',
-    ],
+    age: 15,
     from: [
       'SMP IT Cipansor',
       'SMP IT Cipansor',
@@ -3740,7 +3710,6 @@ async function spmb(ctx: Ctx): Promise<void> {
         isActive: false,
       },
     }));
-  const windows = admissionWindows(ctx.now);
   const statuses: AdmissionStatus[] = [
     AdmissionStatus.REGISTERED,
     AdmissionStatus.REGISTERED,
@@ -3767,88 +3736,22 @@ async function spmb(ctx: Ctx): Promise<void> {
   for (const unitType of Object.keys(SPMB_PLAN) as SchoolUnit[]) {
     const plan = SPMB_PLAN[unitType];
     const unitId = ctx.units[unitType].id;
-    const periods = [];
-    for (const [w, win] of windows.entries()) {
-      const period =
-        (await db.admissionPeriod.findFirst({
-          where: { unitId, academicYearId: intakeRow.id, name: win.name },
-        })) ??
-        (await db.admissionPeriod.create({
-          data: {
-            unitId,
-            academicYearId: intakeRow.id,
-            name: win.name,
-            startDate: win.startDate,
-            endDate: win.endDate,
-            quota: plan.quota[w],
-            registrationFee: new Prisma.Decimal(plan.fee),
-            isActive: true,
-            requirements: JSON.stringify(plan.requirements),
-          },
-        }));
-      periods.push(period);
-    }
-
-    // Satu gelombang per periode, tanggalnya sama dengan periodenya. Gelombang
-    // lama yang tanggalnya di luar periode (seed dasar menaruh gelombang 2024 di
-    // periode 2027/2028) dibuang setelah pendaftarnya dipindah.
-    const waves = [];
-    for (const [w, period] of periods.entries()) {
-      const open = period.startDate <= ctx.now && ctx.now <= period.endDate;
-      const status = open
-        ? WaveStatus.OPEN
-        : period.startDate > ctx.now
-          ? WaveStatus.UPCOMING
-          : WaveStatus.CLOSED;
-      const wave = await db.admissionWave.upsert({
-        where: { periodId_waveNumber: { periodId: period.id, waveNumber: 1 } },
-        create: {
-          periodId: period.id,
-          waveNumber: 1,
-          name: `Gelombang ${w + 1}`,
-          startDate: period.startDate,
-          endDate: period.endDate,
-          quota: period.quota,
-          status,
-          registrationFee: period.registrationFee,
-        },
-        update: {
-          name: `Gelombang ${w + 1}`,
-          startDate: period.startDate,
-          endDate: period.endDate,
-          quota: Math.max(period.quota, 1),
-          registeredCount: 0,
-          acceptedCount: 0,
-          status,
-          registrationFee: period.registrationFee,
-          notes: null,
-        },
-      });
-      const stale = await db.admissionWave.findMany({
-        where: { periodId: period.id, waveNumber: { not: 1 } },
-      });
-      if (stale.length) {
-        await db.registrant.updateMany({
-          where: { waveId: { in: stale.map((s) => s.id) } },
-          data: { waveId: wave.id },
-        });
-        await db.admissionWave.deleteMany({ where: { id: { in: stale.map((s) => s.id) } } });
-      }
-      await db.registrant.updateMany({
-        where: { admissionPeriodId: period.id, waveId: null },
-        data: { waveId: wave.id },
-      });
-      waves.push(wave);
-    }
-
+    // Satu periode per unit dengan dua gelombang di sekitar hari ini. Periode
+    // SMP IT dari seed dasar bernama sama, jadi dipakai ulang beserta
+    // pendaftarnya.
+    const period = await ensureDemoIntake(db, {
+      unit: unitType,
+      unitId,
+      academicYear: intakeRow,
+      quotas: plan.quota,
+      now: ctx.now,
+    });
+    const waves = period.waves;
     const wave1 = waves[0];
-    const period1 = periods[0];
-    const unitSeq = await db.registrant.count({ where: { admissionPeriodId: period1.id } });
+    const unitSeq = await db.registrant.count({ where: { admissionPeriodId: period.id } });
     const tuId = ctx.users.get(tuByUnit[unitType])?.id ?? null;
-    const minDay = period1.startDate.getTime();
+    const minDay = period.startDate.getTime();
     const span = Math.max(1, ctx.now.getTime() - minDay);
-    const age =
-      unitType === 'TK_QURAN' ? 4 : unitType === 'SD_IT' ? 6 : unitType === 'SMP_IT' ? 12 : 15;
     const rows: Prisma.RegistrantCreateManyInput[] = [];
     for (let i = 0; i < plan.count; i++) {
       const gender = i % 2 === 0 ? Gender.MALE : Gender.FEMALE;
@@ -3867,23 +3770,21 @@ async function spmb(ctx: Ctx): Promise<void> {
       const secondary = unitType === 'SMP_IT' || unitType === 'SMA_QURAN';
       const father = rng.pick(FATHER_NAMES);
       rows.push({
-        admissionPeriodId: period1.id,
+        admissionPeriodId: period.id,
         waveId: wave1.id,
         registrationNo: `SPMB${pad(intake.startYear % 100, 2)}-${NIS_UNIT_CODE[unitType]}-${pad(unitSeq + i + 1, 4)}`,
         fullName: name,
         name,
         gender,
         birthPlace: rng.pick(BIRTH_PLACES),
-        birthDate: utcDate(
-          intake.startYear - age - (rng.chance(0.5) ? 0 : 1),
-          rng.int(0, 11),
-          rng.int(1, 28)
-        ),
+        // Lahir setahun sebelum tahun yang membuatnya genap `age` tahun pada
+        // 1 Juli tahun masuk: umurnya `age` sampai `age`+1 pada hari itu.
+        birthDate: utcDate(intake.startYear - plan.age - 1, rng.int(0, 11), rng.int(1, 28)),
         address: `Kp. ${rng.pick(KAMPUNG)}, Kec. ${rng.pick(KECAMATAN)}, Kab. Tasikmalaya`,
         previousSchool: rng.pick(plan.from),
         quranAbility: secondary
-          ? rng.pick(['LANCAR', 'TARTIL', 'TAHFIDZ'])
-          : rng.pick(['BELUM_BISA', 'IQRA', 'LANCAR']),
+          ? rng.pick([QuranAbility.LANCAR, QuranAbility.TARTIL, QuranAbility.TAHFIDZ])
+          : rng.pick([QuranAbility.BELUM_BISA, QuranAbility.IQRA, QuranAbility.LANCAR]),
         memorizedJuz:
           unitType === 'SMA_QURAN' ? rng.int(2, 6) : unitType === 'SMP_IT' ? rng.int(0, 2) : 0,
         parentName: father,
@@ -3899,7 +3800,7 @@ async function spmb(ctx: Ctx): Promise<void> {
         registrationFeePaidAt: feePaid
           ? new Date(Math.min(createdAt.getTime() + 18 * DAY_MS, ctx.now.getTime()))
           : null,
-        registrationFeeAmount: feePaid ? period1.registrationFee : null,
+        registrationFeeAmount: feePaid ? period.registrationFee : null,
         registrationFeeVerifiedById: feePaid ? tuId : null,
         notes:
           status === AdmissionStatus.REJECTED

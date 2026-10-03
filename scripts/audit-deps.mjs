@@ -37,20 +37,53 @@ const SEVERITY_RANK = { low: 0, moderate: 1, high: 2, critical: 3 };
  * Each entry pins one exact version against one exact range, so a regression,
  * a new advisory for the same package, or a widened range all still fail.
  * Verify the fix is really present in the tarball before adding an entry.
+ *
+ * The brace-expansion 1.x line used to need an entry here (1.1.18 against
+ * "<=5.0.7"): the fix was backported to 1.1.18 while the newest 5.x line was
+ * the only one the advisory's range named. That is no longer needed — the root
+ * override now moves 1.x to 1.1.21, which the advisory's own ranges clear — so
+ * the list is empty and waits for the next package that genuinely needs it.
  */
-const BACKPORTED_FIXES = [
-  {
-    name: "brace-expansion",
-    version: "1.1.21",
-    range: "<=5.0.7",
-    note: "Unbounded expansion (CVE-2026-14257) is fixed on the 1.x line from 1.1.18, which adds the EXPANSION_MAX_LENGTH cap; 1.1.21 carries it along with the later 1.x backports. 1.x cannot move to 5.x: brace-expansion 5's CommonJS build exports a named `expand`, while minimatch@3 calls the module itself.",
-  },
-];
+const BACKPORTED_FIXES = [];
 
 const isBackported = (name, version, range) =>
   BACKPORTED_FIXES.some(
     (f) => f.name === name && f.version === version && f.range === range,
   );
+
+/**
+ * Advisories accepted for a while because nothing can be done yet: no patched
+ * release exists, and the package is installed only for development tooling.
+ *
+ * A pin in `pnpm.overrides` is the fix whenever a fixed version exists. When
+ * none does, the alternative is a red Security job on every PR and on `main`
+ * — which also stops the staging deploy — until a third party publishes one.
+ * An entry here waives exactly one advisory (by its URL) on exactly one
+ * version, and only while all three hold:
+ *
+ * - **the date is on or before `until`.** Then it fails again, and someone
+ *   looks: is there a release now, is it still dev-only?
+ * - **no production dependency reaches it.** Checked here from the lockfile,
+ *   from every workspace's `dependencies` and `optionalDependencies` through
+ *   the whole graph, so a new runtime path to the package turns the job red
+ *   whatever the date.
+ * - **the same advisory URL.** A second advisory on the package still fails.
+ *
+ * Say in `note` why the risk does not reach a running system.
+ */
+const ACCEPTED_RISKS = [
+  {
+    name: "braces",
+    version: "3.0.3",
+    advisory: "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+    until: "2026-11-03",
+    note:
+      "No patched release (micromatch/braces#70). Installed only through dev " +
+      "tooling — tsc-alias (chokidar, globby) and eslint-config-next " +
+      "(fast-glob) — which expand the repository's own glob patterns; the " +
+      "stack exhaustion needs attacker-supplied nesting.",
+  },
+];
 
 const levelArgIdx = process.argv.indexOf("--audit-level");
 const threshold =
@@ -82,6 +115,68 @@ if (installed.size === 0) {
   console.error("No packages parsed from pnpm-lock.yaml — lockfile format change?");
   process.exit(2);
 }
+
+/**
+ * Every "name@version" a production install reaches: each workspace's
+ * `dependencies` and `optionalDependencies`, followed through `snapshots`,
+ * and through `link:` into the linked workspace's own production deps.
+ */
+// An aliased dependency ("string-width-cjs": "string-width@4.2.3") names its
+// real package in the version.
+const snapshotKey = (name, version) =>
+  /^\d/.test(version) ? `${name}@${version}` : version;
+
+function productionPackages() {
+  const reached = new Set();
+  const seenImporters = new Set();
+  const queue = [];
+  const visitImporter = (path) => {
+    if (seenImporters.has(path)) return;
+    seenImporters.add(path);
+    const importer = lockfile.importers?.[path];
+    if (!importer) return;
+    for (const group of ["dependencies", "optionalDependencies"]) {
+      for (const [name, { version }] of Object.entries(importer[group] ?? {})) {
+        if (version.startsWith("link:")) {
+          const target = resolve(repoRoot, path, version.slice("link:".length));
+          visitImporter(target.slice(repoRoot.length + 1) || ".");
+        } else {
+          queue.push(snapshotKey(name, version));
+        }
+      }
+    }
+  };
+  for (const path of Object.keys(lockfile.importers ?? {})) {
+    // Start from the workspaces themselves; dev deps are never followed.
+    visitImporter(path);
+  }
+  const seen = new Set();
+  while (queue.length > 0) {
+    const key = queue.pop();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    reached.add(key.replace(/\(.*$/, ""));
+    const snap = lockfile.snapshots?.[key];
+    for (const group of ["dependencies", "optionalDependencies"]) {
+      for (const [name, version] of Object.entries(snap?.[group] ?? {})) {
+        queue.push(snapshotKey(name, version));
+      }
+    }
+  }
+  return reached;
+}
+
+const inProduction = productionPackages();
+const today = new Date().toISOString().slice(0, 10);
+const acceptedRisk = (name, version, url) =>
+  ACCEPTED_RISKS.find(
+    (r) =>
+      r.name === name &&
+      r.version === version &&
+      r.advisory === url &&
+      today <= r.until &&
+      !inProduction.has(`${name}@${version}`),
+  );
 
 const REQUEST_TIMEOUT_MS = Number(process.env.AUDIT_TIMEOUT_MS || 30_000);
 const MAX_ATTEMPTS = Number(process.env.AUDIT_MAX_ATTEMPTS || 4);
@@ -148,6 +243,7 @@ const entries = [...installed.entries()].map(([n, v]) => [n, [...v]]);
 const CHUNK = 400;
 const findings = [];
 const waived = [];
+const accepted = [];
 
 /** Chunks the endpoint never answered — packages this run did not actually check. */
 const unreachable = [];
@@ -170,6 +266,8 @@ for (let i = 0; i < entries.length; i += CHUNK) {
       const hit = [];
       for (const v of matched) {
         if (isBackported(name, v, range)) waived.push({ name, version: v, range });
+        else if (acceptedRisk(name, v, adv.url))
+          accepted.push({ name, version: v, url: adv.url, severity: adv.severity });
         else hit.push(v);
       }
       if (hit.length > 0) {
@@ -212,6 +310,16 @@ for (const w of waived) {
   console.log(
     `~ [waived] ${w.name}@${w.version} matches "${w.range}" but carries a backported fix\n   ${entry.note}`,
   );
+}
+
+for (const a of accepted) {
+  const entry = acceptedRisk(a.name, a.version, a.url);
+  const line =
+    `${a.name}@${a.version} — ${a.url} accepted until ${entry.until}, ` +
+    `dev-only (no production dependency reaches it)`;
+  // A warning on the run, so the waiver is seen on every PR, not only here.
+  console.error(`::warning title=Accepted advisory (${a.severity})::${line}`);
+  console.log(`~ [accepted] ${line}\n   ${entry.note}`);
 }
 
 /**

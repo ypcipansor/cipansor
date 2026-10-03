@@ -2,6 +2,11 @@ import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/password';
 import { assertPasswordAllowed } from '@/lib/password-policy';
 import { Errors } from '@/middleware/error';
+import {
+  assertMayManageAccount,
+  activeAssignmentWhere,
+  type AccountActor,
+} from '@/utils/account-scope';
 import { UserRole, Prisma, type Unit } from '@prisma/client';
 import { resolveLegacyRoleToRoleCode } from '@/modules/auth/auth.service';
 import type { ListUsersQuery, CreateUserInput, UpdateUserInput } from './user.schema';
@@ -11,7 +16,7 @@ export class UserService {
    * Get all users with pagination and filters
    */
   async findAll(query: ListUsersQuery, currentUser: { roleCode: string; unitId: string | null }) {
-    const { page, limit, search, role, unitId } = query;
+    const { page, limit, search, role, unitId, realm } = query;
     const skip = (page - 1) * limit;
 
     // Build where clause
@@ -31,6 +36,10 @@ export class UserService {
 
     if (role) {
       where.role = role as UserRole;
+    }
+
+    if (realm) {
+      where.userRoles = { some: { ...activeAssignmentWhere(), role: { realm } } };
     }
 
     if (search) {
@@ -221,6 +230,9 @@ export class UserService {
         name: input.name,
         email: input.email,
         passwordHash,
+        // Someone else chose it: replaced at the first sign-in (also the
+        // column default, stated here so the rule is read where it applies).
+        mustChangePassword: true,
         role: input.role as UserRole,
         unitId: input.unitId || null,
         isActive: true,
@@ -243,13 +255,12 @@ export class UserService {
   /**
    * Update user
    */
-  async update(
-    id: string,
-    input: UpdateUserInput,
-    currentUser: { roleCode: string; unitId: string | null; sub: string }
-  ) {
+  async update(id: string, input: UpdateUserInput, currentUser: AccountActor) {
     const user = await prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
+      },
     });
 
     if (!user) {
@@ -262,6 +273,19 @@ export class UserService {
     // Unit admins may only touch users of their own unit.
     if (!foundationWide && user.unitId !== currentUser.unitId) {
       throw Errors.forbidden('Unit admins can only manage users in their own unit');
+    }
+
+    // A new email is where the next reset link goes, and switching an account
+    // off locks its holder out: on someone else's account both follow the
+    // delete rule. A name can still be corrected within the unit.
+    const changesAccess =
+      (input.email !== undefined && input.email !== user.email) ||
+      (input.isActive !== undefined && input.isActive !== user.isActive);
+    if (changesAccess && id !== currentUser.sub) {
+      assertMayManageAccount(
+        { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+        currentUser
+      );
     }
 
     // Only Super Admin can change roles or move users between units.
@@ -300,16 +324,70 @@ export class UserService {
   }
 
   /**
-   * Delete user (soft delete)
+   * Mark an account's password as leaked (decisions/autentikasi-2fa-dan-sandi.md):
+   * every session ends now, and the next sign-in asks for a new password.
+   *
+   * Super Admin: any account. A unit admin: accounts of their own unit, and not
+   * one that must use 2FA (another admin, a kepala, an organ of the yayasan) —
+   * the line the admin path of turning 2FA off already draws. Ending someone's
+   * sessions is not a thing a peer should be able to do to a peer.
    */
-  async delete(id: string) {
+  async requirePasswordChange(id: string, currentUser: AccountActor) {
+    if (id === currentUser.sub) {
+      throw Errors.badRequest('Untuk akun Anda sendiri, ganti kata sandi di Profil → Keamanan.');
+    }
+
+    const user = await prisma.user.findFirst({
+      // The client omits credentials by default (lib/prisma.ts); this check needs it.
+      omit: { passwordHash: false },
+      where: { id, deletedAt: null },
+      include: {
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
+      },
+    });
+    if (!user) {
+      throw Errors.notFound('User');
+    }
+    if (!user.passwordHash) {
+      throw Errors.badRequest('Data ini tidak memiliki akun login.');
+    }
+    assertMayManageAccount(
+      { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+      currentUser
+    );
+
+    await prisma.user.update({ where: { id }, data: { mustChangePassword: true } });
+    await prisma.refreshToken.deleteMany({ where: { userId: id } });
+
+    return {
+      // An access token already issued stays valid until it expires (15 minutes);
+      // the refresh that would extend it is refused from now on.
+      message: `Kata sandi ${user.name} wajib diganti. Sesinya berakhir paling lama 15 menit lagi, dan saat masuk berikutnya ia harus membuat kata sandi baru.`,
+    };
+  }
+
+  /**
+   * Delete user (soft delete), within the admin's scope (`assertMayManageAccount`).
+   */
+  async delete(id: string, currentUser: AccountActor) {
+    if (id === currentUser.sub) {
+      throw Errors.badRequest('Akun Anda sendiri tidak dapat dihapus.');
+    }
+
     const user = await prisma.user.findFirst({
       where: { id, deletedAt: null },
+      include: {
+        userRoles: { where: activeAssignmentWhere(), include: { role: true } },
+      },
     });
 
     if (!user) {
       throw Errors.notFound('User');
     }
+    assertMayManageAccount(
+      { unitId: user.unitId, roleCodes: user.userRoles.map((r) => r.role.code) },
+      currentUser
+    );
 
     // Soft delete
     await prisma.user.update({

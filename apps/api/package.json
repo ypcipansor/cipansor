@@ -20,6 +20,7 @@
     "db:deploy": "prisma migrate deploy --config prisma/prisma.config.ts",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:presentasi": "tsx prisma/seed-presentasi.ts",
+    "db:seed:spmb-2027-2028": "tsx prisma/seed-spmb-2027-2028.ts",
     "db:archive-letters": "tsx prisma/scripts/archive-signed-letters.ts",
     "db:purge-identity-documents": "tsx prisma/scripts/purge-identity-documents.ts",
     "db:studio": "prisma studio --config prisma/prisma.config.ts",
@@ -46,9 +47,9 @@
     "morgan": "1.12.1",
     "multer": "^2.4.0",
     "node-cron": "^4.6.0",
-    "pdf-lib": "^1.17.1",
     "nodemailer": "10.0.10",
     "otplib": "13.5.0",
+    "pdf-lib": "^1.17.1",
     "pg": "8.23.0",
     "prisma": "7.10.0",
     "qrcode": "^1.5.4",
@@ -56,8 +57,7 @@
     "swagger-ui-express": "^5.0.1",
     "twilio": "6.1.1",
     "winston": "^3.11.0",
-    "zod": "^4.6.5",
-    "@pdf-lib/fontkit": "^1.1.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",

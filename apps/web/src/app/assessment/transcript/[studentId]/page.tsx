@@ -1,5 +1,6 @@
 "use client";
 
+import { LETTERHEAD } from "@cipansor/shared";
 import { useParams, useRouter } from "next/navigation";
 import { safeFormat } from "@/lib/date";
 import { Button } from "@/components/ui/button";
@@ -487,10 +488,7 @@ function TranscriptPrintPageContent() {
               </p>
             </div>
             <div>
-              <p>
-                Diterbitkan di:{" "}
-                {transcript.school.address?.split(",")[0] ?? "Bandung"}
-              </p>
+              <p>Diterbitkan di: {LETTERHEAD.city}</p>
               <p>
                 Tanggal:{" "}
                 {safeFormat(new Date(transcript.issuedDate), "d MMMM yyyy", {

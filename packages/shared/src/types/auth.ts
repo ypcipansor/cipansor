@@ -80,6 +80,9 @@ export interface LoginResponse {
   refreshToken?: string;
   requiresTwoFactor?: boolean;
   requiresTwoFactorSetup?: boolean;
+  /** The password was set by someone else or marked leaked: choose a new one
+   * (POST /auth/new-password) before the session begins. */
+  requiresPasswordChange?: boolean;
   tempToken?: string;
 }
 
