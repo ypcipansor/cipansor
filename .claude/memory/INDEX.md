@@ -72,6 +72,7 @@ the mechanical cases.
 - [radix-scrollarea-thumb-stalls](lessons/radix-scrollarea-thumb-stalls.md) — the thumb that stops at 3%; measuring at end of frame
 - [radix-direction-defaults-ltr](lessons/radix-direction-defaults-ltr.md) — `<html dir="rtl">` does not reach Radix Tabs/Select; pass `dir` (or a `DirectionProvider`) and assert the attribute
 - [select-empty-value-sentinel](lessons/select-empty-value-sentinel.md) — `""` vs the wrapper's sentinel; never `value={x || undefined}`; build a form of Selects after its data, do not reset it
+- [webkit-seen-only-after-merge](lessons/webkit-seen-only-after-merge.md) — Firefox/WebKit run only on `main`; a CSP that broke WebKit passed every PR check; an informational job that times out cancels the run and staging never deploys — dispatch E2E on the branch, check `/healthz` moved
 
 Update a file in place — one subject, one file — on a branch and through a PR,
 like any other change. Keep this index to one line per file.

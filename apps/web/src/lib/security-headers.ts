@@ -21,13 +21,21 @@
  * cannot drift; the localhost default matches it for `pnpm dev`.
  */
 export function apiOrigin(): string {
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  // Empty is how staging and production build the image: the API is served
+  // from the portal's own origin (`/api`), which `'self'` already covers. It
+  // used to fall through to the localhost default, so the deployed policy
+  // named `http://localhost:3001` in `connect-src` and `media-src`.
+  if (configured === "") return "";
   try {
-    return new URL(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")
-      .origin;
+    return new URL(configured ?? "http://localhost:3001").origin;
   } catch {
     return "http://localhost:3001";
   }
 }
+
+/** A source list without the empty entries a same-origin API leaves behind. */
+const sources = (...list: string[]) => list.filter(Boolean).join(" ");
 
 /**
  * The Content-Security-Policy for a document response.
@@ -62,8 +70,8 @@ export function contentSecurityPolicy(nonce: string): string {
     // recording served from the API host (`/uploads/**`, an absolute URL, so a
     // different origin than the portal). Without both, the preview is silent and
     // playback is blocked.
-    `media-src 'self' blob: ${apiOrigin()}`,
-    `connect-src 'self' ${apiOrigin()} https://challenges.cloudflare.com`,
+    `media-src ${sources("'self'", "blob:", apiOrigin())}`,
+    `connect-src ${sources("'self'", apiOrigin(), "https://challenges.cloudflare.com")}`,
     // `blob:`/`data:` are the app's own local PDF previews (an uploaded file
     // shown in an `<iframe>` before it is saved); `challenges.cloudflare.com`
     // is the Turnstile widget.
@@ -82,9 +90,13 @@ export function contentSecurityPolicy(nonce: string): string {
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "form-action 'self'",
-    // Omitted in dev: it would rewrite the plain-http API calls (`http://…`) to
-    // https and break local development.
-    ...(isDev ? [] : ["upgrade-insecure-requests"]),
+    // No `upgrade-insecure-requests`. Every host this app loads from is https
+    // and HSTS covers navigation, so on the real site it rewrote nothing; but
+    // WebKit applies it to http://localhost as well (WebKit bugs 171934,
+    // 250776), unlike Chromium and Firefox. A production build served over
+    // plain http — CI's e2e, a local rig — then fetched its own `/_next`
+    // chunks from https://localhost, never hydrated, and main's WebKit e2e
+    // failed almost every test after #626.
   ].join("; ");
 }
 

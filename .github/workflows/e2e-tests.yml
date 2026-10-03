@@ -342,8 +342,14 @@ jobs:
           timeout 90 bash -c 'until curl -fs http://localhost:3001/health >/dev/null; do sleep 2; done' \
             || { echo "API did not become healthy"; cat /tmp/api.log; exit 1; }
 
+      # --max-failures: this job is informational, but a run that hits
+      # timeout-minutes ends "cancelled", and a cancelled E2E run does not
+      # trigger the staging deploy. On 2026-10-03 WebKit failed almost every
+      # test (the CSP's upgrade-insecure-requests, #626); with three attempts
+      # each it ran past 45 minutes and staging was never updated. Stopping
+      # early keeps a broken engine a red, reported job instead.
       - name: Run E2E tests (${{ matrix.browser }})
-        run: pnpm --filter web exec playwright test --project=${{ matrix.browser }}
+        run: pnpm --filter web exec playwright test --project=${{ matrix.browser }} --max-failures=30
 
       - name: Stop API
         if: always()
