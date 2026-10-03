@@ -402,6 +402,8 @@ model User {
   givenMedications                  MedicationUsageLog[]        @relation("MedicationGiver")
   createdAnnouncements              Announcement[]              @relation("AnnouncementCreator")
   notifications                     Notification[]
+  pushSubscriptions                 PushSubscription[]
+  notificationPreference            NotificationPreference?
   sentMessages                      Message[]                   @relation("SentMessages")
   receivedMessages                  Message[]                   @relation("ReceivedMessages")
   leaveBalances                     LeaveBalance[]
@@ -2580,6 +2582,23 @@ enum NotificationStatus {
   ARCHIVED
 }
 
+/// Where a notification stands on its way to the user's devices (Web Push).
+/// The notification row is the outbox: the dispatcher claims PENDING rows.
+enum PushDispatchState {
+  PENDING
+  SENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// How often digest reminders are sent (notification preferences).
+enum ReminderFrequency {
+  DAILY
+  WEEKLY
+  NONE
+}
+
 /// Announcement - Pengumuman
 model Announcement {
   id            String           @id @default(uuid())
@@ -2619,6 +2638,10 @@ model Notification {
   data        Json?              @map("data") // Additional data for extended types
   scheduledAt DateTime?          @map("scheduled_at")
   createdAt   DateTime           @default(now()) @map("created_at")
+  /// Web Push outbox state. New rows start PENDING and the dispatcher
+  /// (`push-dispatch.service.ts`) claims them; rows older than Web Push are
+  /// NULL and are never pushed.
+  pushState   PushDispatchState? @default(PENDING) @map("push_state")
 
   // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -2627,7 +2650,59 @@ model Notification {
   @@index([status])
   @@index([createdAt])
   @@index([scheduledAt])
+  @@index([pushState])
   @@map("notifications")
+}
+
+/// What a person wants to be notified about, and how (Pengaturan Notifikasi).
+///
+/// One row per user, created on their first save; until then the defaults in
+/// `preferences.service.ts` apply. Quiet hours are wall-clock WIB ("HH:MM").
+model NotificationPreference {
+  userId            String            @id @map("user_id")
+  emailEnabled      Boolean           @default(true) @map("email_enabled")
+  smsEnabled        Boolean           @default(false) @map("sms_enabled")
+  whatsappEnabled   Boolean           @default(true) @map("whatsapp_enabled")
+  pushEnabled       Boolean           @default(true) @map("push_enabled")
+  paymentReminders  Boolean           @default(true) @map("payment_reminders")
+  attendanceAlerts  Boolean           @default(true) @map("attendance_alerts")
+  academicUpdates   Boolean           @default(true) @map("academic_updates")
+  tahfidzProgress   Boolean           @default(true) @map("tahfidz_progress")
+  announcements     Boolean           @default(true)
+  eventReminders    Boolean           @default(true) @map("event_reminders")
+  monthlyReports    Boolean           @default(true) @map("monthly_reports")
+  quietHoursStart   String?           @map("quiet_hours_start") @db.VarChar(5)
+  quietHoursEnd     String?           @map("quiet_hours_end") @db.VarChar(5)
+  reminderFrequency ReminderFrequency @default(DAILY) @map("reminder_frequency")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// A browser Web Push subscription (one row per device/browser).
+///
+/// Distinct from `User.fcmToken`, which is a single FCM token for a native
+/// Android build: a person can have the portal installed on several devices, and
+/// each produces its own endpoint + keys. The dispatcher
+/// (`push-dispatch.service.ts`) reads these to deliver push and deletes a row
+/// the push service reports gone; the endpoint is the natural idempotency key
+/// because re-subscribing the same browser returns the same endpoint.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 /// Message - Pesan Internal (Buku Penghubung)

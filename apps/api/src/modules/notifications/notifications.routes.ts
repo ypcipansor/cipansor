@@ -228,6 +228,19 @@ router.delete(
 // Body: { token: string | null } — null clears the token on logout.
 router.put('/fcm-token', controller.updateFcmToken);
 
+// Browser Web Push (the PWA). Any authenticated user; each device registers its
+// own subscription. `/push/subscribe`, `/push/unsubscribe` and `/push/status`
+// stay static above the `/:id` routes.
+router.get('/push/config', controller.getPushConfig);
+router.post('/push/subscribe', controller.subscribePush);
+router.post('/push/unsubscribe', controller.unsubscribePush);
+router.get('/push/status', controller.getPushStatus);
+
+// The caller's own notification preferences. No role check: everyone reads and
+// writes only their own row (`req.user.sub`). Static, so above `/:id`.
+router.get('/preferences', controller.getMyPreferences);
+router.patch('/preferences', controller.updateMyPreferences);
+
 // ==================== WHATSAPP ====================
 
 router.post(

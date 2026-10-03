@@ -13,6 +13,20 @@ import {
 } from "@/lib/rbac";
 import { PRINCIPAL_COOKIE } from "@cipansor/shared";
 import { hostSplitActionFor, isPortalHost } from "@/lib/host-split";
+import { contentSecurityPolicy } from "@/lib/security-headers";
+
+/**
+ * Mint a fresh nonce for a document request.
+ *
+ * A 128-bit random value, base64. `crypto.getRandomValues` is available in the
+ * middleware runtime; the value is unpredictable and unique per request, which
+ * is the whole security property of a nonce.
+ */
+function newNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes));
+}
 
 // Public routes that don't require authentication.
 // "/unauthorized" is the access-denied page ProtectedRoute redirects to; it
@@ -112,6 +126,46 @@ function readPrincipal(
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // One nonce per document request, threaded into every response below. Next
+  // reads the CSP off the *request* headers to stamp its own inline bootstrap
+  // scripts, and server components read it back to stamp theirs, so every
+  // response that a document can be rendered from must carry it.
+  const nonce = newNonce();
+  const csp = contentSecurityPolicy(nonce);
+
+  // A rewrite/next that keeps the request headers (with the nonce and CSP) so
+  // the renderer can see them. A redirect cannot — it is answered directly by
+  // the browser, and its target is re-rendered through middleware with a fresh
+  // nonce.
+  const pass = () => {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", csp);
+    const response = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  };
+
+  const redirect = (url: URL, status?: number) => {
+    const response = NextResponse.redirect(url, status);
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  };
+
+  const rewrite = (url: URL, status?: number) => {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", csp);
+    const response = NextResponse.rewrite(url, {
+      status,
+      request: { headers: requestHeaders },
+    });
+    response.headers.set("Content-Security-Policy", csp);
+    return response;
+  };
+
   // Host split, before anything else.
   //
   // The public site and the application are served from separate hosts (see
@@ -129,7 +183,7 @@ export async function middleware(request: NextRequest) {
     // application on it, so it says so — rewrite, not redirect, so the address
     // the visitor typed stays in the bar and they can see what was wrong with
     // it. There is one way in to the system and it is portal.cipansor.or.id.
-    return NextResponse.rewrite(new URL("/404", request.url), { status: 404 });
+    return rewrite(new URL("/404", request.url), 404);
   }
 
   if (action?.kind === "redirect") {
@@ -139,7 +193,7 @@ export async function middleware(request: NextRequest) {
     url.protocol = "https:";
     // 308, not 307: this is a permanent move, and unlike 301 it is guaranteed
     // not to rewrite a POST into a GET on the way.
-    return NextResponse.redirect(url, 308);
+    return redirect(url, 308);
   }
 
   // Check if the route is public
@@ -175,20 +229,20 @@ export async function middleware(request: NextRequest) {
   if (!isPublicRoute && !isAuthenticated) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    return redirect(loginUrl);
   }
 
   // Redirect authenticated users from login to their role-specific dashboard
   if (pathname === "/login" && isAuthenticated) {
     const dashboard = getDashboardForRole(role, roleCode);
-    return NextResponse.redirect(new URL(dashboard, request.url));
+    return redirect(new URL(dashboard, request.url));
   }
 
   // Redirect from root to appropriate page
   if (pathname === "/") {
     if (isAuthenticated) {
       const dashboard = getDashboardForRole(role, roleCode);
-      return NextResponse.redirect(new URL(dashboard, request.url));
+      return redirect(new URL(dashboard, request.url));
     }
     // On the portal the root is the front door of the application, not a
     // marketing page — the landing page lives on the public host, and the host
@@ -197,10 +251,10 @@ export async function middleware(request: NextRequest) {
     // noindex host, and leave someone who typed the portal's name looking at a
     // brochure instead of the sign-in form they came for.
     if (isPortalHost(request.headers.get("host"))) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      return redirect(new URL("/login", request.url));
     }
     // Allow unauthenticated users to see landing page
-    return NextResponse.next();
+    return pass();
   }
 
   // Role-based access control for authenticated users
@@ -208,11 +262,11 @@ export async function middleware(request: NextRequest) {
     if (!canAccessRoute(role, pathname, roleCode)) {
       // Redirect to their proper dashboard if trying to access unauthorized route
       const dashboard = getDashboardForRole(role, roleCode);
-      return NextResponse.redirect(new URL(dashboard, request.url));
+      return redirect(new URL(dashboard, request.url));
     }
   }
 
-  return NextResponse.next();
+  return pass();
 }
 
 export const config = {

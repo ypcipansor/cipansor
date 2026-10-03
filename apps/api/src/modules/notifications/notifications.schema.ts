@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+  pushEndpointSchema,
+  updateNotificationPreferencesSchema,
+  webPushSubscriptionSchema,
+} from '@cipansor/shared';
 import { partialUpdateSchema } from '@/lib/partial';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
@@ -151,3 +156,31 @@ export type QueryTemplateInput = z.infer<typeof queryTemplateSchema>;
 export type CreateAnnouncementInput = z.infer<typeof createAnnouncementSchema>;
 export type UpdateAnnouncementInput = z.infer<typeof updateAnnouncementSchema>;
 export type QueryAnnouncementInput = z.infer<typeof queryAnnouncementSchema>;
+
+// ==================== WEB PUSH ====================
+
+/**
+ * The push contract lives once, in `@cipansor/shared`
+ * (`webPushSubscriptionSchema`) — the API validates with it at the edge and the
+ * web builds its payload from the same type, so the two cannot drift. The
+ * endpoint refinement (HTTPS on a known browser push service only) that keeps
+ * the sender from becoming an SSRF primitive is part of that shared schema.
+ */
+export const pushSubscribeSchema = z.object({
+  subscription: webPushSubscriptionSchema,
+});
+
+export const pushUnsubscribeSchema = z.object({
+  endpoint: pushEndpointSchema,
+});
+
+/** Query for the ownership check (GET /notifications/push/status). */
+export const pushStatusQuerySchema = z.object({
+  endpoint: pushEndpointSchema,
+});
+
+export type PushSubscribeInput = z.infer<typeof pushSubscribeSchema>;
+export type PushUnsubscribeInput = z.infer<typeof pushUnsubscribeSchema>;
+
+/** PATCH /notifications/preferences — the shared contract, any subset. */
+export const updatePreferencesSchema = updateNotificationPreferencesSchema;

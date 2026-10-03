@@ -747,7 +747,7 @@ const parentNavigation: NavGroup[] = [
       },
       {
         title: "Pengaturan Notifikasi",
-        href: "/parent/notifications/preferences",
+        href: "/notifications/settings",
         icon: Bell,
       },
     ],

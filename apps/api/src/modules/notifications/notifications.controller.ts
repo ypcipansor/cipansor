@@ -11,7 +11,13 @@ import {
   createTemplateSchema,
   updateTemplateSchema,
   queryTemplateSchema,
+  pushSubscribeSchema,
+  pushUnsubscribeSchema,
+  pushStatusQuerySchema,
+  updatePreferencesSchema,
 } from './notifications.schema';
+import * as preferences from './preferences.service';
+import { webPushKeys } from './push-dispatch.service';
 import { Errors } from '../../middleware/error';
 import { whatsAppService } from './whatsapp.service';
 import { notificationScheduler } from './scheduler.service';
@@ -281,6 +287,101 @@ export async function updateFcmToken(req: Request, res: Response, next: NextFunc
       data: { fcmToken: token },
     });
     res.json({ success: true, message: token ? 'FCM token registered' : 'FCM token cleared' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ==================== WEB PUSH (browser) ====================
+
+/**
+ * Store the caller's browser push subscription (idempotent on endpoint).
+ *
+ * One user may hold several rows (phone, laptop), which is why this is a table
+ * and not `users.fcm_token`. An endpoint already owned by *another* user is
+ * refused by the service rather than reassigned (CWE-639).
+ */
+export async function subscribePush(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { subscription } = pushSubscribeSchema.parse(req.body);
+    const outcome = await service.subscribePush(
+      req.user!.sub,
+      subscription,
+      req.get('user-agent') ?? null
+    );
+    res.json({
+      success: true,
+      message: 'Push subscription registered',
+      data: { created: outcome === 'created' },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Remove the caller's subscription for one endpoint (on unsubscribe/logout). */
+export async function unsubscribePush(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { endpoint } = pushUnsubscribeSchema.parse(req.body);
+    await service.unsubscribePush(req.user!.sub, endpoint);
+    res.json({ success: true, message: 'Push subscription removed' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Whether the caller has a stored row for this endpoint.
+ *
+ * The client reconciles its live browser subscription against the server on
+ * mount: a browser `PushSubscription` can exist while the API has no row for it
+ * (a registration that failed after `subscribe()` succeeded), and the settings
+ * card must not claim push is active in that state.
+ */
+export async function getPushStatus(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { endpoint } = pushStatusQuerySchema.parse(req.query);
+    const registered = await service.hasPushSubscription(req.user!.sub, endpoint);
+    res.set('Cache-Control', 'no-store, private');
+    res.json({ success: true, data: { registered } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * The VAPID public key the browser subscribes with, or null when this server
+ * does not send push. Read at run time, so a key installed on an environment
+ * reaches the web without rebuilding the web image.
+ */
+export async function getPushConfig(_req: Request, res: Response, next: NextFunction) {
+  try {
+    res.set('Cache-Control', 'no-store, private');
+    res.json({ success: true, data: { publicKey: webPushKeys()?.publicKey ?? null } });
+  } catch (error) {
+    next(error);
+  }
+}
+
+// ==================== PREFERENCES ====================
+
+/** The caller's own preferences (the defaults until they first save). */
+export async function getMyPreferences(req: Request, res: Response, next: NextFunction) {
+  try {
+    // Never a 304: the settings page must read what was just saved.
+    res.set('Cache-Control', 'no-store, private');
+    res.json({ success: true, data: await preferences.getPreferences(req.user!.sub) });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Change any subset of the caller's own preferences. */
+export async function updateMyPreferences(req: Request, res: Response, next: NextFunction) {
+  try {
+    const updates = updatePreferencesSchema.parse(req.body);
+    const saved = await preferences.updatePreferences(req.user!.sub, updates);
+    res.json({ success: true, message: 'Preferensi notifikasi disimpan', data: saved });
   } catch (error) {
     next(error);
   }

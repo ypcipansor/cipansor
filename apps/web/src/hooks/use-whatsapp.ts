@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/api-client";
 
 // ============================================
@@ -32,14 +32,6 @@ export interface WhatsAppStatus {
   };
 }
 
-export interface NotificationPreference {
-  id: string;
-  userId: string;
-  channel: "WHATSAPP" | "EMAIL" | "PUSH" | "SMS";
-  category: string;
-  enabled: boolean;
-}
-
 // ============================================
 // QUERY KEYS
 // ============================================
@@ -47,7 +39,6 @@ export interface NotificationPreference {
 export const whatsappKeys = {
   all: ["whatsapp"] as const,
   status: () => [...whatsappKeys.all, "status"] as const,
-  preferences: () => [...whatsappKeys.all, "preferences"] as const,
 };
 
 // ============================================
@@ -87,35 +78,6 @@ export function useBroadcastWhatsApp() {
         data,
       );
       return response.data;
-    },
-  });
-}
-
-// Get notification preferences
-export function useNotificationPreferences() {
-  return useQuery({
-    queryKey: whatsappKeys.preferences(),
-    queryFn: async () => {
-      const response = await apiClient.get("/notifications/preferences");
-      return response.data.data as NotificationPreference[];
-    },
-  });
-}
-
-// Update notification preference
-export function useUpdateNotificationPreference() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
-      const response = await apiClient.patch(
-        `/notifications/preferences/${id}`,
-        { enabled },
-      );
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: whatsappKeys.preferences() });
     },
   });
 }

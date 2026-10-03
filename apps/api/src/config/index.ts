@@ -304,6 +304,33 @@ export const config = {
     },
   },
 
+  /**
+   * Web Push (VAPID, RFC 8292) — the key pair that identifies this server to
+   * the browsers' push services.
+   *
+   * No defaults, like Turnstile's secret: with either half missing push is off,
+   * the settings page says so, and nothing is asked of the browser. Each
+   * environment gets its own pair. A subscription is bound to the public key it
+   * was made with, so staging's pair cannot deliver to a production device even
+   * if production's rows were copied into staging — the push service refuses
+   * the signature. Getters, so tests that stub the environment see the change.
+   *
+   * The public half is not a secret (the browser needs it to subscribe) and
+   * reaches the web through `GET /notifications/push/config`, read at run time,
+   * not baked into the web bundle.
+   */
+  webPush: {
+    get publicKey(): string | undefined {
+      return process.env.VAPID_PUBLIC_KEY || undefined;
+    },
+    get privateKey(): string | undefined {
+      return process.env.VAPID_PRIVATE_KEY || undefined;
+    },
+    get subject(): string {
+      return process.env.VAPID_SUBJECT || 'mailto:halo@cipansor.or.id';
+    },
+  },
+
   log: {
     level: process.env.LOG_LEVEL || 'debug',
   },

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { STATIC_SECURITY_HEADERS } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Enable React Compiler (experimental - only in development for safety)
@@ -38,6 +39,14 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // The wali's own preferences page asked an API that never existed
+      // (`/notifications/preferences/{id}`) and showed nothing; parents now use
+      // the one settings page every role has.
+      {
+        source: "/parent/notifications/preferences",
+        destination: "/notifications/settings",
+        permanent: true,
+      },
       {
         source: "/ppdb",
         destination: "/spmb",
@@ -175,33 +184,20 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // The service worker script must not be HTTP-cached. The browser's own
+        // update check compares the fetched bytes against the installed worker
+        // (Chrome ignores cache headers for this), but a shared/intermediary
+        // cache in front of the app can still serve a stale `sw.js`, which
+        // pins every client to the old worker until that cache expires. A short
+        // max-age plus revalidation keeps a deploy discoverable.
+        source: "/sw.js",
         headers: [
-          {
-            key: "X-DNS-Prefetch-Control",
-            value: "on",
-          },
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "SAMEORIGIN",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=()",
-          },
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
         ],
+      },
+      {
+        source: "/:path*",
+        headers: STATIC_SECURITY_HEADERS,
       },
     ];
   },

@@ -309,7 +309,10 @@ export const authApi = {
   login: (data: LoginRequest) =>
     api.post<ApiResponse<LoginResponse>>("/auth/login", data),
 
-  logout: () => api.post("/auth/logout"),
+  // `pushEndpoint` scopes the server's push cleanup to this browser, so a
+  // logout here does not stop push on the user's other signed-in devices.
+  logout: (pushEndpoint?: string | null) =>
+    api.post("/auth/logout", pushEndpoint ? { pushEndpoint } : {}),
 
   me: () => api.get<ApiResponse<User>>("/auth/me"),
 

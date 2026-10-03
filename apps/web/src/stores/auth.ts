@@ -6,6 +6,12 @@ import {
   clearTwoFactorInvite,
   markTwoFactorInvite,
 } from "@/lib/two-factor-invite";
+import {
+  clearPrivateServiceWorkerCaches,
+  currentPushEndpoint,
+  forgetPushStatus,
+} from "@/lib/push-cache";
+import { getAppQueryClient } from "@/lib/query-client-registry";
 
 interface AuthState {
   user: User | null;
@@ -209,12 +215,28 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         try {
+          // Name this browser's push endpoint so the server clears only this
+          // device's row — otherwise a logout here would silently stop push on
+          // the user's other signed-in devices. Read before the session ends;
+          // it is a browser value, not a server one.
+          const pushEndpoint = await currentPushEndpoint();
           // The API revokes the refresh token from its cookie and clears every
           // session cookie. The client only drops its copy of the user.
-          await authApi.logout();
+          await authApi.logout(pushEndpoint);
         } catch {
           // Ignore logout errors — the local wipe below is the important part.
         } finally {
+          // Cached per-user content (pages, private images) outlives the
+          // session; drop it so the next person on this device cannot read a
+          // former user's data from Cache Storage (CWE-524). Best-effort —
+          // never block the logout.
+          void clearPrivateServiceWorkerCaches();
+          // The push-status probe is per-account and survives in the shared
+          // React Query cache; drop it so the next login re-reads the server
+          // instead of trusting a still-fresh result from the account that just
+          // signed out (the browser subscription itself outlives logout).
+          const queryClient = getAppQueryClient();
+          if (queryClient) forgetPushStatus(queryClient);
           clearTwoFactorInvite();
           set({
             user: null,

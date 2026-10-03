@@ -82,6 +82,12 @@ services:
       TURNSTILE_ALLOWED_HOSTNAMES: ${TURNSTILE_ALLOWED_HOSTNAMES:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Web Push (VAPID). Both halves or neither: empty = push off and the
+      # settings page says so. The web reads the public half from the API
+      # (`GET /notifications/push/config`), so nothing is baked into the web image.
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Staging switches (see config.scheduler / config.outboundMessages). ON for
       # this production stack; a staging copy sets both to false so it neither
       # runs the cron jobs nor sends e-mail/SMS/WhatsApp to real wali.

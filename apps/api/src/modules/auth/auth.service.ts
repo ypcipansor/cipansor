@@ -18,6 +18,7 @@ import {
   invitesSecondFactor,
 } from '@/middleware/auth';
 import { config } from '@/config';
+import { eventBus } from '@/lib/event-bus';
 import { assertPasswordAllowed, passwordNeedsSecondFactor } from '@/lib/password-policy';
 import {
   assertMayManageAccount,
@@ -612,8 +613,12 @@ export class AuthService {
 
   /**
    * Logout (invalidate refresh token)
+   *
+   * `pushEndpoint` names the browser's push subscription so only that device is
+   * cleared — see the `auth:logged_out` listener. Callers that end every
+   * session (password reset) omit it, and the listener clears all devices.
    */
-  async logout(userId: string, refreshToken?: string) {
+  async logout(userId: string, refreshToken?: string, pushEndpoint?: string | null) {
     if (refreshToken) {
       // Delete specific token
       await prisma.refreshToken.deleteMany({
@@ -627,6 +632,77 @@ export class AuthService {
       await prisma.refreshToken.deleteMany({
         where: { userId },
       });
+    }
+
+    // A browser push endpoint outlives the session that created it. Left in
+    // place it would keep pushing this user's private notifications to a device
+    // they have signed out of (CWE-200); clearing it is handled by the event
+    // bus so auth does not reach into the notifications module.
+    //
+    // The endpoint is client-supplied and may be stale or unrelated, so the
+    // listener must not trust it alone: it also needs to know whether this was
+    // the account's last session. Report that here, after the revoke above, so
+    // the check reflects the state the logout actually produced.
+    const hasActiveSession = await this.hasActiveSession(userId);
+
+    if (hasActiveSession === null) {
+      // The lookup failed, so we cannot tell whether another device is still
+      // signed in. Clear only the device that named itself: it is the one
+      // certain to be gone, and the one the user is looking at. Clearing every
+      // device on a guess would stop push on a phone that is still signed in —
+      // the very harm this follow-up exists to avoid. With no endpoint named
+      // there is no row attributable to this browser, so nothing is cleared and
+      // the other devices are left alone, which is the point.
+      //
+      // The asking device's row is restored by `useWebPush` on its next
+      // authenticated page, and any device left unreachable is swept by the
+      // next *confirmed* last-session logout (a password reset, or the final
+      // session ending) — the same self-healing the unknown-device case already
+      // relies on.
+      if (pushEndpoint) {
+        eventBus.emit('auth:logged_out', {
+          userId,
+          endpoint: pushEndpoint,
+          hasActiveSession: true,
+        });
+      }
+      return;
+    }
+
+    eventBus.emit('auth:logged_out', {
+      userId,
+      endpoint: pushEndpoint ?? null,
+      hasActiveSession,
+    });
+  }
+
+  /**
+   * Whether the user still has a usable refresh-token session.
+   *
+   * `true` and `false` are answers; `null` means the lookup itself failed and
+   * the question is unanswered. `null` is deliberately distinct from `false`:
+   * the `auth:logged_out` listener clears *every* device on a confirmed
+   * `false`, so reporting a transient read error as `false` would stop push on
+   * the user's other signed-in devices for no reason.
+   *
+   * Never rejects, either way. It is asked *after* the refresh tokens are
+   * already revoked, and `logout()` clears the session cookies only once it
+   * resolves — so a database failure answering this question used to leave the
+   * browser holding session cookies for a refresh token that no longer exists,
+   * and skip the push cleanup entirely.
+   */
+  async hasActiveSession(userId: string): Promise<boolean | null> {
+    try {
+      const row = await prisma.refreshToken.findFirst({
+        where: {
+          userId,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
+      });
+      return row !== null;
+    } catch {
+      return null;
     }
   }
 
@@ -939,6 +1015,10 @@ export class AuthService {
     // Whoever asked for this reset may be locking someone else out on purpose.
     // Ending every existing session is the point.
     await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+
+    // Same reason as logout: push endpoints survive the session, so a reset
+    // must not leave a device able to receive the account's notifications.
+    eventBus.emit('auth:logged_out', { userId: user.id });
 
     return { message: 'Password berhasil diperbarui. Silakan masuk dengan password baru Anda.' };
   }

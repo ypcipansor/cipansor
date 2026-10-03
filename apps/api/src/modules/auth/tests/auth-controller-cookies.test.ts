@@ -257,10 +257,57 @@ describe('auth controller: cookies, not body tokens', () => {
       vi.fn()
     );
 
-    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1');
+    // No pushEndpoint in the body → null, so the service clears every device
+    // (the safe fallback for an older client that cannot name its endpoint).
+    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1', null);
     expect(cleared).toEqual(
       expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
     );
+  });
+
+  it('scopes the push cleanup to the endpoint the browser named', async () => {
+    const { res } = mockRes();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+        body: { pushEndpoint: 'https://push.example.com/abc' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    // Only this device is cleared, so the user's other signed-in devices keep
+    // receiving push.
+    expect(authServiceMock.logout).toHaveBeenCalledWith(
+      'u-1',
+      'refresh-1',
+      'https://push.example.com/abc'
+    );
+  });
+
+  it('clears the cookies even when the service fails after revoking the token', async () => {
+    // The refresh token is revoked first; a later failure (the session check
+    // hitting a dropped connection) must not leave the browser presenting a
+    // session cookie for a token that is already gone.
+    authServiceMock.logout.mockRejectedValueOnce(new Error('connection lost'));
+
+    const { res, cleared } = mockRes();
+    const next = vi.fn();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+      }),
+      res,
+      next
+    );
+
+    expect(cleared).toEqual(
+      expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
+    // The failure is still surfaced to the caller.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
   });
 
   it('marks the 2FA status no-store so a revalidation cannot answer 304', async () => {
