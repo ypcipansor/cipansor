@@ -40,7 +40,8 @@ describe("static security headers", () => {
 
   it("keeps the permissions the portal needs and denies the rest", () => {
     const policy = byKey["Permissions-Policy"];
-    expect(policy).toContain("push=(self)");
+    // Not a Permissions-Policy feature: Chromium warned on every page.
+    expect(policy).not.toContain("push");
     // The E-Simaan setoran recorder calls `getUserMedia({ audio: true })`;
     // denying `microphone` here makes every recording fail with no visible
     // cause beyond a generic toast.

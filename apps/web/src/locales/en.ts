@@ -177,7 +177,6 @@ export const en = {
     laundry: "Laundry Service",
     reception: "Reception Desk",
     wallet: "Student Dompet",
-    quickSend: "Quick Broadcast",
     wilayah: "Regional Data",
     kurikulumMerdeka: "Kurikulum Merdeka",
     studentCompliance: "Student Compliance",

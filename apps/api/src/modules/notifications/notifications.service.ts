@@ -10,9 +10,6 @@ import type {
   CreateNotificationInput,
   CreateBulkNotificationInput,
   QueryNotificationInput,
-  CreateAnnouncementInput,
-  UpdateAnnouncementInput,
-  QueryAnnouncementInput,
   CreateTemplateInput,
   UpdateTemplateInput,
   QueryTemplateInput,
@@ -104,6 +101,9 @@ export async function getAllNotifications(query: QueryNotificationInput) {
   const skip = (page - 1) * limit;
 
   const where: Prisma.NotificationWhereInput = {
+    // An announcement's bell copies are one announcement, managed on its
+    // board (decisions/siaran-pengumuman.md) — not a row per recipient here.
+    announcementId: null,
     ...(startDate &&
       endDate && {
         createdAt: {
@@ -221,7 +221,7 @@ export async function updateChannelPolicy(policy: ChannelPolicy) {
   });
 }
 
-export async function createNotification(data: CreateNotificationInput, senderId?: string) {
+export async function createNotification(data: CreateNotificationInput) {
   const { dbType, originalType } = mapTypeToPrisma(data.type ?? 'INFO');
 
   // Extract fields that are not in the Prisma model but need to be stored in `data`
@@ -234,9 +234,6 @@ export async function createNotification(data: CreateNotificationInput, senderId
     data: {
       ...(data.data || {}),
       ...(originalType ? { originalType } : {}),
-      // Who wrote it, for a notification a person sent by hand; system
-      // producers leave it out.
-      ...(senderId ? { sentBy: senderId } : {}),
       // Store non-model fields in JSON data for downstream consumers
       priority,
       channels,
@@ -295,10 +292,7 @@ export async function createNotification(data: CreateNotificationInput, senderId
   return notification;
 }
 
-export async function createBulkNotifications(
-  data: CreateBulkNotificationInput,
-  senderId?: string
-) {
+export async function createBulkNotifications(data: CreateBulkNotificationInput) {
   const { userIds, ...notificationData } = data;
   const { dbType, originalType } = mapTypeToPrisma(notificationData.type);
   const { priority, channels, ...rest } = notificationData;
@@ -310,7 +304,6 @@ export async function createBulkNotifications(
     userId,
     data: {
       ...(originalType ? { originalType } : {}),
-      ...(senderId ? { sentBy: senderId } : {}),
       priority,
       channels,
     },
@@ -378,20 +371,6 @@ export async function deleteNotification(id: string, userId: string, isAdmin = f
 
   return prisma.notification.deleteMany({
     where,
-  });
-}
-
-export async function sendNotification(id: string) {
-  return prisma.notification.update({
-    where: { id },
-    data: { createdAt: new Date() },
-  });
-}
-
-export async function scheduleNotification(id: string, scheduledAt: Date) {
-  return prisma.notification.update({
-    where: { id },
-    data: { scheduledAt },
   });
 }
 
@@ -568,94 +547,6 @@ export async function deleteTemplate(id: string, unitId?: string) {
 }
 
 // ==================== ANNOUNCEMENT ====================
-
-export async function getAnnouncements(query: QueryAnnouncementInput) {
-  const { page, limit, unitId, priority, active } = query;
-  const skip = (page - 1) * limit;
-  const now = new Date();
-
-  const where: Prisma.AnnouncementWhereInput = {
-    ...(unitId && { unitId }),
-    ...(priority !== undefined && { priority }),
-    ...(active && {
-      publishedAt: { lte: now },
-      OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-    }),
-  };
-
-  const [data, total] = await Promise.all([
-    prisma.announcement.findMany({
-      where,
-      skip,
-      take: limit,
-      include: {
-        unit: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
-      },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-    }),
-    prisma.announcement.count({ where }),
-  ]);
-
-  return {
-    data,
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
-}
-
-export async function getAnnouncementById(id: string) {
-  return prisma.announcement.findUnique({
-    where: { id },
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
-    },
-  });
-}
-
-export async function createAnnouncement(data: CreateAnnouncementInput, createdById: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createData: any = {
-    ...data,
-    createdById,
-    publishedAt: data.publishedAt || new Date(),
-  };
-
-  return prisma.announcement.create({
-    data: createData,
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
-    },
-  });
-}
-
-export async function updateAnnouncement(id: string, data: UpdateAnnouncementInput) {
-  const { unitId, type, ...rest } = data;
-  const { dbType } = type ? mapTypeToPrisma(type) : { dbType: undefined };
-
-  return prisma.announcement.update({
-    where: { id },
-    data: {
-      ...rest,
-      ...(type && { type: dbType as any }), // Cast to any because of enum mismatch in Zod vs Prisma
-      ...(unitId && { unit: { connect: { id: unitId } } }),
-    },
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
-    },
-  });
-}
-
-export async function deleteAnnouncement(id: string) {
-  return prisma.announcement.delete({ where: { id } });
-}
 
 // ==================== WEB PUSH (browser) ====================
 

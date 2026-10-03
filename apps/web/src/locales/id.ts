@@ -182,7 +182,6 @@ export const id = {
     laundry: "Laundry",
     reception: "Reception",
     wallet: "Dompet Santri",
-    quickSend: "Quick Send",
     wilayah: "Wilayah",
     kurikulumMerdeka: "Kurikulum Merdeka",
     studentCompliance: "Kepatuhan Siswa",

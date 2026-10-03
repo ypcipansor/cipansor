@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_NOTIFICATION_CONTENT_LENGTH,
-  createAnnouncementSchema,
   createNotificationSchema,
   pushSubscribeSchema,
   pushUnsubscribeSchema,
@@ -26,9 +25,6 @@ describe('notification content size cap', () => {
     expect(
       createNotificationSchema.safeParse({ title: 'Pengumuman', message: worstCase }).success
     ).toBe(true);
-    expect(
-      createAnnouncementSchema.safeParse({ title: 'Pengumuman', content: worstCase }).success
-    ).toBe(true);
   });
 
   it('leaves headroom for escaping and the template shell', () => {
@@ -49,9 +45,6 @@ describe('notification content size cap', () => {
 
     expect(
       createNotificationSchema.safeParse({ title: 'Pengumuman', message: oversized }).success
-    ).toBe(false);
-    expect(
-      createAnnouncementSchema.safeParse({ title: 'Pengumuman', content: oversized }).success
     ).toBe(false);
   });
 });

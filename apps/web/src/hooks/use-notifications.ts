@@ -150,58 +150,6 @@ export function useNotificationStats() {
   });
 }
 
-export function useCreateNotification() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: Partial<AppNotification>) => {
-      const response = await api.post("/notifications", data);
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["notification-stats"] });
-    },
-  });
-}
-
-export function useSendNotification() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const response = await api.post(`/notifications/${id}/send`);
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["notification-stats"] });
-    },
-  });
-}
-
-export function useScheduleNotification() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      id,
-      scheduledAt,
-    }: {
-      id: string;
-      scheduledAt: string;
-    }) => {
-      const response = await api.post(`/notifications/${id}/schedule`, {
-        scheduledAt,
-      });
-      return response.data.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-    },
-  });
-}
-
 export function useDeleteNotification() {
   const queryClient = useQueryClient();
 

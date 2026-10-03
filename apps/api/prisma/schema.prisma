@@ -2567,6 +2567,14 @@ model MedicationUsageLog {
 // PHASE 4: KOMUNIKASI (NOTIFICATIONS)
 // =====================================
 
+/// Who an announcement reaches (decisions/siaran-pengumuman.md).
+enum AnnouncementScope {
+  YAYASAN
+  UNIT
+  CLASSES
+  BOARDERS
+}
+
 enum NotificationType {
   INFO // Informasi umum
   ANNOUNCEMENT // Pengumuman
@@ -2611,6 +2619,18 @@ model Announcement {
   publishedAt   DateTime?        @map("published_at")
   expiresAt     DateTime?        @map("expires_at")
   targetRoles   String[]         @map("target_roles") // ["STUDENT", "PARENT"]
+  /// Who it reaches (decisions/siaran-pengumuman.md): the whole yayasan, one
+  /// unit, the sender's classes, or a musyrif's santri mukim.
+  scope         AnnouncementScope @default(UNIT)
+  /// CLASSES: the classes it was sent to — the sender's own, checked at publication.
+  classIds      String[]         @default([]) @map("class_ids")
+  /// BOARDERS: the musyrif's santri at publication, so the audience does not
+  /// shift when a santri changes kamar later.
+  studentIds    String[]         @default([]) @map("student_ids")
+  /// Withdrawn by its author, the unit's head or admin, or the yayasan: gone
+  /// from the board and from every bell; the row stays as the record.
+  withdrawnAt   DateTime?        @map("withdrawn_at")
+  withdrawnById String?          @map("withdrawn_by_id")
   createdById   String           @map("created_by_id")
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -2618,6 +2638,7 @@ model Announcement {
   // Relations
   unit      Unit? @relation(fields: [unitId], references: [id])
   createdBy User  @relation("AnnouncementCreator", fields: [createdById], references: [id])
+  notifications Notification[]
 
   @@index([unitId])
   @@index([publishedAt])
@@ -2642,15 +2663,20 @@ model Notification {
   /// (`push-dispatch.service.ts`) claims them; rows older than Web Push are
   /// NULL and are never pushed.
   pushState   PushDispatchState? @default(PENDING) @map("push_state")
+  /// The announcement this bell row delivers, if any: revising it rewrites the
+  /// row, withdrawing it removes the row (decisions/siaran-pengumuman.md).
+  announcementId String?         @map("announcement_id")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
   @@index([createdAt])
   @@index([scheduledAt])
   @@index([pushState])
+  @@index([announcementId])
   @@map("notifications")
 }
 

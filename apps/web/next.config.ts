@@ -47,6 +47,24 @@ const nextConfig: NextConfig = {
         destination: "/notifications/settings",
         permanent: true,
       },
+      // Broadcasting is one feature, Pengumuman (decisions/siaran-pengumuman.md):
+      // the two composers stored rows nobody received, and the wali's own
+      // announcements page read a narrower list than the shared board.
+      {
+        source: "/notifications/quick-send",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source: "/notifications/new",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source: "/parent/announcements",
+        destination: "/announcements",
+        permanent: true,
+      },
       {
         source: "/ppdb",
         destination: "/spmb",

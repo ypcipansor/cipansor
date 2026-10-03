@@ -65,6 +65,7 @@ import {
   CalendarX,
 } from "lucide-react";
 import {
+  ADMIN_ROLE_CODES,
   GURU_BK_ROLE_CODES,
   PERMIT_STAFF_ROLE_CODES,
   SCHOOL_TEACHER_ROLE_CODES,
@@ -757,7 +758,7 @@ const parentNavigation: NavGroup[] = [
     items: [
       {
         title: "Pengumuman",
-        href: "/parent/announcements",
+        href: "/announcements",
         icon: Megaphone,
       },
       {
@@ -1596,13 +1597,14 @@ const adminNavigation: NavGroup[] = [
         title: "Notifications",
         href: "/notifications",
         icon: Bell,
-        children: [
-          {
-            title: "Quick Send",
-            href: "/notifications/quick-send",
-            icon: Send,
-          },
-        ],
+      },
+      {
+        // A unit's operator broadcasts to its unit; Super Admin writes no
+        // content (decisions/siaran-pengumuman.md).
+        title: "Pengumuman",
+        href: "/announcements",
+        icon: Megaphone,
+        roleCodes: ADMIN_ROLE_CODES.filter((code) => code !== "SUPER_ADMIN"),
       },
       {
         title: "Unit Usaha",
@@ -1887,7 +1889,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: Bell,
       },
       {
-        title: "Announcements",
+        title: "Pengumuman",
         href: "/announcements",
         icon: Megaphone,
       },
