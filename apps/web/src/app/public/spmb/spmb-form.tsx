@@ -684,7 +684,9 @@ export function SpmbForm({
                 <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
                   <CardContent className="pt-6">
                     <div className="flex flex-col md:flex-row justify-between gap-4">
-                      <div id="spmb-form-start">
+                      {/* Clear of the fixed navbar when "Daftar ke unit
+                          ini" scrolls here. */}
+                      <div id="spmb-form-start" className="scroll-mt-32">
                         <h2 className="text-2xl font-bold text-green-900">
                           Formulir Pendaftaran
                         </h2>
