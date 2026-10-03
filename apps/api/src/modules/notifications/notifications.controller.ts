@@ -18,6 +18,7 @@ import {
 } from './notifications.schema';
 import * as preferences from './preferences.service';
 import { webPushKeys } from './push-dispatch.service';
+import { assertRecipientsInScope } from './recipient-scope.service';
 import { Errors } from '../../middleware/error';
 import { whatsAppService } from './whatsapp.service';
 import { notificationScheduler } from './scheduler.service';
@@ -74,8 +75,11 @@ export async function getNotificationById(req: Request, res: Response, next: Nex
 
 export async function createNotification(req: Request, res: Response, next: NextFunction) {
   try {
+    const sender = req.user;
+    if (!sender) throw Errors.unauthorized();
     const data = createNotificationSchema.parse(req.body);
-    const notification = await service.createNotification(data);
+    if (data.userId) await assertRecipientsInScope(sender, [data.userId]);
+    const notification = await service.createNotification(data, sender.sub);
     res.status(201).json({ success: true, data: notification });
   } catch (error) {
     next(error);
@@ -84,8 +88,11 @@ export async function createNotification(req: Request, res: Response, next: Next
 
 export async function createBulkNotifications(req: Request, res: Response, next: NextFunction) {
   try {
+    const sender = req.user;
+    if (!sender) throw Errors.unauthorized();
     const data = createBulkNotificationSchema.parse(req.body);
-    const result = await service.createBulkNotifications(data);
+    await assertRecipientsInScope(sender, data.userIds);
+    const result = await service.createBulkNotifications(data, sender.sub);
     res.status(201).json({ success: true, data: { count: result.count } });
   } catch (error) {
     next(error);

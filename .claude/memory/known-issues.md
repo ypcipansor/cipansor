@@ -103,6 +103,16 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   page. (Everyone's own inbox is `/notifications/me` since #587.) The admin
   menu's *Notifications* item also lights on `/notifications/me` (prefix
   match).
+- **A broadcast reaches no one** (found 2026-10-03). *Notifications → Quick
+  Send* and `/notifications/new`, addressed to a class, unit or role, store one
+  notification row with no recipient; "send" (`POST /notifications/:id/send`)
+  only touches its timestamp, and the page says the message was sent.
+  Announcements (`/announcements`) never reach a bell either:
+  `broadcastAnnouncement` in `email-sms.service.ts` has no caller, so the
+  "Pengumuman" switch on the settings page has nothing behind it. The menu
+  titles are English. Who may send to whom is for the user to decide
+  (golden rule 12); then fan out to the bell and push within the sender's
+  scope, in one module (`AGENTS.md` → one concept, one module).
 - **A unit's operator sees every unit's subjects.** *Classes → Mata
   Pelajaran & Jadwal* for Admin SD IT lists SMP IT's subjects (seen
   2026-09-28), and its *Tanpa Guru Pengampu* card counts them.
