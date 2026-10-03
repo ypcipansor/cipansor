@@ -1,3 +1,4 @@
+import { QuranAbility } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 
 /**
@@ -29,7 +30,7 @@ export async function calculateLeadScores(registrantIds: string[]) {
     score += Math.min(15, reg._count.documents * 3);
 
     // 4. Quran Ability
-    if (reg.quranAbility === 'TAHFIDZ') score += 10;
+    if (reg.quranAbility === QuranAbility.TAHFIDZ) score += 10;
     if ((reg.memorizedJuz || 0) >= 1) score += 5;
 
     return { registrantId: reg.id, leadScore: Math.round(score) };

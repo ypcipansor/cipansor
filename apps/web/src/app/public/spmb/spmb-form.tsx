@@ -34,6 +34,7 @@ import {
 } from "@/hooks/use-admissions";
 import { PublicIntakes } from "@/components/admissions/public-intakes";
 import { formatRupiah } from "@/lib/admission-intake";
+import { QURAN_ABILITIES, QURAN_ABILITY_LABELS } from "@cipansor/shared";
 import type { Locale } from "@/locales";
 import {
   TurnstileWidget,
@@ -131,14 +132,6 @@ const initialFormData: FormData = {
   memorizedJuz: "",
   unitId: "",
 };
-
-const QURAN_ABILITIES = [
-  { value: "BELUM_BISA", label: "Belum bisa membaca" },
-  { value: "IQRO", label: "Masih Iqro" },
-  { value: "LANCAR", label: "Lancar membaca Al-Quran" },
-  { value: "TARTIL", label: "Tartil dan Tajwid baik" },
-  { value: "HAFIDZ", label: "Sudah hafal beberapa juz" },
-];
 
 /**
  * The page used to branch on the mere existence of a period, so an expired one
@@ -1140,11 +1133,8 @@ export function SpmbForm({
                             </SelectTrigger>
                             <SelectContent>
                               {QURAN_ABILITIES.map((ability) => (
-                                <SelectItem
-                                  key={ability.value}
-                                  value={ability.value}
-                                >
-                                  {ability.label}
+                                <SelectItem key={ability} value={ability}>
+                                  {QURAN_ABILITY_LABELS[ability]}
                                 </SelectItem>
                               ))}
                             </SelectContent>

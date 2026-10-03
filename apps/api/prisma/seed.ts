@@ -1,6 +1,7 @@
 import {
   UserRole,
   UnitType,
+  QuranAbility,
   Gender,
   AttendanceStatus,
   TahfidzActivityType,
@@ -2386,7 +2387,7 @@ async function main() {
     gender: Gender;
     status: AdmissionStatus;
     parentName: string;
-    quranAbility?: string;
+    quranAbility?: QuranAbility;
     memorizedJuz?: number;
   }> = [
     {
@@ -2406,7 +2407,7 @@ async function main() {
       gender: Gender.MALE,
       status: AdmissionStatus.TEST_COMPLETED,
       parentName: 'Bapak Ramadhan',
-      quranAbility: 'TAHFIDZ',
+      quranAbility: QuranAbility.TAHFIDZ,
       memorizedJuz: 5,
     },
     {
@@ -2414,14 +2415,14 @@ async function main() {
       gender: Gender.FEMALE,
       status: AdmissionStatus.DOCUMENT_CHECK,
       parentName: 'Bapak Putra',
-      quranAbility: 'TARTIL',
+      quranAbility: QuranAbility.TARTIL,
     },
     {
       name: 'Akbar Maulana',
       gender: Gender.MALE,
       status: AdmissionStatus.REGISTERED,
       parentName: 'Bapak Maulana',
-      quranAbility: 'LANCAR',
+      quranAbility: QuranAbility.LANCAR,
     },
     {
       name: 'Azzahra Aulia',

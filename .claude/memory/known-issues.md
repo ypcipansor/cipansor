@@ -18,6 +18,17 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 
 ## Broken flows and wrong figures
 
+- **The marketing dashboard's monthly attributed revenue always fails**
+  (found 2026-10-03). `getMonthlyAttributedRevenue` in
+  `marketing/roi.service.ts` filters `invoice.student.registrant`, a relation
+  that does not exist (`Student` has `registrants`), so Prisma refuses the
+  query and the endpoint answers 500 on every call: `/marketing`
+  ("Marketing & PSB") shows an error toast and an empty revenue chart. Its unit test
+  (`tests/funnel-trend.test.ts`) mocks Prisma, so it cannot see a wrong
+  relation name. Fix: `registrants: { some: { campaignId: { not: null }, … } }`,
+  with a test against a real query shape (or an e2e that opens the page and
+  expects no error).
+
 - **The web calls API paths that do not exist — 184 distinct calls left**
   (212 when measured on 2026-09-25; Perizinan fixed in #564, the asrama pages
   in #569 and #571, mata pelajaran in #573, laporan harian in #577, the
@@ -338,6 +349,16 @@ decision.
   The canonical `/admissions/registrants` page was never built; the SPMB
   registrant UI lives at `/spmb` (the API already has the
   `/admissions/registrants` routes).
+
+- **61 free-text columns keep their code vocabulary in a comment**
+  (measured 2026-10-03: `String` fields in `schema.prisma` whose comment lists
+  codes such as `// STUDENT, STAFF, TEACHER`). Nothing stops a writer that
+  never read the comment; that is how `students.status` (#492) and
+  `registrants.quran_ability` (2026-10-03) came to hold two spellings. Sweep
+  them one module at a time when the module is touched: measure what each
+  column holds (`select x, count(*) … group by x`), then a Prisma enum or a
+  CHECK, and `z.enum` at the edge
+  (`lessons/student-status-case-mismatch.md`).
 
 ## Performance
 

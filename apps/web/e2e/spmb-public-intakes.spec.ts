@@ -279,15 +279,26 @@ test.describe("SPMB publik per unit", () => {
     await field(page, "Kota/Kabupaten").fill("Tasikmalaya");
     await field(page, "Provinsi").fill("Jawa Barat");
     await page.getByRole("button", { name: "Selanjutnya" }).click();
-    // Steps 4 and 5 are optional.
+    // Step 4: the Qur'an ability is stored as the code every other reader
+    // uses — the form once sent "HAFIDZ" where the scores read "TAHFIDZ".
+    await page.getByText("Pilih kemampuan").click();
+    await page
+      .getByRole("option", { name: "Sudah hafal beberapa juz" })
+      .click();
     await page.getByRole("button", { name: "Selanjutnya" }).click();
+    // Step 5 is optional.
     await page.getByRole("button", { name: "Selanjutnya" }).click();
     await page.getByRole("button", { name: "Kirim Pendaftaran" }).click();
 
     await expect(page.getByText("Pendaftaran Berhasil!")).toBeVisible();
 
     const { data } = await apiRequest<{
-      data: Array<{ id: string; admissionPeriodId: string; fullName: string }>;
+      data: Array<{
+        id: string;
+        admissionPeriodId: string;
+        fullName: string;
+        quranAbility: string | null;
+      }>;
     }>(
       admin,
       "GET",
@@ -296,5 +307,6 @@ test.describe("SPMB publik per unit", () => {
     expect(data).toHaveLength(1);
     created.registrant = data[0].id;
     expect(data[0].admissionPeriodId).toBe(smpPeriod);
+    expect(data[0].quranAbility).toBe("TAHFIDZ");
   });
 });

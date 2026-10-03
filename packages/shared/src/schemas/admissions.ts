@@ -59,6 +59,41 @@ export const onboardRegistrantSchema = z.object({
     .optional(),
 });
 
+/**
+ * A registrant's own account of how they read the Qur'an, from least to most;
+ * the test at entry checks it. Prisma's `QuranAbility` holds the same five.
+ * The public form once sent "IQRO" and "HAFIDZ" while the lead scores and the
+ * seeds read "IQRA" and "TAHFIDZ", so a declared hafalan never counted.
+ */
+export const QURAN_ABILITIES = [
+  "BELUM_BISA",
+  "IQRA",
+  "LANCAR",
+  "TARTIL",
+  "TAHFIDZ",
+] as const;
+export type QuranAbilityCode = (typeof QURAN_ABILITIES)[number];
+
+export const QURAN_ABILITY_LABELS: Record<QuranAbilityCode, string> = {
+  BELUM_BISA: "Belum bisa membaca",
+  IQRA: "Masih belajar Iqra",
+  LANCAR: "Lancar membaca Al-Qur'an",
+  TARTIL: "Tartil, tajwidnya baik",
+  TAHFIDZ: "Sudah hafal beberapa juz",
+};
+
+/** The label a person reads; an unknown code is shown as it is, never hidden. */
+export function quranAbilityLabel(
+  code: string | null | undefined,
+): string | null {
+  if (!code) return null;
+  return QURAN_ABILITY_LABELS[code as QuranAbilityCode] ?? code;
+}
+
+export const quranAbilitySchema = z.enum(QURAN_ABILITIES, {
+  message: "Pilihan kemampuan Al-Qur'an tidak dikenal",
+});
+
 export interface RegistrantDTO {
   id: string;
   admissionPeriodId: string;
@@ -73,7 +108,7 @@ export interface RegistrantDTO {
   phone?: string | null;
   email?: string | null;
   previousSchool?: string | null;
-  quranAbility?: string | null;
+  quranAbility?: QuranAbilityCode | null;
   memorizedJuz?: number | null;
   parentName: string;
   parentPhone: string;
