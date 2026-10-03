@@ -31,6 +31,8 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { notificationsService } from "@/services/notifications.service";
 import { useWebPush } from "@/hooks/use-web-push";
+import { useAuthStore } from "@/stores/auth";
+import { getEffectiveRole } from "@/lib/rbac";
 import {
   useNotificationPreferences,
   useUpdateNotificationPreferences,
@@ -138,10 +140,19 @@ export default function NotificationSettingsPage() {
   const [hasChanges, setHasChanges] = useState(false);
   const webPush = useWebPush();
 
+  // The outgoing-mail card is for the people who configure it. The endpoint is
+  // admin-only, and since this page is linked for every role, asking it as a
+  // wali or a teacher put an "Insufficient permissions" toast on their screen.
+  const { user } = useAuthStore();
+  const isAdmin = ["SUPER_ADMIN", "UNIT_ADMIN"].includes(
+    getEffectiveRole(user) || "",
+  );
+
   // What the server is actually configured to send with.
   const { data: transport, isLoading: transportLoading } = useQuery({
     queryKey: ["email-transport"],
     queryFn: () => notificationsService.getEmailTransport(),
+    enabled: isAdmin,
   });
 
   // What the server has stored for this person (defaults until first saved).
@@ -299,99 +310,102 @@ export default function NotificationSettingsPage() {
           Gmail setup while every message was being written to a log and thrown
           away. The badge now reports the transport, not the toggle.
         */}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-primary">
-              <Mail className="h-5 w-5" />
-              Server Email Keluar
-            </CardTitle>
-            <CardDescription>
-              Konfigurasi pengiriman email resmi Yayasan Pesantren Cipansor,
-              dibaca langsung dari server.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {transportLoading ? (
-              <p className="text-sm text-muted-foreground">
-                Memuat konfigurasi…
-              </p>
-            ) : !transport ? (
-              <p className="text-sm text-muted-foreground">
-                Konfigurasi email tidak dapat dibaca.
-              </p>
-            ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2 text-sm">
-                  <div className="rounded-md border bg-background p-3">
-                    <span className="text-xs text-muted-foreground block">
-                      Pengirim (From)
-                    </span>
-                    <strong className="font-medium text-foreground break-all">
-                      {transport.from}
-                    </strong>
-                    <span className="text-xs text-muted-foreground block mt-1">
-                      Alamat otomatis sistem — tidak dibaca manusia
-                    </span>
+        {isAdmin && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-primary">
+                <Mail className="h-5 w-5" />
+                Server Email Keluar
+              </CardTitle>
+              <CardDescription>
+                Konfigurasi pengiriman email resmi Yayasan Pesantren Cipansor,
+                dibaca langsung dari server.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {transportLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  Memuat konfigurasi…
+                </p>
+              ) : !transport ? (
+                <p className="text-sm text-muted-foreground">
+                  Konfigurasi email tidak dapat dibaca.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                    <div className="rounded-md border bg-background p-3">
+                      <span className="text-xs text-muted-foreground block">
+                        Pengirim (From)
+                      </span>
+                      <strong className="font-medium text-foreground break-all">
+                        {transport.from}
+                      </strong>
+                      <span className="text-xs text-muted-foreground block mt-1">
+                        Alamat otomatis sistem — tidak dibaca manusia
+                      </span>
+                    </div>
+                    <div className="rounded-md border bg-background p-3">
+                      <span className="text-xs text-muted-foreground block">
+                        Tujuan balasan (Reply-To)
+                      </span>
+                      <strong className="font-medium text-foreground break-all">
+                        {transport.replyTo}
+                      </strong>
+                      <span className="text-xs text-muted-foreground block mt-1">
+                        Ke sinilah balasan wali santri sampai
+                      </span>
+                    </div>
                   </div>
-                  <div className="rounded-md border bg-background p-3">
-                    <span className="text-xs text-muted-foreground block">
-                      Tujuan balasan (Reply-To)
-                    </span>
-                    <strong className="font-medium text-foreground break-all">
-                      {transport.replyTo}
-                    </strong>
-                    <span className="text-xs text-muted-foreground block mt-1">
-                      Ke sinilah balasan wali santri sampai
-                    </span>
-                  </div>
-                </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
-                  <span>
-                    {transport.kind === "gmail_api" && (
-                      <>
-                        Metode: <code>Gmail API</code> (service account, tanpa
-                        sandi aplikasi) sebagai <code>{transport.sender}</code>
-                      </>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
+                    <span>
+                      {transport.kind === "gmail_api" && (
+                        <>
+                          Metode: <code>Gmail API</code> (service account, tanpa
+                          sandi aplikasi) sebagai{" "}
+                          <code>{transport.sender}</code>
+                        </>
+                      )}
+                      {transport.kind === "smtp" && (
+                        <>
+                          Metode: <code>SMTP</code> —{" "}
+                          <code>{transport.host}</code>
+                        </>
+                      )}
+                      {transport.kind === "log" && (
+                        <>Belum ada transport email yang dikonfigurasi.</>
+                      )}
+                    </span>
+                    {transport.configured ? (
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-500 bg-emerald-50 text-emerald-700"
+                      >
+                        Email siap kirim
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500 bg-amber-50 text-amber-700"
+                      >
+                        Email tidak terkirim — hanya dicatat di log
+                      </Badge>
                     )}
-                    {transport.kind === "smtp" && (
-                      <>
-                        Metode: <code>SMTP</code> —{" "}
-                        <code>{transport.host}</code>
-                      </>
-                    )}
-                    {transport.kind === "log" && (
-                      <>Belum ada transport email yang dikonfigurasi.</>
-                    )}
-                  </span>
-                  {transport.configured ? (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-500 bg-emerald-50 text-emerald-700"
-                    >
-                      Email siap kirim
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-500 bg-amber-50 text-amber-700"
-                    >
-                      Email tidak terkirim — hanya dicatat di log
-                    </Badge>
+                  </div>
+
+                  {!transport.configured && (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      Notifikasi email tidak akan sampai ke siapa pun sampai
+                      kredensial Gmail API atau SMTP diisi di server. Lihat{" "}
+                      <code>docs/EMAIL_SETUP.md</code>.
+                    </p>
                   )}
-                </div>
-
-                {!transport.configured && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                    Notifikasi email tidak akan sampai ke siapa pun sampai
-                    kredensial Gmail API atau SMTP diisi di server. Lihat{" "}
-                    <code>docs/EMAIL_SETUP.md</code>.
-                  </p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Channel Preferences */}
         <Card>
@@ -432,6 +446,7 @@ export default function NotificationSettingsPage() {
                   </div>
                   <Switch
                     checked={isEnabled as boolean}
+                    disabled={isLoading}
                     onCheckedChange={() =>
                       handleToggle(channel.key as keyof NotificationPreferences)
                     }
@@ -541,6 +556,7 @@ export default function NotificationSettingsPage() {
                   </div>
                   <Switch
                     checked={isEnabled as boolean}
+                    disabled={isLoading}
                     onCheckedChange={() =>
                       handleToggle(type.key as keyof NotificationPreferences)
                     }
@@ -573,6 +589,7 @@ export default function NotificationSettingsPage() {
               <Select
                 value={preferences.reminderFrequency}
                 onValueChange={handleFrequencyChange}
+                disabled={isLoading}
               >
                 <SelectTrigger className="w-32">
                   <SelectValue />
@@ -600,6 +617,7 @@ export default function NotificationSettingsPage() {
               <Switch
                 id="quiet-hours"
                 checked={quietHoursOn}
+                disabled={isLoading}
                 onCheckedChange={handleQuietHoursToggle}
               />
             </div>

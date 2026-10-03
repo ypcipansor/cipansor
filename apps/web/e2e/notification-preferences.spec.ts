@@ -37,12 +37,22 @@ async function save(page: Page) {
 }
 
 test.describe("Notification preferences", () => {
+  // One wali account, one preferences row: run in order, or one test's save
+  // (the whole set) overwrites what the other just stored.
+  test.describe.configure({ mode: "serial" });
+
   test("a switched-off kind stays off after a reload", async ({ page }) => {
     await loginAs(page, "parent");
     await page.goto(SETTINGS);
 
     const announcements = switchFor(page, "Pengumuman");
-    await expect(announcements).toBeVisible();
+    // Locked until the stored values arrive: a click before then used to be
+    // overwritten by the load, which is what this wait also guards.
+    await expect(announcements).toBeEnabled();
+    // The outgoing-mail card is the administrators'; a wali asking its
+    // endpoint got a 403 toast on this page.
+    await expect(page.getByText("Server Email Keluar")).toHaveCount(0);
+    await expect(page.getByText("Insufficient permissions")).toHaveCount(0);
     // Start from the default so a rerun on a reused database is meaningful.
     if ((await announcements.getAttribute("aria-checked")) === "false") {
       await announcements.click();
@@ -54,6 +64,7 @@ test.describe("Notification preferences", () => {
     await save(page);
 
     await page.reload();
+    await expect(switchFor(page, "Pengumuman")).toBeEnabled();
     await expect(switchFor(page, "Pengumuman")).toHaveAttribute(
       "aria-checked",
       "false",
@@ -69,6 +80,7 @@ test.describe("Notification preferences", () => {
     await page.goto(SETTINGS);
 
     const quiet = page.getByRole("switch", { name: "Jam Tenang" });
+    await expect(quiet).toBeEnabled();
     if ((await quiet.getAttribute("aria-checked")) === "true") {
       await quiet.click();
       await save(page);

@@ -83,6 +83,14 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
+- **PR #626 — PWA and Web Push, audited and completed (2026-10-03).** The
+  user chose to build the sender now (`decisions/notifikasi-push.md`): the
+  notification table is the push outbox, preferences are stored for real,
+  lock-screen text per category, VAPID pair per environment (staging's set
+  through the deploy job from the `staging` environment secret). Merge →
+  staging verifies push end to end; production needs its own pair with the
+  release.
+
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru
   pengampu (#573), laporan harian (#577), the wali kelas relation (#579),

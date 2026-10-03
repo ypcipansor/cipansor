@@ -180,6 +180,15 @@ Or read the old tree without touching yours: run the predicates over
 `git show main:<path>`. See [git-checkout-path-destroys-uncommitted](./git-checkout-path-destroys-uncommitted.md)
 before restoring anything.
 
+## A mock that accepts what the database refuses
+
+The tahfidz milestone test asserted `prisma.notification.create` was called
+with `type: 'TAHFIDZ'`. The mocked client accepted it; the real enum has no
+such value, so in production every milestone notification failed Prisma's
+check and was only logged (found 2026-10-03, #626). When a mock stands in for
+the database, assert the value is one the database accepts — an enum member,
+a column that exists — not merely the value the code happened to send.
+
 ## A test that skips itself when its data is missing
 
 `tk-daily-report.spec.ts` found the class picker by its placeholder, and when
