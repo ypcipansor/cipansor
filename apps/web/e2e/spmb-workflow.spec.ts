@@ -8,14 +8,6 @@ const API_URL = process.env.API_URL || "http://localhost:3001/api";
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-async function publicGet(path: string) {
-  const res = await fetch(`${API_URL}${path}`);
-  const json = await res.json();
-  if (!res.ok)
-    throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
-  return json;
-}
-
 async function publicPost(path: string, body: unknown) {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -131,15 +123,18 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     );
 
     // ── Data setup (real API, no mock) ───────────────────────────────
-    // Use the currently-announced period to borrow a real unit/academic year
-    // so a brand-new, definitely-open period can be created for this run.
-    const basePeriod = (await publicGet("/admissions/public/active-period"))
-      .data;
+    // Borrow a real unit and academic year from an existing period, so a
+    // brand-new, definitely-open period can be created for this run.
+    const session = await loginAs(page, "superAdmin");
+    const basePeriod = (
+      await apiRequest<{
+        data: Array<{ unit: { id: string }; academicYear: { id: string } }>;
+      }>(session, "GET", "/admissions/periods?limit=1")
+    ).data[0];
     expect(basePeriod).toBeTruthy();
     const now = Date.now();
     const runId = `e2e-${now}`;
 
-    const session = await loginAs(page, "superAdmin");
     const createdPeriod = (
       await apiRequest<{ data: { id: string } }>(
         session,

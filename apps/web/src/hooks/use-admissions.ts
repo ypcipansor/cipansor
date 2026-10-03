@@ -8,6 +8,7 @@ import type {
   CreateAdmissionWaveInput,
   RegistrantDTO,
   OnboardRegistrantPayload,
+  PublicIntakeDTO,
   TrackedRegistrantDTO,
   RegistrationStatus,
   ReplaceAdmissionFeesInput,
@@ -229,6 +230,23 @@ export function useUpdateAdmissionPeriod(id: string) {
       return response.data.data;
     },
     onSuccess: () => invalidate(id),
+  });
+}
+
+/**
+ * Each unit's intake for the public SPMB page — no session. One per unit:
+ * the period open now, else the next, else the last one closed.
+ */
+export function usePublicIntakes() {
+  return useQuery({
+    queryKey: ["admissions", "public", "intakes"] as const,
+    queryFn: async () => {
+      const response = await api.get<{ data: PublicIntakeDTO[] }>(
+        "/admissions/public/intakes",
+      );
+      return response.data.data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -474,21 +492,6 @@ export { useRegistrant as useRegistration };
 // Backward-compat hooks
 // (formerly exported from use-psb.ts)
 // =====================================
-
-export function useActivePeriod() {
-  return useQuery({
-    queryKey: ["active-admission-period"],
-    queryFn: async () => {
-      // Use the unauthenticated public endpoint so this hook works on the
-      // public PPDB page (`/public/spmb`) where no user is logged in. The
-      // authenticated `/admissions/periods` list is behind `authenticate`
-      // + `authorize(SUPER_ADMIN, UNIT_ADMIN)` and would return 401/403 for
-      // anonymous visitors, breaking the registration form.
-      const response = await api.get("/admissions/public/active-period");
-      return response.data?.data ?? null;
-    },
-  });
-}
 
 export function useCreateRegistration() {
   const queryClient = useQueryClient();

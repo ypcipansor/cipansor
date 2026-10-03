@@ -67,26 +67,6 @@ export function useUnits(params?: UseUnitsParams) {
   });
 }
 
-/**
- * Units for the unauthenticated SPMB form.
- *
- * `useUnits` hits `GET /units`, which requires a session — on the public
- * registration page that 401s and the "unit tujuan" dropdown renders empty.
- * This reads the deliberately trimmed public projection (id, name, type).
- */
-export function usePublicUnits() {
-  return useQuery({
-    queryKey: ["units", "public"],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Unit[]>>(
-        "/admissions/public/units",
-      );
-      return response.data.data;
-    },
-    staleTime: 60 * 60 * 1000,
-  });
-}
-
 // Hook to get current user's unit based on stored unitId
 export function useCurrentUnit() {
   const unitId =

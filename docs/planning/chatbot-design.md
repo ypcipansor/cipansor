@@ -343,7 +343,8 @@ code — `berita` included, which is not database-backed.
   hand-written corpus going quietly stale — the failure this section originally
   budgeted for — cannot happen. Do not crawl our own rendered site.
 - **Some "public RAG" answers must actually be live tool calls.** SPMB dates and
-  fees must come from `GET /api/admissions/public/active-period`, never from a
+  fees must come from each unit's intake (`findPublicIntakes`, the projection
+  behind `GET /api/admissions/public/intakes`), never from a
   vector chunk that may be stale. This is not hypothetical: stale temporal data
   was fixed in this system in July 2026. A bot that confidently quotes last
   year's fee to a prospective family is a real harm, not a cosmetic bug.

@@ -88,18 +88,22 @@ items before 2026-09-25 is in the history of this file and of
         scope fix, before the Pesantren unit; target: released before wave 2
         opens on 1 January 2027, which needs the user's approval). Each its
         own PR, wired end to end:
-        - units: official name beside the short one, plus NPSN, operating
-          permit and email (Profil Unit), and the seed's address corrected;
-        - waves with four sessions (registration, test, results,
+        - ~~units: official name beside the short one, plus NPSN, operating
+          permit and email (Profil Unit), and the seed's address corrected~~
+          (#635);
+        - ~~waves with four sessions (registration, test, results,
           re-registration) and a pay-in-full discount per wave, with units
-          excluded;
-        - the fee breakdown per unit × ikhwan/akhwat × boarding, and per-unit
-          requirements, minimum age and contact person;
-        - the public `/public/spmb` page and the chatbot read all of it; the
+          excluded~~ (#640);
+        - ~~the fee breakdown per unit × ikhwan/akhwat × boarding, and per-unit
+          requirements, minimum age and contact person~~ (#640, #641);
+        - ~~the public `/public/spmb` page and the chatbot read all of it,
+          and a registration goes to the chosen unit's period~~ (S4);
+        - next: the 2027/28 brochure's data in the seed, for staging (S5);
+        - then: the SPMB form in three languages (known-issues), and the
           brochure's programmes, facilities, extracurriculars and agenda on
           the public site, in three languages;
-        - the full yayasan structure on the public site (names and
-          positions).
+        - ~~the full yayasan structure on the public site (names and
+          positions)~~ (#637).
     11. **Surat keterangan santri through E-Office** (decided 2026-10-02,
         `decisions/surat-keterangan-lewat-eoffice.md`; after the SPMB track).
         `students/documents` creates a `SURAT_KETERANGAN` draft filled from
