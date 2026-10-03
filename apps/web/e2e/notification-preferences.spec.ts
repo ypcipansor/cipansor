@@ -113,6 +113,26 @@ test.describe("Notification preferences", () => {
     expect(response.headers()["location"]).toContain(SETTINGS);
   });
 
+  test("on a phone the header fits the screen and leads back", async ({
+    page,
+  }) => {
+    // 390 px is an iPhone 13–15. The header used to be one unwrapping row, and
+    // "Simpan" — the button the page exists for — sat past the right edge.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAs(page, "parent");
+    await page.goto(SETTINGS);
+
+    for (const name of ["Kembalikan Bawaan", "Simpan"]) {
+      const box = await page.getByRole("button", { name }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.x, name).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, name).toBeLessThanOrEqual(390);
+    }
+
+    await page.getByRole("link", { name: "Notifikasi Saya" }).click();
+    await expect(page).toHaveURL(/\/notifications\/me/);
+  });
+
   test("My Notifications leads to the settings page", async ({ page }) => {
     await loginAs(page, "teacher");
     await page.goto("/notifications/me");

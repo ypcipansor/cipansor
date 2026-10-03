@@ -52,9 +52,7 @@ import {
   Moon,
   RefreshCw,
   Save,
-  ArrowLeft,
 } from "lucide-react";
-import Link from "next/link";
 
 // The shape the API stores and validates (`@cipansor/shared`). This page used
 // to declare its own copy and "save" it into a 500 ms timer; nothing reached
@@ -231,47 +229,40 @@ export default function NotificationSettingsPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/notifications/me"
-              aria-label="Kembali ke Notifikasi Saya"
-            >
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
+        {/* The shared header stacks on a phone; the hand-built row it
+            replaces pushed "Simpan" past the right edge at 390 px. */}
+        <PageHeader
+          title="Pengaturan Notifikasi"
+          description="Kelola preferensi notifikasi Anda"
+          backHref="/notifications/me"
+          backLabel="Notifikasi Saya"
+          actions={
+            <>
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                disabled={isLoading}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Kembalikan Bawaan
               </Button>
-            </Link>
-            <PageHeader
-              title="Pengaturan Notifikasi"
-              description="Kelola preferensi notifikasi Anda"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              disabled={isLoading}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Reset
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={!hasChanges || saveMutation.isPending}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-            </Button>
-          </div>
-        </div>
+              <Button
+                onClick={handleSave}
+                disabled={!hasChanges || saveMutation.isPending}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">
-                Channel Aktif
+                Saluran Aktif
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -412,7 +403,7 @@ export default function NotificationSettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
-              Channel Notifikasi
+              Saluran Notifikasi
             </CardTitle>
             <CardDescription>
               Pilih metode pengiriman notifikasi yang Anda inginkan
