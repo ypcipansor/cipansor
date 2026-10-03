@@ -101,6 +101,9 @@ export async function getAllNotifications(query: QueryNotificationInput) {
   const skip = (page - 1) * limit;
 
   const where: Prisma.NotificationWhereInput = {
+    // An announcement's bell copies are one announcement, managed on its
+    // board (decisions/siaran-pengumuman.md) — not a row per recipient here.
+    announcementId: null,
     ...(startDate &&
       endDate && {
         createdAt: {

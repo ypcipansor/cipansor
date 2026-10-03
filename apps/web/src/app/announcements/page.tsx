@@ -426,61 +426,66 @@ function AnnouncementsPageContent() {
                 className={state?.label === "Ditarik" ? "opacity-70" : ""}
               >
                 <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-start gap-3">
+                  {/* Title and menu on one line, everything else wraps under
+                      it — on a phone the badges must not squeeze the title. */}
+                  <div className="flex items-start gap-3">
+                    <span className="mt-1 shrink-0">
                       {priorityIcon(a.priority)}
-                      <div>
-                        <CardTitle className="text-lg">{a.title}</CardTitle>
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {when(a.publishedAt ?? a.createdAt)}
-                          </span>
-                          {a.createdBy && <span>• {a.createdBy.name}</span>}
-                          <span className="flex items-center gap-1">
-                            <Users className="h-3 w-3" />
-                            {reachOf(a)}
-                          </span>
-                        </div>
+                    </span>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <CardTitle className="text-lg leading-snug">
+                          {a.title}
+                        </CardTitle>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="-mt-1 shrink-0"
+                              aria-label={`Tindakan untuk ${a.title}`}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => setViewing(a)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Lihat
+                            </DropdownMenuItem>
+                            {a.canManage && !a.withdrawnAt && (
+                              <>
+                                <DropdownMenuItem onClick={() => openEdit(a)}>
+                                  <Edit className="mr-2 h-4 w-4" />
+                                  Ubah
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => setWithdrawing(a)}
+                                  className="text-red-600"
+                                >
+                                  <Undo2 className="mr-2 h-4 w-4" />
+                                  Tarik
+                                </DropdownMenuItem>
+                              </>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {state && (
-                        <Badge variant={state.variant}>{state.label}</Badge>
-                      )}
-                      {priorityBadge(a.priority)}
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Tindakan untuk ${a.title}`}
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => setViewing(a)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Lihat
-                          </DropdownMenuItem>
-                          {a.canManage && !a.withdrawnAt && (
-                            <>
-                              <DropdownMenuItem onClick={() => openEdit(a)}>
-                                <Edit className="mr-2 h-4 w-4" />
-                                Ubah
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => setWithdrawing(a)}
-                                className="text-red-600"
-                              >
-                                <Undo2 className="mr-2 h-4 w-4" />
-                                Tarik
-                              </DropdownMenuItem>
-                            </>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-muted-foreground">
+                        {state && (
+                          <Badge variant={state.variant}>{state.label}</Badge>
+                        )}
+                        {priorityBadge(a.priority)}
+                        <span className="flex items-center gap-1 whitespace-nowrap">
+                          <Calendar className="h-3 w-3" />
+                          {when(a.publishedAt ?? a.createdAt)}
+                        </span>
+                        {a.createdBy && <span>{a.createdBy.name}</span>}
+                        <span className="flex items-center gap-1">
+                          <Users className="h-3 w-3 shrink-0" />
+                          {reachOf(a)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>

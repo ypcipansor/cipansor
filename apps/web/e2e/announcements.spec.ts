@@ -209,6 +209,16 @@ test("the unit's TU reaches every wali of the unit, and only that unit", async (
   expect(await inBell(ortuLain, unitTitle)).toBeDefined();
   expect(await inBell(ortu1A, unitTitle)).toBeDefined();
   expect(await inBell(ortuSmp, unitTitle)).toBeUndefined();
+
+  // One announcement, managed on its board — the admin's notification list
+  // does not show a copy per recipient.
+  const admin = await apiLogin(SEED_USERS.adminSdit);
+  const managed = await apiRequest<Bell>(
+    admin,
+    "GET",
+    "/notifications/admin?limit=100",
+  );
+  expect(managed.data.some((n) => n.title === unitTitle)).toBe(false);
 });
 
 test("the head withdraws it: off the board and out of every bell", async ({

@@ -102,7 +102,11 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   `/notifications`; its calls are admin-only, so a non-admin sees an empty
   page. (Everyone's own inbox is `/notifications/me` since #587.) The admin
   menu's *Notifications* item also lights on `/notifications/me` (prefix
-  match).
+  match). Its table still renders the old broadcast model (recipients,
+  sent/read counts) that a bell row does not have, so every row reads
+  "Draft" with an empty recipient; its *Tingkat Pengiriman* is a constant
+  100% and its today/week counts a constant 0 (seen 2026-10-03). What the
+  page is for now that Pengumuman broadcasts is the user's call.
 - **Notification templates have no consumer** (seen 2026-10-03).
   `/notifications/templates` still creates and edits templates (kept in the
   `NOTIFICATION_TEMPLATES` setting), but nothing sends from them since
