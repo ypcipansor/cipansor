@@ -170,14 +170,6 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   is in no menu. `tahfidz/certificate` is in no menu either; both open only by
   URL.
 
-- **The public SPMB form speaks only Indonesian** (found 2026-10-03). The
-  public site is trilingual on every page, and since SPMB S4 the intakes
-  section of `/public/spmb` is (`config/spmb.i18n.ts`), but the hero, the
-  five-step form, its validation messages, the confirmation and the status
-  tracker in `app/public/spmb/spmb-form.tsx` are Indonesian strings in the
-  component. Move them into `spmb.i18n.ts`, which the coverage test already
-  checks.
-
 - **A period's registration fee and its fee table are entered apart.**
   `registrationFee` is what the applicant is billed on registering; the fee
   table is what the public page and the chatbot show, and the brochure's
