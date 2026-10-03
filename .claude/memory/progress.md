@@ -137,9 +137,12 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   are gone (#642). A new high advisory with no fixed release (`braces`,
   dev-only) is accepted until 2026-11-03 by the Security job, and dompurify
   moves to 3.4.16 (#643). Then the brochure itself: loaded by a script
-  (`db:seed:spmb-2027-2028`, decided 2026-10-03) on staging, and on
-  production with a release (S5). Next: the base seed's SPMB in the module's
-  shape, then the SPMB form in three languages. Then the Pesantren unit.
+  (`db:seed:spmb-2027-2028`, decided 2026-10-03, #644), on staging since
+  2026-10-03 and on production with a release; each unit's admin still sets
+  the real wave quotas and the contact. Then the seeds make a unit's intake
+  in the module's shape too — one period, two waves around today, the
+  brochure's fees — named apart from the brochure's (S5b). Next: the SPMB
+  form in three languages. Then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

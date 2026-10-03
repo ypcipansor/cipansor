@@ -57,7 +57,7 @@ export interface BrochureLoadResult {
   deactivated: string[];
 }
 
-function statusByDates(start: Date, end: Date, now: Date): WaveStatus {
+export function statusByDates(start: Date, end: Date, now: Date): WaveStatus {
   if (now < start) return 'UPCOMING';
   if (now > end) return 'CLOSED';
   return 'OPEN';
