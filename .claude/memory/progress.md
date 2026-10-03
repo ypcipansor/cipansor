@@ -141,8 +141,12 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   2026-10-03 and on production with a release; each unit's admin still sets
   the real wave quotas and the contact. Then the seeds make a unit's intake
   in the module's shape too — one period, two waves around today, the
-  brochure's fees — named apart from the brochure's (S5b). Next: the SPMB
-  form in three languages. Then the Pesantren unit.
+  brochure's fees — named apart from the brochure's (S5b, #645). A
+  registrant's Qur'an ability got one vocabulary: the public form had sent
+  codes no score read (#646). Then the public SPMB form, its status lookup
+  and its document upload in Indonesian, English and Arabic, right to left in
+  Arabic (S6). Next: the brochure's programmes, facilities, extracurriculars
+  and agenda on the public site in three languages. Then the Pesantren unit.
   Still open from before: the wali's
   approval for staff-filed leave off the pondok (roadmap 00.5, third part).
   Next: the rest of the homeroom pages (below), the class and teacher

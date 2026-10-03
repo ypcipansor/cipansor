@@ -38,9 +38,9 @@ export default async function PublicSpmbPage() {
   // The landmark lives inside SpmbForm, which renders the page's own <main>
   // after its hero <section>. Wrapping it in a second one here would nest two.
   //
-  // The locale resolves the hero photograph's alt text server-side and the
-  // labels of each unit's intake; the rest of the form is Indonesian only
-  // (known-issues: the SPMB form is not yet trilingual).
+  // The locale resolves the hero photograph's alt text server-side; the form
+  // takes it for its words (config/spmb-form.i18n.ts), its dates and its
+  // direction.
   const locale = await getServerLocale();
   return (
     <SpmbForm photo={galleryPhoto("disiplin", 4, locale)} locale={locale} />

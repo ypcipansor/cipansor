@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  useTrackRegistrant,
-  REGISTRATION_STATUS_LABELS,
-} from "@/hooks/use-admissions";
+import { useTrackRegistrant } from "@/hooks/use-admissions";
+import { spmbFormContentFor } from "@/config/spmb-form.i18n";
+import { dateFormatterFor, formatNumber } from "@/lib/locale-format";
+import type { Locale } from "@/locales";
 import {
   Card,
   CardContent,
@@ -24,14 +24,11 @@ import {
   User,
   GraduationCap,
 } from "lucide-react";
-import { format } from "date-fns";
-import { id } from "date-fns/locale";
-
 const STEPS = [
-  { key: "REGISTERED", label: "Pendaftaran", icon: User },
-  { key: "DOCUMENT_CHECK", label: "Verifikasi Dokumen", icon: FileText },
-  { key: "TEST_COMPLETED", label: "Tes & Seleksi", icon: GraduationCap },
-  { key: "ACCEPTED", label: "Hasil Seleksi", icon: CheckCircle2 },
+  { key: "REGISTERED", icon: User },
+  { key: "DOCUMENT_CHECK", icon: FileText },
+  { key: "TEST_COMPLETED", icon: GraduationCap },
+  { key: "ACCEPTED", icon: CheckCircle2 },
 ] as const;
 
 // Map every backend status onto the closest completed step above so the
@@ -61,7 +58,11 @@ const STATUS_STEP_INDEX: Record<string, number> = {
  * Extracted here so the tab and the standalone page run the same code, rather
  * than one working copy and one imitation of it.
  */
-export function RegistrationTracker() {
+export function RegistrationTracker({ locale }: { locale: Locale }) {
+  const t = spmbFormContentFor(locale).tracker;
+  const formatDay = (moment: string) =>
+    dateFormatterFor(locale).format(new Date(moment));
+  const score = (value: number | string) => formatNumber(locale, Number(value));
   const [regNo, setRegNo] = useState("");
   const [birthDate, setBirthDate] = useState("");
   const [searchParams, setSearchParams] = useState({ no: "", dob: "" });
@@ -97,16 +98,17 @@ export function RegistrationTracker() {
                 htmlFor="track-reg-no"
                 className="text-xs font-bold uppercase text-muted-foreground"
               >
-                No. Pendaftaran
+                {t.registrationNo}
               </label>
               {/*
                 The placeholder used to read "PSB-2026...", a year no record
-                contains. Registration numbers are issued per period, so the
-                example must not imply a particular intake.
+                contains, and later "REG-2026-00001", a shape no number has.
+                Numbers read REG-<year>-<period>-<count>
+                (`generateRegistrationNo`); the example follows that shape.
               */}
               <Input
                 id="track-reg-no"
-                placeholder="Contoh: REG-2026-00001"
+                placeholder={t.example("REG-2027-A1B2-00001")}
                 value={regNo}
                 onChange={(e) => setRegNo(e.target.value)}
                 required
@@ -117,7 +119,7 @@ export function RegistrationTracker() {
                 htmlFor="track-birth-date"
                 className="text-xs font-bold uppercase text-muted-foreground"
               >
-                Tanggal Lahir
+                {t.birthDate}
               </label>
               <Input
                 id="track-birth-date"
@@ -131,13 +133,13 @@ export function RegistrationTracker() {
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <Loader2
-                    className="mr-2 h-4 w-4 animate-spin"
+                    className="me-2 h-4 w-4 animate-spin"
                     aria-hidden="true"
                   />
                 ) : (
-                  <Search className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <Search className="me-2 h-4 w-4" aria-hidden="true" />
                 )}
-                Cek Status
+                {t.search}
               </Button>
             </div>
           </form>
@@ -147,8 +149,7 @@ export function RegistrationTracker() {
       {isError && (
         <Card className="border-rose-200 bg-rose-50/50">
           <CardContent className="py-6 text-center text-rose-600 font-medium">
-            Data tidak ditemukan. Pastikan No. Pendaftaran dan Tanggal Lahir
-            sudah benar.
+            {t.notFound}
           </CardContent>
         </Card>
       )}
@@ -168,16 +169,16 @@ export function RegistrationTracker() {
               variant={isRejected ? "destructive" : "default"}
               className="text-sm py-1 px-4"
             >
-              {REGISTRATION_STATUS_LABELS[registrant.status] ??
+              {t.status[registrant.status as keyof typeof t.status] ??
                 registrant.status}
             </Badge>
           </CardHeader>
           <CardContent>
             {/* Stepper */}
             <div className="relative flex justify-between mt-6 mb-10">
-              <div className="absolute top-5 left-0 w-full h-0.5 bg-slate-100 -z-0" />
+              <div className="absolute top-5 start-0 w-full h-0.5 bg-slate-100 -z-0" />
               <div
-                className="absolute top-5 left-0 h-0.5 bg-primary transition-all duration-500 -z-0"
+                className="absolute top-5 start-0 h-0.5 bg-primary transition-all duration-500 -z-0"
                 style={{
                   width: `${Math.max(0, currentStatusIndex) * (100 / (STEPS.length - 1))}%`,
                 }}
@@ -204,7 +205,7 @@ export function RegistrationTracker() {
                         isCompleted ? "text-primary" : "text-muted-foreground"
                       }`}
                     >
-                      {step.label}
+                      {t.steps[step.key]}
                     </span>
                   </div>
                 );
@@ -215,17 +216,15 @@ export function RegistrationTracker() {
               <div className="space-y-4">
                 <h3 className="font-bold flex items-center gap-2">
                   <Clock className="w-4 h-4 text-primary" aria-hidden="true" />{" "}
-                  Riwayat
+                  {t.history}
                 </h3>
                 <div className="space-y-3">
                   <div className="flex gap-3 items-start">
                     <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5" />
                     <div>
-                      <p className="text-sm font-bold">Pendaftaran Diterima</p>
+                      <p className="text-sm font-bold">{t.received}</p>
                       <p className="text-[10px] text-muted-foreground">
-                        {format(new Date(registrant.createdAt), "PPP", {
-                          locale: id,
-                        })}
+                        {formatDay(registrant.createdAt)}
                       </p>
                     </div>
                   </div>
@@ -234,12 +233,10 @@ export function RegistrationTracker() {
                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5" />
                       <div>
                         <p className="text-sm font-bold text-emerald-600">
-                          Dinyatakan Diterima
+                          {t.accepted}
                         </p>
                         <p className="text-[10px] text-muted-foreground">
-                          {format(new Date(registrant.acceptedAt), "PPP", {
-                            locale: id,
-                          })}
+                          {formatDay(registrant.acceptedAt)}
                         </p>
                       </div>
                     </div>
@@ -250,37 +247,35 @@ export function RegistrationTracker() {
                   registrant.interviewScore != null ||
                   registrant.tahfidzScore != null) && (
                   <div className="pt-2 border-t space-y-1 text-xs">
-                    <p className="font-bold text-slate-700">
-                      Hasil Nilai Seleksi:
-                    </p>
+                    <p className="font-bold text-slate-700">{t.scores}</p>
                     <div className="grid grid-cols-3 gap-2">
                       {registrant.testScore != null && (
                         <div className="bg-white p-1.5 rounded border text-center">
                           <span className="block text-[9px] text-muted-foreground">
-                            Akademik
+                            {t.academic}
                           </span>
                           <span className="font-bold text-sm text-primary">
-                            {registrant.testScore}
+                            {score(registrant.testScore)}
                           </span>
                         </div>
                       )}
                       {registrant.interviewScore != null && (
                         <div className="bg-white p-1.5 rounded border text-center">
                           <span className="block text-[9px] text-muted-foreground">
-                            Wawancara
+                            {t.interview}
                           </span>
                           <span className="font-bold text-sm text-primary">
-                            {registrant.interviewScore}
+                            {score(registrant.interviewScore)}
                           </span>
                         </div>
                       )}
                       {registrant.tahfidzScore != null && (
                         <div className="bg-white p-1.5 rounded border text-center">
                           <span className="block text-[9px] text-muted-foreground">
-                            Qur'an
+                            {t.quran}
                           </span>
                           <span className="font-bold text-sm text-primary">
-                            {registrant.tahfidzScore}
+                            {score(registrant.tahfidzScore)}
                           </span>
                         </div>
                       )}
@@ -295,7 +290,7 @@ export function RegistrationTracker() {
                     className="w-4 h-4 text-primary"
                     aria-hidden="true"
                   />{" "}
-                  Verifikasi Dokumen
+                  {t.documents}
                 </h3>
                 <div className="space-y-2">
                   {registrant.documents?.length > 0 ? (
@@ -309,13 +304,13 @@ export function RegistrationTracker() {
                           variant={doc.isVerified ? "default" : "outline"}
                           className="text-[9px] h-4"
                         >
-                          {doc.isVerified ? "Terverifikasi" : "Menunggu"}
+                          {doc.isVerified ? t.verified : t.waiting}
                         </Badge>
                       </div>
                     ))
                   ) : (
                     <p className="text-xs italic text-muted-foreground">
-                      Belum ada dokumen yang diunggah.
+                      {t.noDocuments}
                     </p>
                   )}
                 </div>
@@ -329,12 +324,12 @@ export function RegistrationTracker() {
                 </div>
                 <div>
                   <p className="font-bold text-emerald-900">
-                    Selamat! Daftar Ulang Selesai
+                    {t.enrolledTitle}
                   </p>
                   <p className="text-sm text-emerald-700">
-                    Ananda telah resmi menjadi santri di{" "}
-                    {registrant.admissionPeriod?.unit?.name ?? "Cipansor"}.
-                    Silakan tunggu informasi jadwal masuk.
+                    {t.enrolledBody(
+                      registrant.admissionPeriod?.unit?.name ?? "Cipansor",
+                    )}
                   </p>
                 </div>
               </div>

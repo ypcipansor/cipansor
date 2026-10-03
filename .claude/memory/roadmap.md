@@ -102,9 +102,9 @@ items before 2026-09-25 is in the history of this file and of
           staging 2026-10-03; production with a release);
         - ~~the base seed's and the pack's SPMB in the module's shape~~
           (S5b);
-        - then: the SPMB form in three languages (known-issues), and the
-          brochure's programmes, facilities, extracurriculars and agenda on
-          the public site, in three languages;
+        - ~~the SPMB form in three languages~~ (S6);
+        - then: the brochure's programmes, facilities, extracurriculars and
+          agenda on the public site, in three languages;
         - ~~the full yayasan structure on the public site (names and
           positions)~~ (#637).
     11. **Surat keterangan santri through E-Office** (decided 2026-10-02,
