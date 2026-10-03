@@ -221,7 +221,7 @@ export async function updateChannelPolicy(policy: ChannelPolicy) {
   });
 }
 
-export async function createNotification(data: CreateNotificationInput) {
+export async function createNotification(data: CreateNotificationInput, senderId?: string) {
   const { dbType, originalType } = mapTypeToPrisma(data.type ?? 'INFO');
 
   // Extract fields that are not in the Prisma model but need to be stored in `data`
@@ -234,6 +234,9 @@ export async function createNotification(data: CreateNotificationInput) {
     data: {
       ...(data.data || {}),
       ...(originalType ? { originalType } : {}),
+      // Who wrote it, for a notification a person sent by hand; system
+      // producers leave it out.
+      ...(senderId ? { sentBy: senderId } : {}),
       // Store non-model fields in JSON data for downstream consumers
       priority,
       channels,
@@ -292,7 +295,10 @@ export async function createNotification(data: CreateNotificationInput) {
   return notification;
 }
 
-export async function createBulkNotifications(data: CreateBulkNotificationInput) {
+export async function createBulkNotifications(
+  data: CreateBulkNotificationInput,
+  senderId?: string
+) {
   const { userIds, ...notificationData } = data;
   const { dbType, originalType } = mapTypeToPrisma(notificationData.type);
   const { priority, channels, ...rest } = notificationData;
@@ -304,6 +310,7 @@ export async function createBulkNotifications(data: CreateBulkNotificationInput)
     userId,
     data: {
       ...(originalType ? { originalType } : {}),
+      ...(senderId ? { sentBy: senderId } : {}),
       priority,
       channels,
     },
