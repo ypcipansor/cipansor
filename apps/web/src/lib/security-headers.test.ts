@@ -85,6 +85,31 @@ describe("Content-Security-Policy", () => {
     expect(csp).toContain(`connect-src 'self' ${apiOrigin()}`);
   });
 
+  it("does not ask the browser to upgrade requests", () => {
+    // WebKit upgrades http://localhost too, so a production build served over
+    // plain http (CI's e2e) loaded its own scripts from https and never
+    // hydrated.
+    expect(csp).not.toContain("upgrade-insecure-requests");
+  });
+
+  it("names no API host when the API is the portal's own origin", () => {
+    // Staging and production build with NEXT_PUBLIC_API_URL empty: `/api` on
+    // the same origin. The policy used to name http://localhost:3001 there.
+    const before = process.env.NEXT_PUBLIC_API_URL;
+    try {
+      process.env.NEXT_PUBLIC_API_URL = "";
+      const deployed = contentSecurityPolicy("n");
+      expect(deployed).not.toContain("localhost");
+      expect(deployed).toContain(
+        "connect-src 'self' https://challenges.cloudflare.com",
+      );
+      expect(deployed).toContain("media-src 'self' blob:;");
+    } finally {
+      if (before === undefined) delete process.env.NEXT_PUBLIC_API_URL;
+      else process.env.NEXT_PUBLIC_API_URL = before;
+    }
+  });
+
   it("allows the Turnstile frame and script", () => {
     expect(csp).toContain("https://challenges.cloudflare.com");
   });
