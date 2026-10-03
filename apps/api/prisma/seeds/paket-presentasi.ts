@@ -64,6 +64,7 @@ import {
   PermitStatus,
   PermitType,
   Prisma,
+  QuranAbility,
   PrismaClient,
   StaffAttendanceStatus,
   SubjectType,
@@ -3782,8 +3783,8 @@ async function spmb(ctx: Ctx): Promise<void> {
         address: `Kp. ${rng.pick(KAMPUNG)}, Kec. ${rng.pick(KECAMATAN)}, Kab. Tasikmalaya`,
         previousSchool: rng.pick(plan.from),
         quranAbility: secondary
-          ? rng.pick(['LANCAR', 'TARTIL', 'TAHFIDZ'])
-          : rng.pick(['BELUM_BISA', 'IQRA', 'LANCAR']),
+          ? rng.pick([QuranAbility.LANCAR, QuranAbility.TARTIL, QuranAbility.TAHFIDZ])
+          : rng.pick([QuranAbility.BELUM_BISA, QuranAbility.IQRA, QuranAbility.LANCAR]),
         memorizedJuz:
           unitType === 'SMA_QURAN' ? rng.int(2, 6) : unitType === 'SMP_IT' ? rng.int(0, 2) : 0,
         parentName: father,

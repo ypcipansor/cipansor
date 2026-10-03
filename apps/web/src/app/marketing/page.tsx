@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { safeFormat } from "@/lib/date";
+import { quranAbilityLabel } from "@cipansor/shared";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -415,7 +416,9 @@ export default function MarketingDashboard() {
                           {lead.fullName}
                         </div>
                         <div className="text-xs text-muted-foreground">
-                          {lead.source} • {lead.quranAbility}
+                          {[lead.source, quranAbilityLabel(lead.quranAbility)]
+                            .filter(Boolean)
+                            .join(" • ")}
                         </div>
                       </div>
                       <div className="text-right">

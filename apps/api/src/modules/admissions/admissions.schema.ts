@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AdmissionStatus } from '@prisma/client';
+import { quranAbilitySchema } from '@cipansor/shared';
 
 // Admission Period schemas
 // The intake's own fields (period and waves) are a contract with the portal's
@@ -63,7 +64,7 @@ export const createRegistrantSchema = z.object({
   motherPhone: z.string().optional(),
 
   // Quran
-  quranAbility: z.string().optional(),
+  quranAbility: quranAbilitySchema.optional(),
   memorizedJuz: z.number().int().optional(),
 
   notes: z.string().optional(),
