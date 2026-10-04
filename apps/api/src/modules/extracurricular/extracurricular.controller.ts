@@ -34,6 +34,15 @@ export class ExtracurricularController {
   // EXTRACURRICULAR CRUD
   // ======================
 
+  /** GET /extracurricular/public — no session; see the service. */
+  async publicList(_req: Request, res: Response, next: NextFunction) {
+    try {
+      res.json({ data: await extracurricularService.publicList() });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   async list(req: Request, res: Response, next: NextFunction) {
     try {
       const query = listExtracurricularsQuerySchema.parse(req.query);

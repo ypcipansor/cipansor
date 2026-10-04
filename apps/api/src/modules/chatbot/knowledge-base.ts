@@ -19,6 +19,8 @@ import {
   addressLines,
   educationUnits,
   featuredPrograms,
+  campusFacilities,
+  annualActivities,
   donationConfig,
 } from '@cipansor/shared';
 
@@ -125,6 +127,27 @@ const baseEntries: KnowledgeEntry[] = [
     text: `${program.title}. ${program.description}`,
   })),
 
+  {
+    id: 'fasilitas',
+    title: 'Fasilitas (sarana dan prasarana)',
+    url: '/campus',
+    text: [
+      `Sarana dan prasarana ${siteConfig.name}:`,
+      campusFacilities.map((f) => `${f.name} — ${f.description}`).join(' '),
+    ].join(' '),
+    aliases: ['facilities campus sarana prasarana gedung asrama masjid laboratorium lapangan'],
+  },
+  {
+    id: 'agenda-tahunan',
+    title: 'Agenda tahunan dan kegiatan',
+    url: '/activities',
+    text: [
+      `Agenda tahunan ${siteConfig.name}:`,
+      annualActivities.map((a) => `${a.name} — ${a.description}`).join(' '),
+      'Daftar ekstrakurikuler setiap unit ada di halaman Kegiatan.',
+    ].join(' '),
+    aliases: ['activities events agenda kegiatan ekstrakurikuler ekskul extracurricular'],
+  },
   {
     id: 'donasi-ikhtisar',
     title: `${donationConfig.headline} — donasi, wakaf dan infaq`,

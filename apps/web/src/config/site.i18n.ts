@@ -3,6 +3,8 @@ import {
   siteConfig,
   educationUnits,
   featuredPrograms,
+  campusFacilities,
+  annualActivities,
   galleryItems,
 } from "./site";
 import { unitDetails } from "./content";
@@ -49,6 +51,10 @@ export interface SiteText {
     highlights: string[];
   }>;
   programs: BySlug<{ title: string; description: string }>;
+  /** Sarana & prasarana on /campus, keyed by `campusFacilities[].slug`. */
+  facilities: BySlug<{ name: string; description: string }>;
+  /** The annual agenda on /activities, keyed by `annualActivities[].slug`. */
+  activities: BySlug<{ name: string; description: string }>;
   gallery: BySlug<string>;
   /**
    * Alt text for each photograph, positionally keyed to `galleryItems[].photos`.
@@ -135,6 +141,10 @@ const EN: SiteText = {
         "All 30 juz memorised with sanad and mutqin accuracy",
         "Tajwid and qira'ah strengthened",
         "Daily halaqoh and scheduled muroja'ah revision",
+        "Arabic and Dirosah Islamiyah (Islamic studies)",
+        "Entrepreneurship",
+        "A Takhosus Plus Kuliah track, alongside university study",
+        "A bachelor's degree on a scholarship (terms and conditions apply)",
         "Scholarships available through the Takhosus Santri Scholarship",
       ],
     },
@@ -189,6 +199,81 @@ const EN: SiteText = {
       title: "Year 12 University Preparation",
       description:
         "Focused academic support for Year 12 santri preparing for university entrance selection, in Indonesia and abroad.",
+    },
+  },
+  facilities: {
+    masjid: {
+      name: "Mosque",
+      description:
+        "The centre of worship: congregational prayer, Qur'an recitation and study circles.",
+    },
+    asrama: {
+      name: "Dormitories",
+      description:
+        "Separate boarding houses for boys and girls, where santri live and study with their musyrif and musyrifah (resident mentors).",
+    },
+    "ruang-kelas": {
+      name: "Classrooms",
+      description: "Classrooms for every level, from TK Qur'an to SMA Qur'an.",
+    },
+    "lapangan-upacara": {
+      name: "Assembly Ground",
+      description: "Where flag ceremonies and morning assemblies are held.",
+    },
+    "aula-utama": {
+      name: "Main Hall",
+      description:
+        "A large hall for gatherings of santri, teachers and parents.",
+    },
+    "gelanggang-olahraga": {
+      name: "Sports Hall",
+      description: "A covered hall for training and matches.",
+    },
+    "lapangan-olahraga": {
+      name: "Sports Field",
+      description: "An open field for sport and games.",
+    },
+    "laboratorium-komputer": {
+      name: "Computer Laboratory",
+      description: "A room for computer and information-technology practice.",
+    },
+    "laboratorium-ipa": {
+      name: "Science Laboratory",
+      description: "A laboratory for natural-science practicals.",
+    },
+    kantin: {
+      name: "Canteen",
+      description: "Where santri buy food and everyday needs.",
+    },
+    "sarana-outbound": {
+      name: "Outdoor Activity Course",
+      description: "An outdoor course for building courage and teamwork.",
+    },
+    "sumber-mata-air": {
+      name: "Natural Spring",
+      description: "A natural spring within the pesantren grounds.",
+    },
+  },
+  activities: {
+    "rihlah-tarbawi": {
+      name: "Rihlah Tarbawi",
+      description:
+        "An educational journey together: learning first-hand outside the pesantren while strengthening the bonds of brotherhood.",
+    },
+    "study-tour": {
+      name: "Study Tour",
+      description:
+        "Study visits to universities, institutions and historic places.",
+    },
+    "wisuda-tahfidz": {
+      name: "Tahfidz Graduation",
+      description:
+        "A graduation for santri who complete their Qur'an memorisation target, with their parents present.",
+    },
+    mukhoyam: {
+      name: "Mukhoyam (Camp)",
+      description:
+        "A santri camp that trains independence, discipline and teamwork.",
     },
   },
   gallery: {
@@ -297,6 +382,10 @@ const AR: SiteText = {
         "حفظ الثلاثين جزءاً بسندٍ متّصل وإتقانٍ راسخ",
         "تقوية علم التجويد والقراءات",
         "حلقة يومية ومراجعة مجدولة",
+        "اللغة العربية والدراسات الإسلامية",
+        "ريادة الأعمال",
+        "مسار «التخصّص مع الدراسة الجامعية»",
+        "الدراسة الجامعية (البكالوريوس) بمنحة دراسية وفق الشروط والأحكام",
         "منح دراسية متاحة عبر برنامج منحة طلاب التخصّص",
       ],
     },
@@ -353,6 +442,79 @@ const AR: SiteText = {
         "دعم أكاديمي مركّز لطلاب الصف الثاني عشر استعداداً لاختبارات القبول الجامعي داخل إندونيسيا وخارجها.",
     },
   },
+  facilities: {
+    masjid: {
+      name: "المسجد",
+      description: "مركز العبادة: صلاة الجماعة وتلاوة القرآن وحلقات العلم.",
+    },
+    asrama: {
+      name: "السكن الداخلي",
+      description:
+        "سكن منفصل للبنين والبنات يقيم فيه الطلاب ويدرسون بإشراف المشرفين والمشرفات.",
+    },
+    "ruang-kelas": {
+      name: "الفصول الدراسية",
+      description:
+        "فصول دراسية لكل المراحل من روضة القرآن إلى الثانوية القرآنية.",
+    },
+    "lapangan-upacara": {
+      name: "ساحة الطابور",
+      description: "ساحة لمراسم رفع العلم والطابور الصباحي.",
+    },
+    "aula-utama": {
+      name: "القاعة الرئيسية",
+      description: "قاعة كبيرة للقاءات الطلاب والأساتذة وأولياء الأمور.",
+    },
+    "gelanggang-olahraga": {
+      name: "الصالة الرياضية",
+      description: "صالة مغطاة للتدريب والمباريات.",
+    },
+    "lapangan-olahraga": {
+      name: "الملعب الرياضي",
+      description: "ملعب مفتوح للرياضة والألعاب.",
+    },
+    "laboratorium-komputer": {
+      name: "مختبر الحاسوب",
+      description: "قاعة للتدريب على الحاسوب وتقنية المعلومات.",
+    },
+    "laboratorium-ipa": {
+      name: "مختبر العلوم",
+      description: "مختبر للتجارب في العلوم الطبيعية.",
+    },
+    kantin: {
+      name: "المقصف",
+      description: "يشتري منه الطلاب الطعام وحاجاتهم اليومية.",
+    },
+    "sarana-outbound": {
+      name: "ساحة الأنشطة الخارجية",
+      description:
+        "ساحة للأنشطة في الهواء الطلق لتنمية الشجاعة والعمل الجماعي.",
+    },
+    "sumber-mata-air": {
+      name: "عين الماء",
+      description: "عين ماء طبيعية في رحاب المعهد.",
+    },
+  },
+  activities: {
+    "rihlah-tarbawi": {
+      name: "الرحلة التربوية",
+      description:
+        "رحلة تربوية جماعية للتعلم المباشر خارج المعهد وتوثيق روابط الأخوة.",
+    },
+    "study-tour": {
+      name: "الزيارة العلمية",
+      description: "زيارات علمية إلى الجامعات والمؤسسات والأماكن التاريخية.",
+    },
+    "wisuda-tahfidz": {
+      name: "حفل تخريج الحفاظ",
+      description:
+        "حفل تخريج للطلاب الذين أتموا مقدار الحفظ المقرر من القرآن بحضور أولياء أمورهم.",
+    },
+    mukhoyam: {
+      name: "المخيم",
+      description: "مخيم للطلاب لتدريب الاعتماد على النفس والانضباط والتعاون.",
+    },
+  },
   gallery: {
     fasilitas: "لمحات من المسيرة وتوثيق لمرافق المعهد",
     disiplin: "بناء ثقافة الانضباط منذ الصغر",
@@ -407,6 +569,18 @@ const ID: SiteText = {
     featuredPrograms.map((p) => [
       p.slug,
       { title: p.title, description: p.description },
+    ]),
+  ),
+  facilities: Object.fromEntries(
+    campusFacilities.map((f) => [
+      f.slug,
+      { name: f.name, description: f.description },
+    ]),
+  ),
+  activities: Object.fromEntries(
+    annualActivities.map((a) => [
+      a.slug,
+      { name: a.name, description: a.description },
     ]),
   ),
   gallery: Object.fromEntries(galleryItems.map((g) => [g.slug, g.title])),

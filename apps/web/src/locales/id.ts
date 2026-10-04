@@ -39,6 +39,8 @@ export const id = {
       profile: "Profil",
       programs: "Program Unggulan",
       units: "Unit Pendidikan",
+      facilities: "Fasilitas",
+      activities: "Kegiatan",
       news: "Berita",
       donate: "Wakaf & Infaq",
       register: "Daftar SPMB",

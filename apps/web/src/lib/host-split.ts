@@ -37,6 +37,8 @@ export const PUBLIC_PATH_PREFIXES = [
   "/profil",
   "/program-unggulan",
   "/unit",
+  "/campus",
+  "/activities",
   "/berita",
   "/galeri",
   "/wakaf-infaq",

@@ -15,6 +15,7 @@ import type {
   ListAchievementsQuery,
 } from './extracurricular.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
+import { EXTRACURRICULAR_CATEGORIES, type PublicExtracurricular } from '@cipansor/shared';
 
 /**
  * A coach as an extracurricular shows one: the name. Select, never include —
@@ -29,7 +30,61 @@ const studentName = {
   select: { id: true, nis: true, user: { select: { id: true, name: true } } },
 } as const;
 
+/** The education units, in the order the public site lists them (TK → Takhosus). */
+const PUBLIC_UNIT_ORDER = ['TK_QURAN', 'SD_IT', 'SMP_IT', 'SMA_QURAN', 'PESANTREN'] as const;
+
 export class ExtracurricularService {
+  /**
+   * What the public site lists on *Kegiatan*
+   * (decisions/fasilitas-dan-kegiatan-situs-publik.md): every active
+   * extracurricular of an education unit, once per name, with the units that
+   * run it, by category then name. Name, translations, category and unit type
+   * are all it selects — no coach, schedule or member leaves through here.
+   */
+  async publicList(): Promise<PublicExtracurricular[]> {
+    const rows = await prisma.extracurricular.findMany({
+      where: {
+        status: 'ACTIVE',
+        deletedAt: null,
+        unit: { deletedAt: null, type: { in: [...PUBLIC_UNIT_ORDER] } },
+      },
+      select: {
+        name: true,
+        nameEn: true,
+        nameAr: true,
+        category: true,
+        unit: { select: { type: true } },
+      },
+      orderBy: [{ createdAt: 'asc' }],
+    });
+
+    const byName = new Map<string, PublicExtracurricular>();
+    for (const row of rows) {
+      const name = row.name.trim();
+      const key = name.toLocaleLowerCase('id');
+      const entry = byName.get(key) ?? {
+        name,
+        nameEn: null,
+        nameAr: null,
+        category: row.category,
+        unitTypes: [],
+      };
+      entry.nameEn ??= row.nameEn?.trim() || null;
+      entry.nameAr ??= row.nameAr?.trim() || null;
+      if (!entry.unitTypes.includes(row.unit.type)) entry.unitTypes.push(row.unit.type);
+      byName.set(key, entry);
+    }
+
+    const categoryOrder = (e: PublicExtracurricular) =>
+      EXTRACURRICULAR_CATEGORIES.indexOf(e.category);
+    return [...byName.values()]
+      .map((e) => ({
+        ...e,
+        unitTypes: PUBLIC_UNIT_ORDER.filter((t) => e.unitTypes.includes(t)),
+      }))
+      .sort((a, b) => categoryOrder(a) - categoryOrder(b) || a.name.localeCompare(b.name, 'id'));
+  }
+
   /**
    * Get all extracurriculars with pagination
    */

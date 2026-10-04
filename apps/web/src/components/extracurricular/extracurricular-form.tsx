@@ -55,6 +55,8 @@ import { useUnits } from "@/hooks/use-units";
 
 interface FormValues {
   name: string;
+  nameEn: string;
+  nameAr: string;
   code: string;
   description: string;
   category: ExtracurricularCategory | "";
@@ -94,6 +96,8 @@ function valuesFrom(initial: Extracurricular | undefined): FormValues {
   const time = splitScheduleTime(initial?.scheduleTime);
   return {
     name: initial?.name ?? "",
+    nameEn: initial?.nameEn ?? "",
+    nameAr: initial?.nameAr ?? "",
     code: initial?.code ?? "",
     description: initial?.description ?? "",
     category: initial?.category ?? "",
@@ -182,6 +186,8 @@ function FormBody(
         ? createExtracurricularSchema.safeParse({
             ...common,
             unitId: v.unitId,
+            nameEn: v.nameEn,
+            nameAr: v.nameAr,
             code: v.code,
             description: v.description,
             scheduleTime,
@@ -191,6 +197,8 @@ function FormBody(
           })
         : updateExtracurricularSchema.safeParse({
             ...common,
+            nameEn: v.nameEn.trim() || null,
+            nameAr: v.nameAr.trim() || null,
             code: v.code,
             description: v.description.trim() || null,
             scheduleTime: scheduleTime ?? null,
@@ -249,6 +257,34 @@ function FormBody(
               />
               {errorOf("code")}
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="nameEn">Nama dalam bahasa Inggris</Label>
+              <Input
+                id="nameEn"
+                lang="en"
+                placeholder="Contoh: Scouting (Pramuka), Archery"
+                {...register("nameEn")}
+              />
+              {errorOf("nameEn")}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="nameAr">Nama dalam bahasa Arab</Label>
+              <Input
+                id="nameAr"
+                lang="ar"
+                dir="rtl"
+                placeholder="مثال: الكشافة، الرماية"
+                {...register("nameAr")}
+              />
+              {errorOf("nameAr")}
+            </div>
+            <p className="text-xs text-muted-foreground md:col-span-2">
+              Ekstrakurikuler aktif tampil di situs publik (halaman Kegiatan)
+              dalam tiga bahasa. Kosongkan bila sama dengan nama Indonesia.
+            </p>
           </div>
 
           <div className="space-y-2">

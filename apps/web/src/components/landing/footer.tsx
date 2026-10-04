@@ -27,6 +27,8 @@ export function LandingFooter() {
     { label: copy.links.legal, href: "/profil/legalitas" },
     { label: copy.links.programs, href: "/program-unggulan" },
     { label: copy.links.units, href: "/unit" },
+    { label: copy.links.facilities, href: "/campus" },
+    { label: copy.links.activities, href: "/activities" },
     { label: copy.links.news, href: "/berita" },
     // Not in the header nav: the 1024-1279 band has ~36px of slack (see
     // navbar.tsx) and a seventh link overflows it. The footer carries it

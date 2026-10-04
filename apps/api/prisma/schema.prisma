@@ -3892,6 +3892,9 @@ model Extracurricular {
   id               String                  @id @default(uuid())
   unitId           String                  @map("unit_id")
   name             String // Nama kegiatan
+  /// The name on the public site in English and Arabic; empty shows `name`.
+  nameEn           String?                 @map("name_en")
+  nameAr           String?                 @map("name_ar")
   code             String? // Kode singkat
   category         ExtracurricularCategory
   description      String?                 @db.Text

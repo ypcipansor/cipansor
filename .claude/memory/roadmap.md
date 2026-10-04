@@ -103,8 +103,13 @@ items before 2026-09-25 is in the history of this file and of
         - ~~the base seed's and the pack's SPMB in the module's shape~~
           (S5b);
         - ~~the SPMB form in three languages~~ (S6);
-        - then: the brochure's programmes, facilities, extracurriculars and
-          agenda on the public site, in three languages;
+        - ~~the brochure's programmes, facilities, extracurriculars and
+          agenda on the public site, in three languages~~ (decided
+          2026-10-04, `decisions/fasilitas-dan-kegiatan-situs-publik.md`;
+          the extracurricular forms fixed first); the brochure's
+          extracurriculars load on production with a release
+          (`db:seed:ekskul-2027-2028`), and the brochure's original photos
+          replace the facility icons when the user has them;
         - ~~the full yayasan structure on the public site (names and
           positions)~~ (#637).
     11. **Surat keterangan santri through E-Office** (decided 2026-10-02,

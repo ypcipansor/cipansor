@@ -39,6 +39,8 @@ const STATIC_PAGES = [
     priority: 0.8,
   },
   { url: `${SITE_URL}/unit`, changeFrequency: "monthly", priority: 0.8 },
+  { url: `${SITE_URL}/campus`, changeFrequency: "monthly", priority: 0.8 },
+  { url: `${SITE_URL}/activities`, changeFrequency: "monthly", priority: 0.8 },
   { url: `${SITE_URL}/berita`, changeFrequency: "weekly", priority: 0.9 },
   { url: `${SITE_URL}/galeri`, changeFrequency: "monthly", priority: 0.7 },
   { url: `${SITE_URL}/wakaf-infaq`, changeFrequency: "weekly", priority: 0.9 },

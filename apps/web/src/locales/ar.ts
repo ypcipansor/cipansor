@@ -26,6 +26,8 @@ export const ar = {
       profile: "نبذة عنّا",
       programs: "البرامج",
       units: "الوحدات",
+      facilities: "المرافق",
+      activities: "الأنشطة",
       news: "الأخبار",
       donate: "الوقف والإنفاق",
       // SPMB: قبول الطلاب الجدد — الاسم المستخدم في كل مراسلات المعهد.
