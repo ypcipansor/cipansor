@@ -29,6 +29,17 @@
    unit (atau admin unit, atau organ yayasan untuk siaran yayasan) bisa
    **menarik** siaran: pengumuman hilang dari papan dan dari lonceng. Push
    yang sudah terkirim tidak bisa ditarik.
+5. **Halaman Notifikasi admin dipensiunkan** (2026-10-04, sesudah #651).
+   Daftar semua notifikasi dan statistiknya dihapus; yang tersisa untuk
+   pengirim dan pengawas unit adalah angka **per pengumuman** di papan:
+   masuk ke berapa lonceng, dibaca berapa. Admin tidak membaca isi lonceng
+   pribadi orang lain — notifikasi hanya bisa dibuka dan dihapus oleh
+   pemiliknya. Alamat `/notifications` mengarah ke *Notifikasi Saya*.
+   Jalan siaran lain yang tersisa (tab *Broadcast Pengumuman* di halaman
+   WhatsApp) ikut ditutup, karena keputusan 2.
+6. **Templat notifikasi dihapus** (2026-10-04): halaman, rute, dan isinya.
+   Pengumuman ditulis per kejadian; templat bisa dibangun lagi bila nanti
+   ada kebutuhan nyata.
 
 ## Riset (2026-10-03)
 
@@ -44,6 +55,14 @@
 - Relasinya sudah ada di data: wali kelas (#579), jadwal mengajar (dipakai
   absensi, `attendance.access.ts`), dan penugasan musyrif (`boarders.ts`).
 
+- Statistik per pesan untuk pengirimnya, bukan daftar lonceng semua orang:
+  ParentSquare menampilkan "Delivery Stats" per postingan — siapa menerima,
+  lewat apa, terkirim, dibuka. Sumber:
+  [ParentSquare](https://www.parentsquare.com/blog/2016-4-16-post-approval-and-delivery-stats/).
+- UU 27/2022 (PDP) Pasal 16 ayat (2): pemrosesan data pribadi dilakukan
+  secara terbatas dan spesifik. Sumber:
+  [pasal.id](https://pasal.id/peraturan/uu/uu-no-27-tahun-2022/pasal-16).
+
 ## Yang ditolak
 
 - *Per unit* (setiap guru/staf ke seluruh unitnya) — seorang guru bisa
@@ -52,3 +71,7 @@
   utama.
 - *Dua fitur* (Pengumuman + Kirim Notifikasi) dan *tanpa siaran*.
 - Pengirim memilih email/WhatsApp; persetujuan kepala unit sebelum terkirim.
+- Mempertahankan daftar Notifikasi admin (dibatasi ke unit, kolom
+  diperbaiki): admin tetap membaca notifikasi pribadi (izin, tagihan) tanpa
+  kebutuhan. Menghapusnya tanpa pengganti: pengirim tidak tahu berapa yang
+  membaca. Templat dipakai dari Pengumuman: belum ada kebutuhan nyata.

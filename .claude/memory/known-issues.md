@@ -98,22 +98,11 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   `/finance/invoices/bulk` (no such route), "Catat Pembayaran" sends
   `billId`/`paymentMethod` (API: `invoiceId`/`method`), and deleting a payment
   calls `DELETE /finance/payments/:id` (no such route).
-- **The notifications management page opens for any role** that types
-  `/notifications`; its calls are admin-only, so a non-admin sees an empty
-  page. (Everyone's own inbox is `/notifications/me` since #587.) The admin
-  menu's *Notifications* item also lights on `/notifications/me` (prefix
-  match). Its table still renders the old broadcast model (recipients,
-  sent/read counts) that a bell row does not have, so every row reads
-  "Draft" with an empty recipient; its *Tingkat Pengiriman* is a constant
-  100% and its today/week counts a constant 0 (seen 2026-10-03). What the
-  page is for now that Pengumuman broadcasts is the user's call.
-- **Notification templates have no consumer** (seen 2026-10-03).
-  `/notifications/templates` still creates and edits templates (kept in the
-  `NOTIFICATION_TEMPLATES` setting), but nothing sends from them since
-  broadcasting became Pengumuman alone (`decisions/siaran-pengumuman.md`); the
-  scheduler's own messages are written in code. Either give Pengumuman a "use
-  a template" step or remove the pages, routes and setting — after asking
-  (golden rule 12).
+- **The WhatsApp page (`/notifications/whatsapp`) is on no menu**, and calls
+  the API with a bare `fetch` (not `lib/api.ts`), so its POSTs carry no CSRF
+  header, which the API requires. Its broadcast tab went with Pengumuman
+  (`decisions/siaran-pengumuman.md`); what is left — send one message, a
+  provider check, a scheduler trigger — is admin tooling nobody reaches.
 - **A unit's operator sees every unit's subjects.** *Classes → Mata
   Pelajaran & Jadwal* for Admin SD IT lists SMP IT's subjects (seen
   2026-09-28), and its *Tanpa Guru Pengampu* card counts them.

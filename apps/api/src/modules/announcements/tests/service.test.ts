@@ -25,7 +25,7 @@ const delivery = vi.hoisted(() => ({
   deliverAnnouncement: vi.fn(),
   reviseAnnouncementDelivery: vi.fn(),
   withdrawAnnouncementDelivery: vi.fn(),
-  announcementRecipientCount: vi.fn(),
+  announcementDeliveryCounts: vi.fn(),
 }));
 const dorm = vi.hoisted(() => ({ boardersOfMusyrif: vi.fn() }));
 

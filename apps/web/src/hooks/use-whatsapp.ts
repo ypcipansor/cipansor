@@ -15,13 +15,6 @@ export interface WhatsAppMessage {
   templateParams?: string[];
 }
 
-export interface WhatsAppBroadcast {
-  recipients: string[];
-  message: string;
-  templateName?: string;
-  templateParams?: Record<string, string>[];
-}
-
 export interface WhatsAppStatus {
   provider: string;
   configured: boolean;
@@ -62,19 +55,6 @@ export function useSendWhatsApp() {
     mutationFn: async (data: WhatsAppMessage) => {
       const response = await apiClient.post(
         "/notifications/whatsapp/send",
-        data,
-      );
-      return response.data;
-    },
-  });
-}
-
-// Broadcast WhatsApp to multiple recipients
-export function useBroadcastWhatsApp() {
-  return useMutation({
-    mutationFn: async (data: WhatsAppBroadcast) => {
-      const response = await apiClient.post(
-        "/notifications/whatsapp/broadcast",
         data,
       );
       return response.data;

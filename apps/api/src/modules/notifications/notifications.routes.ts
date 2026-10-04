@@ -41,41 +41,9 @@ router.use(authenticate);
  */
 router.get('/', controller.getMyNotifications);
 
-/**
- * @swagger
- * /api/notifications/admin:
- *   get:
- *     summary: Get all notifications (Admin View)
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: List of all notifications
- */
-// Protected Admin Routes
-router.get(
-  '/admin',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getAllNotifications
-);
-
-router.get('/stats', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.getStats);
+// No list of everyone's notifications: a sender sees, per announcement, how
+// many bells it reached and how many read it (decisions/siaran-pengumuman.md,
+// 5). A notification is opened and deleted by its owner only.
 
 // Channel policy: which external channels (email/SMS/WhatsApp) the system
 // may use. Read: admins. Write: SUPER_ADMIN only (system-wide switch).
@@ -92,33 +60,6 @@ router.get(
   '/settings/email-transport',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   controller.getEmailTransport
-);
-
-// Templates (Admin Only)
-router.get(
-  '/templates',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  controller.getTemplates
-);
-router.get(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  controller.getTemplateById
-);
-router.post(
-  '/templates',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.createTemplate
-);
-router.put(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateTemplate
-);
-router.delete(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteTemplate
 );
 
 router.post('/read-all', controller.markAllAsRead);
@@ -152,11 +93,6 @@ router.post(
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   controller.sendWhatsApp
 );
-router.post(
-  '/whatsapp/broadcast',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.broadcastWhatsApp
-);
 router.get(
   '/whatsapp/status',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
@@ -170,8 +106,7 @@ router.post('/scheduler/trigger', authorize(UserRole.SUPER_ADMIN), controller.tr
 // ==================== GENERIC ID ROUTES (MUST BE LAST) ====================
 
 router.post('/:id/read', controller.markAsRead);
-// Removed RBAC from delete to allow users to delete their own notifications.
-// Controller/Service handles ownership check via { id, userId }.
+// Owner only: someone else's notification answers 404, an admin's included.
 router.delete('/:id', controller.deleteNotification);
 router.get('/:id', controller.getNotificationById);
 

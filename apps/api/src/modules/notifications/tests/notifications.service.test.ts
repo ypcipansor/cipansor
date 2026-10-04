@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getAllNotifications, getChannelPolicy } from '../notifications.service';
+import {
+  deleteNotification,
+  getChannelPolicy,
+  getNotificationById,
+} from '../notifications.service';
 import { prisma } from '../../../lib/prisma';
 
 vi.mock('../../../lib/prisma', () => ({
@@ -8,8 +12,8 @@ vi.mock('../../../lib/prisma', () => ({
       findFirst: vi.fn(),
     },
     notification: {
-      findMany: vi.fn(),
-      count: vi.fn(),
+      findFirst: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -42,15 +46,28 @@ describe('Notifications Service - Channel Policy', () => {
   });
 });
 
-describe('Notifications Service - management list', () => {
-  it("leaves out an announcement's bell copies: they are managed on its board", async () => {
-    (prisma.notification.findMany as any).mockResolvedValue([]);
-    (prisma.notification.count as any).mockResolvedValue(0);
+describe("Notifications Service - a notification is its owner's", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    await getAllNotifications({ page: 1, limit: 20 } as any);
+  it('reads one only together with its owner', async () => {
+    (prisma.notification.findFirst as any).mockResolvedValue(null);
 
-    const { where } = (prisma.notification.findMany as any).mock.calls[0][0];
-    expect(where.announcementId).toBeNull();
-    expect((prisma.notification.count as any).mock.calls[0][0].where.announcementId).toBeNull();
+    expect(await getNotificationById('n-1', 'someone-else')).toBeNull();
+    expect((prisma.notification.findFirst as any).mock.calls[0][0].where).toEqual({
+      id: 'n-1',
+      userId: 'someone-else',
+    });
+  });
+
+  it('deletes one only together with its owner, whatever the role', async () => {
+    (prisma.notification.deleteMany as any).mockResolvedValue({ count: 0 });
+
+    await deleteNotification('n-1', 'admin-1');
+    expect((prisma.notification.deleteMany as any).mock.calls[0][0].where).toEqual({
+      id: 'n-1',
+      userId: 'admin-1',
+    });
   });
 });

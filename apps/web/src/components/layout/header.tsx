@@ -62,8 +62,8 @@ export function Header({ onMenuClick }: HeaderProps) {
         {/* Language Switcher */}
         <LanguageSwitcher />
 
-        {/* The user's own notifications — for everyone. The management page
-            (broadcasts, templates) is in the admins' menu. */}
+        {/* The user's own notifications — for everyone, and the only list of
+            notifications there is; broadcasts are Pengumuman. */}
         <Button variant="ghost" size="icon" className="relative" asChild>
           <Link
             href="/notifications/me"

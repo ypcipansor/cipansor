@@ -79,3 +79,16 @@ export function overseesUnit(actor: AnnouncementActor): 'ALL' | string | null {
     TATA_USAHA_ROLE_CODES.includes(code);
   return unitHead && actor.unitId ? actor.unitId : null;
 }
+
+/**
+ * Who sees how far an announcement went (bells reached, bells read): whoever
+ * may manage it, and whoever oversees its unit. Counts only, never names.
+ */
+export function seesDelivery(
+  actor: AnnouncementActor,
+  announcement: { createdById: string; unitId: string | null }
+): boolean {
+  if (mayManage(actor, announcement)) return true;
+  const oversees = overseesUnit(actor);
+  return oversees === 'ALL' || (!!oversees && announcement.unitId === oversees);
+}

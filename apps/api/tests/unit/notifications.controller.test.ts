@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as controller from '../../src/modules/notifications/notifications.controller';
 import * as service from '../../src/modules/notifications/notifications.service';
-import { Errors } from '../../src/middleware/error';
 
 vi.mock('../../src/modules/notifications/notifications.service');
 vi.mock('../../src/modules/notifications/whatsapp.service');
@@ -27,8 +26,11 @@ describe('Notifications Controller', () => {
     vi.clearAllMocks();
   });
 
+  // A notification is its owner's (decisions/siaran-pengumuman.md, 5): the
+  // service is asked with the caller's id, and anything else is a 404 — an
+  // admin's request included.
   describe('getNotificationById', () => {
-    it('should return notification when user is owner', async () => {
+    it("returns the caller's own notification", async () => {
       req.params.id = 'notif-1';
       req.user.sub = 'owner-id';
       const mockNotification = { id: 'notif-1', userId: 'owner-id', title: 'Test' };
@@ -36,56 +38,42 @@ describe('Notifications Controller', () => {
 
       await controller.getNotificationById(req, res, next);
 
-      expect(service.getNotificationById).toHaveBeenCalledWith('notif-1');
+      expect(service.getNotificationById).toHaveBeenCalledWith('notif-1', 'owner-id');
       expect(res.json).toHaveBeenCalledWith({ success: true, data: mockNotification });
     });
 
-    it('should return notification when user is admin', async () => {
+    it("answers 404 for someone else's, even to an admin", async () => {
       req.params.id = 'notif-1';
-      req.user.role = 'SUPER_ADMIN';
-      req.user.sub = 'admin-id';
-      const mockNotification = { id: 'notif-1', userId: 'other-user', title: 'Test' };
-      (service.getNotificationById as any).mockResolvedValue(mockNotification);
-
-      await controller.getNotificationById(req, res, next);
-
-      expect(service.getNotificationById).toHaveBeenCalledWith('notif-1');
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: mockNotification });
-    });
-
-    it('should throw Forbidden error when user is not owner and not admin', async () => {
-      req.params.id = 'notif-1';
-      req.user.sub = 'other-user';
-      req.user.role = 'USER';
-      const mockNotification = { id: 'notif-1', userId: 'owner-id', title: 'Test' };
-      (service.getNotificationById as any).mockResolvedValue(mockNotification);
-
-      await controller.getNotificationById(req, res, next);
-
-      const expectedError = Errors.forbidden(
-        'You do not have permission to view this notification'
-      );
-      expect(next).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expectedError.message,
-          code: expectedError.code,
-        })
-      );
-    });
-
-    it('should throw NotFound error when notification does not exist', async () => {
-      req.params.id = 'non-existent';
+      req.user = { sub: 'admin-id', role: 'SUPER_ADMIN' };
       (service.getNotificationById as any).mockResolvedValue(null);
 
       await controller.getNotificationById(req, res, next);
 
-      const expectedError = Errors.notFound('Notification not found');
-      expect(next).toHaveBeenCalledWith(
-        expect.objectContaining({
-          message: expectedError.message,
-          code: expectedError.code,
-        })
-      );
+      expect(service.getNotificationById).toHaveBeenCalledWith('notif-1', 'admin-id');
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+      expect(res.json).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleteNotification', () => {
+    it("deletes the caller's own", async () => {
+      req.params.id = 'notif-1';
+      (service.deleteNotification as any).mockResolvedValue({ count: 1 });
+
+      await controller.deleteNotification(req, res, next);
+
+      expect(service.deleteNotification).toHaveBeenCalledWith('notif-1', 'user-id');
+      expect(res.json).toHaveBeenCalledWith({ success: true, message: 'Notification deleted' });
+    });
+
+    it("answers 404 when nothing of the caller's was there", async () => {
+      req.params.id = 'notif-1';
+      req.user = { sub: 'admin-id', role: 'UNIT_ADMIN' };
+      (service.deleteNotification as any).mockResolvedValue({ count: 0 });
+
+      await controller.deleteNotification(req, res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
     });
   });
 });

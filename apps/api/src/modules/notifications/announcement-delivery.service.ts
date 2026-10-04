@@ -1,4 +1,4 @@
-import { NotificationType } from '@prisma/client';
+import { NotificationStatus, NotificationType } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 
 /**
@@ -73,7 +73,29 @@ export async function withdrawAnnouncementDelivery(announcementId: string): Prom
   return count;
 }
 
-/** How many people it was delivered to. */
-export async function announcementRecipientCount(announcementId: string): Promise<number> {
-  return prisma.notification.count({ where: { announcementId } });
+export interface AnnouncementDelivery {
+  /** Bells it is in. */
+  recipients: number;
+  /** Of those, read. */
+  read: number;
+}
+
+/** Per announcement: how many bells it is in, and how many of them were read. */
+export async function announcementDeliveryCounts(
+  announcementIds: string[]
+): Promise<Map<string, AnnouncementDelivery>> {
+  const counts = new Map(announcementIds.map((id) => [id, { recipients: 0, read: 0 }]));
+  if (announcementIds.length === 0) return counts;
+  const groups = await prisma.notification.groupBy({
+    by: ['announcementId', 'status'],
+    where: { announcementId: { in: announcementIds } },
+    _count: { _all: true },
+  });
+  for (const group of groups) {
+    const entry = group.announcementId ? counts.get(group.announcementId) : undefined;
+    if (!entry) continue;
+    entry.recipients += group._count._all;
+    if (group.status === NotificationStatus.READ) entry.read += group._count._all;
+  }
+  return counts;
 }

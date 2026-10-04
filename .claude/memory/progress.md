@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-10-03**. What a new session needs to pick up the thread, newest
+Updated **2026-10-04**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -12,8 +12,8 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `47776a67f` (#650) on
-  2026-10-03. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `6bfdfa340` (#651) on
+  2026-10-04. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -94,13 +94,16 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   (#648), the setoran recorder skipped off Chromium (#649), and the CSP
   without `upgrade-insecure-requests`, which WebKit applied to `http://localhost`
   (#650, `lessons/webkit-seen-only-after-merge.md`).
-- **Pengumuman, the one way to broadcast** (decided 2026-10-03,
-  `decisions/siaran-pengumuman.md`; branch `feat/announcements-reach`).
-  Sending by relation (guru → their classes, musyrif → their santri mukim,
-  head/TU/admin → their unit, organs → the yayasan or a unit, Super Admin
-  writes nothing); bell + push only; no approval, recorded, the unit head
-  withdraws. Quick Send, *Buat Notifikasi* and the wali's separate
-  announcements page go, with permanent redirects to `/announcements`.
+- **Pengumuman, the one way to broadcast — merged 2026-10-03 (#651), on
+  staging and proven there** (an admin offered only its unit; published to
+  the unit's staff, out of every bell on withdrawal; writing to the yayasan
+  refused; the old addresses 308). Decided 2026-10-03,
+  `decisions/siaran-pengumuman.md`: sending by relation, bell + push only,
+  no approval but recorded and withdrawable. Then (decided 2026-10-04, this
+  PR): no list of everyone's notifications — the sender and the unit's
+  overseers see, per announcement, bells reached and read; a notification is
+  opened and deleted by its owner only; templates and the WhatsApp broadcast
+  tab are gone.
 
 - **Audit phase 1, area by area.** Done: Perizinan (#564, then #568 moved
   the decision to the mentor), Asrama (#569, #571), mata pelajaran and guru

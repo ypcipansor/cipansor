@@ -1594,11 +1594,6 @@ const adminNavigation: NavGroup[] = [
         icon: IdCard,
       },
       {
-        title: "Notifications",
-        href: "/notifications",
-        icon: Bell,
-      },
-      {
         // A unit's operator broadcasts to its unit; Super Admin writes no
         // content (decisions/siaran-pengumuman.md).
         title: "Pengumuman",
@@ -1882,11 +1877,6 @@ const kepalaSekolahNavigation: NavGroup[] = [
         title: "E-Office (Persuratan)",
         href: "/e-office",
         icon: Mail,
-      },
-      {
-        title: "Notifications",
-        href: "/notifications",
-        icon: Bell,
       },
       {
         title: "Pengumuman",
@@ -2315,8 +2305,8 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
           icon: LayoutDashboard,
         },
         {
-          title: "Notifications",
-          href: "/notifications",
+          title: "Notifikasi Saya",
+          href: "/notifications/me",
           icon: Bell,
         },
       ],
