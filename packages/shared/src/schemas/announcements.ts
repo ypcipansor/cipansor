@@ -129,8 +129,13 @@ export interface AnnouncementDTO {
   createdBy: { id: string; name: string } | null;
   /** The caller may revise or withdraw it. */
   canManage: boolean;
-  /** People it was delivered to (bell); for the sender and those who manage it. */
+  /**
+   * Bells it reached, and how many of those were read — per announcement, for
+   * its sender and whoever oversees it (decisions/siaran-pengumuman.md, 5).
+   * Absent for everyone else.
+   */
   recipientCount?: number;
+  readCount?: number;
 }
 
 /** `GET /announcements/compose` — what the caller may publish, and where. */

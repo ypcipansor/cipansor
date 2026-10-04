@@ -24,7 +24,7 @@ import { prisma } from '@/lib/prisma';
 import { ApiError, ErrorCode, Errors } from '@/middleware/error';
 import { boardersOfMusyrif } from '@/modules/dormitories';
 import {
-  announcementRecipientCount,
+  announcementDeliveryCounts,
   deliverAnnouncement,
   reviseAnnouncementDelivery,
   withdrawAnnouncementDelivery,
@@ -34,6 +34,7 @@ import {
   mayManage,
   overseesUnit,
   scopesFor,
+  seesDelivery,
   type AnnouncementActor,
 } from './announcements.access';
 import type {
@@ -271,7 +272,11 @@ type Shown = Prisma.AnnouncementGetPayload<{ include: typeof SHOWN }>;
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
 
-function toDTO(a: Shown, actor: AnnouncementActor, recipientCount?: number): AnnouncementDTO {
+function toDTO(
+  a: Shown,
+  actor: AnnouncementActor,
+  delivery?: { recipients: number; read: number }
+): AnnouncementDTO {
   return {
     id: a.id,
     unitId: a.unitId,
@@ -292,8 +297,16 @@ function toDTO(a: Shown, actor: AnnouncementActor, recipientCount?: number): Ann
     unit: a.unit,
     createdBy: a.createdBy,
     canManage: mayManage(actor, a),
-    ...(recipientCount !== undefined ? { recipientCount } : {}),
+    ...(delivery ? { recipientCount: delivery.recipients, readCount: delivery.read } : {}),
   };
+}
+
+/** Bells reached and read, for the rows the caller may see that of. */
+async function withDelivery(rows: Shown[], actor: AnnouncementActor): Promise<AnnouncementDTO[]> {
+  const counts = await announcementDeliveryCounts(
+    rows.filter((a) => seesDelivery(actor, a)).map((a) => a.id)
+  );
+  return rows.map((a) => toDTO(a, actor, counts.get(a.id)));
 }
 
 export async function list(actor: AnnouncementActor, query: AnnouncementListQuery) {
@@ -317,7 +330,7 @@ export async function list(actor: AnnouncementActor, query: AnnouncementListQuer
     prisma.announcement.count({ where }),
   ]);
   return {
-    data: rows.map((a) => toDTO(a, actor)),
+    data: await withDelivery(rows, actor),
     meta: {
       page: query.page,
       limit: query.limit,
@@ -346,8 +359,8 @@ export async function getById(actor: AnnouncementActor, id: string) {
     include: SHOWN,
   });
   if (!a) throw notFound();
-  const manage = mayManage(actor, a);
-  return toDTO(a, actor, manage ? await announcementRecipientCount(a.id) : undefined);
+  const [shown] = await withDelivery([a], actor);
+  return shown;
 }
 
 /** Counts over the announcements the caller oversees (or can see). */
@@ -479,7 +492,7 @@ export async function create(actor: AnnouncementActor, input: CreateAnnouncement
       scheduledAt: publishedAt > now ? publishedAt : null,
       recipients: await recipientsOf(created),
     });
-    return toDTO(created, actor, delivered);
+    return toDTO(created, actor, { recipients: delivered, read: 0 });
   } catch (error) {
     // Nothing half-sent: an announcement no bell received is not left behind.
     await prisma.announcement.delete({ where: { id: created.id } }).catch(() => undefined);

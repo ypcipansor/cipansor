@@ -45,7 +45,10 @@ interface Board {
   data: { id: string; title: string }[];
 }
 interface Bell {
-  data: { title: string; link: string | null }[];
+  data: { id: string; title: string; link: string | null }[];
+}
+interface One {
+  data: { recipientCount?: number; readCount?: number };
 }
 
 const STAMP = Date.now().toString(36);
@@ -61,6 +64,7 @@ let tu: AuthSession;
 let siswa: AuthSession;
 let superAdmin: AuthSession;
 let classAnnouncementId = "";
+let unitAnnouncementId = "";
 
 const onBoard = async (s: AuthSession, title: string) =>
   (await apiRequest<Board>(s, "GET", "/announcements?limit=100")).data.some(
@@ -200,25 +204,61 @@ test("the bell's link opens the announcement on the board", async ({
 });
 
 test("the unit's TU reaches every wali of the unit, and only that unit", async () => {
-  await apiRequest(tu, "POST", "/announcements", {
-    scope: "UNIT",
-    targetRoles: ["PARENT"],
-    title: unitTitle,
-    content: "Sekolah libur hari Senin.",
-  });
+  const made = await apiRequest<{ data: { id: string } }>(
+    tu,
+    "POST",
+    "/announcements",
+    {
+      scope: "UNIT",
+      targetRoles: ["PARENT"],
+      title: unitTitle,
+      content: "Sekolah libur hari Senin.",
+    },
+  );
+  unitAnnouncementId = made.data.id;
   expect(await inBell(ortuLain, unitTitle)).toBeDefined();
   expect(await inBell(ortu1A, unitTitle)).toBeDefined();
   expect(await inBell(ortuSmp, unitTitle)).toBeUndefined();
+});
 
-  // One announcement, managed on its board — the admin's notification list
-  // does not show a copy per recipient.
+test("its sender sees how many bells it reached and how many read it; a recipient does not", async () => {
+  const figures = async (s: AuthSession) =>
+    (await apiRequest<One>(s, "GET", `/announcements/${unitAnnouncementId}`))
+      .data;
+  const before = await figures(tu);
+  expect(before.recipientCount).toBeGreaterThanOrEqual(2);
+  expect(before.readCount).toBe(0);
+
+  const note = await inBell(ortuLain, unitTitle);
+  await apiRequest(ortuLain, "POST", `/notifications/${note?.id}/read`);
+  expect((await figures(tu)).readCount).toBe(1);
+
+  // Counts only, and only for whoever sent or oversees it.
+  const received = await figures(ortuLain);
+  expect(received.recipientCount).toBeUndefined();
+  expect(received.readCount).toBeUndefined();
+});
+
+test("a notification is its owner's: an admin cannot open or delete a wali's, and there is no list of everyone's", async () => {
   const admin = await apiLogin(SEED_USERS.adminSdit);
-  const managed = await apiRequest<Bell>(
-    admin,
-    "GET",
-    "/notifications/admin?limit=100",
+  const note = await inBell(ortu1A, unitTitle);
+  expect(note).toBeDefined();
+  expect(
+    await statusOf(apiRequest(admin, "GET", `/notifications/${note?.id}`)),
+  ).toBe(404);
+  expect(
+    await statusOf(apiRequest(admin, "DELETE", `/notifications/${note?.id}`)),
+  ).toBe(404);
+  expect(await inBell(ortu1A, unitTitle)).toBeDefined();
+  expect(
+    await statusOf(apiRequest(ortu1A, "GET", `/notifications/${note?.id}`)),
+  ).toBe(200);
+  expect(await statusOf(apiRequest(admin, "GET", "/notifications/admin"))).toBe(
+    404,
   );
-  expect(managed.data.some((n) => n.title === unitTitle)).toBe(false);
+  expect(
+    await statusOf(apiRequest(admin, "GET", "/notifications/templates")),
+  ).toBe(404);
 });
 
 test("the head withdraws it: off the board and out of every bell", async ({
@@ -229,6 +269,9 @@ test("the head withdraws it: off the board and out of every bell", async ({
   const card = page
     .getByTestId("announcement-card")
     .filter({ hasText: unitTitle });
+  await expect(card.getByTestId("announcement-delivery")).toContainText(
+    /Masuk ke \d+ lonceng · dibaca 1 /,
+  );
   await card
     .getByRole("button", { name: `Tindakan untuk ${unitTitle}` })
     .click();
@@ -254,17 +297,35 @@ test("the head withdraws it: off the board and out of every bell", async ({
   expect(await inBell(ortu1A, classTitle)).toBeUndefined();
 });
 
-test("the old composer and wali addresses lead to the board", async ({
+test("the old addresses lead to the board, or to one's own bell", async ({
   page,
 }) => {
   await injectSession(page, tu);
+  const leadsTo = async (old: string, target: string) => {
+    const response = await page.request.get(old, { maxRedirects: 0 });
+    expect(response.status(), old).toBe(308);
+    expect(
+      new URL(response.headers()["location"], "http://x").pathname,
+      old,
+    ).toBe(target);
+  };
   for (const old of [
     "/notifications/quick-send",
     "/notifications/new",
     "/parent/announcements",
+    "/notifications/templates",
+    "/notifications/templates/new",
   ]) {
-    const response = await page.request.get(old, { maxRedirects: 0 });
-    expect(response.status(), old).toBe(308);
-    expect(response.headers()["location"], old).toContain("/announcements");
+    await leadsTo(old, "/announcements");
+  }
+  await leadsTo("/notifications", "/notifications/me");
+  await leadsTo(
+    "/notifications/0b6f8f0e-8c1e-4a8e-9d3b-2f0c5a7e1d42",
+    "/notifications/me",
+  );
+  // The pages under /notifications stay where they are.
+  for (const page_ of ["/notifications/me", "/notifications/settings"]) {
+    const response = await page.request.get(page_, { maxRedirects: 0 });
+    expect(response.status(), page_).toBe(200);
   }
 });

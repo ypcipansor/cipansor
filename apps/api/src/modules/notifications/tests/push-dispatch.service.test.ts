@@ -244,7 +244,7 @@ describe('what a push may say', () => {
       link: '//evil.example/x',
       data: null,
     });
-    expect(long.url).toBe('/notifications');
+    expect(long.url).toBe('/notifications/me');
     expect(long.title.length).toBeLessThanOrEqual(120);
     expect(long.body.length).toBeLessThanOrEqual(240);
   });

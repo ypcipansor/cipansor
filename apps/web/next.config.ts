@@ -65,6 +65,26 @@ const nextConfig: NextConfig = {
         destination: "/announcements",
         permanent: true,
       },
+      // No list of everyone's notifications, and no templates (same decision,
+      // 5 and 6): "Notifikasi" is the caller's own bell. A notification's old
+      // detail address (an id) leads there too; `me`, `settings` and
+      // `whatsapp` are pages and are left alone.
+      {
+        source: "/notifications",
+        destination: "/notifications/me",
+        permanent: true,
+      },
+      {
+        source: "/notifications/templates/:path*",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source:
+          "/notifications/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        destination: "/notifications/me",
+        permanent: true,
+      },
       {
         source: "/ppdb",
         destination: "/spmb",

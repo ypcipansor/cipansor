@@ -133,6 +133,21 @@ function reachOf(a: Announcement): string {
   return `${place} · ${who}`;
 }
 
+/**
+ * How far it went, for its sender and whoever oversees it: bells reached and
+ * read (decisions/siaran-pengumuman.md, 5). Null for everyone else, and once it
+ * is withdrawn (its bell rows are gone).
+ */
+function deliveryOf(a: Announcement, now: Date): string | null {
+  if (a.recipientCount === undefined || a.withdrawnAt) return null;
+  if (a.publishedAt && new Date(a.publishedAt) > now)
+    return `Akan masuk ke ${a.recipientCount} lonceng`;
+  const read = a.readCount ?? 0;
+  const share =
+    a.recipientCount > 0 ? Math.round((read / a.recipientCount) * 100) : 0;
+  return `Masuk ke ${a.recipientCount} lonceng · dibaca ${read} (${share}%)`;
+}
+
 /** Withdrawn, scheduled, expired — or nothing when it is live. */
 function stateOf(a: Announcement, now: Date) {
   if (a.withdrawnAt)
@@ -419,6 +434,7 @@ function AnnouncementsPageContent() {
         ) : (
           shown.map((a) => {
             const state = stateOf(a, now);
+            const delivery = deliveryOf(a, now);
             return (
               <Card
                 key={a.id}
@@ -493,11 +509,24 @@ function AnnouncementsPageContent() {
                   <p className="line-clamp-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
                     {a.content}
                   </p>
-                  {a.expiresAt && (
-                    <p className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      Berlaku sampai {when(a.expiresAt)}
-                    </p>
+                  {(a.expiresAt || delivery) && (
+                    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      {delivery && (
+                        <span
+                          className="flex items-center gap-1"
+                          data-testid="announcement-delivery"
+                        >
+                          <Eye className="h-3 w-3" />
+                          {delivery}
+                        </span>
+                      )}
+                      {a.expiresAt && (
+                        <span className="flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          Berlaku sampai {when(a.expiresAt)}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -773,9 +802,9 @@ function AnnouncementsPageContent() {
             </DialogDescription>
           </DialogHeader>
           <p className="whitespace-pre-wrap text-sm">{opened?.content}</p>
-          {opened?.recipientCount !== undefined && (
+          {opened && deliveryOf(opened, now) && (
             <p className="text-sm text-muted-foreground">
-              Masuk ke lonceng {opened.recipientCount} orang.
+              {deliveryOf(opened, now)}
             </p>
           )}
           <DialogFooter>

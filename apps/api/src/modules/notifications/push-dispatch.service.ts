@@ -137,10 +137,10 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-/** A same-origin path, or the notification list. The worker re-checks it. */
+/** A same-origin path, or the caller's own bell. The worker re-checks it. */
 function safePath(link: string | null): string {
   if (link && link.startsWith('/') && !link.startsWith('//')) return link;
-  return '/notifications';
+  return '/notifications/me';
 }
 
 /** What the device shows. Sensitive kinds get the generic text. */

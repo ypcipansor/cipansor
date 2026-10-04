@@ -2,10 +2,6 @@ import type { Request, Response, NextFunction } from 'express';
 import * as service from './notifications.service';
 import {
   queryNotificationSchema,
-  queryStatsSchema,
-  createTemplateSchema,
-  updateTemplateSchema,
-  queryTemplateSchema,
   pushSubscribeSchema,
   pushUnsubscribeSchema,
   pushStatusQuerySchema,
@@ -17,12 +13,8 @@ import { Errors } from '../../middleware/error';
 import { whatsAppService } from './whatsapp.service';
 import { notificationScheduler } from './scheduler.service';
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { describeEmailTransport } from './email-transport';
-
-// Constants
-const ADMIN_ROLES: readonly string[] = [UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN];
 
 // ==================== NOTIFICATION ====================
 
@@ -36,31 +28,17 @@ export async function getMyNotifications(req: Request, res: Response, next: Next
   }
 }
 
-export async function getAllNotifications(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = queryNotificationSchema.parse(req.query);
-    const result = await service.getAllNotifications(query);
-    res.json({ success: true, ...result });
-  } catch (error) {
-    next(error);
-  }
-}
-
+/**
+ * One of the caller's own notifications. Someone else's — an admin's view
+ * included — answers 404, as if it did not exist
+ * (decisions/siaran-pengumuman.md, 5).
+ */
 export async function getNotificationById(req: Request, res: Response, next: NextFunction) {
   try {
-    const notification = await service.getNotificationById(req.params.id);
-    if (!notification) {
-      throw Errors.notFound('Notification not found');
-    }
-
-    // Security check: User must be the owner OR have admin privileges
-    const userRole = req.user?.role;
-    const isAdmin = userRole !== undefined && ADMIN_ROLES.includes(userRole);
-
-    if (notification.userId !== req.user!.sub && !isAdmin) {
-      throw Errors.forbidden('You do not have permission to view this notification');
-    }
-
+    const owner = req.user;
+    if (!owner) throw Errors.unauthorized();
+    const notification = await service.getNotificationById(req.params.id, owner.sub);
+    if (!notification) throw Errors.notFound('Notifikasi tidak ditemukan');
     res.json({ success: true, data: notification });
   } catch (error) {
     next(error);
@@ -87,89 +65,15 @@ export async function markAllAsRead(req: Request, res: Response, next: NextFunct
 
 export async function deleteNotification(req: Request, res: Response, next: NextFunction) {
   try {
-    const userRole = req.user?.role;
-    const isAdmin = userRole !== undefined && ADMIN_ROLES.includes(userRole);
-
-    await service.deleteNotification(req.params.id, req.user!.sub, isAdmin);
+    const owner = req.user;
+    if (!owner) throw Errors.unauthorized();
+    const { count } = await service.deleteNotification(req.params.id, owner.sub);
+    if (count === 0) throw Errors.notFound('Notifikasi tidak ditemukan');
     res.json({ success: true, message: 'Notification deleted' });
   } catch (error) {
     next(error);
   }
 }
-
-export async function getStats(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = queryStatsSchema.parse(req.query);
-    const result = await service.getNotificationStats(query.startDate, query.endDate);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-// ==================== TEMPLATES ====================
-
-export async function getTemplates(req: Request, res: Response, next: NextFunction) {
-  try {
-    const query = queryTemplateSchema.parse(req.query);
-    const unitId = req.user?.unitId ?? undefined;
-    const result = await service.getTemplates(query, unitId);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/**
- * Get notification template by ID
- */
-export async function getTemplateById(req: Request, res: Response, next: NextFunction) {
-  try {
-    const unitId = req.user?.unitId ?? undefined;
-    const result = await service.getTemplateById(req.params.id, unitId);
-    if (!result) {
-      throw Errors.notFound('Template not found');
-    }
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function createTemplate(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = createTemplateSchema.parse(req.body);
-    // Pass user's unitId if available (for multi-tenancy)
-    const unitId = req.user?.unitId ?? undefined;
-    const result = await service.createTemplate(data, unitId);
-    res.status(201).json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function updateTemplate(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = updateTemplateSchema.parse(req.body);
-    const unitId = req.user?.unitId ?? undefined;
-    const result = await service.updateTemplate(req.params.id, data, unitId);
-    res.json({ success: true, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function deleteTemplate(req: Request, res: Response, next: NextFunction) {
-  try {
-    const unitId = req.user?.unitId ?? undefined;
-    await service.deleteTemplate(req.params.id, unitId);
-    res.json({ success: true, message: 'Template deleted' });
-  } catch (error) {
-    next(error);
-  }
-}
-
-// ==================== ANNOUNCEMENT ====================
 
 // ==================== MOBILE PUSH (FCM) ====================
 
@@ -295,17 +199,6 @@ const sendWhatsAppSchema = z.object({
   message: z.string().min(1),
 });
 
-const broadcastSchema = z.object({
-  title: z.string().min(1),
-  message: z.string().min(1),
-  type: z
-    .enum(['INFO', 'PAYMENT', 'ACADEMIC', 'ATTENDANCE', 'HEALTH', 'COUNSELING', 'ANNOUNCEMENT'])
-    .default('ANNOUNCEMENT'),
-  targetType: z.enum(['ALL', 'STUDENTS', 'TEACHERS', 'UNIT', 'CLASS']).default('ALL'),
-  targetId: z.string().uuid().optional(),
-  useWhatsApp: z.boolean().default(false),
-});
-
 export async function sendWhatsApp(req: Request, res: Response, next: NextFunction) {
   try {
     const data = sendWhatsAppSchema.parse(req.body);
@@ -315,23 +208,6 @@ export async function sendWhatsApp(req: Request, res: Response, next: NextFuncti
       type: 'text',
     });
     res.json({ success: result.success, data: result });
-  } catch (error) {
-    next(error);
-  }
-}
-
-export async function broadcastWhatsApp(req: Request, res: Response, next: NextFunction) {
-  try {
-    const data = broadcastSchema.parse(req.body);
-    const result = await notificationScheduler.broadcastNotification({
-      title: data.title,
-      message: data.message,
-      type: data.type as any,
-      targetType: data.targetType,
-      targetId: data.targetId,
-      useWhatsApp: data.useWhatsApp,
-    });
-    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }

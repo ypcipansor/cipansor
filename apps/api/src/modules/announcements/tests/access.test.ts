@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { choosesUnit, mayManage, overseesUnit, scopesFor } from '../announcements.access';
+import {
+  choosesUnit,
+  mayManage,
+  overseesUnit,
+  scopesFor,
+  seesDelivery,
+} from '../announcements.access';
 
 /** decisions/siaran-pengumuman.md, as a table: the active role → what it may publish. */
 const actor = (roleCode: string, unitId: string | null = 'unit-sd') => ({
@@ -84,5 +90,27 @@ describe('who oversees the board', () => {
     expect(overseesUnit(actor('SDIT_KEPALA_SEKOLAH'))).toBe('unit-sd');
     expect(overseesUnit(actor('SDIT_GURU'))).toBeNull();
     expect(overseesUnit(actor('SUPER_ADMIN', null))).toBeNull();
+  });
+});
+
+describe('who sees how far it went (bells reached, read)', () => {
+  const byGuru = { createdById: 'guru-1', unitId: 'unit-sd' };
+
+  it('its sender, and whoever oversees its unit', () => {
+    expect(seesDelivery({ sub: 'guru-1', roleCode: 'SDIT_GURU', unitId: 'unit-sd' }, byGuru)).toBe(
+      true
+    );
+    expect(seesDelivery(actor('SDIT_TATA_USAHA'), byGuru)).toBe(true);
+    expect(seesDelivery(actor('SDIT_KEPALA_SEKOLAH'), byGuru)).toBe(true);
+    expect(seesDelivery(actor('YAYASAN_KETUA', null), byGuru)).toBe(true);
+  });
+
+  it('not another guru, not a wali who received it, not another unit, not Super Admin', () => {
+    expect(seesDelivery({ sub: 'guru-2', roleCode: 'SDIT_GURU', unitId: 'unit-sd' }, byGuru)).toBe(
+      false
+    );
+    expect(seesDelivery(actor('SDIT_ORANG_TUA'), byGuru)).toBe(false);
+    expect(seesDelivery(actor('SMPIT_TATA_USAHA', 'unit-smp'), byGuru)).toBe(false);
+    expect(seesDelivery(actor('SUPER_ADMIN', null), byGuru)).toBe(false);
   });
 });

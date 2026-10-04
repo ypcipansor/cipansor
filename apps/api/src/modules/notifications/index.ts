@@ -17,8 +17,9 @@ export {
   deliverAnnouncement,
   reviseAnnouncementDelivery,
   withdrawAnnouncementDelivery,
-  announcementRecipientCount,
+  announcementDeliveryCounts,
 } from './announcement-delivery.service';
+export type { AnnouncementDelivery } from './announcement-delivery.service';
 
 // Email/SMS notification service
 export { notificationService, templates, smsTemplates } from './email-sms.service';

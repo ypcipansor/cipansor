@@ -4,7 +4,6 @@ import {
   updateNotificationPreferencesSchema,
   webPushSubscriptionSchema,
 } from '@cipansor/shared';
-import { partialUpdateSchema } from '@/lib/partial';
 
 // We define the enum manually to match @cipansor/shared and include Prisma's types for compatibility
 // Shared: ANNOUNCEMENT, ATTENDANCE, FINANCE, ACADEMIC, PERMIT, HEALTH, VIOLATION, REWARD, SYSTEM
@@ -88,44 +87,12 @@ export const queryNotificationSchema = z.object({
   endDate: z.coerce.date().optional(),
 });
 
-// ==================== TEMPLATES ====================
-
-export const createTemplateSchema = z.object({
-  name: z.string().min(1),
-  type: NotificationTypeEnum,
-  titleTemplate: z.string().min(1),
-  messageTemplate: z.string().min(1),
-  channels: z.array(NotificationChannelEnum),
-  variables: z.array(z.string()).default([]),
-  isActive: z.boolean().default(true),
-});
-
-export const updateTemplateSchema = partialUpdateSchema(createTemplateSchema);
-
-export const queryTemplateSchema = z.object({
-  type: NotificationTypeEnum.optional(),
-  isActive: z
-    .enum(['true', 'false'])
-    .optional()
-    .transform((v) => v === 'true'),
-});
-
-// ==================== STATS ====================
-
-export const queryStatsSchema = z.object({
-  startDate: z.coerce.date().optional(),
-  endDate: z.coerce.date().optional(),
-});
-
 // Use the INPUT type so fields with schema defaults (priority, channels,
 // recipientType, type) are optional for internal callers that build a
 // notification directly without re-parsing (e.g. permits, scheduler).
 export type CreateNotificationInput = z.input<typeof createNotificationSchema>;
 export type CreateBulkNotificationInput = z.infer<typeof createBulkNotificationSchema>;
 export type QueryNotificationInput = z.infer<typeof queryNotificationSchema>;
-export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
-export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
-export type QueryTemplateInput = z.infer<typeof queryTemplateSchema>;
 
 // ==================== WEB PUSH ====================
 
