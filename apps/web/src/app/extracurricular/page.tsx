@@ -63,6 +63,7 @@ import {
   EXTRACURRICULAR_CATEGORIES,
   getCategoryConfig,
   formatSchedule,
+  EXTRACURRICULAR_STATUS_LABELS,
   type ExtracurricularCategory,
   type ExtracurricularStatus,
 } from "@/hooks/use-extracurricular";
@@ -112,7 +113,7 @@ export default function ExtracurricularPage() {
     total: extracurriculars.length,
     active: extracurriculars.filter((e) => e.status === "ACTIVE").length,
     totalMembers: extracurriculars.reduce(
-      (acc, e) => acc + e.currentMembers,
+      (acc, e) => acc + (e._count?.enrollments ?? 0),
       0,
     ),
     byCategory: EXTRACURRICULAR_CATEGORIES.map((cat) => ({
@@ -125,7 +126,7 @@ export default function ExtracurricularPage() {
     <MainLayout>
       <PageHeader
         title="Ekstrakurikuler"
-        description="Kelola kegiatan ekstrakurikuler dan keanggotaan siswa"
+        description="Kelola kegiatan ekstrakurikuler dan keanggotaan santri"
         action={{
           label: "Tambah Ekskul",
           icon: <Plus className="h-4 w-4" />,
@@ -235,7 +236,7 @@ export default function ExtracurricularPage() {
                 <SelectItem value="ALL">Semua Status</SelectItem>
                 <SelectItem value="ACTIVE">Aktif</SelectItem>
                 <SelectItem value="INACTIVE">Tidak Aktif</SelectItem>
-                <SelectItem value="ARCHIVED">Diarsipkan</SelectItem>
+                <SelectItem value="SUSPENDED">Ditangguhkan</SelectItem>
               </SelectContent>
             </Select>
             <Select value={unitId} onValueChange={setUnitId}>
@@ -323,9 +324,10 @@ export default function ExtracurricularPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {extracurriculars.map((ekskul) => {
             const catConfig = getCategoryConfig(ekskul.category);
-            const memberProgress = ekskul.maxMembers
-              ? (ekskul.currentMembers / ekskul.maxMembers) * 100
-              : 0;
+            const members = ekskul._count?.enrollments ?? 0;
+            const capacity = ekskul.maxParticipants;
+            const memberProgress = capacity ? (members / capacity) * 100 : 0;
+            const schedule = formatSchedule(ekskul);
 
             return (
               <Card
@@ -384,11 +386,7 @@ export default function ExtracurricularPage() {
                           ekskul.status === "ACTIVE" ? "default" : "secondary"
                         }
                       >
-                        {ekskul.status === "ACTIVE"
-                          ? "Aktif"
-                          : ekskul.status === "INACTIVE"
-                            ? "Tidak Aktif"
-                            : "Arsip"}
+                        {EXTRACURRICULAR_STATUS_LABELS[ekskul.status]}
                       </Badge>
                     </div>
 
@@ -407,41 +405,30 @@ export default function ExtracurricularPage() {
                           Anggota
                         </span>
                         <span>
-                          {ekskul.currentMembers}
-                          {ekskul.maxMembers && ` / ${ekskul.maxMembers}`}
+                          {members}
+                          {capacity ? ` / ${capacity}` : ""}
                         </span>
                       </div>
-                      {ekskul.maxMembers && (
+                      {Boolean(capacity) && (
                         <Progress value={memberProgress} className="h-1.5" />
                       )}
                     </div>
 
                     {/* Coach */}
-                    {ekskul.coachName && (
+                    {ekskul.coach && (
                       <p className="text-sm">
                         <span className="text-muted-foreground">Pembina:</span>{" "}
-                        {ekskul.coachName}
+                        {ekskul.coach.user.name}
                       </p>
                     )}
 
                     {/* Schedule Preview */}
-                    {ekskul.schedules && ekskul.schedules.length > 0 && (
-                      <div className="text-sm space-y-1">
-                        <p className="text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          Jadwal:
-                        </p>
-                        {ekskul.schedules.slice(0, 2).map((schedule, idx) => (
-                          <p key={idx} className="text-xs pl-4">
-                            {formatSchedule(schedule)}
-                          </p>
-                        ))}
-                        {ekskul.schedules.length > 2 && (
-                          <p className="text-xs text-muted-foreground pl-4">
-                            +{ekskul.schedules.length - 2} jadwal lainnya
-                          </p>
-                        )}
-                      </div>
+                    {schedule && (
+                      <p className="flex items-center gap-1 text-sm">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        {schedule}
+                        {ekskul.venue ? ` · ${ekskul.venue}` : ""}
+                      </p>
                     )}
 
                     {/* Unit */}
@@ -481,12 +468,12 @@ export default function ExtracurricularPage() {
                             ekskul.status === "ACTIVE" ? "default" : "outline"
                           }
                         >
-                          {ekskul.status === "ACTIVE" ? "Aktif" : "Tidak Aktif"}
+                          {EXTRACURRICULAR_STATUS_LABELS[ekskul.status]}
                         </Badge>
                       </div>
                       <p className="text-sm text-muted-foreground">
-                        {ekskul.currentMembers} anggota •{" "}
-                        {ekskul.coachName || "Belum ada pembina"}
+                        {ekskul._count?.enrollments ?? 0} anggota •{" "}
+                        {ekskul.coach?.user.name ?? "Belum ada pembina"}
                       </p>
                     </div>
                   </div>

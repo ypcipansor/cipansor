@@ -1,61 +1,28 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
-import { AttendanceStatus } from "@cipansor/shared";
+import {
+  AttendanceStatus,
+  DayOfWeek,
+  splitScheduleTime,
+  type ExtracurricularCategory,
+  type ExtracurricularDTO,
+  type ExtracurricularStatus,
+  type CreateExtracurricularInput,
+  type UpdateExtracurricularInput as UpdateExtracurricularBody,
+} from "@cipansor/shared";
 
 // Types
-export type ExtracurricularCategory =
-  | "SPORT"
-  | "ART"
-  | "SCIENCE"
-  | "RELIGIOUS"
-  | "LANGUAGE"
-  | "LEADERSHIP"
-  | "TECHNOLOGY"
-  | "OTHER";
+export type {
+  ExtracurricularCategory,
+  ExtracurricularStatus,
+  CreateExtracurricularInput,
+} from "@cipansor/shared";
 
-export type ExtracurricularStatus = "ACTIVE" | "INACTIVE" | "ARCHIVED";
+/** An extracurricular as the API returns it (`@cipansor/shared`). */
+export type Extracurricular = ExtracurricularDTO;
 
 export type EnrollmentStatus =
   "PENDING" | "APPROVED" | "REJECTED" | "WITHDRAWN";
-
-export interface Extracurricular {
-  id: string;
-  name: string;
-  code: string;
-  description?: string;
-  category: ExtracurricularCategory;
-  status: ExtracurricularStatus;
-  maxMembers?: number;
-  currentMembers: number;
-  coachName?: string;
-  coachId?: string;
-  coach?: {
-    id: string;
-    name: string;
-    email: string;
-  };
-  schedules: ExtracurricularSchedule[];
-  unitId: string;
-  unit?: {
-    id: string;
-    name: string;
-  };
-  academicYearId: string;
-  academicYear?: {
-    id: string;
-    name: string;
-  };
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ExtracurricularSchedule {
-  id: string;
-  dayOfWeek: number; // 0 = Sunday, 1 = Monday, etc.
-  startTime: string; // HH:mm
-  endTime: string; // HH:mm
-  location?: string;
-}
 
 export interface ExtracurricularEnrollment {
   id: string;
@@ -133,22 +100,9 @@ export interface ExtracurricularListParams {
   academicYearId?: string;
 }
 
-export interface CreateExtracurricularInput {
-  name: string;
-  code: string;
-  description?: string;
-  category: ExtracurricularCategory;
-  status?: ExtracurricularStatus;
-  maxMembers?: number;
-  coachId?: string;
-  schedules?: Omit<ExtracurricularSchedule, "id">[];
-  unitId: string;
-  academicYearId: string;
-}
-
-export interface UpdateExtracurricularInput extends Partial<CreateExtracurricularInput> {
+export type UpdateExtracurricularInput = UpdateExtracurricularBody & {
   id: string;
-}
+};
 
 export interface EnrollStudentInput {
   extracurricularId: string;
@@ -168,7 +122,7 @@ export interface CreateAchievementInput {
   photo?: string;
 }
 
-// Category config
+// Category config — every value the API holds, labelled for the portal.
 export const EXTRACURRICULAR_CATEGORIES: Array<{
   value: ExtracurricularCategory;
   label: string;
@@ -176,20 +130,20 @@ export const EXTRACURRICULAR_CATEGORIES: Array<{
   color: string;
 }> = [
   {
-    value: "SPORT",
+    value: "SPORTS",
     label: "Olahraga",
     icon: "⚽",
     color: "bg-green-100 text-green-800",
   },
   {
-    value: "ART",
-    label: "Seni",
+    value: "ARTS",
+    label: "Seni & Budaya",
     icon: "🎨",
     color: "bg-purple-100 text-purple-800",
   },
   {
-    value: "SCIENCE",
-    label: "Sains",
+    value: "ACADEMIC",
+    label: "Akademik",
     icon: "🔬",
     color: "bg-blue-100 text-blue-800",
   },
@@ -200,16 +154,22 @@ export const EXTRACURRICULAR_CATEGORIES: Array<{
     color: "bg-emerald-100 text-emerald-800",
   },
   {
-    value: "LANGUAGE",
-    label: "Bahasa",
-    icon: "📚",
-    color: "bg-amber-100 text-amber-800",
+    value: "SCOUTING",
+    label: "Kepramukaan",
+    icon: "⛺",
+    color: "bg-orange-100 text-orange-800",
   },
   {
     value: "LEADERSHIP",
     label: "Kepemimpinan",
     icon: "🏆",
     color: "bg-red-100 text-red-800",
+  },
+  {
+    value: "LANGUAGE",
+    label: "Bahasa",
+    icon: "📚",
+    color: "bg-amber-100 text-amber-800",
   },
   {
     value: "TECHNOLOGY",
@@ -224,6 +184,15 @@ export const EXTRACURRICULAR_CATEGORIES: Array<{
     color: "bg-gray-100 text-gray-800",
   },
 ];
+
+export const EXTRACURRICULAR_STATUS_LABELS: Record<
+  ExtracurricularStatus,
+  string
+> = {
+  ACTIVE: "Aktif",
+  INACTIVE: "Tidak Aktif",
+  SUSPENDED: "Ditangguhkan",
+};
 
 export const ACHIEVEMENT_LEVELS: Array<{
   value: ExtracurricularAchievement["level"];
@@ -262,14 +231,15 @@ export const ACHIEVEMENT_LEVELS: Array<{
   },
 ];
 
-export const DAY_NAMES = [
-  "Minggu",
-  "Senin",
-  "Selasa",
-  "Rabu",
-  "Kamis",
-  "Jumat",
-  "Sabtu",
+/** Days in the order a week is read here, Monday first. */
+export const WEEKDAYS: Array<{ value: DayOfWeek; label: string }> = [
+  { value: DayOfWeek.MONDAY, label: "Senin" },
+  { value: DayOfWeek.TUESDAY, label: "Selasa" },
+  { value: DayOfWeek.WEDNESDAY, label: "Rabu" },
+  { value: DayOfWeek.THURSDAY, label: "Kamis" },
+  { value: DayOfWeek.FRIDAY, label: "Jumat" },
+  { value: DayOfWeek.SATURDAY, label: "Sabtu" },
+  { value: DayOfWeek.SUNDAY, label: "Minggu" },
 ];
 
 // Hooks
@@ -543,6 +513,14 @@ export function getLevelConfig(level: ExtracurricularAchievement["level"]) {
   return ACHIEVEMENT_LEVELS.find((l) => l.value === level);
 }
 
-export function formatSchedule(schedule: ExtracurricularSchedule): string {
-  return `${DAY_NAMES[schedule.dayOfWeek]}, ${schedule.startTime} - ${schedule.endTime}${schedule.location ? ` (${schedule.location})` : ""}`;
+/** "Selasa, Kamis · 15:30–17:00" — or null when no meeting time is set. */
+export function formatSchedule(
+  ekskul: Pick<Extracurricular, "scheduleDay" | "scheduleTime">,
+): string | null {
+  const days = WEEKDAYS.filter((d) => ekskul.scheduleDay?.includes(d.value))
+    .map((d) => d.label)
+    .join(", ");
+  const time = splitScheduleTime(ekskul.scheduleTime);
+  const hours = time ? `${time.start}–${time.end}` : ekskul.scheduleTime;
+  return [days, hours].filter(Boolean).join(" · ") || null;
 }
