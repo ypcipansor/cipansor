@@ -43,6 +43,20 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   84 more sit in functions nothing imports, mostly `services/`. The Tagihan and
   Types entries below are part of this. Phase 1 of the audit plan fixes it area
   by area; the guard (#563) stops new ones.
+- **An extracurricular's members, attendance and achievements do not work**
+  (found 2026-10-04; the extracurricular itself — create, edit, list,
+  detail — was fixed in the same week). On the detail page the *Anggota*,
+  *Absensi* and *Prestasi* tabs, and a student's own enrolment, call
+  `/extracurricular/{id}/enrollments`, `/{id}/attendance`, `/{id}/enroll`
+  and `/enrollments/{id}/approve|reject`, which the router does not serve
+  (they are in the contract baseline), and `GET /extracurricular/achievements`
+  and `/my-enrollments`, which it *does* answer — through `/:id`, as "not
+  found". That is the error toast on every detail page, and the contract
+  guard cannot see these two because `/:id` matches them. The served routes
+  are `/enrollments/list`, `/attendance/list`, `/achievements/list` and
+  `/students/:studentId`. Underneath is a model difference that is a decision,
+  not a typo: the web has enrolment as PENDING → APPROVED/REJECTED, the API as
+  ACTIVE/GRADUATED/WITHDRAWN/DISMISSED with no approval step.
 - **The wali's home page shows figures nobody produced.** Seen with the TK
   Qur'an wali (parent portal home, `apps/web/src/app/parent/page.tsx`).
   - Attendance falls back to `0%` in red when the summary carries none

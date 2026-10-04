@@ -82,7 +82,7 @@ import {
   getCategoryConfig,
   getLevelConfig,
   formatSchedule,
-  DAY_NAMES,
+  EXTRACURRICULAR_STATUS_LABELS,
 } from "@/hooks/use-extracurricular";
 
 export default function ExtracurricularDetailPage() {
@@ -178,9 +178,10 @@ export default function ExtracurricularDetailPage() {
   }
 
   const catConfig = getCategoryConfig(extracurricular.category);
-  const memberProgress = extracurricular.maxMembers
-    ? (extracurricular.currentMembers / extracurricular.maxMembers) * 100
-    : 0;
+  const members = extracurricular._count?.enrollments ?? 0;
+  const capacity = extracurricular.maxParticipants;
+  const memberProgress = capacity ? (members / capacity) * 100 : 0;
+  const schedule = formatSchedule(extracurricular);
 
   const pendingEnrollments = enrollments.filter((e) => e.status === "PENDING");
   const approvedEnrollments = enrollments.filter(
@@ -191,7 +192,7 @@ export default function ExtracurricularDetailPage() {
     <MainLayout>
       <PageHeader
         title={extracurricular.name}
-        description={extracurricular.code}
+        description={extracurricular.code ?? undefined}
         backHref="/extracurricular"
         action={{
           label: "Edit",
@@ -227,13 +228,12 @@ export default function ExtracurricularDetailPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Anggota</p>
                     <p className="text-xl font-bold">
-                      {extracurricular.currentMembers}
-                      {extracurricular.maxMembers &&
-                        ` / ${extracurricular.maxMembers}`}
+                      {members}
+                      {capacity ? ` / ${capacity}` : ""}
                     </p>
                   </div>
                 </div>
-                {extracurricular.maxMembers && (
+                {Boolean(capacity) && (
                   <Progress value={memberProgress} className="mt-2 h-1.5" />
                 )}
               </CardContent>
@@ -247,7 +247,7 @@ export default function ExtracurricularDetailPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Jadwal</p>
                     <p className="text-xl font-bold">
-                      {extracurricular.schedules?.length || 0}x/minggu
+                      {extracurricular.scheduleDay.length}x/minggu
                     </p>
                   </div>
                 </div>
@@ -306,9 +306,7 @@ export default function ExtracurricularDetailPage() {
                       }
                       className="ml-2"
                     >
-                      {extracurricular.status === "ACTIVE"
-                        ? "Aktif"
-                        : "Tidak Aktif"}
+                      {EXTRACURRICULAR_STATUS_LABELS[extracurricular.status]}
                     </Badge>
                   </div>
                 </div>
@@ -330,9 +328,7 @@ export default function ExtracurricularDetailPage() {
                   <div>
                     <p className="text-sm text-muted-foreground">Pembina</p>
                     <p className="font-medium">
-                      {extracurricular.coach?.name ||
-                        extracurricular.coachName ||
-                        "-"}
+                      {extracurricular.coach?.user.name ?? "-"}
                     </p>
                   </div>
                 </div>
@@ -344,33 +340,20 @@ export default function ExtracurricularDetailPage() {
                 <CardTitle>Jadwal Kegiatan</CardTitle>
               </CardHeader>
               <CardContent>
-                {extracurricular.schedules &&
-                extracurricular.schedules.length > 0 ? (
-                  <div className="space-y-3">
-                    {extracurricular.schedules.map((schedule, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg"
-                      >
-                        <div className="p-2 bg-background rounded-lg">
-                          <Calendar className="h-4 w-4" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-medium">
-                            {DAY_NAMES[schedule.dayOfWeek]}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {schedule.startTime} - {schedule.endTime}
-                          </p>
-                        </div>
-                        {schedule.location && (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            {schedule.location}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                {schedule || extracurricular.venue ? (
+                  <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                    <div className="rounded-lg bg-background p-2">
+                      <Calendar className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium">{schedule ?? "-"}</p>
+                      {extracurricular.venue && (
+                        <p className="flex items-center gap-1 text-sm text-muted-foreground">
+                          <MapPin className="h-3 w-3" />
+                          {extracurricular.venue}
+                        </p>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <p className="text-center text-muted-foreground py-4">
@@ -415,7 +398,7 @@ export default function ExtracurricularDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>NIS</TableHead>
-                      <TableHead>Nama Siswa</TableHead>
+                      <TableHead>Nama Santri</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Tanggal Daftar</TableHead>
                       <TableHead>Aksi</TableHead>
@@ -502,7 +485,7 @@ export default function ExtracurricularDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>NIS</TableHead>
-                      <TableHead>Nama Siswa</TableHead>
+                      <TableHead>Nama Santri</TableHead>
                       <TableHead>Kelas</TableHead>
                       <TableHead>Bergabung</TableHead>
                       <TableHead>Aksi</TableHead>

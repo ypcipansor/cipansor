@@ -16,6 +16,19 @@ import type {
 } from './extracurricular.schema';
 import { seesAllUnits } from '@/utils/resolve-unit-id';
 
+/**
+ * A coach as an extracurricular shows one: the name. Select, never include —
+ * an included relation carries every column (lessons/prisma-include-leaks-pii.md).
+ */
+const coachName = {
+  select: { id: true, user: { select: { id: true, name: true } } },
+} as const;
+
+/** A member as an extracurricular lists one: number and name, nothing else of a child's record. */
+const studentName = {
+  select: { id: true, nis: true, user: { select: { id: true, name: true } } },
+} as const;
+
 export class ExtracurricularService {
   /**
    * Get all extracurriculars with pagination
@@ -72,20 +85,8 @@ export class ExtracurricularService {
           unit: {
             select: { id: true, name: true, type: true },
           },
-          coach: {
-            include: {
-              user: {
-                select: { id: true, name: true, email: true },
-              },
-            },
-          },
-          assistantCoach: {
-            include: {
-              user: {
-                select: { id: true, name: true, email: true },
-              },
-            },
-          },
+          coach: coachName,
+          assistantCoach: coachName,
           academicYear: {
             select: { id: true, name: true, isActive: true },
           },
@@ -118,27 +119,24 @@ export class ExtracurricularService {
     const extracurricular = await prisma.extracurricular.findUnique({
       where: { id, deletedAt: null },
       include: {
-        unit: true,
-        coach: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-        assistantCoach: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-          },
-        },
-        academicYear: true,
+        unit: { select: { id: true, name: true, type: true } },
+        coach: coachName,
+        assistantCoach: coachName,
+        academicYear: { select: { id: true, name: true, isActive: true } },
         enrollments: {
           where: { status: 'ACTIVE' },
-          include: {
+          select: {
+            id: true,
+            status: true,
+            enrolledAt: true,
             student: {
-              include: {
+              select: {
+                id: true,
+                nis: true,
                 user: { select: { id: true, name: true } },
                 enrollments: {
                   where: { status: 'active' },
-                  include: { class: { select: { id: true, name: true } } },
+                  select: { class: { select: { id: true, name: true } } },
                   take: 1,
                 },
               },
@@ -151,7 +149,11 @@ export class ExtracurricularService {
           take: 10,
         },
         _count: {
-          select: { enrollments: true, attendances: true, achievements: true },
+          select: {
+            enrollments: { where: { status: 'ACTIVE' } },
+            attendances: true,
+            achievements: true,
+          },
         },
       },
     });
@@ -199,14 +201,13 @@ export class ExtracurricularService {
     }
 
     const extracurricular = await prisma.extracurricular.create({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       data: {
         ...input,
         status: 'ACTIVE',
-      } as any,
+      },
       include: {
         unit: { select: { id: true, name: true } },
-        coach: { include: { user: { select: { id: true, name: true } } } },
+        coach: coachName,
         academicYear: { select: { id: true, name: true } },
       },
     });
@@ -245,7 +246,7 @@ export class ExtracurricularService {
       data: input,
       include: {
         unit: { select: { id: true, name: true } },
-        coach: { include: { user: { select: { id: true, name: true } } } },
+        coach: coachName,
         academicYear: { select: { id: true, name: true } },
       },
     });
@@ -315,7 +316,7 @@ export class ExtracurricularService {
         where: { id: existingEnrollment.id },
         data: { status: 'ACTIVE', notes },
         include: {
-          student: { include: { user: { select: { name: true } } } },
+          student: studentName,
           extracurricular: { select: { name: true } },
         },
       });
@@ -342,7 +343,7 @@ export class ExtracurricularService {
         status: 'ACTIVE',
       } as any,
       include: {
-        student: { include: { user: { select: { name: true } } } },
+        student: studentName,
         extracurricular: { select: { name: true } },
       },
     });
@@ -537,11 +538,11 @@ export class ExtracurricularService {
         orderBy: { enrolledAt: 'desc' },
         include: {
           student: {
-            include: {
-              user: { select: { id: true, name: true } },
+            select: {
+              ...studentName.select,
               enrollments: {
                 where: { status: 'active' },
-                include: { class: { select: { name: true } } },
+                select: { class: { select: { name: true } } },
                 take: 1,
               },
             },
@@ -670,9 +671,7 @@ export class ExtracurricularService {
         take: limit,
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         include: {
-          student: {
-            include: { user: { select: { id: true, name: true } } },
-          },
+          student: studentName,
           extracurricular: { select: { id: true, name: true } },
           recordedBy: { select: { id: true, name: true } },
         },
@@ -735,7 +734,7 @@ export class ExtracurricularService {
       } as any,
       include: {
         extracurricular: { select: { id: true, name: true } },
-        student: { include: { user: { select: { name: true } } } },
+        student: studentName,
       },
     });
 
@@ -779,7 +778,7 @@ export class ExtracurricularService {
         orderBy: { eventDate: 'desc' },
         include: {
           extracurricular: { select: { id: true, name: true, category: true } },
-          student: { include: { user: { select: { name: true } } } },
+          student: studentName,
         },
       }),
       prisma.extracurricularAchievement.count({ where }),
@@ -844,7 +843,7 @@ export class ExtracurricularService {
       include: {
         extracurricular: {
           include: {
-            coach: { include: { user: { select: { name: true } } } },
+            coach: coachName,
             academicYear: { select: { name: true } },
           },
         },
@@ -899,7 +898,7 @@ export class ExtracurricularService {
           take: 5,
           include: {
             extracurricular: { select: { name: true } },
-            student: { include: { user: { select: { name: true } } } },
+            student: studentName,
           },
         }),
       ]);
