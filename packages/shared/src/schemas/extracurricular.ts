@@ -70,6 +70,9 @@ const fields = {
   unitId: z.string().uuid({ message: "Pilih unit" }),
   academicYearId: z.string().uuid({ message: "Pilih tahun ajaran" }),
   name: z.string().trim().min(1, "Nama wajib diisi").max(100),
+  /** The name on the public site; left empty, the site shows `name`. */
+  nameEn: optionalText(100),
+  nameAr: optionalText(100),
   code: optionalText(20),
   category: z.enum(EXTRACURRICULAR_CATEGORIES, { message: "Pilih kategori" }),
   description: optionalText(2000),
@@ -99,6 +102,8 @@ export const createExtracurricularSchema = z.object({
 export const updateExtracurricularSchema = z
   .object({
     ...fields,
+    nameEn: fields.nameEn.nullable(),
+    nameAr: fields.nameAr.nullable(),
     description: fields.description.nullable(),
     scheduleTime: fields.scheduleTime.nullable(),
     venue: fields.venue.nullable(),
@@ -125,6 +130,8 @@ export interface ExtracurricularDTO {
   unitId: string;
   academicYearId: string;
   name: string;
+  nameEn: string | null;
+  nameAr: string | null;
   code: string | null;
   category: ExtracurricularCategory;
   description: string | null;
@@ -147,4 +154,19 @@ export interface ExtracurricularDTO {
   _count?: { enrollments: number; achievements: number };
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * GET /extracurricular/public — what the public site lists on *Kegiatan*
+ * (decisions/fasilitas-dan-kegiatan-situs-publik.md): each active
+ * extracurricular once, with the units that run it. Names and categories
+ * only — never a coach, a schedule or a member.
+ */
+export interface PublicExtracurricular {
+  name: string;
+  nameEn: string | null;
+  nameAr: string | null;
+  category: ExtracurricularCategory;
+  /** Unit types (`SD_IT`, `SMA_QURAN`, …), in the public site's order. */
+  unitTypes: string[];
 }

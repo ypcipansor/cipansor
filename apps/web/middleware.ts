@@ -61,6 +61,8 @@ const publicPrefixes = [
   "/profil",
   "/program-unggulan",
   "/unit",
+  "/campus",
+  "/activities",
   "/berita",
   "/galeri",
   "/wakaf-infaq",

@@ -8,6 +8,7 @@ import {
   type ExtracurricularDTO,
   type ExtracurricularStatus,
   type CreateExtracurricularInput,
+  type PublicExtracurricular,
   type UpdateExtracurricularInput as UpdateExtracurricularBody,
 } from "@cipansor/shared";
 
@@ -255,6 +256,23 @@ export function useExtracurriculars(params: ExtracurricularListParams = {}) {
       );
       return response.data;
     },
+  });
+}
+
+/**
+ * The public site's list on *Kegiatan* — no session. Each active
+ * extracurricular once, with the units that run it.
+ */
+export function usePublicExtracurriculars() {
+  return useQuery({
+    queryKey: ["extracurriculars", "public"] as const,
+    queryFn: async () => {
+      const response = await api.get<ApiResponse<PublicExtracurricular[]>>(
+        "/extracurricular/public",
+      );
+      return response.data.data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 

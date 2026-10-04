@@ -40,6 +40,9 @@ const KEPT_VERBATIM: Record<string, string> = {
   "en:programs.entrepreneurship.title": "Already English in the source",
   "en:profileStats[1].label":
     "Santri is kept and glossed, not translated to 'students'",
+  "en:activities.rihlah-tarbawi.name":
+    "A pesantren term kept, as the brochure prints it; its description glosses it",
+  "en:activities.study-tour.name": "Already English in the source",
   "en:contact.emailHeading": "'Email' is the same word in Indonesian",
   "en:contact.whatsappHeading": "A product name",
   // The donation page. Akad names are the terms the donation record stores and

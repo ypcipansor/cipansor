@@ -83,6 +83,17 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
+- **The brochure's facilities, extracurriculars and agenda on the public site
+  — on a branch (2026-10-04).** Decided by the user
+  (`decisions/fasilitas-dan-kegiatan-situs-publik.md`): *Fasilitas*
+  (`/campus`) and *Kegiatan* (`/activities`) as two menu items. The
+  extracurriculars are read from the portal module, and the brochure's nine
+  are loaded by `db:seed:ekskul-2027-2028` (staging after merge, production
+  with a release). It needed the module's forms fixed first: #653, the
+  forms sent categories, schedules and capacities the API refused or dropped,
+  and Edit was a 404. The facility icons wait for the brochure's original
+  photographs, which the user is asking for.
+
 - **Web Push and stored notification preferences — merged 2026-10-03
   (#626), on staging and proven there** (a push delivered to a real browser
   endpoint, decrypted). The user chose to build the sender

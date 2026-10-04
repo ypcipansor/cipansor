@@ -37,8 +37,6 @@ import {
   BusinessUnitType,
   MealType,
   MealAttendanceStatus,
-  ExtracurricularCategory,
-  ExtracurricularStatus,
   EnrollmentStatus,
   CounselingCategory,
   CounselingPriority,
@@ -129,6 +127,7 @@ import { seedImmunizationReference } from './seeds/immunization-reference';
 import { seedStrategicPlans } from './seeds/strategic-plan-cipansor';
 import { currentAcademicYear, nextAcademicYear } from '../src/lib/academic-calendar';
 import { ensureDemoIntake } from './seeds/spmb-demo';
+import { loadBrochureExtracurriculars } from './seeds/ekskul-2027-2028';
 import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permissions';
 // Imported from source (not the built dist) so a stale @cipansor/shared build
 // can't leave the seeded demo logins out of sync with what the web login page
@@ -4353,40 +4352,33 @@ async function main() {
   }
   console.log('   ✅ Meal attendances created');
 
-  // 5. Extracurriculars
-  const scout = await prisma.extracurricular.create({
+  // 5. Extracurriculars — the brochure's, as production gets them
+  // (seeds/ekskul-2027-2028.ts); two of SMP IT's then get a demo schedule,
+  // coach and members.
+  await loadBrochureExtracurriculars(prisma);
+  const brochureEkskul = (code: string) =>
+    prisma.extracurricular.findFirstOrThrow({ where: { unitId: smpIt.id, code } });
+  const scout = await prisma.extracurricular.update({
+    where: { id: (await brochureEkskul('PRAMUKA')).id },
     data: {
-      unitId: smpIt.id,
-      name: 'Pramuka Penggalang',
-      code: 'EXC-001',
-      category: ExtracurricularCategory.SCOUTING,
       description: 'Latihan kepramukaan mingguan wajib',
       scheduleDay: [DayOfWeek.FRIDAY],
-      scheduleTime: '14:00 - 15:30',
-      venue: 'Lapangan Utama Pesantren',
+      scheduleTime: '14:00-15:30',
+      venue: 'Lapangan Upacara',
       maxParticipants: 100,
       coachId: teacherPesantren.id,
-      status: ExtracurricularStatus.ACTIVE,
       isCompulsory: true,
-      academicYearId: academicYear.id,
     },
   });
-
-  const hadroh = await prisma.extracurricular.create({
+  const englishClub = await prisma.extracurricular.update({
+    where: { id: (await brochureEkskul('ENGLISH-CLUB')).id },
     data: {
-      unitId: smpIt.id,
-      name: 'Hadroh Seni Musik Islami',
-      code: 'EXC-002',
-      category: ExtracurricularCategory.ARTS,
-      description: 'Pelatihan seni musik rebana/hadroh',
+      description: 'Percakapan, pidato, dan permainan berbahasa Inggris',
       scheduleDay: [DayOfWeek.SUNDAY],
-      scheduleTime: '15:45 - 17:15',
-      venue: 'Aula Gedung Pertemuan',
+      scheduleTime: '15:45-17:15',
+      venue: 'Aula Utama',
       maxParticipants: 20,
       coachId: teacherPesantren.id,
-      status: ExtracurricularStatus.ACTIVE,
-      isCompulsory: false,
-      academicYearId: academicYear.id,
     },
   });
   console.log('   ✅ Extracurricular activities created');
@@ -4402,7 +4394,7 @@ async function main() {
 
     await prisma.extracurricularEnrollment.create({
       data: {
-        extracurricularId: hadroh.id,
+        extracurricularId: englishClub.id,
         studentId: students[0].id,
         status: EnrollmentStatus.ACTIVE,
       },
@@ -5952,11 +5944,11 @@ async function main() {
           recordedById: teacherPesantrenUser.id,
         },
         {
-          extracurricularId: hadroh.id,
+          extracurricularId: englishClub.id,
           studentId: students[0].id,
           date: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 5),
           status: AttendanceStatus.PRESENT,
-          notes: 'Latihan persiapan penampilan Maulid.',
+          notes: 'Latihan pidato sebelum lomba.',
           recordedById: teacherPesantrenUser.id,
         },
       ],
@@ -5979,9 +5971,9 @@ async function main() {
           eventDate: new Date('2024-11-10'),
         },
         {
-          extracurricularId: hadroh.id,
-          title: 'Juara 1 Festival Hadroh',
-          description: 'Tim hadroh pesantren meraih juara 1 festival hadroh se-Kabupaten Sukabumi.',
+          extracurricularId: englishClub.id,
+          title: 'Juara 1 Lomba Speech',
+          description: 'Anggota English Club meraih juara 1 lomba speech se-Kabupaten Sukabumi.',
           level: 'Kabupaten',
           rank: 'Juara 1',
           organizer: 'Kemenag Kabupaten Sukabumi',

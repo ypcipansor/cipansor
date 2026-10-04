@@ -30,6 +30,8 @@ export const en = {
       profile: "About",
       programs: "Programs",
       units: "Units",
+      facilities: "Facilities",
+      activities: "Activities",
       news: "News",
       // Wakaf (endowment) and infaq (voluntary giving) are distinct
       // instruments with no single English equivalent; the donation page

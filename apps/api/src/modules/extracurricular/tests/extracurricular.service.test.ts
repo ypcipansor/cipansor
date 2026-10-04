@@ -202,3 +202,56 @@ describe('update', () => {
     expect(call.include.coach).toEqual(COACH_NAME);
   });
 });
+
+describe('publicList — the public site', () => {
+  const row = (name: string, type: string, extra: Record<string, unknown> = {}) => ({
+    name,
+    nameEn: null,
+    nameAr: null,
+    category: 'SPORTS',
+    unit: { type },
+    ...extra,
+  });
+
+  it('lists each active one once, with its units in the site order, by category then name', async () => {
+    prismaMock.extracurricular.findMany.mockResolvedValue([
+      row('Taekwondo', 'SMA_QURAN', { nameEn: 'Taekwondo', nameAr: 'التايكوندو' }),
+      row('Taekwondo', 'SD_IT'),
+      row(' taekwondo ', 'SMP_IT'),
+      row('Pramuka', 'SMP_IT', { category: 'SCOUTING', nameEn: 'Scouting' }),
+      row('English Club', 'SD_IT', { category: 'LANGUAGE' }),
+      row('Futsal', 'SMA_QURAN'),
+    ]);
+
+    const list = await extracurricularService.publicList();
+
+    expect(list.map((e) => e.name)).toEqual(['Futsal', 'Taekwondo', 'Pramuka', 'English Club']);
+    expect(list[1]).toEqual({
+      name: 'Taekwondo',
+      nameEn: 'Taekwondo',
+      nameAr: 'التايكوندو',
+      category: 'SPORTS',
+      unitTypes: ['SD_IT', 'SMP_IT', 'SMA_QURAN'],
+    });
+    expect(list[2]).toMatchObject({ nameEn: 'Scouting', nameAr: null, unitTypes: ['SMP_IT'] });
+  });
+
+  it('asks for active rows of the education units, and selects nothing but names, category and unit type', async () => {
+    prismaMock.extracurricular.findMany.mockResolvedValue([]);
+
+    await extracurricularService.publicList();
+
+    const call = prismaMock.extracurricular.findMany.mock.calls[0][0];
+    expect(call.where).toMatchObject({ status: 'ACTIVE', deletedAt: null });
+    expect(call.where.unit.type.in.sort()).toEqual(
+      ['PESANTREN', 'SD_IT', 'SMA_QURAN', 'SMP_IT', 'TK_QURAN'].sort()
+    );
+    expect(call.select).toEqual({
+      name: true,
+      nameEn: true,
+      nameAr: true,
+      category: true,
+      unit: { select: { type: true } },
+    });
+  });
+});

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { donationConfig, educationUnits, siteConfig } from '@cipansor/shared';
+import {
+  annualActivities,
+  campusFacilities,
+  donationConfig,
+  educationUnits,
+  siteConfig,
+} from '@cipansor/shared';
 import { TOPIC_HUB_IDS, knowledgeBase, knowledgeById, topicLabels } from '../knowledge-base';
 
 describe('knowledge base', () => {
@@ -11,6 +17,15 @@ describe('knowledge base', () => {
       expect(entry, `missing entry for unit ${unit.slug}`).toBeDefined();
       expect(entry!.text).toContain(unit.description);
     }
+  });
+
+  it('knows every facility and annual event the public site lists', () => {
+    const facilities = knowledgeById.get('fasilitas')!;
+    for (const f of campusFacilities) expect(facilities.text).toContain(f.name);
+    expect(facilities.url).toBe('/campus');
+    const agenda = knowledgeById.get('agenda-tahunan')!;
+    for (const a of annualActivities) expect(agenda.text).toContain(a.name);
+    expect(agenda.url).toBe('/activities');
   });
 
   it('states the bank details exactly as published', () => {

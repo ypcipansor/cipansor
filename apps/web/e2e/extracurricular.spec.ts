@@ -169,6 +169,11 @@ test.describe("Extracurricular - create and edit through the forms", () => {
 
     await page.getByLabel("Nama Ekstrakurikuler *").fill(NAME);
     await page.getByLabel("Kode").fill(`T${STAMP}`.slice(0, 20));
+    // The names the public site shows on Kegiatan in English and Arabic.
+    await page
+      .getByLabel("Nama dalam bahasa Inggris")
+      .fill(`Taekwondo ${STAMP}`);
+    await page.getByLabel("Nama dalam bahasa Arab").fill(`التايكوندو ${STAMP}`);
     await page.getByLabel("Kategori *").click();
     await page.getByRole("option", { name: /Olahraga/ }).click();
     await page.getByLabel("Kapasitas Anggota").fill("30");
@@ -206,12 +211,16 @@ test.describe("Extracurricular - create and edit through the forms", () => {
     const one = await apiRequest<{
       data: {
         category: string;
+        nameEn: string | null;
+        nameAr: string | null;
         scheduleDay: string[];
         scheduleTime: string;
         coach: Record<string, unknown> & { user: Record<string, unknown> };
       };
     }>(admin, "GET", `/extracurricular/${createdId}`);
     expect(one.data.category).toBe("SPORTS");
+    expect(one.data.nameEn).toBe(`Taekwondo ${STAMP}`);
+    expect(one.data.nameAr).toBe(`التايكوندو ${STAMP}`);
     expect(one.data.scheduleDay).toEqual(["TUESDAY", "THURSDAY"]);
     expect(one.data.scheduleTime).toBe("15:30-17:00");
     expect(Object.keys(one.data.coach).sort()).toEqual(["id", "user"]);

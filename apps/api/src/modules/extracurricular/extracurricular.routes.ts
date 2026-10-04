@@ -5,7 +5,12 @@ import { UserRole } from '@prisma/client';
 
 const router = Router();
 
-// All routes require authentication
+// What the public site lists on *Kegiatan* — names, categories and units only
+// (decisions/fasilitas-dan-kegiatan-situs-publik.md). Mounted before
+// `authenticate`, and before `/:id`.
+router.get('/public', extracurricularController.publicList.bind(extracurricularController));
+
+// Every other route requires authentication
 router.use(authenticate);
 
 // ======================
