@@ -34,7 +34,6 @@ const KNOWN_MISSING = new Set([
   "/curriculum/schedules",
   "/donation/X",
   "/donation/campaigns/X/edit",
-  "/extracurricular/X/edit",
   "/finance/bills",
   "/finance/bills/X/pay",
   "/finance/invoices",
