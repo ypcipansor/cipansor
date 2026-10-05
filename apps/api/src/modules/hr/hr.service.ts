@@ -378,6 +378,9 @@ export async function createEmployee(data: CreateEmployeeInput, actor: HrActor) 
         name: data.name,
         email: data.email,
         passwordHash,
+        // Someone else chose it: replaced at the first sign-in (also the
+        // column default, stated here so the rule is read where it applies).
+        mustChangePassword: true,
         role: data.role as UserRole,
         unitId,
         phone: data.phone,

@@ -27,8 +27,6 @@ import { Separator } from "@/components/ui/separator";
 import {
   MessageSquare,
   Send,
-  Users,
-  Bell,
   CreditCard,
   AlertTriangle,
   Calendar,
@@ -155,21 +153,6 @@ _Tim Tahfidz Pesantren Cipansor_`,
 
 _Pesantren Cipansor_`,
   },
-  {
-    id: "announcement",
-    name: "Pengumuman",
-    description: "Broadcast pengumuman umum",
-    icon: Bell,
-    category: "general",
-    variables: ["title", "content"],
-    preview: `🔔 *PENGUMUMAN*
-
-*{title}*
-
-{content}
-
-_Pesantren Cipansor_`,
-  },
 ];
 
 // Scheduled tasks
@@ -219,14 +202,9 @@ const SCHEDULED_TASKS = [
 ];
 
 export default function WhatsAppPage() {
-  const [activeTab, setActiveTab] = useState("broadcast");
+  // Broadcasting is Pengumuman's alone (decisions/siaran-pengumuman.md).
+  const [activeTab, setActiveTab] = useState("single");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [broadcastForm, setBroadcastForm] = useState({
-    title: "",
-    content: "",
-    priority: "NORMAL",
-    unitId: "",
-  });
   const [singleSend, setSingleSend] = useState({
     phone: "",
     message: "",
@@ -276,42 +254,6 @@ export default function WhatsAppPage() {
       }
     } catch {
       toast.error("Gagal mengirim pesan");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Send broadcast
-  const handleBroadcast = async () => {
-    if (!broadcastForm.title || !broadcastForm.content) {
-      toast.error("Judul dan konten harus diisi");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch("/api/notifications/whatsapp/broadcast", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(broadcastForm),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        toast.success(
-          `Broadcast terkirim ke ${data.data.sent} penerima (${data.data.failed} gagal)`,
-        );
-        setBroadcastForm({
-          title: "",
-          content: "",
-          priority: "NORMAL",
-          unitId: "",
-        });
-      } else {
-        toast.error("Gagal mengirim broadcast");
-      }
-    } catch {
-      toast.error("Gagal mengirim broadcast");
     } finally {
       setIsLoading(false);
     }
@@ -398,10 +340,6 @@ export default function WhatsAppPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList>
-            <TabsTrigger value="broadcast">
-              <Users className="mr-2 h-4 w-4" />
-              Broadcast
-            </TabsTrigger>
             <TabsTrigger value="single">
               <Send className="mr-2 h-4 w-4" />
               Kirim Pesan
@@ -419,124 +357,6 @@ export default function WhatsAppPage() {
               Pengaturan
             </TabsTrigger>
           </TabsList>
-
-          {/* Broadcast Tab */}
-          <TabsContent value="broadcast" className="space-y-4">
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Broadcast Pengumuman</CardTitle>
-                  <CardDescription>
-                    Kirim pengumuman ke semua orang tua atau per unit
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="broadcast-title">Judul</Label>
-                    <Input
-                      id="broadcast-title"
-                      placeholder="Judul pengumuman"
-                      value={broadcastForm.title}
-                      onChange={(e) =>
-                        setBroadcastForm({
-                          ...broadcastForm,
-                          title: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="broadcast-content">Konten</Label>
-                    <Textarea
-                      id="broadcast-content"
-                      placeholder="Isi pengumuman..."
-                      rows={5}
-                      value={broadcastForm.content}
-                      onChange={(e) =>
-                        setBroadcastForm({
-                          ...broadcastForm,
-                          content: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="broadcast-priority">Prioritas</Label>
-                      <Select
-                        value={broadcastForm.priority}
-                        onValueChange={(v) =>
-                          setBroadcastForm({ ...broadcastForm, priority: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="LOW">Rendah</SelectItem>
-                          <SelectItem value="NORMAL">Normal</SelectItem>
-                          <SelectItem value="HIGH">Penting</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="broadcast-unit">Unit (Opsional)</Label>
-                      <Select
-                        value={broadcastForm.unitId}
-                        onValueChange={(v) =>
-                          setBroadcastForm({ ...broadcastForm, unitId: v })
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Semua unit" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="">Semua Unit</SelectItem>
-                          {units?.map((unit) => (
-                            <SelectItem key={unit.id} value={unit.id}>
-                              {unit.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <Button
-                    className="w-full"
-                    onClick={handleBroadcast}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="mr-2 h-4 w-4" />
-                    )}
-                    Kirim Broadcast
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Preview Pesan</CardTitle>
-                  <CardDescription>
-                    Format pesan yang akan dikirim
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="bg-green-50 rounded-lg p-4 font-mono text-sm whitespace-pre-wrap">
-                    {broadcastForm.priority === "HIGH" && "⚠️ *PENTING - "}
-                    🔔 *PENGUMUMAN*{broadcastForm.priority === "HIGH" && "*"}
-                    {"\n\n"}*{broadcastForm.title || "[Judul]"}*{"\n\n"}
-                    {broadcastForm.content ||
-                      "[Konten pengumuman akan ditampilkan di sini]"}
-                    {"\n\n"}
-                    _Pesantren Cipansor_
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
 
           {/* Single Send Tab */}
           <TabsContent value="single" className="space-y-4">

@@ -255,6 +255,37 @@ export function authenticate2FA(req: Request, res: Response, next: NextFunction)
       throw Errors.unauthorized('Sesi tidak valid. Silakan masuk kembali.');
     }
 
+    // A token that may only change the password must not complete a 2FA step:
+    // a second /2fa/login with it would be a session without the new password.
+    if (payload.purpose === 'password-change') {
+      throw Errors.unauthorized('Ganti kata sandi Anda lebih dulu.');
+    }
+
+    req.user = buildReqUser(payload);
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Authentication for the one route an account that must change its password
+ * may reach: the change itself. Accepts only the temporary token minted for
+ * that purpose — not a session, and not the 2FA step's token, which proves the
+ * password but not yet the second factor.
+ */
+export function authenticatePasswordChange(req: Request, res: Response, next: NextFunction) {
+  try {
+    const token = tokenFromRequest(req);
+    if (!token) {
+      throw Errors.unauthorized('Sesi tidak ditemukan. Silakan masuk kembali.');
+    }
+
+    const payload = verifyToken(token);
+    if (payload.type !== 'access' || !payload.isTemp || payload.purpose !== 'password-change') {
+      throw Errors.unauthorized('Masuk kembali dengan email dan kata sandi Anda.');
+    }
+
     req.user = buildReqUser(payload);
     next();
   } catch (error) {

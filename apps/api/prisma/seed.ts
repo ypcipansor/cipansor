@@ -1,6 +1,7 @@
 import {
   UserRole,
   UnitType,
+  QuranAbility,
   Gender,
   AttendanceStatus,
   TahfidzActivityType,
@@ -36,8 +37,6 @@ import {
   BusinessUnitType,
   MealType,
   MealAttendanceStatus,
-  ExtracurricularCategory,
-  ExtracurricularStatus,
   EnrollmentStatus,
   CounselingCategory,
   CounselingPriority,
@@ -79,7 +78,6 @@ import {
   ContractStatus,
   EmployeeDocumentType,
   EmploymentAction,
-  WaveStatus,
   PAUDAspect,
   PAUDAchievementLevel,
   PAUDReportPeriod,
@@ -127,16 +125,15 @@ import { seedPAUDIndicators } from './seeds/paud-indicators';
 import { syncParentRoleAssignments, type ParentScopeClient } from '../src/utils/parent-scope';
 import { seedImmunizationReference } from './seeds/immunization-reference';
 import { seedStrategicPlans } from './seeds/strategic-plan-cipansor';
-import {
-  admissionWindows,
-  currentAcademicYear,
-  nextAcademicYear,
-} from '../src/lib/academic-calendar';
+import { currentAcademicYear, nextAcademicYear } from '../src/lib/academic-calendar';
+import { ensureDemoIntake } from './seeds/spmb-demo';
+import { loadBrochureExtracurriculars } from './seeds/ekskul-2027-2028';
 import { PERMISSIONS, permissionsForRoleCode } from '../src/modules/roles/permissions';
 // Imported from source (not the built dist) so a stale @cipansor/shared build
 // can't leave the seeded demo logins out of sync with what the web login page
 // lists. This is the single source of truth for the per-role demo accounts.
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../../packages/shared/src/types/demo-accounts';
+import { YAYASAN_ORGANS } from '../../../packages/shared/src/types/office-holders';
 import { SECOND_FACTOR_ROLE_CODES } from '../../../packages/shared/src/roles';
 
 // RoleCode comes straight from the generated Prisma client — do NOT keep a
@@ -218,15 +215,23 @@ async function main() {
   // PHASE 3: Foundation / Yayasan
   // ============================================
 
+  /**
+   * Every unit sits at the one campus. The address, the official names, NPSNs
+   * and permits are those of the permits and Kemendikdasmen's reference data
+   * (decisions/spmb-2027-2028.md item 6); TK Qur'an has no NPSN there.
+   */
+  const UNIT_ADDRESS =
+    'Jl. Raya Malangbong - Kadipaten RT 001 RW 001, Kp. Nyalindung, Desa Buniasih, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157';
+
   const foundation = await prisma.foundation.create({
     data: {
       name: 'Yayasan Pesantren Cipansor',
-      legalName: 'Yayasan Pendidikan Islam Cipansor',
-      foundingDate: new Date('1985-08-17'),
-      taxId: '01.234.567.8-901.000',
-      address: 'Jl. Cipansor No. 1, Kec. Sukabumi, Kota Sukabumi, Jawa Barat',
-      phone: '0266100001',
-      email: 'yayasan@cipansor.or.id',
+      legalName: 'Yayasan Pesantren Cipansor',
+      // Akta Notaris No. 01, 5 April 2012 (LETTERHEAD.legalBasis).
+      foundingDate: new Date('2012-04-05'),
+      address: UNIT_ADDRESS,
+      phone: '0811110400',
+      email: 'halo@cipansor.or.id',
       website: 'https://cipansor.or.id',
       vision:
         'Menjadi lembaga pendidikan Islam terdepan yang menghasilkan generasi Qurani berakhlak mulia',
@@ -237,52 +242,22 @@ async function main() {
 
   console.log('✅ Foundation created');
 
-  // Create Board Members
-  const boardMembersData = [
-    {
-      name: 'KH. Muhammad Yusuf',
-      position: 'Ketua',
-      phone: '081234567890',
-      email: 'ketua@cipansor.or.id',
-    },
-    {
-      name: 'H. Ahmad Fauzi',
-      position: 'Wakil Ketua',
-      phone: '081234567891',
-      email: 'wakil@cipansor.or.id',
-    },
-    {
-      name: 'Hj. Siti Fatimah',
-      position: 'Sekretaris',
-      phone: '081234567892',
-      email: 'sekretaris@cipansor.or.id',
-    },
-    {
-      name: 'H. Abdullah Rahman',
-      position: 'Bendahara',
-      phone: '081234567893',
-      email: 'bendahara@cipansor.or.id',
-    },
-    {
-      name: 'Ustadz Hasan Basri',
-      position: 'Anggota',
-      phone: '081234567894',
-      email: 'anggota1@cipansor.or.id',
-    },
-  ];
-
-  for (const member of boardMembersData) {
-    await prisma.boardMember.create({
-      data: {
-        foundationId: foundation.id,
-        name: member.name,
-        position: member.position,
-        phone: member.phone,
-        email: member.email,
-        startDate: new Date('2020-01-01'),
-        isActive: true,
-      },
-    });
+  // The yayasan's organs as the yayasan published them (office-holders.ts):
+  // names, positions and portraits. No phone numbers or e-mail — those are the
+  // person's, entered by an admin — and no start date, which nobody here knows;
+  // an invented "Sejak Jan 2020" beside a real name is a false statement.
+  for (const group of YAYASAN_ORGANS) {
+    for (const holder of group.holders) {
+      await prisma.boardMember.create({
+        data: {
+          foundationId: foundation.id,
+          name: holder.name,
+          position: holder.position,
+          photoUrl: holder.photo ?? null,
+          isActive: true,
+        },
+      });
+    }
   }
 
   console.log('✅ Board members created');
@@ -292,8 +267,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: 'SMP IT Cipansor',
+      officialName: 'SMP IT Pesantren Cipansor',
+      npsn: '69988558',
+      operatingPermitNumber: '503/0671/Kep.07/DPMPTSP/2019',
+      operatingPermitDate: new Date('2019-05-02'),
       type: UnitType.SMP_IT,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'smpit@cipansor.or.id',
     },
@@ -303,8 +282,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: 'SD IT Cipansor',
+      officialName: 'SD IT Pesantren Cipansor',
+      npsn: '69888850',
+      operatingPermitNumber: '642.2/0131/Disdik',
+      operatingPermitDate: new Date('2015-01-16'),
       type: UnitType.SD_IT,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'sdit@cipansor.or.id',
     },
@@ -314,8 +297,9 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: "TK Qur'an Cipansor",
+      officialName: "TK Qur'an An Nur Pesantren Cipansor",
       type: UnitType.TK_QURAN,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'tkquran@cipansor.or.id',
     },
@@ -325,8 +309,12 @@ async function main() {
     data: {
       foundationId: foundation.id,
       name: "SMA Qur'an Cipansor",
+      officialName: "SMA Qur'an Pesantren Cipansor",
+      npsn: '70038414',
+      operatingPermitNumber: '5/011050/DPMPTSP/II/2023',
+      operatingPermitDate: new Date('2023-02-07'),
       type: UnitType.SMA_QURAN,
-      address: 'Kp. Cipansor, Kec. Kadipaten, Kab. Tasikmalaya, Jawa Barat 46157',
+      address: UNIT_ADDRESS,
       phone: '0811110400',
       email: 'smaquran@cipansor.or.id',
     },
@@ -850,96 +838,6 @@ async function main() {
     },
   });
 
-  // Create Yayasan Users with multiple roles
-  const ketuaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'KH. Muhammad Yusuf',
-      email: 'ketua@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Ketua123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  // Ketua is Pengurus, and only Pengurus.
-  //
-  // This block used to give the same account YAYASAN_KETUA and
-  // YAYASAN_PEMBINA, under a comment reading "Ketua Yayasan has multiple
-  // roles". UU 16/2001 Pasal 29 forbids exactly that: an anggota Pembina may
-  // not concurrently be Pengurus or Pengawas, because the organ that appoints
-  // cannot also be the one that executes. The database now refuses it too (see
-  // the trg_yayasan_organ_exclusive migration), so this seed would fail loudly
-  // rather than reproduce the violation.
-  //
-  // Multi-role accounts are still demonstrated, and legitimately — see the
-  // komite members and staff who are also wali further down.
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: ketuaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_KETUA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  // Pembina is a separate person, as the law requires.
-  const pembinaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'KH. Abdurrahman Wahid Nurcholis',
-      email: 'pembina@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Pembina123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: pembinaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_PEMBINA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  const sekretarisYayasanUser = await prisma.user.create({
-    data: {
-      name: 'Hj. Siti Fatimah',
-      email: 'sekretaris@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Sekretaris123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: sekretarisYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_SEKRETARIS].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
-  const bendaharaYayasanUser = await prisma.user.create({
-    data: {
-      name: 'H. Abdullah Rahman',
-      email: 'bendahara@cipansor.or.id',
-      passwordHash: await bcrypt.hash('Bendahara123!', 10),
-      role: UserRole.STAFF,
-      isActive: true,
-    },
-  });
-
-  await prisma.userRoleAssignment.create({
-    data: {
-      userId: bendaharaYayasanUser.id,
-      roleId: roles[RoleCode.YAYASAN_BENDAHARA].id,
-      isPrimary: true,
-      isActive: true,
-    },
-  });
-
   // No "Admin Yayasan" user. Foundation-level administration belongs to
   // SUPER_ADMIN, so this account had no role left to hold.
 
@@ -1010,6 +908,17 @@ async function main() {
 
   const kepalaSmpItUser = demoUserOrThrow(RoleCode.SMPIT_KEPALA_SEKOLAH);
   const kepalaSdItUser = demoUserOrThrow(RoleCode.SDIT_KEPALA_SEKOLAH);
+
+  // The yayasan's organs, the same way. A second set of accounts used to be
+  // created here — ketua@, pembina@, sekretaris@ and bendahara@, with invented
+  // names and passwords of their own — beside the yayasan.*@ accounts that
+  // DEMO_ACCOUNTS creates with the real office holders' names. Ketua and
+  // Pembina are separate people (UU 16/2001 Ps. 29; the database enforces it
+  // with trg_yayasan_organ_exclusive), and DEMO_ACCOUNTS keeps them apart.
+  const ketuaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_KETUA);
+  const pembinaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_PEMBINA);
+  const sekretarisYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_SEKRETARIS);
+  const bendaharaYayasanUser = demoUserOrThrow(RoleCode.YAYASAN_BENDAHARA);
 
   // The SD IT head also teaches, mirroring the SMP IT pairing.
   await prisma.userRoleAssignment.create({
@@ -2453,60 +2362,23 @@ async function main() {
   console.log('✅ Leave requests created');
 
   // ============================================
-  // PHASE 3: PSB (Penerimaan Santri Baru)
+  // PHASE 3: SPMB (penerimaan santri baru)
   // ============================================
 
-  // Create Admission Period.
-  //
-  // Windows are anchored to the seed run, not written as literals: wave 1 is
-  // open today and wave 2 is still ahead of it, so a freshly seeded system
-  // always has a registration a visitor can actually complete. Both stay
-  // `isActive` — that flag records administrative intent, while whether the
-  // form opens is derived from the dates by `getPublicActiveAdmissionPeriod`
-  // and by `getPeriodWindow` on the web side.
-  const [wave1, wave2] = admissionWindows();
-
-  const admissionPeriod = await prisma.admissionPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: nextYear.id,
-      name: wave1.name,
-      startDate: wave1.startDate,
-      endDate: wave1.endDate,
-      quota: 50,
-      registrationFee: new Prisma.Decimal(350000),
-      isActive: true,
-      requirements: JSON.stringify([
-        'Fotokopi Akta Kelahiran',
-        'Fotokopi Kartu Keluarga',
-        'Ijazah SD/MI atau Surat Keterangan Lulus',
-        'Pas Foto 3x4 (4 lembar)',
-        'Surat Keterangan Sehat',
-      ]),
-    },
+  // SMP IT's intake for next year, in the module's shape: one period with two
+  // waves around today — wave 1 open, wave 2 still ahead — and the brochure's
+  // fees and requirements (seeds/spmb-demo.ts). Dates derive from the seed run,
+  // so a freshly seeded system always has a registration a visitor can
+  // complete.
+  const admissionPeriod = await ensureDemoIntake(prisma, {
+    unit: 'SMP_IT',
+    unitId: smpIt.id,
+    academicYear: nextYear,
+    quotas: [50, 20],
   });
+  const [admissionWave1] = admissionPeriod.waves;
 
-  const admissionPeriod2 = await prisma.admissionPeriod.create({
-    data: {
-      unitId: smpIt.id,
-      academicYearId: nextYear.id,
-      name: wave2.name,
-      startDate: wave2.startDate,
-      endDate: wave2.endDate,
-      quota: 20,
-      registrationFee: new Prisma.Decimal(350000),
-      isActive: true,
-      requirements: JSON.stringify([
-        'Fotokopi Akta Kelahiran',
-        'Fotokopi Kartu Keluarga',
-        'Ijazah SD/MI atau Surat Keterangan Lulus',
-        'Pas Foto 3x4 (4 lembar)',
-        'Surat Keterangan Sehat',
-      ]),
-    },
-  });
-
-  console.log('✅ Admission periods created');
+  console.log('✅ Admission period created');
 
   // Create Registrants with various statuses
   const registrantData: Array<{
@@ -2514,7 +2386,7 @@ async function main() {
     gender: Gender;
     status: AdmissionStatus;
     parentName: string;
-    quranAbility?: string;
+    quranAbility?: QuranAbility;
     memorizedJuz?: number;
   }> = [
     {
@@ -2534,7 +2406,7 @@ async function main() {
       gender: Gender.MALE,
       status: AdmissionStatus.TEST_COMPLETED,
       parentName: 'Bapak Ramadhan',
-      quranAbility: 'TAHFIDZ',
+      quranAbility: QuranAbility.TAHFIDZ,
       memorizedJuz: 5,
     },
     {
@@ -2542,14 +2414,14 @@ async function main() {
       gender: Gender.FEMALE,
       status: AdmissionStatus.DOCUMENT_CHECK,
       parentName: 'Bapak Putra',
-      quranAbility: 'TARTIL',
+      quranAbility: QuranAbility.TARTIL,
     },
     {
       name: 'Akbar Maulana',
       gender: Gender.MALE,
       status: AdmissionStatus.REGISTERED,
       parentName: 'Bapak Maulana',
-      quranAbility: 'LANCAR',
+      quranAbility: QuranAbility.LANCAR,
     },
     {
       name: 'Azzahra Aulia',
@@ -2564,6 +2436,7 @@ async function main() {
     const registrant = await prisma.registrant.create({
       data: {
         admissionPeriodId: admissionPeriod.id,
+        waveId: admissionWave1.id,
         // These are the applicants of the wave that is open right now, so the
         // number carries the intake year rather than the year the seed was written.
         registrationNo: `REG-${intakeYear.startYear}-${String(regCounter++).padStart(4, '0')}`,
@@ -2648,6 +2521,17 @@ async function main() {
       ],
     });
   }
+  // The wave's counters say what its registrants are, as a public registration
+  // keeps them.
+  await prisma.admissionWave.update({
+    where: { id: admissionWave1.id },
+    data: {
+      registeredCount: registrantData.length,
+      acceptedCount: registrantData.filter(
+        (r) => r.status === AdmissionStatus.ACCEPTED || r.status === AdmissionStatus.ENROLLED
+      ).length,
+    },
+  });
 
   console.log('✅ Registrants created');
 
@@ -3932,7 +3816,7 @@ async function main() {
 
   console.log('\n📊 Seed Summary:');
   console.log(`   Foundation: 1`);
-  console.log(`   Board Members: ${boardMembersData.length}`);
+  console.log(`   Board Members: ${YAYASAN_ORGANS.flatMap((g) => g.holders).length}`);
   console.log(`   Units: 4`);
   console.log(`   Roles: 24`);
   console.log(`   Users: ${students.length + 15 + staffData.length + 1}`); // +1 for System User
@@ -3953,7 +3837,7 @@ async function main() {
   console.log(`   Payments: 6`);
   console.log(`   Staff Attendance: ${staffData.length * 7}`);
   console.log(`   Leave Requests: ${leaveData.length}`);
-  console.log(`   Admission Periods: 2`);
+  console.log(`   Admission Periods: 1 (SMP IT, ${admissionPeriod.waves.length} waves)`);
   console.log(`   Registrants: ${registrantData.length}`);
   console.log(`   Book Categories: ${bookCategoriesData.length}`);
   console.log(`   Books: ${booksData.length}`);
@@ -3985,9 +3869,7 @@ async function main() {
   console.log('   Super Admin: superadmin@cipansor.or.id / SuperAdmin123!');
 
   console.log('\n   === YAYASAN ===');
-  console.log('   Ketua Yayasan: ketua@cipansor.or.id / Ketua123!');
-  console.log('   Pembina Yayasan: pembina@cipansor.or.id / Pembina123!');
-  console.log('   Pengawas Yayasan: pengawas@cipansor.or.id / Pengawas123!');
+  console.log('   The yayasan.*@ demo accounts (DEMO_ACCOUNTS) / the shared demo password');
 
   // No PAUD block is printed here on purpose. It used to advertise
   // admin@paud.sch.id / Admin123! and student4@paud.sch.id / Student123! —
@@ -4470,40 +4352,33 @@ async function main() {
   }
   console.log('   ✅ Meal attendances created');
 
-  // 5. Extracurriculars
-  const scout = await prisma.extracurricular.create({
+  // 5. Extracurriculars — the brochure's, as production gets them
+  // (seeds/ekskul-2027-2028.ts); two of SMP IT's then get a demo schedule,
+  // coach and members.
+  await loadBrochureExtracurriculars(prisma);
+  const brochureEkskul = (code: string) =>
+    prisma.extracurricular.findFirstOrThrow({ where: { unitId: smpIt.id, code } });
+  const scout = await prisma.extracurricular.update({
+    where: { id: (await brochureEkskul('PRAMUKA')).id },
     data: {
-      unitId: smpIt.id,
-      name: 'Pramuka Penggalang',
-      code: 'EXC-001',
-      category: ExtracurricularCategory.SCOUTING,
       description: 'Latihan kepramukaan mingguan wajib',
       scheduleDay: [DayOfWeek.FRIDAY],
-      scheduleTime: '14:00 - 15:30',
-      venue: 'Lapangan Utama Pesantren',
+      scheduleTime: '14:00-15:30',
+      venue: 'Lapangan Upacara',
       maxParticipants: 100,
       coachId: teacherPesantren.id,
-      status: ExtracurricularStatus.ACTIVE,
       isCompulsory: true,
-      academicYearId: academicYear.id,
     },
   });
-
-  const hadroh = await prisma.extracurricular.create({
+  const englishClub = await prisma.extracurricular.update({
+    where: { id: (await brochureEkskul('ENGLISH-CLUB')).id },
     data: {
-      unitId: smpIt.id,
-      name: 'Hadroh Seni Musik Islami',
-      code: 'EXC-002',
-      category: ExtracurricularCategory.ARTS,
-      description: 'Pelatihan seni musik rebana/hadroh',
+      description: 'Percakapan, pidato, dan permainan berbahasa Inggris',
       scheduleDay: [DayOfWeek.SUNDAY],
-      scheduleTime: '15:45 - 17:15',
-      venue: 'Aula Gedung Pertemuan',
+      scheduleTime: '15:45-17:15',
+      venue: 'Aula Utama',
       maxParticipants: 20,
       coachId: teacherPesantren.id,
-      status: ExtracurricularStatus.ACTIVE,
-      isCompulsory: false,
-      academicYearId: academicYear.id,
     },
   });
   console.log('   ✅ Extracurricular activities created');
@@ -4519,7 +4394,7 @@ async function main() {
 
     await prisma.extracurricularEnrollment.create({
       data: {
-        extracurricularId: hadroh.id,
+        extracurricularId: englishClub.id,
         studentId: students[0].id,
         status: EnrollmentStatus.ACTIVE,
       },
@@ -4896,7 +4771,6 @@ async function main() {
       unitId: smpIt.id,
       donorName: 'H. Muhammad Yusuf',
       donorPhone: '081234567890',
-      donorEmail: 'ketua@cipansor.or.id',
       isAnonymous: false,
       type: PublicDonationType.WAKAF,
       amount: new Prisma.Decimal(50000000),
@@ -6070,11 +5944,11 @@ async function main() {
           recordedById: teacherPesantrenUser.id,
         },
         {
-          extracurricularId: hadroh.id,
+          extracurricularId: englishClub.id,
           studentId: students[0].id,
           date: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 5),
           status: AttendanceStatus.PRESENT,
-          notes: 'Latihan persiapan penampilan Maulid.',
+          notes: 'Latihan pidato sebelum lomba.',
           recordedById: teacherPesantrenUser.id,
         },
       ],
@@ -6097,9 +5971,9 @@ async function main() {
           eventDate: new Date('2024-11-10'),
         },
         {
-          extracurricularId: hadroh.id,
-          title: 'Juara 1 Festival Hadroh',
-          description: 'Tim hadroh pesantren meraih juara 1 festival hadroh se-Kabupaten Sukabumi.',
+          extracurricularId: englishClub.id,
+          title: 'Juara 1 Lomba Speech',
+          description: 'Anggota English Club meraih juara 1 lomba speech se-Kabupaten Sukabumi.',
           level: 'Kabupaten',
           rank: 'Juara 1',
           organizer: 'Kemenag Kabupaten Sukabumi',
@@ -6109,54 +5983,6 @@ async function main() {
     });
   }
   console.log('   ✅ Extracurricular achievements created');
-
-  // --- Admission Wave ---
-  const admissionPeriods = await prisma.admissionPeriod.findMany();
-  if (admissionPeriods.length > 0) {
-    await prisma.admissionWave.createMany({
-      data: [
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 1,
-          name: 'Gelombang 1 - Jalur Prestasi',
-          startDate: new Date('2024-01-15'),
-          endDate: new Date('2024-03-15'),
-          quota: 60,
-          registeredCount: 55,
-          acceptedCount: 48,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(250000),
-          notes: 'Jalur prestasi akademik dan tahfidz.',
-        },
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 2,
-          name: 'Gelombang 2 - Jalur Reguler',
-          startDate: new Date('2024-04-01'),
-          endDate: new Date('2024-06-30'),
-          quota: 40,
-          registeredCount: 38,
-          acceptedCount: 32,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(300000),
-          notes: 'Jalur pendaftaran reguler.',
-        },
-        {
-          periodId: admissionPeriods[0].id,
-          waveNumber: 3,
-          name: 'Gelombang 3 - Sisa Kuota',
-          startDate: new Date('2024-07-01'),
-          endDate: new Date('2024-07-15'),
-          quota: 10,
-          registeredCount: 6,
-          acceptedCount: 6,
-          status: WaveStatus.CLOSED,
-          registrationFee: new Prisma.Decimal(350000),
-        },
-      ],
-    });
-  }
-  console.log('   ✅ Admission waves created');
 
   // --- Asset Assignment ---
   const allAssets = await prisma.asset.findMany({ take: 3 });
@@ -8121,6 +7947,18 @@ async function main() {
 
   console.log('🔧 Phase 11, 12, 13 & 14 comprehensive demo data completed!\n');
 
+  // Demo accounts keep their published password. A new row is flagged to
+  // choose a new password at first sign-in (the column default: someone else
+  // set it), which is right for a real account and wrong for a demo account
+  // shared by every tester and by the e2e suite — the first person in would
+  // lock everyone else out. A real deployment flags every account once, at the
+  // release, with scripts/require-password-change-all.ts.
+  const unflagged = await prisma.user.updateMany({
+    where: { mustChangePassword: true },
+    data: { mustChangePassword: false },
+  });
+  console.log(`🔑 ${unflagged.count} demo account(s) keep their seeded password`);
+
   // ============================================
   // E2E: deterministic 2FA for admin accounts
   // ============================================
@@ -8132,7 +7970,7 @@ async function main() {
     const fixedSecret = process.env.E2E_2FA_SECRET || 'NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE';
     // Everyone login forces through 2FA: the legacy admin column, plus any
     // active assignment in SECOND_FACTOR_ROLE_CODES — admins, the organs (whose
-    // legacy column is STAFF on some accounts, e.g. ketua@) and the unit heads.
+    // legacy column is STAFF on some accounts, e.g. yayasan.ketua@) and the unit heads.
     const secondFactorCodes = [...SECOND_FACTOR_ROLE_CODES] as RoleCode[];
     const updated = await prisma.user.updateMany({
       where: {

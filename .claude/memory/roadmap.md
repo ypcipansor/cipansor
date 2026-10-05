@@ -67,12 +67,56 @@ items before 2026-09-25 is in the history of this file and of
        - passwords, part A: length 8 with 2FA / 15 without, a local list of
          common and leaked passwords plus the service's and the account's
          own name, no composition rules, one check wherever a password is set
-         (this change);
-       - passwords, part B: a must-change flag (first login, set by someone
-         else, marked compromised, and every account once at that release);
-         and changing one's own password should end the *other* sessions,
-         not this one — today every refresh token is revoked, the current
-         one included.
+         (done, #625);
+       - passwords, part B: a must-change flag (set by someone else, marked
+         leaked by an admin, 2FA turned off under a short password, and every
+         account once at the release — by script, with part A in the same
+         release); changing one's own password ends the *other* sessions
+         only (done, #632 — on staging; parts A and B go to production
+         together, and `scripts/require-password-change-all.ts` runs once
+         after that deploy).
+       - **passkey (FIDO2/WebAuthn) as the first sign-in path** (decided
+         2026-09-30, `decisions/autentikasi-2fa-dan-sandi.md`): a "Masuk
+         dengan passkey" button above the password form; password + TOTP +
+         recovery codes kept as fallback, so no second recovery channel is
+         built; one passkey satisfies `requiresSecondFactor` because WebAuthn
+         user verification is provable, unlike Google's `amr`. After 4.A and
+         passwords part B, as its own multi-PR track (schema + registration;
+         sign-in ceremony; admin reset + recovery hardening + e2e).
+    10. **SPMB 2027/2028 in the portal and on the public site** (decided
+        2026-10-02, `decisions/spmb-2027-2028.md`; after the users-module
+        scope fix, before the Pesantren unit; target: released before wave 2
+        opens on 1 January 2027, which needs the user's approval). Each its
+        own PR, wired end to end:
+        - ~~units: official name beside the short one, plus NPSN, operating
+          permit and email (Profil Unit), and the seed's address corrected~~
+          (#635);
+        - ~~waves with four sessions (registration, test, results,
+          re-registration) and a pay-in-full discount per wave, with units
+          excluded~~ (#640);
+        - ~~the fee breakdown per unit × ikhwan/akhwat × boarding, and per-unit
+          requirements, minimum age and contact person~~ (#640, #641);
+        - ~~the public `/public/spmb` page and the chatbot read all of it,
+          and a registration goes to the chosen unit's period~~ (#642);
+        - ~~the brochure loaded by `db:seed:spmb-2027-2028`~~ (#644, on
+          staging 2026-10-03; production with a release);
+        - ~~the base seed's and the pack's SPMB in the module's shape~~
+          (S5b);
+        - ~~the SPMB form in three languages~~ (S6);
+        - ~~the brochure's programmes, facilities, extracurriculars and
+          agenda on the public site, in three languages~~ (decided
+          2026-10-04, `decisions/fasilitas-dan-kegiatan-situs-publik.md`;
+          the extracurricular forms fixed first); the brochure's
+          extracurriculars load on production with a release
+          (`db:seed:ekskul-2027-2028`), and the brochure's original photos
+          replace the facility icons when the user has them;
+        - ~~the full yayasan structure on the public site (names and
+          positions)~~ (#637).
+    11. **Surat keterangan santri through E-Office** (decided 2026-10-02,
+        `decisions/surat-keterangan-lewat-eoffice.md`; after the SPMB track).
+        `students/documents` creates a `SURAT_KETERANGAN` draft filled from
+        the student's record, which then takes its agenda number, TTE and
+        verification like any naskah. Its menu place is Akademik → Students.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

@@ -80,7 +80,7 @@ interface DashboardData {
     title: string;
     content: string;
     createdAt: string;
-    priority: string;
+    priority: number;
   }>;
   unreadNotifications: number;
 }
@@ -165,7 +165,7 @@ export default function ParentDashboardPage() {
           </p>
         </div>
         {dashboard && dashboard.unreadNotifications > 0 && (
-          <Link href="/parent/announcements">
+          <Link href="/announcements">
             <Button variant="outline" className="gap-2">
               <Bell className="h-4 w-4" />
               {dashboard.unreadNotifications} Notifikasi Baru
@@ -375,7 +375,7 @@ export default function ParentDashboardPage() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <h4 className="font-medium">{announcement.title}</h4>
-                          {announcement.priority === "HIGH" && (
+                          {announcement.priority >= 1 && (
                             <Badge variant="destructive">Penting</Badge>
                           )}
                         </div>
@@ -396,7 +396,7 @@ export default function ParentDashboardPage() {
                     </div>
                   ))}
               </div>
-              <Link href="/parent/announcements">
+              <Link href="/announcements">
                 <Button variant="link" className="mt-4 p-0">
                   Lihat Semua Pengumuman →
                 </Button>
@@ -430,7 +430,7 @@ export default function ParentDashboardPage() {
                 <span>Ajukan Izin</span>
               </Button>
             </Link>
-            <Link href="/parent/announcements">
+            <Link href="/announcements">
               <Button variant="outline" className="w-full h-20 flex-col gap-2">
                 <Bell className="h-6 w-6" />
                 <span>Pengumuman</span>

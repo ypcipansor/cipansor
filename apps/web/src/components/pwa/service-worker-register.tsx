@@ -22,6 +22,33 @@ import { useEffect } from "react";
  * serving cached marketing pages through a worker no code registers any more,
  * and no future deploy would ever dislodge it.
  */
+/**
+ * Seed planted in localStorage just before the reload that applies an update.
+ *
+ * `controllerchange` also fires for the first-install claim; guarding on this
+ * flag means the auto-reload only happens for an update the user accepted.
+ */
+export const SW_UPDATE_RELOAD_FLAG = "pwa-sw-updated";
+
+declare global {
+  interface Window {
+    __swWaiting?: ServiceWorker | null;
+  }
+}
+
+/**
+ * Tell the update prompt there is a waiting worker.
+ *
+ * Registration runs on `load`, which can beat React's mount, so the waiting
+ * worker is both stashed on `window` and announced by an event: a mounted
+ * prompt hears the event, and one that mounts later reads the stash — the same
+ * before/after-mount race InstallPrompt handles for `beforeinstallprompt`.
+ */
+function announceUpdate(worker: ServiceWorker) {
+  window.__swWaiting = worker;
+  window.dispatchEvent(new Event("sw-update-ready"));
+}
+
 export function ServiceWorkerRegister({
   enabled = true,
 }: {
@@ -66,10 +93,34 @@ export function ServiceWorkerRegister({
     if (navigator.webdriver) return;
 
     const onLoad = () => {
-      navigator.serviceWorker.register("/sw.js").catch((err) => {
-        // Non-fatal: the app works without the SW, just without offline/install.
-        console.error("Service worker registration failed:", err);
-      });
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          // A new worker that is already waiting (an update installed while a
+          // previous tab was open) will never fire `updatefound` again; tell
+          // the UI immediately so the reload prompt can appear.
+          if (registration.waiting && navigator.serviceWorker.controller) {
+            announceUpdate(registration.waiting);
+          }
+          registration.addEventListener("updatefound", () => {
+            const installing = registration.installing;
+            if (!installing) return;
+            installing.addEventListener("statechange", () => {
+              // `controller` is null on the very first install — there is
+              // nothing to update from, so stay quiet then.
+              if (
+                installing.state === "installed" &&
+                navigator.serviceWorker.controller
+              ) {
+                announceUpdate(installing);
+              }
+            });
+          });
+        })
+        .catch((err) => {
+          // Non-fatal: the app works without the SW, just without offline/install.
+          console.error("Service worker registration failed:", err);
+        });
     };
 
     if (document.readyState === "complete") onLoad();

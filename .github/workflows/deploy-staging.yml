@@ -181,7 +181,25 @@ jobs:
               --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
               --target-port "${port[$c]}" -o none
           done
+          # Every document staging renders is a test copy, stamped "SALINAN UJI —
+          # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
+          # so a rebuilt app cannot come up without it; production never sets it.
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+            --settings DOCUMENT_TEST_COPY=true -o none
+          # Web Push: this environment's own VAPID pair (decisions/
+          # notifikasi-push.md), from the environment's secret and variable.
+          # Absent = push stays off, so nothing here forces a pair on anyone.
+          # -o none: the command would otherwise echo the settings back.
+          if [ -n "$VAPID_PRIVATE_KEY" ] && [ -n "$VAPID_PUBLIC_KEY" ]; then
+            az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+              --settings VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
+              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
+              VAPID_SUBJECT=mailto:halo@cipansor.or.id -o none
+          fi
           az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
+        env:
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
 
       # The api container applies pending migrations before it starts
       # (MIGRATE_ON_START=true on staging), so a migration that fails shows up

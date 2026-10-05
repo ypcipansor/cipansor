@@ -6,6 +6,7 @@ import { Header } from "./header";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { TwoFactorInvite } from "@/components/auth/two-factor-invite";
+import { useWebPushReconcile } from "@/hooks/use-web-push";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -25,6 +26,12 @@ export function MainLayout({
 }: MainLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Keep this device's push row alive on every authenticated page: a logout or
+  // a rotated endpoint can leave the browser holding a subscription the server
+  // no longer has, and the repair used to wait for the settings page to open.
+  // Renders nothing.
+  useWebPushReconcile();
 
   return (
     <ProtectedRoute

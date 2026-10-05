@@ -224,19 +224,6 @@ export class ParentController {
   }
 
   /**
-   * Get announcements
-   */
-  async getAnnouncements(req: Request, res: Response, next: NextFunction) {
-    try {
-      const parentId = req.user!.sub;
-      const data = await parentService.getAnnouncements(parentId);
-      res.json({ success: true, data });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * Get notifications
    */
   async getNotifications(req: Request, res: Response, next: NextFunction) {

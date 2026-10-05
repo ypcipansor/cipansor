@@ -460,15 +460,24 @@ function ProfilePageContent() {
               </CardDescription>
             </CardHeader>
             <CardContent>
+              {/* The rules decided 2026-09-28 (NIST SP 800-63B-4): length
+                  over composition, and a change after an incident, not on a
+                  calendar — decisions/autentikasi-2fa-dan-sandi.md. */}
               <ul className="list-disc list-inside space-y-2 text-sm text-muted-foreground">
                 <li>
-                  Gunakan password yang kuat dengan kombinasi huruf, angka, dan
-                  simbol
+                  Pakai kalimat pendek yang mudah Anda ingat; panjangnya lebih
+                  penting daripada huruf besar, angka, atau simbol
                 </li>
-                <li>Jangan bagikan password Anda kepada siapapun</li>
-                <li>Ganti password secara berkala (minimal setiap 3 bulan)</li>
-                <li>Jangan gunakan password yang sama dengan akun lain</li>
-                <li>Logout dari perangkat yang tidak digunakan</li>
+                <li>Aktifkan verifikasi dua langkah</li>
+                <li>
+                  Jangan bagikan kata sandi kepada siapa pun, termasuk admin
+                </li>
+                <li>Jangan pakai kata sandi yang sama dengan akun lain</li>
+                <li>
+                  Ganti kata sandi bila Anda menduga orang lain mengetahuinya;
+                  tidak perlu diganti berkala
+                </li>
+                <li>Keluar dari perangkat yang tidak Anda gunakan lagi</li>
               </ul>
             </CardContent>
           </Card>

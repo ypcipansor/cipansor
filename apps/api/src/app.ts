@@ -59,6 +59,7 @@ import { muhasabahRoutes } from '@/modules/muhasabah';
 import { donationRoutes } from '@/modules/donation';
 import { admissionsRoutes } from '@/modules/admissions';
 import { wilayahRoutes } from '@/modules/wilayah';
+import { environmentRoutes } from '@/modules/environment';
 import { kurikulumMerdekaRoutes } from '@/modules/kurikulum-merdeka';
 import { facilitiesRoutes } from '@/modules/facilities';
 import { studentComplianceRoutes } from '@/modules/student-compliance';
@@ -328,6 +329,7 @@ apiRouter.use('/muhasabah', muhasabahRoutes);
 apiRouter.use('/donation', donationRoutes);
 apiRouter.use('/admissions', admissionsRoutes);
 apiRouter.use('/wilayah', wilayahRoutes);
+apiRouter.use('/environment', environmentRoutes);
 apiRouter.use('/kurikulum-merdeka', kurikulumMerdekaRoutes);
 apiRouter.use('/facilities', facilitiesRoutes);
 apiRouter.use('/student-compliance', studentComplianceRoutes);
@@ -443,6 +445,7 @@ apiRouter.get('/', (_req, res) => {
       emis: '/api/emis',
       dapodik: '/api/dapodik',
       wilayah: '/api/wilayah',
+      environment: '/api/environment',
       kurikulumMerdeka: '/api/kurikulum-merdeka',
       facilities: '/api/facilities',
       studentCompliance: '/api/student-compliance',

@@ -1,87 +1,63 @@
-import { Request, Response } from 'express';
-import { NotificationType } from '@prisma/client';
-import { asyncHandler } from '@/middleware/error';
-import { announcementService } from './announcements.service';
+import type { Request } from 'express';
+import { asyncHandler, Errors } from '@/middleware/error';
+import * as service from './announcements.service';
+import {
+  announcementListQuerySchema,
+  createAnnouncementSchema,
+  recentQuerySchema,
+  updateAnnouncementSchema,
+} from './announcements.schema';
+import type { AnnouncementActor } from './announcements.access';
 
-/**
- * List announcements
- * GET /api/announcements
- */
-export const list = asyncHandler(async (req: Request, res: Response) => {
-  const { unitId, type, priority, published, page, limit } = req.query;
+const actorOf = (req: Request): AnnouncementActor => {
+  if (!req.user) throw Errors.unauthorized();
+  return { sub: req.user.sub, roleCode: req.user.roleCode, unitId: req.user.unitId };
+};
 
-  const result = await announcementService.findAll({
-    unitId: (unitId as string) || req.user?.unitId || undefined,
-    type: type as NotificationType,
-    priority: priority ? parseInt(priority as string) : undefined,
-    published: published === 'true',
-    page: page ? parseInt(page as string) : 1,
-    limit: limit ? parseInt(limit as string) : 20,
-  });
-
+/** GET /announcements — the caller's board. */
+export const list = asyncHandler(async (req, res) => {
+  const result = await service.list(actorOf(req), announcementListQuerySchema.parse(req.query));
   res.json({ success: true, ...result });
 });
 
-/**
- * Announcement statistics
- * GET /api/announcements/stats
- */
-export const getStats = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = (req.query.unitId as string) || req.user?.unitId || undefined;
-  const stats = await announcementService.getStats(unitId);
-  res.json({ success: true, data: stats });
+/** GET /announcements/stats */
+export const getStats = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.stats(actorOf(req)) });
 });
 
-/**
- * Recent announcements
- * GET /api/announcements/recent
- */
-export const getRecent = asyncHandler(async (req: Request, res: Response) => {
-  const unitId = (req.query.unitId as string) || req.user?.unitId || undefined;
-  const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
-  const announcements = await announcementService.getRecent(unitId, limit);
-  res.json({ success: true, data: announcements });
+/** GET /announcements/recent — the dashboards' card. */
+export const getRecent = asyncHandler(async (req, res) => {
+  const { limit } = recentQuerySchema.parse(req.query);
+  res.json({ success: true, data: await service.recent(actorOf(req), limit) });
 });
 
-/**
- * Get announcement by ID
- * GET /api/announcements/:id
- */
-export const getById = asyncHandler(async (req: Request, res: Response) => {
-  const announcement = await announcementService.findById(req.params.id);
-  if (!announcement) {
-    return res.status(404).json({ success: false, error: { message: 'Announcement not found' } });
-  }
-  res.json({ success: true, data: announcement });
+/** GET /announcements/compose — what the caller may publish, and where. */
+export const getComposeOptions = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.composeOptions(actorOf(req)) });
 });
 
-/**
- * Create announcement
- * POST /api/announcements
- */
-export const create = asyncHandler(async (req: Request, res: Response) => {
-  const announcement = await announcementService.create({
-    ...req.body,
-    unitId: req.body.unitId || req.user?.unitId || undefined,
-    createdById: (req.user as any).id || (req.user as any).userId,
-  });
-  res.status(201).json({ success: true, data: announcement });
+/** GET /announcements/:id */
+export const getById = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.getById(actorOf(req), req.params.id) });
 });
 
-/**
- * Update announcement
- * PATCH /api/announcements/:id
- */
-export const update = asyncHandler(async (req: Request, res: Response) => {
-  const announcement = await announcementService.update(req.params.id, req.body);
-  res.json({ success: true, data: announcement });
+/** POST /announcements — publish, and deliver to the audience's bells. */
+export const create = asyncHandler(async (req, res) => {
+  const data = await service.create(actorOf(req), createAnnouncementSchema.parse(req.body));
+  res.status(201).json({ success: true, data });
 });
 
-/**
- * Delete announcement
- * DELETE /api/announcements/:id
- */
-export const remove = asyncHandler(async (req: Request, res: Response) => {
-  await announcementService.delete(req.params.id);
-  res.json({ success: true, message: 'Announcement deleted' });
+/** PATCH /announcements/:id — new words; the audience stays. */
+export const update = asyncHandler(async (req, res) => {
+  const data = await service.update(
+    actorOf(req),
+    req.params.id,
+    updateAnnouncementSchema.parse(req.body)
+  );
+  res.json({ success: true, data });
+});
+
+/** POST /announcements/:id/withdraw */
+export const withdraw = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.withdraw(actorOf(req), req.params.id) });
 });

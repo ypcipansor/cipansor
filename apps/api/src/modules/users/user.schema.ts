@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Realm } from '@prisma/client';
 
 // Query params
 export const listUsersQuerySchema = z.object({
@@ -7,6 +8,8 @@ export const listUsersQuerySchema = z.object({
   search: z.string().optional(),
   role: z.enum(['SUPER_ADMIN', 'UNIT_ADMIN', 'TEACHER', 'STUDENT', 'PARENT']).optional(),
   unitId: z.string().uuid().optional(),
+  /** Accounts holding an active role in this realm — filtered here, not on one page in the browser. */
+  realm: z.nativeEnum(Realm).optional(),
 });
 
 // Create user

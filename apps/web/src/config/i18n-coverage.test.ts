@@ -8,6 +8,8 @@ import { pagesContentFor } from "./pages.i18n";
 import { donationContentFor } from "./donation.i18n";
 import { publicContentFor } from "./content.i18n";
 import { accreditationContentFor } from "./accreditation.i18n";
+import { spmbContentFor } from "./spmb.i18n";
+import { spmbFormContentFor } from "./spmb-form.i18n";
 import { formatNumber } from "@/lib/locale-format";
 
 /**
@@ -38,6 +40,9 @@ const KEPT_VERBATIM: Record<string, string> = {
   "en:programs.entrepreneurship.title": "Already English in the source",
   "en:profileStats[1].label":
     "Santri is kept and glossed, not translated to 'students'",
+  "en:activities.rihlah-tarbawi.name":
+    "A pesantren term kept, as the brochure prints it; its description glosses it",
+  "en:activities.study-tour.name": "Already English in the source",
   "en:contact.emailHeading": "'Email' is the same word in Indonesian",
   "en:contact.whatsappHeading": "A product name",
   // The donation page. Akad names are the terms the donation record stores and
@@ -98,6 +103,8 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
   { name: "donation", of: donationContentFor },
   { name: "profile/legal", of: publicContentFor },
   { name: "accreditation", of: accreditationContentFor },
+  { name: "spmb", of: spmbContentFor },
+  { name: "spmb form", of: spmbFormContentFor },
 ];
 
 describe.each(SURFACES)("$name content", ({ of }) => {

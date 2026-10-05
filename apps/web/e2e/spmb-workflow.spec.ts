@@ -8,14 +8,6 @@ const API_URL = process.env.API_URL || "http://localhost:3001/api";
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
-async function publicGet(path: string) {
-  const res = await fetch(`${API_URL}${path}`);
-  const json = await res.json();
-  if (!res.ok)
-    throw new Error(`${path} → ${res.status}: ${JSON.stringify(json)}`);
-  return json;
-}
-
 async function publicPost(path: string, body: unknown) {
   const res = await fetch(`${API_URL}${path}`, {
     method: "POST",
@@ -77,11 +69,13 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
     expect(page.url()).toContain("/spmb");
-    const bodyText = await page.textContent("body");
-    expect(bodyText).toContain("Total Pendaftar");
-    expect(bodyText).toContain("Menunggu Verifikasi");
-    expect(bodyText).toContain("Lulus Seleksi");
-    expect(bodyText).toContain("Gelombang Aktif");
+    // The hub is a client component: `domcontentloaded` can land before React
+    // mounts it, so a one-shot `textContent("body")` reads the pre-hydration
+    // shell on WebKit under load. Await the labels themselves instead.
+    await expect(page.getByText("Total Pendaftar")).toBeVisible();
+    await expect(page.getByText("Menunggu Verifikasi")).toBeVisible();
+    await expect(page.getByText("Lulus Seleksi")).toBeVisible();
+    await expect(page.getByText("Gelombang Aktif")).toBeVisible();
   });
 
   test("admin registrations list filters by status query parameter and opens detail verification panel", async ({
@@ -129,15 +123,18 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
     );
 
     // ── Data setup (real API, no mock) ───────────────────────────────
-    // Use the currently-announced period to borrow a real unit/academic year
-    // so a brand-new, definitely-open period can be created for this run.
-    const basePeriod = (await publicGet("/admissions/public/active-period"))
-      .data;
+    // Borrow a real unit and academic year from an existing period, so a
+    // brand-new, definitely-open period can be created for this run.
+    const session = await loginAs(page, "superAdmin");
+    const basePeriod = (
+      await apiRequest<{
+        data: Array<{ unit: { id: string }; academicYear: { id: string } }>;
+      }>(session, "GET", "/admissions/periods?limit=1")
+    ).data[0];
     expect(basePeriod).toBeTruthy();
     const now = Date.now();
     const runId = `e2e-${now}`;
 
-    const session = await loginAs(page, "superAdmin");
     const createdPeriod = (
       await apiRequest<{ data: { id: string } }>(
         session,
@@ -147,8 +144,10 @@ test.describe("SPMB - End-to-End Public Registration & Admin Management", () => 
           unitId: basePeriod.unit.id,
           academicYearId: basePeriod.academicYear.id,
           name: `SPMB E2E Auto ${runId}`,
-          startDate: new Date(now - 86_400_000).toISOString(),
-          endDate: new Date(now + 30 * 86_400_000).toISOString(),
+          // Calendar days; the API opens the first at 00.00 WIB and closes
+          // the last at 24.00 WIB.
+          startDate: new Date(now - 2 * 86_400_000).toISOString().slice(0, 10),
+          endDate: new Date(now + 30 * 86_400_000).toISOString().slice(0, 10),
           quota: 50,
           registrationFee: 0,
         },

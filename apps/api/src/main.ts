@@ -3,7 +3,12 @@ import { config } from '@/config';
 import { assertProductionSecrets } from '@/config/assert-secrets';
 import { logger } from '@/lib/logger';
 import { prisma } from '@/lib/prisma';
-import { initializeScheduler, stopScheduler } from '@/jobs';
+import {
+  initializeScheduler,
+  stopScheduler,
+  startWebPushDispatcher,
+  stopWebPushDispatcher,
+} from '@/jobs';
 import { redis } from '@/lib/redis';
 import { initializeEventBus } from '@/lib/event-bus';
 import { createServer } from 'http';
@@ -46,6 +51,8 @@ async function bootstrap() {
           '⏸️  Scheduler disabled (SCHEDULER_ENABLED=false): no cron jobs run in this process'
         );
       }
+      // Separate from the switch above on purpose — see web-push-dispatch.job.ts.
+      startWebPushDispatcher();
     }
 
     // Graceful shutdown
@@ -54,6 +61,7 @@ async function bootstrap() {
 
       // Stop scheduled jobs
       stopScheduler();
+      stopWebPushDispatcher();
 
       // Close the Redis connection (dashboard, chatbot and permission caches)
       await redis.quit().catch(() => undefined);

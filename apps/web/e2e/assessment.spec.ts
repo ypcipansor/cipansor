@@ -1,6 +1,12 @@
 import { test, expect } from "./fixtures/auth.fixture";
 import { LoginPage } from "./page-objects";
-import { loginAs, apiRequest } from "./helpers/auth-api";
+import {
+  apiLogin,
+  apiRequest,
+  injectSession,
+  loginAs,
+  SEED_USERS,
+} from "./helpers/auth-api";
 import { settledContent } from "./helpers/page-state";
 
 /**
@@ -87,6 +93,67 @@ test.describe("Assessment - Raport Merdeka", () => {
     await page.waitForLoadState("domcontentloaded", { timeout: 10000 });
 
     expect(page.url()).toMatch(/raport-merdeka/);
+  });
+});
+
+/**
+ * The Raport Merdeka preview names the student's school as the PDF does: the
+ * unit's official name (Edit Unit → Identitas Resmi). It used to print "SMP
+ * Cipansor, Jl. Pendidikan No. 123, Kabupaten Bogor" for every unit, and
+ * "Bogor" above the wali kelas's signature.
+ */
+test.describe("Assessment - Raport Merdeka preview", () => {
+  test("names the school by its official name, signed in Tasikmalaya", async ({
+    page,
+  }) => {
+    const admin = await apiLogin(SEED_USERS.adminSdit);
+    const unitId = (admin.user as { unitId: string }).unitId;
+    const { data: unit } = await apiRequest<{
+      data: { name: string; officialName: string | null };
+    }>(admin, "GET", `/units/${unitId}`);
+    const school = unit.officialName ?? unit.name;
+
+    const { data: years } = await apiRequest<{
+      data: Array<{ id: string; name: string; isActive: boolean }>;
+    }>(admin, "GET", "/academic-years?limit=100");
+    const year = years.find((y) => y.isActive);
+    expect(year, "an active academic year").toBeTruthy();
+
+    // A santri of the unit whose raport exists this year.
+    const { data: students } = await apiRequest<{
+      data: Array<{ id: string; nis: string }>;
+    }>(admin, "GET", "/students?limit=100");
+    let nis = "";
+    // Few santri are in a class this year; look through the whole list.
+    for (const s of students) {
+      const ok = await apiRequest(
+        admin,
+        "GET",
+        `/assessment/raport-merdeka/students/${s.id}?academicYearId=${year!.id}&semester=1`,
+      ).then(
+        () => true,
+        () => false,
+      );
+      if (ok) {
+        nis = s.nis;
+        break;
+      }
+    }
+    expect(nis, "a santri with a raport this year").not.toBe("");
+
+    await injectSession(page, admin);
+    await page.goto("/assessment/raport-merdeka");
+    await page.getByRole("tab", { name: "Generate Raport" }).click();
+    await page.getByRole("combobox").filter({ hasText: "Pilih Siswa" }).click();
+    await page
+      .getByRole("option", { name: new RegExp(`\\(${nis}\\)`) })
+      .click();
+    await page.getByRole("combobox").filter({ hasText: "Pilih Tahun" }).click();
+    await page.getByRole("option", { name: year!.name, exact: true }).click();
+
+    await expect(page.getByTestId("raport-school")).toHaveText(school);
+    await expect(page.getByText(/Tasikmalaya, /).first()).toBeVisible();
+    await expect(page.getByText(/Bogor|Jl\. Pendidikan/)).toHaveCount(0);
   });
 });
 

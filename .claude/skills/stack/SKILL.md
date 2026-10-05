@@ -61,5 +61,10 @@ node apps/api/dist/main.js &                        # :3001
   (see `packages/shared/src/types/demo-accounts.ts`). The local part carries the
   realm — `yayasan.ketua@`, `smpit.guru@` — since the old `@demo.` domain is gone.
   Do not invent `qa-*` accounts.
+- **A full e2e run needs `JWT_EXPIRES_IN=7d` and `JWT_REFRESH_EXPIRES_IN=30d`**
+  on the API, as `e2e-tests.yml` sets them. The global setup signs each role in
+  once; with the 15-minute default, every test that starts after the first 15
+  minutes lands on `/login`, and the run reports a block of unrelated specs as
+  failed. Targeted runs shorter than that pass either way, which hides it.
 - Redis is optional; the API logs a connection error and runs degraded without it.
 - Health check: `curl -sf http://localhost:3001/health` and `http://localhost:3000/login`.

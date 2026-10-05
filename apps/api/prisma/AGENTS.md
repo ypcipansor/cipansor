@@ -40,7 +40,29 @@ pnpm --filter api db:migrate          # create + apply a migration
 
 ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed  # TRUNCATEs every table first; refuses without the flag
 ALLOW_DEMO_PACK=1 pnpm --filter api db:seed:presentasi  # ADDS the presentation pack to an existing DB; truncates nothing
+APPLY_SPMB_2027_2028=1 pnpm --filter api db:seed:spmb-2027-2028  # loads the 2027/2028 SPMB brochure; truncates nothing
 ```
+
+**The 2027/2028 brochure** (`seeds/spmb-2027-2028.ts`, data in
+`seeds/spmb-2027-2028.data.ts`) is real data, not demo data: per unit one
+period with the brochure's four waves, fee table, requirements and minimum
+age. It runs on staging, and on production with a release
+(`decisions/spmb-2027-2028.md` point 8). Every value is checked with the
+schemas the API checks a form with. A unit whose period exists is skipped, so
+an admin's edit is never overwritten (`SPMB_2027_2028_UPDATE=1` lays the
+brochure over it again, keeping the contact, the quotas and an admin's early
+close). Other active 2027/2028 periods of the unit are deactivated, not
+deleted. It sets no contact and no real quota — the brochure has neither;
+each unit's admin enters them.
+
+**Demo intakes** (`seeds/spmb-demo.ts`) are what the base seed (SMP IT) and
+the presentation pack (every unit) make: one period per unit and year, as the
+module has it, with two waves around today from `admissionWindows` — wave 1
+open, wave 2 ahead — and the brochure's fees and requirements. They are named
+"SPMB <year> <unit> (contoh)", never the brochure's own name: the loader skips
+a unit whose "SPMB 2027/2028 <unit>" exists, so a demo period under that name
+would keep a reseeded staging on demo dates. Under its own name the loader
+sets it aside like any other period of the year.
 
 **The presentation pack** (`seeds/paket-presentasi.ts`) turns the thin base seed
 into a school year that holds together: 164 santri in 20 rombel, a clash-free
@@ -82,3 +104,4 @@ thin base data made the dashboard show "+1162%" growth that never happened.
   don't hand-edit `0_init`.
 - `seed.ts`, `seeds/*` — seed data (admin user, roles, reference data).
 - `seed-presentasi.ts` — standalone runner for the presentation pack; refuses without `ALLOW_DEMO_PACK=1`.
+- `seed-spmb-2027-2028.ts` — standalone runner for the 2027/2028 brochure; refuses without `APPLY_SPMB_2027_2028=1`.

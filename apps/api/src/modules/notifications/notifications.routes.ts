@@ -41,120 +41,9 @@ router.use(authenticate);
  */
 router.get('/', controller.getMyNotifications);
 
-/**
- * @swagger
- * /api/notifications/admin:
- *   get:
- *     summary: Get all notifications (Admin View)
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *       - in: query
- *         name: startDate
- *         schema:
- *           type: string
- *           format: date
- *       - in: query
- *         name: endDate
- *         schema:
- *           type: string
- *           format: date
- *     responses:
- *       200:
- *         description: List of all notifications
- */
-// Protected Admin Routes
-router.get(
-  '/admin',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.getAllNotifications
-);
-
-/**
- * @swagger
- * /api/notifications:
- *   post:
- *     summary: Create notification
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - userId
- *               - title
- *               - message
- *             properties:
- *               userId:
- *                 type: string
- *               title:
- *                 type: string
- *               message:
- *                 type: string
- *               type:
- *                 type: string
- *               link:
- *                 type: string
- *     responses:
- *       201:
- *         description: Notification created
- */
-// Creating notifications usually requires admin/staff privileges
-router.post(
-  '/',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  controller.createNotification
-);
-
-/**
- * @swagger
- * /api/notifications/bulk:
- *   post:
- *     summary: Send bulk notifications
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - userIds
- *               - title
- *               - message
- *             properties:
- *               userIds:
- *                 type: array
- *                 items:
- *                   type: string
- *               title:
- *                 type: string
- *               message:
- *                 type: string
- *               type:
- *                 type: string
- *     responses:
- *       201:
- *         description: Notifications sent
- */
-router.post(
-  '/bulk',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
-  controller.createBulkNotifications
-);
-
-router.get('/stats', authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN), controller.getStats);
+// No list of everyone's notifications: a sender sees, per announcement, how
+// many bells it reached and how many read it (decisions/siaran-pengumuman.md,
+// 5). A notification is opened and deleted by its owner only.
 
 // Channel policy: which external channels (email/SMS/WhatsApp) the system
 // may use. Read: admins. Write: SUPER_ADMIN only (system-wide switch).
@@ -173,54 +62,10 @@ router.get(
   controller.getEmailTransport
 );
 
-// Templates (Admin Only)
-router.get(
-  '/templates',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  controller.getTemplates
-);
-router.get(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  controller.getTemplateById
-);
-router.post(
-  '/templates',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.createTemplate
-);
-router.put(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateTemplate
-);
-router.delete(
-  '/templates/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteTemplate
-);
-
 router.post('/read-all', controller.markAllAsRead);
 
-// ==================== ANNOUNCEMENTS ====================
-
-router.get('/announcements', controller.getAnnouncements);
-router.get('/announcements/:id', controller.getAnnouncementById);
-router.post(
-  '/announcements',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER),
-  controller.createAnnouncement
-);
-router.put(
-  '/announcements/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.updateAnnouncement
-);
-router.delete(
-  '/announcements/:id',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.deleteAnnouncement
-);
+// Announcements are their own module (`/announcements`); hand-written
+// notifications go through them (decisions/siaran-pengumuman.md).
 
 // ==================== MOBILE PUSH (FCM) ====================
 
@@ -228,17 +73,25 @@ router.delete(
 // Body: { token: string | null } — null clears the token on logout.
 router.put('/fcm-token', controller.updateFcmToken);
 
+// Browser Web Push (the PWA). Any authenticated user; each device registers its
+// own subscription. `/push/subscribe`, `/push/unsubscribe` and `/push/status`
+// stay static above the `/:id` routes.
+router.get('/push/config', controller.getPushConfig);
+router.post('/push/subscribe', controller.subscribePush);
+router.post('/push/unsubscribe', controller.unsubscribePush);
+router.get('/push/status', controller.getPushStatus);
+
+// The caller's own notification preferences. No role check: everyone reads and
+// writes only their own row (`req.user.sub`). Static, so above `/:id`.
+router.get('/preferences', controller.getMyPreferences);
+router.patch('/preferences', controller.updateMyPreferences);
+
 // ==================== WHATSAPP ====================
 
 router.post(
   '/whatsapp/send',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
   controller.sendWhatsApp
-);
-router.post(
-  '/whatsapp/broadcast',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.broadcastWhatsApp
 );
 router.get(
   '/whatsapp/status',
@@ -252,53 +105,8 @@ router.post('/scheduler/trigger', authorize(UserRole.SUPER_ADMIN), controller.tr
 
 // ==================== GENERIC ID ROUTES (MUST BE LAST) ====================
 
-// `/:id/send` sat above `/whatsapp/send` and answered it with id = "whatsapp"
-// (utils/route-shadowing.guard.test.ts keeps every param route below its static siblings).
-router.post(
-  '/:id/send',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.sendNotification
-);
-
-/**
- * @swagger
- * /api/notifications/{id}/schedule:
- *   post:
- *     summary: Schedule a notification
- *     tags: [Notifications]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - scheduledAt
- *             properties:
- *               scheduledAt:
- *                 type: string
- *                 format: date-time
- *     responses:
- *       200:
- *         description: Notification scheduled
- */
-router.post(
-  '/:id/schedule',
-  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN),
-  controller.scheduleNotification
-);
-
 router.post('/:id/read', controller.markAsRead);
-// Removed RBAC from delete to allow users to delete their own notifications.
-// Controller/Service handles ownership check via { id, userId }.
+// Owner only: someone else's notification answers 404, an admin's included.
 router.delete('/:id', controller.deleteNotification);
 router.get('/:id', controller.getNotificationById);
 

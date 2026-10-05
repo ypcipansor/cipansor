@@ -1,10 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type {
+  AdmissionFeeItemDTO,
+  AdmissionPeriodDTO,
+  AdmissionWaveDTO,
+  CreateAdmissionPeriodInput,
+  CreateAdmissionWaveInput,
   RegistrantDTO,
   OnboardRegistrantPayload,
+  PublicIntakeDTO,
   TrackedRegistrantDTO,
   RegistrationStatus,
+  ReplaceAdmissionFeesInput,
+  UpdateAdmissionPeriodInput,
+  UpdateAdmissionWaveInput,
 } from "@cipansor/shared";
 export type { RegistrationStatus };
 
@@ -171,10 +180,132 @@ export function useAdmissionPeriod(id: string) {
   return useQuery({
     queryKey: ["admission-period", id],
     queryFn: async () => {
-      const response = await api.get(`/admissions/periods/${id}`);
+      const response = await api.get<{ data: AdmissionPeriodDTO }>(
+        `/admissions/periods/${id}`,
+      );
       return response.data.data;
     },
     enabled: !!id,
+  });
+}
+
+// --- An intake's period and waves, as the unit's admin enters them ---
+
+function useInvalidateIntake() {
+  const queryClient = useQueryClient();
+  return (periodId?: string) => {
+    queryClient.invalidateQueries({ queryKey: ["admission-periods"] });
+    queryClient.invalidateQueries({ queryKey: ["admission-waves"] });
+    queryClient.invalidateQueries({ queryKey: ["active-admission-waves"] });
+    if (periodId) {
+      queryClient.invalidateQueries({
+        queryKey: ["admission-period", periodId],
+      });
+    }
+  };
+}
+
+export function useCreateAdmissionPeriod() {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: CreateAdmissionPeriodInput) => {
+      const response = await api.post<{ data: AdmissionPeriodDTO }>(
+        "/admissions/periods",
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: (period) => invalidate(period.id),
+  });
+}
+
+export function useUpdateAdmissionPeriod(id: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: UpdateAdmissionPeriodInput) => {
+      const response = await api.patch<{ data: AdmissionPeriodDTO }>(
+        `/admissions/periods/${id}`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(id),
+  });
+}
+
+/**
+ * Each unit's intake for the public SPMB page — no session. One per unit:
+ * the period open now, else the next, else the last one closed.
+ */
+export function usePublicIntakes() {
+  return useQuery({
+    queryKey: ["admissions", "public", "intakes"] as const,
+    queryFn: async () => {
+      const response = await api.get<{ data: PublicIntakeDTO[] }>(
+        "/admissions/public/intakes",
+      );
+      return response.data.data ?? [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Save an intake's whole fee table (the brochure's "Rincian Biaya"). */
+export function useReplaceAdmissionFees(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: ReplaceAdmissionFeesInput) => {
+      const response = await api.put<{ data: AdmissionFeeItemDTO[] }>(
+        `/admissions/periods/${periodId}/fees`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(periodId),
+  });
+}
+
+export function useCreateAdmissionWave() {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (input: CreateAdmissionWaveInput) => {
+      const response = await api.post<{ data: AdmissionWaveDTO }>(
+        "/admissions/waves",
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: (_, input) => invalidate(input.periodId),
+  });
+}
+
+export function useUpdateAdmissionWave(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      input,
+    }: {
+      id: string;
+      input: UpdateAdmissionWaveInput;
+    }) => {
+      const response = await api.patch<{ data: AdmissionWaveDTO }>(
+        `/admissions/waves/${id}`,
+        input,
+      );
+      return response.data.data;
+    },
+    onSuccess: () => invalidate(periodId),
+  });
+}
+
+export function useDeleteAdmissionWave(periodId: string) {
+  const invalidate = useInvalidateIntake();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/admissions/waves/${id}`);
+    },
+    onSuccess: () => invalidate(periodId),
   });
 }
 
@@ -361,21 +492,6 @@ export { useRegistrant as useRegistration };
 // Backward-compat hooks
 // (formerly exported from use-psb.ts)
 // =====================================
-
-export function useActivePeriod() {
-  return useQuery({
-    queryKey: ["active-admission-period"],
-    queryFn: async () => {
-      // Use the unauthenticated public endpoint so this hook works on the
-      // public PPDB page (`/public/spmb`) where no user is logged in. The
-      // authenticated `/admissions/periods` list is behind `authenticate`
-      // + `authorize(SUPER_ADMIN, UNIT_ADMIN)` and would return 401/403 for
-      // anonymous visitors, breaking the registration form.
-      const response = await api.get("/admissions/public/active-period");
-      return response.data?.data ?? null;
-    },
-  });
-}
 
 export function useCreateRegistration() {
   const queryClient = useQueryClient();

@@ -24,6 +24,23 @@ not of the diff: a newly published advisory reddens every open PR at once, and
 Example (2026-09-02): `fast-uri >=4.1.2` → `>=4.1.3` and `qs ^6.15.2` →
 `^6.16.0`. Two lines.
 
+## When no fixed version exists
+
+A pin cannot clear an advisory with no patched release (`first_patched_version:
+null` in `gh api /advisories/<GHSA>`). First found 2026-10-03: `braces <=3.0.3`
+(GHSA-vfj7-8cjw-p6xm), updated on the 2nd, red on every PR; 3.0.3 was the
+newest release.
+
+- `pnpm why <pkg> -r` — is any path a `dependencies` one? If yes, there is no
+  waiver: replace or patch what pulls it in.
+- Dev-only: an entry in `ACCEPTED_RISKS` (`scripts/audit-deps.mjs`) — exact
+  name, version and advisory URL, an `until` date about a month out, and a
+  note on why the risk does not reach a running system. The script recomputes
+  production reachability from the lockfile on every run, so a new runtime
+  path fails whatever the date, and so does the date passing. Each waiver is a
+  `::warning::` on the run. When it reds again on the date: look for a
+  release, then either pin it and delete the entry, or renew with a reason.
+
 ## When it goes green — read the annotation
 
 Since #460 the script times out each request after 30 s

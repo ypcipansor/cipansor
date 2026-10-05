@@ -353,6 +353,16 @@ model User {
   passwordHash           String?   @map("password_hash")
   resetTokenHash         String?   @map("reset_token_hash")
   resetTokenExpiresAt    DateTime? @map("reset_token_expires_at")
+  /// Must choose a new password at the next sign-in
+  /// (decisions/autentikasi-2fa-dan-sandi.md): when someone else set it, when
+  /// an admin marks it leaked, when 2FA that a short password relied on is
+  /// turned off, and once for every account at the release that brought the
+  /// rules. On for a new row; only the paths where a person sets their own
+  /// password turn it off.
+  mustChangePassword     Boolean   @default(true) @map("must_change_password")
+  /// The current password is shorter than the single-factor minimum (15), so
+  /// it is acceptable only while 2FA stays on.
+  passwordNeedsSecondFactor Boolean @default(false) @map("password_needs_second_factor")
   phone                  String?
   role                   UserRole? // DEPRECATED: Legacy role field. Use UserRoleAssignment instead.
   unitId                 String?   @map("unit_id")
@@ -392,6 +402,8 @@ model User {
   givenMedications                  MedicationUsageLog[]        @relation("MedicationGiver")
   createdAnnouncements              Announcement[]              @relation("AnnouncementCreator")
   notifications                     Notification[]
+  pushSubscriptions                 PushSubscription[]
+  notificationPreference            NotificationPreference?
   sentMessages                      Message[]                   @relation("SentMessages")
   receivedMessages                  Message[]                   @relation("ReceivedMessages")
   leaveBalances                     LeaveBalance[]
@@ -601,6 +613,14 @@ model Unit {
   email         String?
   logoUrl       String?   @map("logo_url")
   npsn          String?   @unique // Nomor Pokok Sekolah Nasional
+  /// The name on the operating permit and in the national reference data
+  /// ("SMP IT Pesantren Cipansor"). Documents print it — letterhead, rapor,
+  /// certificates, Dapodik — and screens keep the short `name`. Null: documents
+  /// print `name` (`unitDocumentName`).
+  officialName          String?   @map("official_name")
+  /// Izin operasional / izin pendirian: number and date as the permit gives them.
+  operatingPermitNumber String?   @map("operating_permit_number")
+  operatingPermitDate   DateTime? @map("operating_permit_date") @db.Date
   /// Superseded by `UnitAccreditation` (2026-09-28): nothing reads or writes it
   /// any more; the readiness self-assessment used to overwrite it. Drop it once
   /// a release has run without it.
@@ -1838,11 +1858,12 @@ model BoardMember {
   id           String    @id @default(uuid())
   foundationId String    @map("foundation_id")
   name         String
-  position     String // Ketua, Sekretaris, Bendahara, Anggota
+  position     String // Pembina, Pengawas, or a Pengurus office: Ketua, Sekretaris, Bendahara
   phone        String?
   email        String?
   photoUrl     String?   @map("photo_url")
-  startDate    DateTime  @map("start_date")
+  /// Unknown until an admin enters it from the appointment deed — never guessed.
+  startDate    DateTime? @map("start_date")
   endDate      DateTime? @map("end_date")
   isActive     Boolean   @default(true) @map("is_active")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -1893,18 +1914,29 @@ enum AdmissionStatus {
   CANCELLED // Dibatalkan
 }
 
-/// AdmissionPeriod - Periode Penerimaan Santri Baru
+/// AdmissionPeriod - one unit's SPMB intake for one academic year
+/// ("SPMB 2027/2028 SMP IT"), divided into waves (AdmissionWave). What the
+/// brochure prints per unit lives here: the requirements, the minimum age and
+/// the contact person.
 model AdmissionPeriod {
   id              String   @id @default(uuid())
   unitId          String   @map("unit_id")
   academicYearId  String   @map("academic_year_id")
-  name            String // e.g., "PSB 2024/2025 Gelombang 1"
+  name            String // e.g., "SPMB 2027/2028 SMP IT"
   startDate       DateTime @map("start_date")
   endDate         DateTime @map("end_date")
   quota           Int      @default(0)
   registrationFee Decimal  @default(0) @map("registration_fee") @db.Decimal(15, 2)
   isActive        Boolean  @default(true) @map("is_active")
-  requirements    String?  @db.Text // JSON atau teks persyaratan
+  /// One line per requirement, in the order the brochure prints them.
+  requirements    String[] @default([])
+  /// Minimum age in whole months, measured on `ageReferenceDate` (or on the
+  /// day of registration when that is empty). 84 = 7 years.
+  minAgeMonths    Int?     @map("min_age_months")
+  ageReferenceDate DateTime? @map("age_reference_date") @db.Date
+  /// The unit's contact person for this intake, entered by its admin.
+  contactName     String?  @map("contact_name")
+  contactPhone    String?  @map("contact_phone")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -1913,6 +1945,7 @@ model AdmissionPeriod {
   academicYear AcademicYear    @relation(fields: [academicYearId], references: [id])
   registrants  Registrant[]
   waves        AdmissionWave[] // NEW: Gelombang pendaftaran
+  feeItems     AdmissionFeeItem[]
 
   @@index([unitId])
   @@index([academicYearId])
@@ -1937,7 +1970,7 @@ model Registrant {
   email             String?
   previousSchool    String?         @map("previous_school")
   // Kemampuan Al-Quran (NEW)
-  quranAbility      String?         @map("quran_ability") // BELUM_BISA, IQRA, LANCAR, TARTIL, TAHFIDZ
+  quranAbility      QuranAbility?   @map("quran_ability")
   memorizedJuz      Int?            @map("memorized_juz") // Jumlah juz yang sudah dihafal
   // Parent info
   parentName        String          @map("parent_name")
@@ -2534,6 +2567,14 @@ model MedicationUsageLog {
 // PHASE 4: KOMUNIKASI (NOTIFICATIONS)
 // =====================================
 
+/// Who an announcement reaches (decisions/siaran-pengumuman.md).
+enum AnnouncementScope {
+  YAYASAN
+  UNIT
+  CLASSES
+  BOARDERS
+}
+
 enum NotificationType {
   INFO // Informasi umum
   ANNOUNCEMENT // Pengumuman
@@ -2549,6 +2590,23 @@ enum NotificationStatus {
   ARCHIVED
 }
 
+/// Where a notification stands on its way to the user's devices (Web Push).
+/// The notification row is the outbox: the dispatcher claims PENDING rows.
+enum PushDispatchState {
+  PENDING
+  SENDING
+  SENT
+  SKIPPED
+  FAILED
+}
+
+/// How often digest reminders are sent (notification preferences).
+enum ReminderFrequency {
+  DAILY
+  WEEKLY
+  NONE
+}
+
 /// Announcement - Pengumuman
 model Announcement {
   id            String           @id @default(uuid())
@@ -2561,6 +2619,18 @@ model Announcement {
   publishedAt   DateTime?        @map("published_at")
   expiresAt     DateTime?        @map("expires_at")
   targetRoles   String[]         @map("target_roles") // ["STUDENT", "PARENT"]
+  /// Who it reaches (decisions/siaran-pengumuman.md): the whole yayasan, one
+  /// unit, the sender's classes, or a musyrif's santri mukim.
+  scope         AnnouncementScope @default(UNIT)
+  /// CLASSES: the classes it was sent to — the sender's own, checked at publication.
+  classIds      String[]         @default([]) @map("class_ids")
+  /// BOARDERS: the musyrif's santri at publication, so the audience does not
+  /// shift when a santri changes kamar later.
+  studentIds    String[]         @default([]) @map("student_ids")
+  /// Withdrawn by its author, the unit's head or admin, or the yayasan: gone
+  /// from the board and from every bell; the row stays as the record.
+  withdrawnAt   DateTime?        @map("withdrawn_at")
+  withdrawnById String?          @map("withdrawn_by_id")
   createdById   String           @map("created_by_id")
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @updatedAt @map("updated_at")
@@ -2568,6 +2638,7 @@ model Announcement {
   // Relations
   unit      Unit? @relation(fields: [unitId], references: [id])
   createdBy User  @relation("AnnouncementCreator", fields: [createdById], references: [id])
+  notifications Notification[]
 
   @@index([unitId])
   @@index([publishedAt])
@@ -2588,15 +2659,76 @@ model Notification {
   data        Json?              @map("data") // Additional data for extended types
   scheduledAt DateTime?          @map("scheduled_at")
   createdAt   DateTime           @default(now()) @map("created_at")
+  /// Web Push outbox state. New rows start PENDING and the dispatcher
+  /// (`push-dispatch.service.ts`) claims them; rows older than Web Push are
+  /// NULL and are never pushed.
+  pushState   PushDispatchState? @default(PENDING) @map("push_state")
+  /// The announcement this bell row delivers, if any: revising it rewrites the
+  /// row, withdrawing it removes the row (decisions/siaran-pengumuman.md).
+  announcementId String?         @map("announcement_id")
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcement Announcement? @relation(fields: [announcementId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([status])
   @@index([createdAt])
   @@index([scheduledAt])
+  @@index([pushState])
+  @@index([announcementId])
   @@map("notifications")
+}
+
+/// What a person wants to be notified about, and how (Pengaturan Notifikasi).
+///
+/// One row per user, created on their first save; until then the defaults in
+/// `preferences.service.ts` apply. Quiet hours are wall-clock WIB ("HH:MM").
+model NotificationPreference {
+  userId            String            @id @map("user_id")
+  emailEnabled      Boolean           @default(true) @map("email_enabled")
+  smsEnabled        Boolean           @default(false) @map("sms_enabled")
+  whatsappEnabled   Boolean           @default(true) @map("whatsapp_enabled")
+  pushEnabled       Boolean           @default(true) @map("push_enabled")
+  paymentReminders  Boolean           @default(true) @map("payment_reminders")
+  attendanceAlerts  Boolean           @default(true) @map("attendance_alerts")
+  academicUpdates   Boolean           @default(true) @map("academic_updates")
+  tahfidzProgress   Boolean           @default(true) @map("tahfidz_progress")
+  announcements     Boolean           @default(true)
+  eventReminders    Boolean           @default(true) @map("event_reminders")
+  monthlyReports    Boolean           @default(true) @map("monthly_reports")
+  quietHoursStart   String?           @map("quiet_hours_start") @db.VarChar(5)
+  quietHoursEnd     String?           @map("quiet_hours_end") @db.VarChar(5)
+  reminderFrequency ReminderFrequency @default(DAILY) @map("reminder_frequency")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// A browser Web Push subscription (one row per device/browser).
+///
+/// Distinct from `User.fcmToken`, which is a single FCM token for a native
+/// Android build: a person can have the portal installed on several devices, and
+/// each produces its own endpoint + keys. The dispatcher
+/// (`push-dispatch.service.ts`) reads these to deliver push and deletes a row
+/// the push service reports gone; the endpoint is the natural idempotency key
+/// because re-subscribing the same browser returns the same endpoint.
+model PushSubscription {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @map("user_agent") @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }
 
 /// Message - Pesan Internal (Buku Penghubung)
@@ -3626,6 +3758,47 @@ model Donation {
 // PPDB ENHANCEMENT - Admission Waves
 // =====================================
 
+/// Who a line of an intake's fee table is for.
+enum FeeResidency {
+  ALL // mukim and tidak mukim
+  BOARDING // mukim (asrama)
+  NON_BOARDING // tidak mukim
+}
+
+/// A registrant's own account of how they read the Qur'an, least to most; the
+/// entry test checks it. Labels in @cipansor/shared (QURAN_ABILITY_LABELS).
+enum QuranAbility {
+  BELUM_BISA
+  IQRA
+  LANCAR
+  TARTIL
+  TAHFIDZ
+}
+
+/// One line of a unit's entry fees for an intake, as the brochure's "Rincian
+/// Biaya" table prints it: an amount for ikhwan and one for akhwat, for
+/// boarding, non-boarding or both. A monthly fee (SPP) is one line too: its
+/// first month is paid on entry, which is why the brochure's totals include
+/// "Infaq Juli". Totals are computed (admissionFeeTotals in @cipansor/shared),
+/// never stored.
+model AdmissionFeeItem {
+  id           String       @id @default(uuid())
+  periodId     String       @map("period_id")
+  sortOrder    Int          @default(0) @map("sort_order")
+  label        String
+  maleAmount   Decimal      @map("male_amount") @db.Decimal(12, 2)
+  femaleAmount Decimal      @map("female_amount") @db.Decimal(12, 2)
+  residency    FeeResidency @default(ALL)
+  isMonthly    Boolean      @default(false) @map("is_monthly")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  period AdmissionPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@index([periodId])
+  @@map("admission_fee_items")
+}
+
 enum WaveStatus {
   UPCOMING // Belum dibuka
   OPEN // Sedang dibuka
@@ -3658,6 +3831,18 @@ model AdmissionWave {
   /// cancellation. NULL for rows migrated from before this flag existed.
   fullByCapacity   Boolean?  @default(false) @map("full_by_capacity")
   registrationFee Decimal?   @map("registration_fee") @db.Decimal(12, 2)
+  /// The wave's sessions after registration, as calendar days. An empty end
+  /// means a single day. The CHECKs that each end is not before its start are
+  /// in migration 20261003000000.
+  testStartDate           DateTime? @map("test_start_date") @db.Date
+  testEndDate             DateTime? @map("test_end_date") @db.Date
+  resultsStartDate        DateTime? @map("results_start_date") @db.Date
+  resultsEndDate          DateTime? @map("results_end_date") @db.Date
+  reRegistrationStartDate DateTime? @map("re_registration_start_date") @db.Date
+  reRegistrationEndDate   DateTime? @map("re_registration_end_date") @db.Date
+  /// Taken off the entry fees when they are paid in full in this wave. Empty
+  /// for a wave, or a unit, with no such discount.
+  fullPaymentDiscount     Decimal?  @map("full_payment_discount") @db.Decimal(12, 2)
   notes           String?
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
@@ -3707,6 +3892,9 @@ model Extracurricular {
   id               String                  @id @default(uuid())
   unitId           String                  @map("unit_id")
   name             String // Nama kegiatan
+  /// The name on the public site in English and Arabic; empty shows `name`.
+  nameEn           String?                 @map("name_en")
+  nameAr           String?                 @map("name_ar")
   code             String? // Kode singkat
   category         ExtracurricularCategory
   description      String?                 @db.Text

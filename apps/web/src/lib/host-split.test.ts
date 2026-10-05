@@ -155,6 +155,17 @@ describe("hostSplitActionFor", () => {
     it("does not treat /unit-usaha as public", () => {
       expect(target(PUBLIC_HOST, "/unit-usaha")).toBe("404");
     });
+
+    // The public Fasilitas and Kegiatan pages live at /campus and /activities
+    // because /facilities (Sarpras) and /extracurricular are portal modules,
+    // read with a session; neither may leak onto the marketing host.
+    it("keeps the portal's /facilities and /extracurricular off the public host", () => {
+      expect(target(PUBLIC_HOST, "/facilities")).toBe("404");
+      expect(target(PUBLIC_HOST, "/extracurricular")).toBe("404");
+      expect(target(PORTAL_HOST, "/facilities")).toBeNull();
+      expect(target(PUBLIC_HOST, "/campus")).toBeNull();
+      expect(target(PUBLIC_HOST, "/activities")).toBeNull();
+    });
   });
 
   it("is case-insensitive and port-insensitive about the host", () => {

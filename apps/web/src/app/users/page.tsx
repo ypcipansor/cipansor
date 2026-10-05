@@ -10,7 +10,12 @@ import {
   SearchInput,
   ConfirmDialog,
 } from "@/components/shared";
-import { useUsers, useDeleteUser, useUnits } from "@/hooks";
+import {
+  useUsers,
+  useDeleteUser,
+  useUnits,
+  useRequirePasswordChange,
+} from "@/hooks";
 import { realmDisplayNames, realmColors } from "@/hooks/use-roles";
 import { User, UserRole, authApi } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +56,7 @@ import {
   Building2,
   ShieldAlert,
   KeyRound,
+  LockKeyhole,
 } from "lucide-react";
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 
@@ -58,6 +64,7 @@ import { toast } from "sonner";
 import { useAuthStore } from "@/stores/auth";
 import { authService } from "@/services/auth.service";
 import { cn } from "@/lib/utils";
+import { getErrorMessage } from "@/lib/api-error";
 
 // Realm filter options
 const realmOptions = [
@@ -165,6 +172,7 @@ export default function UsersPage() {
   const [deactivate2FAUserId, setDeactivate2FAUserId] = useState<string | null>(
     null,
   );
+  const [passwordChangeFor, setPasswordChangeFor] = useState<User | null>(null);
 
   // Get active role from current user
   const activeUserRole = useMemo(() => {
@@ -180,9 +188,29 @@ export default function UsersPage() {
     limit: pageSize,
     search: search || undefined,
     unitId: unitFilter || (!isSuperAdmin ? currentUser?.unitId : undefined),
+    // Filtered by the API across every page, not within the page shown.
+    realm: realmFilter || undefined,
   });
 
   const deleteMutation = useDeleteUser();
+  const requirePasswordChange = useRequirePasswordChange();
+
+  /**
+   * For a password that leaked or that someone else learned: the account
+   * chooses a new one at its next sign-in. The admin never learns it.
+   */
+  const handleRequirePasswordChange = async () => {
+    if (!passwordChangeFor) return;
+    try {
+      const result = await requirePasswordChange.mutateAsync(
+        passwordChangeFor.id,
+      );
+      toast.success(result.message);
+      setPasswordChangeFor(null);
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
 
   /**
    * E-mail this user a password reset link.
@@ -217,17 +245,15 @@ export default function UsersPage() {
     }
   };
 
-  // Filter users by realm if selected
-  const filteredData = useMemo(() => {
-    if (!data?.data || !realmFilter) return data?.data || [];
-
-    return data.data.filter((user) => {
-      const userRoles = user.userRoles as UserRole[] | undefined;
-      if (!userRoles) return false;
-      return userRoles.some((ur) => ur.role.realm === realmFilter);
-    });
-    // We explicitly only want to re-run when data or filter changes
-  }, [data, realmFilter]);
+  // Search and filters narrow the whole list, so they start again at page
+  // one: kept on page 2, a search with three results showed an empty table
+  // and "Page 2 of 1".
+  const narrow =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value);
+      setPage(1);
+    };
 
   const columns: ColumnDef<User>[] = [
     {
@@ -323,6 +349,14 @@ export default function UsersPage() {
                   ? "Mengirim…"
                   : "Kirim tautan reset password"}
               </DropdownMenuItem>
+              {!isSelf && (
+                <DropdownMenuItem
+                  onClick={() => setPasswordChangeFor(row.original)}
+                >
+                  <LockKeyhole className="mr-2 h-4 w-4" />
+                  Wajibkan ganti kata sandi
+                </DropdownMenuItem>
+              )}
               {(row.original as any).isTwoFactorEnabled && (
                 <DropdownMenuItem
                   onClick={() => setDeactivate2FAUserId(row.original.id)}
@@ -367,12 +401,12 @@ export default function UsersPage() {
             <SearchInput
               placeholder="Search by name or email..."
               value={search}
-              onChange={setSearch}
+              onChange={narrow(setSearch)}
             />
           </div>
           <Select
             value={realmFilter}
-            onValueChange={(v) => setRealmFilter(v === "ALL" ? "" : v)}
+            onValueChange={(v) => narrow(setRealmFilter)(v === "ALL" ? "" : v)}
           >
             <SelectTrigger className="w-full md:w-44">
               <SelectValue placeholder="All Realms" />
@@ -388,7 +422,7 @@ export default function UsersPage() {
           {isSuperAdmin && (
             <Select
               value={unitFilter}
-              onValueChange={(v) => setUnitFilter(v === "ALL" ? "" : v)}
+              onValueChange={(v) => narrow(setUnitFilter)(v === "ALL" ? "" : v)}
             >
               <SelectTrigger className="w-full md:w-48">
                 <SelectValue placeholder="All Units" />
@@ -408,14 +442,14 @@ export default function UsersPage() {
         {/* Table */}
         <DataTable
           columns={columns}
-          data={filteredData}
+          data={data?.data ?? []}
           isLoading={isLoading}
           onRowClick={(row) => router.push(`/users/${row.id}`)}
           pagination={{
             page,
-            totalPages: data?.meta?.totalPages || 1,
+            totalPages: data?.meta?.pagination?.totalPages || 1,
             pageSize,
-            total: data?.meta?.total || 0,
+            total: data?.meta?.pagination?.total || 0,
             onPageChange: setPage,
             onPageSizeChange: (size) => {
               setPageSize(size);
@@ -436,6 +470,17 @@ export default function UsersPage() {
           variant="destructive"
         />
 
+        <ConfirmDialog
+          open={!!passwordChangeFor}
+          onOpenChange={(open) => !open && setPasswordChangeFor(null)}
+          title="Wajibkan ganti kata sandi?"
+          description={`Untuk kata sandi yang bocor atau diketahui orang lain. ${passwordChangeFor?.name ?? "Pengguna ini"} harus membuat kata sandi baru saat masuk berikutnya, dan sesinya yang sedang berjalan berakhir paling lama 15 menit lagi. Anda tidak akan mengetahui kata sandi barunya.`}
+          confirmLabel="Wajibkan"
+          cancelLabel="Batal"
+          onConfirm={handleRequirePasswordChange}
+          isLoading={requirePasswordChange.isPending}
+        />
+
         {/* Deactivate 2FA Dialog */}
         <Dialog
           open={!!deactivate2FAUserId}
@@ -448,7 +493,8 @@ export default function UsersPage() {
                 Untuk pengguna yang kehilangan ponsel dan kode pemulihannya.
                 Masukkan kode dari aplikasi autentikator <strong>Anda</strong>{" "}
                 untuk mengonfirmasi. Pengguna itu lalu masuk dengan kata sandi
-                saja, dan bisa mengaktifkannya lagi di Profil.
+                saja — bila kurang dari 15 karakter, ia diminta membuat yang
+                baru — dan bisa mengaktifkannya lagi di Profil.
               </DialogDescription>
             </DialogHeader>
             <TwoFactorVerify

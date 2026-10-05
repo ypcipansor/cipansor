@@ -1,5 +1,10 @@
 import { Router } from 'express';
-import { authenticate, authenticate2FA, isAdmin } from '@/middleware/auth';
+import {
+  authenticate,
+  authenticate2FA,
+  authenticatePasswordChange,
+  isAdmin,
+} from '@/middleware/auth';
 import { requireTurnstile } from '@/middleware/turnstile';
 import { validate } from '@/middleware/error';
 import * as controller from './auth.controller';
@@ -10,6 +15,7 @@ import {
   changePasswordSchema,
   sendPasswordResetSchema,
   resetPasswordSchema,
+  newPasswordSchema,
   twoFactorCodeSchema,
   disableTwoFactorSchema,
 } from './auth.schema';
@@ -220,6 +226,39 @@ router.post(
   twoFactorLimiter,
   validate(twoFactorCodeSchema),
   controller.verifyTwoFactorLogin
+);
+
+/**
+ * @swagger
+ * /api/auth/new-password:
+ *   post:
+ *     summary: Set the new password a sign-in asked for
+ *     description: >
+ *       Answered with `requiresPasswordChange` by login or the 2FA step when
+ *       the password was set by someone else or marked leaked. Accepts only
+ *       the temporary token minted for this step; answers with a session.
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [newPassword]
+ *             properties:
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password set; the session starts
+ *       400:
+ *         description: Refused by the password rules, or the same as the old one
+ */
+router.post(
+  '/new-password',
+  authenticatePasswordChange,
+  validate(newPasswordSchema),
+  controller.setRequiredPassword
 );
 
 // Protected routes (Requires Full Access Token)

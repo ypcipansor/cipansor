@@ -12,9 +12,16 @@
  * accounts here, never in the consumers. The login page no longer lists them:
  * the demo credential panel was removed with DEMO_MODE (2026-09-23).
  *
- * Real names + photos are used for the six leaders of Yayasan Pesantren
- * Cipansor. All other names are representative demo data.
+ * The accounts of the yayasan's organs and the unit heads carry the real
+ * office holders' names and photos, from `office-holders.ts` (decided
+ * 2026-10-02, decisions/spmb-2027-2028.md item 5). Their passwords are public,
+ * so a test copy of the system stamps every document it renders "SALINAN UJI —
+ * BUKAN DOKUMEN SAH". The Sekretaris Yayasan is also Kepala SD IT, so two logins
+ * carry the same name. The yayasan publishes no Anggota Pengurus, so that account is
+ * named by its function. Every other name is representative demo data.
  */
+
+import { OFFICE_HOLDERS as H } from "./office-holders";
 
 export interface DemoAccount {
   /** Realm the account belongs to (YAYASAN, PESANTREN, SD_IT, …). */
@@ -53,16 +60,15 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_KETUA",
-    name: "H. Ramram Mansur Ramdani, S.Pd.I., M.Ag",
+    ...H.ramram,
     email: "yayasan.ketua@cipansor.or.id",
     password: P,
     description: "Ketua Yayasan Pesantren Cipansor",
-    photo: "/images/people/ketua-yayasan.webp",
   },
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_PEMBINA",
-    name: "K.H. Endang Saepudin, M.Pd.I",
+    ...H.aangSuandi,
     email: "yayasan.pembina@cipansor.or.id",
     password: P,
     description: "Pembina Yayasan",
@@ -70,7 +76,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_PENGAWAS",
-    name: "H. Ujang Suryana, S.E.",
+    ...H.asepTamim,
     email: "yayasan.pengawas@cipansor.or.id",
     password: P,
     description: "Pengawas Yayasan",
@@ -78,7 +84,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_SEKRETARIS",
-    name: "Hj. Siti Maemunah, S.Pd.",
+    ...H.dadanAliRidwan,
     email: "yayasan.sekretaris@cipansor.or.id",
     password: P,
     description: "Sekretaris Yayasan",
@@ -86,16 +92,15 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_BENDAHARA",
-    name: "H. Andi Muhammad Badrudin, S.T.",
+    ...H.andiBadrudin,
     email: "yayasan.bendahara@cipansor.or.id",
     password: P,
     description: "Bendahara Yayasan",
-    photo: "/images/people/bendahara-yayasan.webp",
   },
   {
     group: "YAYASAN",
     roleCode: "YAYASAN_ANGGOTA",
-    name: "H. Dedi Mulyadi, S.Ag.",
+    name: "Anggota Pengurus Yayasan",
     email: "yayasan.anggota@cipansor.or.id",
     password: P,
     description: "Anggota Pengurus Yayasan",
@@ -105,11 +110,10 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "PESANTREN",
     roleCode: "PESANTREN_PENGASUH",
-    name: "K.H. Muhammad Taufik Ismail, S.Pd",
+    ...H.taufikIsmail,
     email: "pesantren.pengasuh@cipansor.or.id",
     password: P,
     description: "Pimpinan Pesantren (Kiai), juga Pembina yayasan",
-    photo: "/images/people/pimpinan-pesantren.webp",
   },
   {
     group: "PESANTREN",
@@ -188,7 +192,7 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "TK_QURAN",
     roleCode: "TKQ_KEPALA_SEKOLAH",
-    name: "Hj. Wulan Sari, S.Pd.AUD",
+    ...H.aniSitiNurasiah,
     email: "tkq.kepala@cipansor.or.id",
     password: P,
     description: "Kepala TK Qur'an",
@@ -263,11 +267,10 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "SD_IT",
     roleCode: "SDIT_KEPALA_SEKOLAH",
-    name: "H. Dadan Ali Ridwan, S.Ag",
+    ...H.dadanAliRidwan,
     email: "sdit.kepala@cipansor.or.id",
     password: P,
     description: "Kepala SD IT",
-    photo: "/images/people/kepala-sdit.webp",
   },
   {
     group: "SD_IT",
@@ -347,11 +350,10 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "SMP_IT",
     roleCode: "SMPIT_KEPALA_SEKOLAH",
-    name: "H. Cecep Helmi Syawali, Lc., M.Ag",
+    ...H.cecepHelmi,
     email: "smpit.kepala@cipansor.or.id",
     password: P,
     description: "Kepala SMP IT",
-    photo: "/images/people/kepala-smpit.webp",
   },
   {
     group: "SMP_IT",
@@ -447,11 +449,10 @@ export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     group: "SMA_QURAN",
     roleCode: "SMAQ_KEPALA_SEKOLAH",
-    name: "H.M. Rizkon Hakiki, Lc., Al-Hafidz",
+    ...H.rizkonHakiki,
     email: "smaq.kepala@cipansor.or.id",
     password: P,
     description: "Kepala SMA Qur'an",
-    photo: "/images/people/kepala-smaquran.webp",
   },
   {
     group: "SMA_QURAN",

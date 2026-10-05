@@ -8,6 +8,7 @@ import {
   CreateDocumentInput,
   UpdateDocumentInput,
 } from './foundation.schema';
+import { Errors } from '../../middleware/error';
 
 // =====================================
 // FOUNDATION SERVICE
@@ -142,25 +143,35 @@ export async function getBoardMemberById(id: string) {
   });
 }
 
+/** A calendar day from a date input, stored at midnight UTC like the unit's permit date. */
+function day(value: string | null | undefined): Date | null | undefined {
+  if (value === undefined) return undefined;
+  return value ? new Date(`${value}T00:00:00.000Z`) : null;
+}
+
 export async function createBoardMember(data: CreateBoardMemberInput) {
+  const { foundationId: given, startDate, endDate, ...fields } = data;
+  // The yayasan has one foundation record; the portal's form does not name it.
+  const foundationId =
+    given ??
+    (await prisma.foundation.findFirst({ select: { id: true }, orderBy: { createdAt: 'asc' } }))
+      ?.id;
+  if (!foundationId) throw Errors.notFound('Foundation');
   return prisma.boardMember.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
-      ...data,
-      startDate: new Date(data.startDate),
-      endDate: data.endDate ? new Date(data.endDate) : undefined,
-    } as any,
+      ...fields,
+      foundationId,
+      startDate: day(startDate) ?? null,
+      endDate: day(endDate) ?? null,
+    },
   });
 }
 
 export async function updateBoardMember(id: string, data: UpdateBoardMemberInput) {
+  const { startDate, endDate, ...fields } = data;
   return prisma.boardMember.update({
     where: { id },
-    data: {
-      ...data,
-      startDate: data.startDate ? new Date(data.startDate) : undefined,
-      endDate: data.endDate ? new Date(data.endDate) : undefined,
-    },
+    data: { ...fields, startDate: day(startDate), endDate: day(endDate) },
   });
 }
 

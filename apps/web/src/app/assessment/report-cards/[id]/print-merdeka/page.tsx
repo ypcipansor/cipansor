@@ -4,6 +4,8 @@ import { useParams, useRouter } from "next/navigation";
 import { safeFormat } from "@/lib/date";
 import { Button } from "@/components/ui/button";
 import { useReportCard } from "@/hooks";
+import { useUnit, useUnitHead } from "@/hooks/use-units";
+import { LETTERHEAD, unitDocumentName, unitPermitLine } from "@cipansor/shared";
 import { ArrowLeft, Printer, Loader2 } from "lucide-react";
 
 import { id as idLocale } from "date-fns/locale";
@@ -119,6 +121,10 @@ function PrintReportCardMerdekaPageContent() {
   const reportCardId = params.id as string;
 
   const { data: reportCard, isLoading } = useReportCard(reportCardId);
+  // The head of the unit that issues the rapor (the class's), from the data;
+  // a blank line to sign by hand when the unit has none.
+  const { data: head } = useUnitHead(reportCard?.class?.unitId);
+  const { data: unit } = useUnit(reportCard?.class?.unitId ?? "");
 
   const handlePrint = () => {
     window.print();
@@ -260,25 +266,36 @@ function PrintReportCardMerdekaPageContent() {
           <div className="space-y-4">
             {/* Header Sekolah */}
             <div className="text-center border-b-2 border-gray-800 pb-3">
+              {/* The yayasan and the issuing unit, with the unit's permit and
+                  NPSN. It used to read "KEMENTERIAN AGAMA REPUBLIK INDONESIA",
+                  emoji for crests and an invented NSM. */}
               <div className="flex items-center justify-center gap-6 mb-2">
-                <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center text-2xl">
-                  🏫
-                </div>
+                {/* eslint-disable-next-line @next/next/no-img-element -- printed as is */}
+                <img
+                  src="/images/cipansor/logo-cipansor.webp"
+                  alt=""
+                  width={56}
+                  height={56}
+                  className="h-14 w-14 object-contain"
+                />
                 <div>
                   <p className="text-xs font-medium text-gray-600">
-                    KEMENTERIAN AGAMA REPUBLIK INDONESIA
+                    {LETTERHEAD.organisation}
                   </p>
-                  <h1 className="text-lg font-bold uppercase">
-                    {siteConfig.legalName}
+                  <h1
+                    className="text-lg font-bold uppercase"
+                    data-testid="rapor-unit"
+                  >
+                    {unit ? unitDocumentName(unit) : siteConfig.legalName}
                   </h1>
                   <p className="text-xs">{addressLines.join(", ")}</p>
                   <p className="text-xs">
                     Telp: {siteConfig.contact.phone} | Email:{" "}
-                    {siteConfig.contact.email} | NSM: 121232040001
+                    {siteConfig.contact.email}
+                    {unit &&
+                      unitPermitLine(unit) &&
+                      ` | ${unitPermitLine(unit)}`}
                   </p>
-                </div>
-                <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center text-xl">
-                  ☪️
                 </div>
               </div>
               <div className="bg-green-700 text-white py-1 px-4 mt-2">
@@ -332,7 +349,7 @@ function PrintReportCardMerdekaPageContent() {
                   </div>
                   <div className="flex">
                     <span className="w-28 text-gray-600">Kepala Satuan</span>
-                    <span>: H. Ahmad Fauzi, S.Pd.I., M.Pd.</span>
+                    <span data-testid="rapor-head">: {head?.name ?? "-"}</span>
                   </div>
                 </div>
               </div>
@@ -767,7 +784,7 @@ function PrintReportCardMerdekaPageContent() {
               </div>
               <div>
                 <p>
-                  Bandung,{" "}
+                  {LETTERHEAD.city},{" "}
                   {safeFormat(new Date(), "d MMMM yyyy", { locale: idLocale })}
                 </p>
                 <p>Wali Kelas</p>
@@ -779,12 +796,14 @@ function PrintReportCardMerdekaPageContent() {
               </div>
               <div>
                 <p>Mengetahui,</p>
-                <p>Kepala Madrasah</p>
+                <p>{head?.title ?? "Kepala Sekolah"}</p>
                 <div className="h-16"></div>
                 <p className="border-t border-gray-400 pt-1">
-                  H. Ahmad Fauzi, S.Pd.I., M.Pd.
+                  {head?.name ?? "(................................)"}
                 </p>
-                <p className="text-xs text-gray-600">NIP. 196505121990031002</p>
+                {head?.nip && (
+                  <p className="text-xs text-gray-600">NIP. {head.nip}</p>
+                )}
               </div>
             </div>
 

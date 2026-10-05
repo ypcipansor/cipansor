@@ -101,16 +101,13 @@ export const waveController = {
     try {
       const wave = await waveService.create(req.body, req.user);
       res.status(201).json(ApiResponse.success(wave, 'Wave created successfully'));
-    } catch (error: any) {
-      if (error.message?.includes('already exists')) {
-        return res.status(400).json(ApiResponse.error(error.message));
-      }
+    } catch (error) {
       next(error);
     }
   },
 
   /**
-   * PUT /api/ppdb-waves/:id
+   * PATCH /api/admissions/waves/:id
    */
   async update(req: Request, res: Response, next: NextFunction) {
     try {
@@ -128,10 +125,7 @@ export const waveController = {
     try {
       await waveService.delete(req.params.id, req.user);
       res.json(ApiResponse.success(null, 'Wave deleted successfully'));
-    } catch (error: any) {
-      if (error.message?.includes('Cannot delete')) {
-        return res.status(400).json(ApiResponse.error(error.message));
-      }
+    } catch (error) {
       next(error);
     }
   },

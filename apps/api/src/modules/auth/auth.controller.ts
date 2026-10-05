@@ -10,6 +10,7 @@ import {
   ChangePasswordInput,
   SendPasswordResetInput,
   ResetPasswordInput,
+  NewPasswordInput,
 } from './auth.schema';
 import {
   clearAuthCookies,
@@ -54,12 +55,17 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
   if (!('accessToken' in result)) {
     const requiresTwoFactor = 'requiresTwoFactor' in result && result.requiresTwoFactor;
+    const requiresPasswordChange =
+      'requiresPasswordChange' in result && result.requiresPasswordChange;
     setTempCookie(res, result.tempToken, requiresTwoFactor ? 5 * 60 * 1000 : 10 * 60 * 1000);
+    const step = requiresTwoFactor
+      ? { requiresTwoFactor: true }
+      : requiresPasswordChange
+        ? { requiresPasswordChange: true }
+        : { requiresTwoFactorSetup: true };
     return res.json({
       success: true,
-      data: requiresTwoFactor
-        ? { requiresTwoFactor: true, ...(bearer ? { tempToken: result.tempToken } : {}) }
-        : { requiresTwoFactorSetup: true, ...(bearer ? { tempToken: result.tempToken } : {}) },
+      data: { ...step, ...(bearer ? { tempToken: result.tempToken } : {}) },
     });
   }
 
@@ -141,6 +147,35 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
 });
 
 /**
+ * The new password a sign-in asked for (`requiresPasswordChange`).
+ * POST /api/auth/new-password — reachable only with the temporary token minted
+ * for it (`authenticatePasswordChange`); answers with a full session, like
+ * login.
+ */
+export const setRequiredPassword = asyncHandler(async (req: Request, res: Response) => {
+  const userId = req.user!.sub;
+  const { newPassword }: NewPasswordInput = req.body;
+  const bearer = mayReturnTokens(req);
+  const { user, accessToken, refreshToken } = await authService.completeForcedChange(
+    userId,
+    newPassword
+  );
+
+  setSessionCookies(
+    res,
+    accessToken,
+    refreshToken,
+    randomCsrfToken(),
+    principalClaimsFromToken(accessToken)
+  );
+
+  res.json({
+    success: true,
+    data: bearer ? { user, accessToken, refreshToken } : { user },
+  });
+});
+
+/**
  * Logout
  * POST /api/auth/logout
  */
@@ -155,7 +190,7 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
   // lifetime after the user had logged out. The store swallows the error
   // client-side, so the only visible symptom was an "Internal server error"
   // toast on the login page.
-  const { refreshToken } = req.body ?? {};
+  const { refreshToken, pushEndpoint } = req.body ?? {};
 
   // Prefer the cookie's refresh token so a browser logout revokes the session
   // that is actually signed in, even though the body carries none.
@@ -163,9 +198,22 @@ export const logout = asyncHandler(async (req: Request, res: Response) => {
 
   // Undefined here is meaningful, not a fallback: authService.logout() revokes
   // every refresh token for the user when no specific token is named.
-  await authService.logout(userId, token);
-
-  clearAuthCookies(res);
+  //
+  // `pushEndpoint` scopes the push cleanup to this browser so the user's other
+  // signed-in devices keep receiving push; the client sends it when it can read
+  // its subscription. Absent, the service clears every device (the safe
+  // direction, and what an older client does).
+  //
+  // The cookies are cleared in a `finally`, not after the `await`: the user
+  // asked to sign out, so the browser must never be left presenting a session
+  // because a database write or the session check failed. An error still
+  // propagates (the client reports it and clears its own state), but the
+  // Set-Cookie headers are already queued when it does.
+  try {
+    await authService.logout(userId, token, typeof pushEndpoint === 'string' ? pushEndpoint : null);
+  } finally {
+    clearAuthCookies(res);
+  }
 
   res.json({
     success: true,
@@ -195,7 +243,8 @@ export const changePassword = asyncHandler(async (req: Request, res: Response) =
   const userId = req.user!.sub;
   const input: ChangePasswordInput = req.body;
 
-  const result = await authService.changePassword(userId, input);
+  // The session that makes the change stays signed in; every other one ends.
+  const result = await authService.changePassword(userId, input, refreshTokenFromCookie(req));
 
   res.json({
     success: true,
@@ -234,6 +283,18 @@ export const verifyTwoFactorLogin = asyncHandler(async (req: Request, res: Respo
   const isTemp = req.user?.isTemp;
   const bearer = mayReturnTokens(req);
   const result = await authService.verifyTwoFactorLogin(userId, token, isTemp);
+
+  // Both factors passed, but the password must be replaced first.
+  if ('requiresPasswordChange' in result) {
+    setTempCookie(res, result.tempToken, 10 * 60 * 1000);
+    return res.json({
+      success: true,
+      data: {
+        requiresPasswordChange: true,
+        ...(bearer ? { tempToken: result.tempToken } : {}),
+      },
+    });
+  }
 
   const { user, accessToken, refreshToken } = result;
   setSessionCookies(
@@ -277,6 +338,12 @@ export const disableTwoFactor = asyncHandler(async (req: Request, res: Response)
 export const getTwoFactorStatus = asyncHandler(async (req: Request, res: Response) => {
   const userId = req.user!.sub;
   const result = await authService.getTwoFactorStatus(userId);
+  // Per-user session state, never cacheable. Without `no-store` the browser
+  // caches the JSON and revalidates with `If-None-Match`, so the next sign-in
+  // gets a 304 instead of the body — and a shared machine could serve one
+  // account's status to the next. `e2e/two-factor-invite.spec.ts` caught the
+  // 304 (Playwright's `r.ok()` is 200–299).
+  res.setHeader('Cache-Control', 'no-store, private');
   res.json({ success: true, data: result });
 });
 
@@ -291,7 +358,11 @@ export const getTwoFactorStatus = asyncHandler(async (req: Request, res: Respons
 export const sendPasswordReset = asyncHandler(async (req: Request, res: Response) => {
   const { userId }: SendPasswordResetInput = req.body;
 
-  const reset = await authService.issuePasswordResetToken(userId);
+  const reset = await authService.issuePasswordResetToken(userId, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+    sub: req.user!.sub,
+  });
 
   // Fire-and-forget: a mail outage must not roll back a token that has already
   // been recorded, and the admin gets told what to check instead.

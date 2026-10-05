@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  type NotificationPreferencesInput,
+} from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { PageHeader } from "@/components/shared";
 import {
@@ -14,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   Select,
@@ -25,6 +30,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { notificationsService } from "@/services/notifications.service";
+import { useWebPush } from "@/hooks/use-web-push";
+import { useAuthStore } from "@/stores/auth";
+import { getEffectiveRole } from "@/lib/rbac";
+import {
+  useNotificationPreferences,
+  useUpdateNotificationPreferences,
+} from "@/hooks/use-notification-preferences";
 import {
   Bell,
   Mail,
@@ -40,47 +52,13 @@ import {
   Moon,
   RefreshCw,
   Save,
-  ArrowLeft,
 } from "lucide-react";
-import Link from "next/link";
 
-interface NotificationPreferences {
-  userId: string;
-  emailEnabled: boolean;
-  smsEnabled: boolean;
-  whatsappEnabled: boolean;
-  pushEnabled: boolean;
-  inAppEnabled: boolean;
-  paymentReminders: boolean;
-  attendanceAlerts: boolean;
-  academicUpdates: boolean;
-  tahfidzProgress: boolean;
-  announcements: boolean;
-  eventReminders: boolean;
-  monthlyReports: boolean;
-  quietHoursStart: string | null;
-  quietHoursEnd: string | null;
-  reminderFrequency: "DAILY" | "WEEKLY" | "NONE";
-}
-
-const DEFAULT_PREFERENCES: NotificationPreferences = {
-  userId: "",
-  emailEnabled: true,
-  smsEnabled: false,
-  whatsappEnabled: true,
-  pushEnabled: true,
-  inAppEnabled: true,
-  paymentReminders: true,
-  attendanceAlerts: true,
-  academicUpdates: true,
-  tahfidzProgress: true,
-  announcements: true,
-  eventReminders: true,
-  monthlyReports: true,
-  quietHoursStart: null,
-  quietHoursEnd: null,
-  reminderFrequency: "DAILY",
-};
+// The shape the API stores and validates (`@cipansor/shared`). This page used
+// to declare its own copy and "save" it into a 500 ms timer; nothing reached
+// the server, and every toggle came back on at the next visit.
+type NotificationPreferences = NotificationPreferencesInput;
+const DEFAULT_PREFERENCES = DEFAULT_NOTIFICATION_PREFERENCES;
 
 const CHANNEL_CONFIG = [
   {
@@ -105,13 +83,7 @@ const CHANNEL_CONFIG = [
     key: "pushEnabled",
     label: "Push",
     icon: Bell,
-    description: "Notifikasi browser/mobile",
-  },
-  {
-    key: "inAppEnabled",
-    label: "In-App",
-    icon: Bell,
-    description: "Notifikasi dalam aplikasi",
+    description: "Ke ponsel atau peramban yang Anda aktifkan di bawah",
   },
 ];
 
@@ -164,45 +136,36 @@ export default function NotificationSettingsPage() {
   const [preferences, setPreferences] =
     useState<NotificationPreferences>(DEFAULT_PREFERENCES);
   const [hasChanges, setHasChanges] = useState(false);
-  const queryClient = useQueryClient();
+  const webPush = useWebPush();
+
+  // The outgoing-mail card is for the people who configure it. The endpoint is
+  // admin-only, and since this page is linked for every role, asking it as a
+  // wali or a teacher put an "Insufficient permissions" toast on their screen.
+  const { user } = useAuthStore();
+  const isAdmin = ["SUPER_ADMIN", "UNIT_ADMIN"].includes(
+    getEffectiveRole(user) || "",
+  );
 
   // What the server is actually configured to send with.
   const { data: transport, isLoading: transportLoading } = useQuery({
     queryKey: ["email-transport"],
     queryFn: () => notificationsService.getEmailTransport(),
+    enabled: isAdmin,
   });
 
-  // Fetch current preferences
-  const { isLoading, data: fetchedPreferences } = useQuery({
-    queryKey: ["notification-preferences"],
-    queryFn: async () => {
-      // In production, this would fetch from API
-      return DEFAULT_PREFERENCES;
-    },
-  });
+  // What the server has stored for this person (defaults until first saved).
+  const { isLoading, data: fetchedPreferences } = useNotificationPreferences();
 
   useEffect(() => {
     if (fetchedPreferences) {
-      setPreferences(fetchedPreferences);
+      // The DTO also carries `userId`; the form holds only the preferences.
+      const { userId: _userId, ...stored } = fetchedPreferences;
+      setPreferences(stored);
+      setHasChanges(false);
     }
   }, [fetchedPreferences]);
 
-  // Save mutation
-  const saveMutation = useMutation({
-    mutationFn: async (prefs: NotificationPreferences) => {
-      // In production, this would call the API
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      return prefs;
-    },
-    onSuccess: () => {
-      toast.success("Pengaturan notifikasi berhasil disimpan");
-      setHasChanges(false);
-      queryClient.invalidateQueries({ queryKey: ["notification-preferences"] });
-    },
-    onError: () => {
-      toast.error("Gagal menyimpan pengaturan");
-    },
-  });
+  const saveMutation = useUpdateNotificationPreferences();
 
   const handleToggle = (key: keyof NotificationPreferences) => {
     setPreferences((prev) => ({
@@ -220,13 +183,39 @@ export default function NotificationSettingsPage() {
     setHasChanges(true);
   };
 
+  const quietHoursOn = preferences.quietHoursStart !== null;
+
+  const handleQuietHoursToggle = (on: boolean) => {
+    setPreferences((prev) => ({
+      ...prev,
+      quietHoursStart: on ? "21:00" : null,
+      quietHoursEnd: on ? "05:00" : null,
+    }));
+    setHasChanges(true);
+  };
+
+  const handleQuietHoursChange = (
+    key: "quietHoursStart" | "quietHoursEnd",
+    value: string,
+  ) => {
+    setPreferences((prev) => ({ ...prev, [key]: value }));
+    setHasChanges(true);
+  };
+
   const handleReset = () => {
     setPreferences(DEFAULT_PREFERENCES);
     setHasChanges(true);
   };
 
   const handleSave = () => {
-    saveMutation.mutate(preferences);
+    saveMutation.mutate(preferences, {
+      onSuccess: () => {
+        toast.success("Pengaturan notifikasi berhasil disimpan");
+        setHasChanges(false);
+      },
+      // The API's reason (e.g. quiet hours that start and end at the same
+      // minute) is the useful part; the global handler toasts it.
+    });
   };
 
   const enabledChannelCount = CHANNEL_CONFIG.filter(
@@ -240,44 +229,40 @@ export default function NotificationSettingsPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/notifications">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
+        {/* The shared header stacks on a phone; the hand-built row it
+            replaces pushed "Simpan" past the right edge at 390 px. */}
+        <PageHeader
+          title="Pengaturan Notifikasi"
+          description="Kelola preferensi notifikasi Anda"
+          backHref="/notifications/me"
+          backLabel="Notifikasi Saya"
+          actions={
+            <>
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                disabled={isLoading}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Kembalikan Bawaan
               </Button>
-            </Link>
-            <PageHeader
-              title="Pengaturan Notifikasi"
-              description="Kelola preferensi notifikasi Anda"
-            />
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={handleReset}
-              disabled={isLoading}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Reset
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={!hasChanges || saveMutation.isPending}
-            >
-              <Save className="mr-2 h-4 w-4" />
-              {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
-            </Button>
-          </div>
-        </div>
+              <Button
+                onClick={handleSave}
+                disabled={!hasChanges || saveMutation.isPending}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {saveMutation.isPending ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </>
+          }
+        />
 
         {/* Summary Cards */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">
-                Channel Aktif
+                Saluran Aktif
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -316,106 +301,109 @@ export default function NotificationSettingsPage() {
           Gmail setup while every message was being written to a log and thrown
           away. The badge now reports the transport, not the toggle.
         */}
-        <Card className="border-primary/20 bg-primary/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-primary">
-              <Mail className="h-5 w-5" />
-              Server Email Keluar
-            </CardTitle>
-            <CardDescription>
-              Konfigurasi pengiriman email resmi Yayasan Pesantren Cipansor,
-              dibaca langsung dari server.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {transportLoading ? (
-              <p className="text-sm text-muted-foreground">
-                Memuat konfigurasi…
-              </p>
-            ) : !transport ? (
-              <p className="text-sm text-muted-foreground">
-                Konfigurasi email tidak dapat dibaca.
-              </p>
-            ) : (
-              <>
-                <div className="grid gap-3 sm:grid-cols-2 text-sm">
-                  <div className="rounded-md border bg-background p-3">
-                    <span className="text-xs text-muted-foreground block">
-                      Pengirim (From)
-                    </span>
-                    <strong className="font-medium text-foreground break-all">
-                      {transport.from}
-                    </strong>
-                    <span className="text-xs text-muted-foreground block mt-1">
-                      Alamat otomatis sistem — tidak dibaca manusia
-                    </span>
+        {isAdmin && (
+          <Card className="border-primary/20 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-primary">
+                <Mail className="h-5 w-5" />
+                Server Email Keluar
+              </CardTitle>
+              <CardDescription>
+                Konfigurasi pengiriman email resmi Yayasan Pesantren Cipansor,
+                dibaca langsung dari server.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {transportLoading ? (
+                <p className="text-sm text-muted-foreground">
+                  Memuat konfigurasi…
+                </p>
+              ) : !transport ? (
+                <p className="text-sm text-muted-foreground">
+                  Konfigurasi email tidak dapat dibaca.
+                </p>
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2 text-sm">
+                    <div className="rounded-md border bg-background p-3">
+                      <span className="text-xs text-muted-foreground block">
+                        Pengirim (From)
+                      </span>
+                      <strong className="font-medium text-foreground break-all">
+                        {transport.from}
+                      </strong>
+                      <span className="text-xs text-muted-foreground block mt-1">
+                        Alamat otomatis sistem — tidak dibaca manusia
+                      </span>
+                    </div>
+                    <div className="rounded-md border bg-background p-3">
+                      <span className="text-xs text-muted-foreground block">
+                        Tujuan balasan (Reply-To)
+                      </span>
+                      <strong className="font-medium text-foreground break-all">
+                        {transport.replyTo}
+                      </strong>
+                      <span className="text-xs text-muted-foreground block mt-1">
+                        Ke sinilah balasan wali santri sampai
+                      </span>
+                    </div>
                   </div>
-                  <div className="rounded-md border bg-background p-3">
-                    <span className="text-xs text-muted-foreground block">
-                      Tujuan balasan (Reply-To)
-                    </span>
-                    <strong className="font-medium text-foreground break-all">
-                      {transport.replyTo}
-                    </strong>
-                    <span className="text-xs text-muted-foreground block mt-1">
-                      Ke sinilah balasan wali santri sampai
-                    </span>
-                  </div>
-                </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
-                  <span>
-                    {transport.kind === "gmail_api" && (
-                      <>
-                        Metode: <code>Gmail API</code> (service account, tanpa
-                        sandi aplikasi) sebagai <code>{transport.sender}</code>
-                      </>
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-2 text-xs text-muted-foreground">
+                    <span>
+                      {transport.kind === "gmail_api" && (
+                        <>
+                          Metode: <code>Gmail API</code> (service account, tanpa
+                          sandi aplikasi) sebagai{" "}
+                          <code>{transport.sender}</code>
+                        </>
+                      )}
+                      {transport.kind === "smtp" && (
+                        <>
+                          Metode: <code>SMTP</code> —{" "}
+                          <code>{transport.host}</code>
+                        </>
+                      )}
+                      {transport.kind === "log" && (
+                        <>Belum ada transport email yang dikonfigurasi.</>
+                      )}
+                    </span>
+                    {transport.configured ? (
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-500 bg-emerald-50 text-emerald-700"
+                      >
+                        Email siap kirim
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500 bg-amber-50 text-amber-700"
+                      >
+                        Email tidak terkirim — hanya dicatat di log
+                      </Badge>
                     )}
-                    {transport.kind === "smtp" && (
-                      <>
-                        Metode: <code>SMTP</code> —{" "}
-                        <code>{transport.host}</code>
-                      </>
-                    )}
-                    {transport.kind === "log" && (
-                      <>Belum ada transport email yang dikonfigurasi.</>
-                    )}
-                  </span>
-                  {transport.configured ? (
-                    <Badge
-                      variant="outline"
-                      className="border-emerald-500 bg-emerald-50 text-emerald-700"
-                    >
-                      Email siap kirim
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="border-amber-500 bg-amber-50 text-amber-700"
-                    >
-                      Email tidak terkirim — hanya dicatat di log
-                    </Badge>
+                  </div>
+
+                  {!transport.configured && (
+                    <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      Notifikasi email tidak akan sampai ke siapa pun sampai
+                      kredensial Gmail API atau SMTP diisi di server. Lihat{" "}
+                      <code>docs/EMAIL_SETUP.md</code>.
+                    </p>
                   )}
-                </div>
-
-                {!transport.configured && (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                    Notifikasi email tidak akan sampai ke siapa pun sampai
-                    kredensial Gmail API atau SMTP diisi di server. Lihat{" "}
-                    <code>docs/EMAIL_SETUP.md</code>.
-                  </p>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Channel Preferences */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5" />
-              Channel Notifikasi
+              Saluran Notifikasi
             </CardTitle>
             <CardDescription>
               Pilih metode pengiriman notifikasi yang Anda inginkan
@@ -449,6 +437,7 @@ export default function NotificationSettingsPage() {
                   </div>
                   <Switch
                     checked={isEnabled as boolean}
+                    disabled={isLoading}
                     onCheckedChange={() =>
                       handleToggle(channel.key as keyof NotificationPreferences)
                     }
@@ -456,6 +445,66 @@ export default function NotificationSettingsPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        {/* Web Push (browser) — a per-device control, separate from the
+            per-user "Push" channel above. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Notifikasi Push di Perangkat Ini
+            </CardTitle>
+            <CardDescription>
+              Terima notifikasi di ponsel atau peramban ini walau portal sedang
+              tertutup. Setiap perangkat diaktifkan sendiri-sendiri. Untuk
+              kesehatan, konseling, pelanggaran, dan aduan, layar kunci hanya
+              menampilkan &ldquo;Ada pemberitahuan baru&rdquo;; isinya dibaca
+              setelah membuka portal.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {webPush.state === "checking" && "Memeriksa…"}
+              {webPush.state === "unsupported" &&
+                "Browser ini tidak mendukung notifikasi push."}
+              {webPush.state === "needs-install" &&
+                "Di iPhone/iPad, pasang dulu portal ini ke Layar Utama (Bagikan → Tambah ke Layar Utama) untuk mengaktifkan notifikasi push."}
+              {webPush.state === "unconfigured" &&
+                "Notifikasi push belum tersedia di server ini."}
+              {webPush.state === "denied" &&
+                "Izin notifikasi diblokir. Buka pengaturan situs di browser untuk mengizinkan."}
+              {webPush.state === "subscribed" &&
+                (preferences.pushEnabled
+                  ? "Aktif. Perangkat ini menerima notifikasi push."
+                  : "Perangkat ini terdaftar, tetapi saluran Push di atas dimatikan, jadi tidak ada yang dikirim.")}
+              {webPush.state === "unsubscribed" &&
+                "Belum aktif di perangkat ini."}
+            </p>
+            {webPush.state === "subscribed" ? (
+              <Button
+                variant="outline"
+                onClick={webPush.disable}
+                disabled={webPush.busy}
+              >
+                Matikan
+              </Button>
+            ) : (
+              <Button
+                onClick={webPush.enable}
+                disabled={
+                  webPush.busy ||
+                  webPush.state === "checking" ||
+                  webPush.state === "unsupported" ||
+                  webPush.state === "needs-install" ||
+                  webPush.state === "unconfigured" ||
+                  webPush.state === "denied"
+                }
+              >
+                Aktifkan di perangkat ini
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -498,6 +547,7 @@ export default function NotificationSettingsPage() {
                   </div>
                   <Switch
                     checked={isEnabled as boolean}
+                    disabled={isLoading}
                     onCheckedChange={() =>
                       handleToggle(type.key as keyof NotificationPreferences)
                     }
@@ -515,7 +565,9 @@ export default function NotificationSettingsPage() {
               <Moon className="h-5 w-5" />
               Frekuensi & Waktu
             </CardTitle>
-            <CardDescription>Atur frekuensi pengingat</CardDescription>
+            <CardDescription>
+              Atur frekuensi pengingat dan jam tenang
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -528,6 +580,7 @@ export default function NotificationSettingsPage() {
               <Select
                 value={preferences.reminderFrequency}
                 onValueChange={handleFrequencyChange}
+                disabled={isLoading}
               >
                 <SelectTrigger className="w-32">
                   <SelectValue />
@@ -539,6 +592,54 @@ export default function NotificationSettingsPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="quiet-hours" className="font-medium">
+                  Jam Tenang
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Selama jam ini notifikasi push tidak dikirim. Notifikasinya
+                  tetap ada di lonceng.
+                </p>
+              </div>
+              <Switch
+                id="quiet-hours"
+                checked={quietHoursOn}
+                disabled={isLoading}
+                onCheckedChange={handleQuietHoursToggle}
+              />
+            </div>
+            {quietHoursOn && (
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="quiet-start">Mulai (WIB)</Label>
+                  <Input
+                    id="quiet-start"
+                    type="time"
+                    className="w-32"
+                    value={preferences.quietHoursStart ?? ""}
+                    onChange={(e) =>
+                      handleQuietHoursChange("quietHoursStart", e.target.value)
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="quiet-end">Selesai (WIB)</Label>
+                  <Input
+                    id="quiet-end"
+                    type="time"
+                    className="w-32"
+                    value={preferences.quietHoursEnd ?? ""}
+                    onChange={(e) =>
+                      handleQuietHoursChange("quietHoursEnd", e.target.value)
+                    }
+                  />
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 

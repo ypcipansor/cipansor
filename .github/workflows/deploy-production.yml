@@ -75,7 +75,20 @@ jobs:
               --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
               --target-port "${port[$c]}" -o none
           done
+          # Web Push: this environment's own VAPID pair (decisions/
+          # notifikasi-push.md), from the environment's secret and variable.
+          # Absent = push stays off, so nothing here forces a pair on anyone.
+          # -o none: the command would otherwise echo the settings back.
+          if [ -n "$VAPID_PRIVATE_KEY" ] && [ -n "$VAPID_PUBLIC_KEY" ]; then
+            az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+              --settings VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
+              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
+              VAPID_SUBJECT=mailto:halo@cipansor.or.id -o none
+          fi
           az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
+        env:
+          VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
 
       - name: Wait until ${{ inputs.sha }} answers at ${{ env.URL }}
         run: bash deploy/azure/wait-for-release.sh "$URL" "$SHA"

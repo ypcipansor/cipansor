@@ -1,0 +1,143 @@
+import { test, expect, type Page } from "@playwright/test";
+import { loginAs } from "./helpers/auth-api";
+
+/**
+ * Notification preferences are stored, and the wali reaches them.
+ *
+ * Until 2026-10-03 the settings page "saved" into a 500 ms timer and the API
+ * had no route for it: every toggle came back on at the next visit, and the
+ * push dispatcher had nothing to read. The wali's own page asked an endpoint
+ * that never existed. These check the round trip through the real API, the
+ * way a person sees it — save, reload, still saved.
+ */
+
+const SETTINGS = "/notifications/settings";
+
+/** The switch on the row whose label is `label`. */
+function switchFor(page: Page, label: string) {
+  return page
+    .locator("div.flex.items-center.justify-between")
+    .filter({ has: page.getByText(label, { exact: true }) })
+    .getByRole("switch");
+}
+
+async function save(page: Page) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (r) =>
+        r.url().includes("/notifications/preferences") &&
+        r.request().method() === "PATCH",
+    ),
+    page.getByRole("button", { name: "Simpan" }).click(),
+  ]);
+  expect(response.ok()).toBe(true);
+  await expect(
+    page.getByText("Pengaturan notifikasi berhasil disimpan"),
+  ).toBeVisible();
+}
+
+test.describe("Notification preferences", () => {
+  // One wali account, one preferences row: run in order, or one test's save
+  // (the whole set) overwrites what the other just stored.
+  test.describe.configure({ mode: "serial" });
+
+  test("a switched-off kind stays off after a reload", async ({ page }) => {
+    await loginAs(page, "parent");
+    await page.goto(SETTINGS);
+
+    const announcements = switchFor(page, "Pengumuman");
+    // Locked until the stored values arrive: a click before then used to be
+    // overwritten by the load, which is what this wait also guards.
+    await expect(announcements).toBeEnabled();
+    // The outgoing-mail card is the administrators'; a wali asking its
+    // endpoint got a 403 toast on this page.
+    await expect(page.getByText("Server Email Keluar")).toHaveCount(0);
+    await expect(page.getByText("Insufficient permissions")).toHaveCount(0);
+    // Start from the default so a rerun on a reused database is meaningful.
+    if ((await announcements.getAttribute("aria-checked")) === "false") {
+      await announcements.click();
+      await save(page);
+    }
+
+    await announcements.click();
+    await expect(announcements).toHaveAttribute("aria-checked", "false");
+    await save(page);
+
+    await page.reload();
+    await expect(switchFor(page, "Pengumuman")).toBeEnabled();
+    await expect(switchFor(page, "Pengumuman")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+
+    // Put it back for whoever runs next.
+    await switchFor(page, "Pengumuman").click();
+    await save(page);
+  });
+
+  test("quiet hours are stored as typed, in WIB", async ({ page }) => {
+    await loginAs(page, "parent");
+    await page.goto(SETTINGS);
+
+    const quiet = page.getByRole("switch", { name: "Jam Tenang" });
+    await expect(quiet).toBeEnabled();
+    if ((await quiet.getAttribute("aria-checked")) === "true") {
+      await quiet.click();
+      await save(page);
+    }
+
+    await quiet.click();
+    await page.getByLabel("Mulai (WIB)").fill("22:15");
+    await page.getByLabel("Selesai (WIB)").fill("04:45");
+    await save(page);
+
+    await page.reload();
+    await expect(page.getByLabel("Mulai (WIB)")).toHaveValue("22:15");
+    await expect(page.getByLabel("Selesai (WIB)")).toHaveValue("04:45");
+
+    await page.getByRole("switch", { name: "Jam Tenang" }).click();
+    await save(page);
+    await page.reload();
+    await expect(page.getByLabel("Mulai (WIB)")).toHaveCount(0);
+  });
+
+  test("the wali's old preferences address moves permanently to the one page", async ({
+    page,
+  }) => {
+    await loginAs(page, "parent");
+    const response = await page.request.get(
+      "/parent/notifications/preferences",
+      { maxRedirects: 0 },
+    );
+    expect(response.status()).toBe(308);
+    expect(response.headers()["location"]).toContain(SETTINGS);
+  });
+
+  test("on a phone the header fits the screen and leads back", async ({
+    page,
+  }) => {
+    // 390 px is an iPhone 13–15. The header used to be one unwrapping row, and
+    // "Simpan" — the button the page exists for — sat past the right edge.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAs(page, "parent");
+    await page.goto(SETTINGS);
+
+    for (const name of ["Kembalikan Bawaan", "Simpan"]) {
+      const box = await page.getByRole("button", { name }).boundingBox();
+      expect(box, name).not.toBeNull();
+      expect(box!.x, name).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width, name).toBeLessThanOrEqual(390);
+    }
+
+    await page.getByRole("link", { name: "Notifikasi Saya" }).click();
+    await expect(page).toHaveURL(/\/notifications\/me/);
+  });
+
+  test("My Notifications leads to the settings page", async ({ page }) => {
+    await loginAs(page, "teacher");
+    await page.goto("/notifications/me");
+    await page.getByRole("link", { name: "Pengaturan" }).click();
+    await expect(page).toHaveURL(new RegExp(SETTINGS));
+    await expect(page.getByText("Pengaturan Notifikasi").first()).toBeVisible();
+  });
+});

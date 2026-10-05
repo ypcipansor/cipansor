@@ -13,6 +13,7 @@
  * misrepresents the nonprofit.
  */
 
+import { OFFICE_HOLDERS as H } from "@cipansor/shared";
 import { siteConfig } from "@/config/site";
 
 /** A paragraph-level block. Rendered as elements, never as raw HTML. */
@@ -186,54 +187,54 @@ export interface Leader {
   position: string;
   /** A saying each leader chose to be published alongside their name. */
   motto: string;
-  /** Portrait in `public/images/people/`, shared with the demo-account panel. */
+  /** Portrait in `public/images/people/`, shared with the demo accounts. */
   photo: string;
 }
 
 export const leadership: Leader[] = [
   {
     slug: "ketua-yayasan",
-    name: "H. Ramram Mansur Ramdani, S.Pd.I., M.Ag",
-    photo: "/images/people/ketua-yayasan.webp",
+    name: H.ramram.name,
+    photo: H.ramram.photo,
     position: "Ketua Yayasan",
     motto:
       "Tidaklah seseorang merendahkan diri karena Allah, melainkan Allah akan mengangkat derajatnya.",
   },
   {
     slug: "pimpinan-pesantren",
-    name: "K.H. Muhammad Taufik Ismail, S.Pd",
-    photo: "/images/people/pimpinan-pesantren.webp",
+    name: H.taufikIsmail.name,
+    photo: H.taufikIsmail.photo,
     position: "Pimpinan Pesantren",
     motto:
       "Didiklah anak-anakmu sesuai zamannya, karena mereka hidup bukan di zamanmu.",
   },
   {
     slug: "bendahara-yayasan",
-    name: "H. Andi Muhammad Badrudin, S.T.",
-    photo: "/images/people/bendahara-yayasan.webp",
+    name: H.andiBadrudin.name,
+    photo: H.andiBadrudin.photo,
     position: "Bendahara Yayasan",
     motto:
       "Ilmu tanpa adab bagaikan api tanpa kayu bakar. Ia tidak memberi manfaat, bahkan bisa membinasakan.",
   },
   {
     slug: "kepala-sdit",
-    name: "H. Dadan Ali Ridwan, S.Ag",
-    photo: "/images/people/kepala-sdit.webp",
+    name: H.dadanAliRidwan.name,
+    photo: H.dadanAliRidwan.photo,
     position: "Kepala SD IT Cipansor",
     motto: "Sesungguhnya setiap amalan tergantung pada niatnya.",
   },
   {
     slug: "kepala-smpit",
-    name: "H. Cecep Helmi Syawali, Lc., M.Ag",
-    photo: "/images/people/kepala-smpit.webp",
+    name: H.cecepHelmi.name,
+    photo: H.cecepHelmi.photo,
     position: "Kepala SMP IT Cipansor",
     motto:
       "Didiklah anak-anakmu sesuai zamannya, karena mereka hidup bukan di zamanmu.",
   },
   {
     slug: "kepala-smaquran",
-    name: "H. M. Rizkon Hakiki, Lc., Al-Hafidz",
-    photo: "/images/people/kepala-smaquran.webp",
+    name: H.rizkonHakiki.name,
+    photo: H.rizkonHakiki.photo,
     position: "Kepala SMA Qur'an",
     motto:
       "Sebaik-baik manusia adalah yang paling bermanfaat bagi manusia lainnya.",
@@ -547,6 +548,10 @@ export const unitDetails: Record<
       "Target hafalan 30 juz bersanad dengan kualitas mutqin",
       "Penguatan ilmu tajwid dan qira'ah",
       "Halaqoh harian dan muroja'ah terjadwal",
+      "Bahasa Arab dan Dirosah Islamiyah",
+      "Kewirausahaan",
+      "Pilihan Takhosus Plus Kuliah",
+      "Kuliah S1 dengan beasiswa (syarat dan ketentuan berlaku)",
       "Beasiswa tersedia melalui program Beasiswa Santri Takhosus",
     ],
   },

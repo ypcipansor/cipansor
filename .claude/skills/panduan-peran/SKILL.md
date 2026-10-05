@@ -121,7 +121,11 @@ diputuskan musyrif santri itu (santri mukim; koordinator asrama bila ia
 pulang atau menginap) atau wali kelasnya, jadi guru yang sama boleh untuk satu
 anak dan 403 untuk anak lain. Jawab dengan menyebut
 aturannya ([`pemutus-izin-santri`](../../memory/decisions/pemutus-izin-santri.md)),
-dan di layar lihat baris "Diputuskan oleh …" pada izin itu.
+dan di layar lihat baris "Diputuskan oleh …" pada izin itu. Pengumuman juga
+begitu: guru menerbitkan hanya ke kelas yang ia ajar atau walikan, musyrif ke
+santri mukim binaannya
+([`siaran-pengumuman`](../../memory/decisions/siaran-pengumuman.md)); pilihan
+yang ditawarkan ke seseorang terbaca di `GET /announcements/compose`.
 
 Hal yang sama berlaku untuk **data perwalian** dan **absensi harian**
 (#579, #580). Data perwalian sebuah kelas dibaca oleh wali kelasnya, serta

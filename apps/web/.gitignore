@@ -46,6 +46,10 @@ playwright/
 
 # temporary/diagnostic e2e specs (underscore-prefixed)
 e2e/_*.spec.ts
+# …except the PWA screenshot capture, which is committed tooling: it is still
+# skipped by playwright.config's testIgnore, but the manifest screenshots are
+# regenerated with it (scripts/gen-pwa-assets.py), so it must travel with the repo.
+!e2e/_capture-mobile.spec.ts
 
 # e2e auth state
 .auth/

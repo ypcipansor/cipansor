@@ -49,8 +49,17 @@ export function TwoFactorSettings() {
 
   const handleDisable = async (token: string) => {
     try {
-      await authApi.disable2FA({ token });
-      toast.success("Verifikasi dua langkah dimatikan");
+      const res = await authApi.disable2FA({ token });
+      if (res.data.data?.mustChangePassword) {
+        // Its session is not renewed until the password changes.
+        toast.warning("Verifikasi dua langkah dimatikan", {
+          description:
+            "Kata sandi Anda kurang dari 15 karakter, yang hanya boleh dipakai bersama verifikasi dua langkah. Buat yang baru sekarang di kartu Ubah Password di bawah; bila tidak, sesi Anda berakhir dalam 15 menit dan Anda diminta membuatnya saat masuk berikutnya.",
+          duration: 20000,
+        });
+      } else {
+        toast.success("Verifikasi dua langkah dimatikan");
+      }
       setIsDisableOpen(false);
       fetchStatus();
     } catch {
@@ -133,7 +142,9 @@ export function TwoFactorSettings() {
                   <DialogTitle>Matikan Verifikasi Dua Langkah</DialogTitle>
                   <DialogDescription>
                     Masukkan kode dari aplikasi autentikator untuk
-                    mengonfirmasi. Sesudahnya, masuk cukup dengan kata sandi.
+                    mengonfirmasi. Sesudahnya, masuk cukup dengan kata sandi —
+                    yang harus minimal 15 karakter; kata sandi yang lebih pendek
+                    harus diganti.
                   </DialogDescription>
                 </DialogHeader>
                 <TwoFactorVerify

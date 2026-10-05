@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { currentAccreditations } from '@/modules/units';
+import { unitDocumentName } from '@cipansor/shared';
 
 // =====================================
 // TYPES
@@ -270,7 +271,7 @@ export async function generateSkhun(
       parentName: student.parentName,
     },
     school: {
-      name: student.unit.name,
+      name: unitDocumentName(student.unit),
       npsn: student.unit.npsn,
       address: student.unit.address,
       // The certificate in force (decisions/akreditasi-unit.md). It printed
@@ -468,7 +469,7 @@ export async function generateTranscript(
       graduationYear: gradYear,
     },
     school: {
-      name: student.unit.name,
+      name: unitDocumentName(student.unit),
       npsn: student.unit.npsn,
       address: student.unit.address,
       level: student.unit.type,
@@ -562,7 +563,7 @@ export async function getReportCardPrintData(reportCardId: string) {
     })),
     p5Projects,
     school: {
-      name: reportCard.student.unit.name,
+      name: unitDocumentName(reportCard.student.unit),
       npsn: reportCard.student.unit.npsn,
       address: reportCard.student.unit.address,
       phone: reportCard.student.unit.phone,

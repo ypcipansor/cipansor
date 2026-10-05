@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma';
 import { CreateCampaignInput, LogInteractionInput, UpdateCampaignInput } from './marketing.schema';
-import { AdmissionStatus, Prisma } from '@prisma/client';
+import { AdmissionStatus, Prisma, QuranAbility } from '@prisma/client';
 
 export const createCampaign = async (data: CreateCampaignInput, userId: string) => {
   return prisma.marketingCampaign.create({
@@ -200,7 +200,7 @@ export const getHighPriorityLeads = async (unitId?: string, limit: number = 10) 
   });
 
   // Compute a simple priority score: quranAbility + memorized juz bonus
-  const quranAbilityScore: Record<string, number> = {
+  const quranAbilityScore: Record<QuranAbility, number> = {
     TAHFIDZ: 40,
     TARTIL: 25,
     LANCAR: 15,
