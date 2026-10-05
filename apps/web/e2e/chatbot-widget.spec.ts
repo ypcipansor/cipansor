@@ -18,6 +18,23 @@ import { test, expect } from "@playwright/test";
 
 const LAUNCHER = "button[aria-label='Buka asisten informasi']";
 
+/**
+ * Wait until the widget has had its answer, so an absence assertion is real.
+ *
+ * `toHaveCount(0)` passes the instant the count is zero — including the moment
+ * before the status query resolves, when the widget has not rendered yet. On a
+ * stack that DOES have a provider configured that turns "stays hidden" into a
+ * false pass. Waiting for the status response first means the widget has already
+ * decided, so a count of zero is the decision and not the gap before it.
+ */
+async function statusSettled(page: import("@playwright/test").Page) {
+  await page
+    .waitForResponse((r) => r.url().includes("/chatbot/public/status"), {
+      timeout: 15000,
+    })
+    .catch(() => undefined);
+}
+
 test.describe("public chatbot widget", () => {
   test("stays hidden on the homepage when no provider is configured", async ({
     page,
@@ -31,6 +48,7 @@ test.describe("public chatbot widget", () => {
     // `<footer>` inside `<main>`, and a footer inside a landmark has no
     // implicit contentinfo role. The role-based locator timed out here.
     await expect(page.locator("footer")).toBeVisible({ timeout: 30000 });
+    await statusSettled(page);
     await expect(page.locator(LAUNCHER)).toHaveCount(0);
   });
 
@@ -39,6 +57,7 @@ test.describe("public chatbot widget", () => {
 
     await expect(page).not.toHaveURL(/.*login.*/, { timeout: 15000 });
     await expect(page.locator("footer")).toBeVisible({ timeout: 30000 });
+    await statusSettled(page);
     await expect(page.locator(LAUNCHER)).toHaveCount(0);
   });
 
@@ -135,5 +154,37 @@ test.describe("public chatbot widget, assistant available", () => {
     await expect(
       page.getByText(/tidak memiliki akses ke data pribadi/i),
     ).toBeVisible();
+  });
+
+  test("names itself a test copy when the provider is a deterministic double", async ({
+    page,
+  }) => {
+    // On staging the assistant answers from a copy of the real corpus, not a
+    // model. The widget says so, so a walkthrough never mistakes a stub for a
+    // release-ready assistant.
+    await page.route("**/chatbot/public/status", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          success: true,
+          data: { available: true, testProvider: true },
+        }),
+      }),
+    );
+
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.locator(LAUNCHER).click();
+
+    await expect(page.getByTestId("chatbot-test-provider")).toBeVisible();
+  });
+
+  test("does not name itself a test copy when a real model answers", async ({
+    page,
+  }) => {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await page.locator(LAUNCHER).click();
+
+    await expect(page.getByTestId("chatbot-test-provider")).toHaveCount(0);
   });
 });

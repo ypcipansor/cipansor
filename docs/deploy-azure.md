@@ -50,9 +50,11 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 | Setting | Production | Staging | Why |
 |---|---|---|---|
+| `APP_ENV` | `production`, set by `deploy-production.yml` | `staging`, set by `deploy-staging.yml` | Which deployed copy this is — distinct from `NODE_ENV`, which is `production` on both because both run the same images. It is what `/health` reports as `environment`, and what lets a guard say "not in production" and mean it (the chatbot's deterministic provider). A production build with it unset resolves to `production`; anything else to `local`. |
 | `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
 | `DOCUMENT_TEST_COPY` | unset (off) | `true`, set by `deploy-staging.yml` on every release | Every PDF the api renders and every page printed from the web is stamped "SALINAN UJI — BUKAN DOKUMEN SAH": staging's demo accounts carry the names of real office holders, their passwords are public, and the letterhead is the real one |
+| `CHATBOT_PROVIDER` | `openai-compatible` with a Key Vault key (when enabled) | `echo`, set by `deploy-staging.yml` | `echo` answers from the same public corpus and live SPMB rows the real assistant uses, with no API key and no spend, so the feature can be exercised before a release. `resolveProvider()` refuses it when `APP_ENV=production`, so it can never answer a visitor on the live site. |
 | `MIGRATE_ON_START` | `true` | `true` | The database is private; CI cannot reach it |
 | `PERSISTENT_DIR` | `/home/data` | `/home/data` | Uploads and identity documents survive restarts ([Files](#files)) |
 | Gmail / SMTP / WhatsApp credentials | Key Vault references | none | Second line of defence behind the switch above |

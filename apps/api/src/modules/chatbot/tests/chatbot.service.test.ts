@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ask, ChatbotUnavailableError, resolveProvider } from '../chatbot.service';
+import { ask, ChatbotUnavailableError, resolveProvider, isTestProvider } from '../chatbot.service';
 import { StubProvider } from '../providers/stub';
 import { collectLiveFacts } from '../live-facts';
 import { knowledgeBase, knowledgeById, topicLabels } from '../knowledge-base';
@@ -490,11 +490,11 @@ describe('ask ketika penyedianya sedang penuh', () => {
 });
 
 describe('resolveProvider', () => {
-  const original = { ...config.chatbot, env: config.env };
+  const original = { ...config.chatbot, appEnv: config.appEnv };
 
   afterEach(() => {
     Object.assign(config.chatbot, original);
-    (config as { env: string }).env = original.env;
+    (config as { appEnv: string }).appEnv = original.appEnv;
   });
 
   it('is disabled by default', () => {
@@ -528,13 +528,35 @@ describe('resolveProvider', () => {
     // unable to answer anything that is not a near-verbatim match — a quieter
     // failure than an outage, and a worse one.
     Object.assign(config.chatbot, { provider: 'stub' });
-    (config as { env: string }).env = 'production';
+    (config as { appEnv: string }).appEnv = 'production';
+    expect(resolveProvider()).toBeNull();
+  });
+
+  it('never selects the echo provider in production', () => {
+    Object.assign(config.chatbot, { provider: 'echo' });
+    (config as { appEnv: string }).appEnv = 'production';
     expect(resolveProvider()).toBeNull();
   });
 
   it('allows the stub outside production', () => {
     Object.assign(config.chatbot, { provider: 'stub' });
-    (config as { env: string }).env = 'development';
+    (config as { appEnv: string }).appEnv = 'local';
     expect(resolveProvider()?.name).toBe('stub');
+  });
+
+  it('allows the echo provider on staging, where NODE_ENV is also production', () => {
+    // The whole point of the APP_ENV split: staging compiles as production, so
+    // keying this guard off `config.env` would disable the provider on the one
+    // environment built to exercise the feature.
+    Object.assign(config.chatbot, { provider: 'echo' });
+    (config as { env: string }).env = 'production';
+    (config as { appEnv: string }).appEnv = 'staging';
+    expect(resolveProvider()?.name).toBe('echo');
+  });
+
+  it('names the deterministic providers as test providers', () => {
+    expect(isTestProvider('stub')).toBe(true);
+    expect(isTestProvider('echo')).toBe(true);
+    expect(isTestProvider('openai-compatible')).toBe(false);
   });
 });

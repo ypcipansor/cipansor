@@ -184,8 +184,17 @@ jobs:
           # Every document staging renders is a test copy, stamped "SALINAN UJI —
           # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
           # so a rebuilt app cannot come up without it; production never sets it.
+          #
+          # APP_ENV=staging is the identity that lets the chatbot run its
+          # deterministic provider here. Without it the assistant was inert on
+          # staging — the only environment meant to exercise it before a release
+          # — because NODE_ENV is `production` on both copies and the "no doubles
+          # in production" guard could not tell them apart. CHATBOT_PROVIDER=echo
+          # answers from the real public corpus and the live SPMB rows, with no
+          # API key and no spend. Production sets its own real provider and
+          # APP_ENV=production, so `echo` can never reach visitors there.
           az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
-            --settings DOCUMENT_TEST_COPY=true -o none
+            --settings DOCUMENT_TEST_COPY=true APP_ENV=staging CHATBOT_PROVIDER=echo -o none
           # Web Push: this environment's own VAPID pair (decisions/
           # notifikasi-push.md), from the environment's secret and variable.
           # Absent = push stays off, so nothing here forces a pair on anyone.

@@ -9,22 +9,32 @@ import type {
   ChatMessage,
   PublicChatRequest,
   PublicChatResponse,
+  PublicChatStatus,
 } from "@cipansor/shared";
 
 /**
- * Whether the assistant is configured and reachable.
+ * Whether the assistant is configured and reachable, and how.
  *
  * The widget asks before rendering anything. A disabled or unconfigured
  * assistant therefore does not appear at all, rather than appearing and then
  * failing on the visitor's first question — which is the difference between a
  * feature that is off and a feature that looks broken.
+ *
+ * `testProvider` is carried alongside `available` so the widget can say, on
+ * screen, that staging answers from a deterministic double rather than a model.
+ * A walkthrough that could not tell the two apart is how a stub answer gets
+ * mistaken for a release-ready one.
  */
 export function useChatbotAvailability() {
   return useQuery({
     queryKey: ["chatbot", "status"],
-    queryFn: async (): Promise<boolean> => {
+    queryFn: async (): Promise<PublicChatStatus> => {
       const response = await api.get("/chatbot/public/status");
-      return response.data?.data?.available === true;
+      const data = response.data?.data;
+      return {
+        available: data?.available === true,
+        testProvider: data?.testProvider === true,
+      };
     },
     // The answer changes only on redeploy, and a failure here should not put
     // the widget into a retry loop on every public page view.

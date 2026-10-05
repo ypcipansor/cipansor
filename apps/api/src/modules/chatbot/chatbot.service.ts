@@ -26,6 +26,7 @@ import { recordUsage } from './usage.service';
 import type { LlmProvider } from './providers/types';
 import { OpenAiCompatibleProvider } from './providers/openai-compatible';
 import { StubProvider } from './providers/stub';
+import { EchoProvider } from './providers/echo';
 
 /**
  * Pembatas kesejajaran bersama untuk seluruh proses.
@@ -46,12 +47,32 @@ export class ChatbotUnavailableError extends Error {
 }
 
 /**
+ * Provider names that answer deterministically without a model.
+ *
+ * Kept here, next to the switch that creates them, so the two cannot drift: a
+ * new double added to `resolveProvider()` is one edit away from being reported
+ * as a test provider, rather than silently presented as a real one.
+ */
+const TEST_PROVIDER_NAMES = new Set(['stub', 'echo']);
+
+export function isTestProvider(name: string): boolean {
+  return TEST_PROVIDER_NAMES.has(name);
+}
+
+/**
  * Builds the configured provider, or returns null when the assistant is off.
  *
- * The stub is refused outside development on purpose: it answers by echoing
- * retrieved text, which reads like a working service while being unable to
- * handle any question that is not a near-verbatim match. Shipping that to real
- * visitors would be a quieter failure than an outage, and a worse one.
+ * The stub and the echo provider are refused in production on purpose: both
+ * answer by echoing retrieved text, which reads like a working service while
+ * being unable to handle any question that is not a near-verbatim match.
+ * Shipping that to real visitors would be a quieter failure than an outage, and
+ * a worse one.
+ *
+ * That guard reads `config.appEnv`, not `config.env`. `NODE_ENV` is
+ * `production` on staging too — both run the same images — so the guard used to
+ * fire on the one environment whose whole job is to test the feature before a
+ * release, and the assistant could never be exercised anywhere but production.
+ * `appEnv` is what distinguishes the two (see `resolveAppEnv` in config).
  */
 export function resolveProvider(): LlmProvider | null {
   const { provider, baseUrl, apiKey, model } = config.chatbot;
@@ -61,11 +82,18 @@ export function resolveProvider(): LlmProvider | null {
       return null;
 
     case 'stub':
-      if (config.env === 'production') {
+      if (config.appEnv === 'production') {
         logger.error('CHATBOT_PROVIDER=stub is not permitted in production; chatbot disabled');
         return null;
       }
       return new StubProvider();
+
+    case 'echo':
+      if (config.appEnv === 'production') {
+        logger.error('CHATBOT_PROVIDER=echo is not permitted in production; chatbot disabled');
+        return null;
+      }
+      return new EchoProvider();
 
     case 'openai-compatible': {
       if (!baseUrl || !apiKey || !model) {

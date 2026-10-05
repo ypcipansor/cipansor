@@ -172,15 +172,26 @@ export const escalate = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * Whether the assistant is available.
+ * Whether the assistant is available, and how.
  * GET /api/chatbot/public/status
  *
  * The widget calls this before rendering so a disabled or unconfigured
  * assistant simply does not appear, instead of appearing and then failing on
  * the visitor's first question.
+ *
+ * `testProvider` names the provider when it is a deterministic double (staging,
+ * local). It is not a secret — the widget prints it on screen so a person
+ * testing the feature knows the answer is a real corpus excerpt and not a
+ * model's, and never mistakes staging for the live assistant.
  */
 export const status = asyncHandler(async (_req: Request, res: Response) => {
-  res.json(ApiResponse.success({ available: chatbotService.resolveProvider() !== null }));
+  const provider = chatbotService.resolveProvider();
+  res.json(
+    ApiResponse.success({
+      available: provider !== null,
+      testProvider: provider !== null && chatbotService.isTestProvider(provider.name),
+    })
+  );
 });
 
 /**

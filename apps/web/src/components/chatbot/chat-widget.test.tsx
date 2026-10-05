@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mutateAsync = vi.fn();
+const availability = vi.hoisted(() => ({
+  value: { available: true, testProvider: false },
+}));
 
 vi.mock("@/hooks/use-chatbot", () => ({
-  useChatbotAvailability: () => ({ data: true, isLoading: false }),
+  useChatbotAvailability: () => ({
+    data: availability.value,
+    isLoading: false,
+  }),
   usePublicChat: () => ({ mutateAsync, isPending: false }),
   // Alur penerusan dirender oleh widget ini, jadi hook-nya harus ada di mock —
   // tanpa ini komponennya melempar saat dipasang dan tawarannya tidak pernah
@@ -42,6 +48,7 @@ async function tanya(pertanyaan: string) {
 // yang tidak ada hubungannya dengan yang sedang diperiksa.
 beforeEach(() => {
   vi.clearAllMocks();
+  availability.value = { available: true, testProvider: false };
   Element.prototype.scrollTo = vi.fn();
 });
 
@@ -133,5 +140,33 @@ describe("ChatWidget dan tawaran meneruskan pertanyaan", () => {
 
     await waitFor(() => expect(screen.getByText(/sedang ramai/i)).toBeTruthy());
     expect(screen.queryByText(/berkenan saya teruskan/i)).toBeNull();
+  });
+});
+
+/**
+ * Penanda "lingkungan uji".
+ *
+ * Di staging asistennya menjawab dari salinan deterministik atas data publik,
+ * bukan dari model. Menampilkan penanda itu di layar adalah bedanya antara
+ * walkthrough yang memperagakan korpus sungguhan dan satu yang menyangka
+ * sebuah stub sudah layak rilis.
+ */
+describe("ChatWidget dan penanda penyedia uji", () => {
+  it("menyebut dirinya lingkungan uji ketika penyedianya deterministik", () => {
+    availability.value = { available: true, testProvider: true };
+
+    render(<ChatWidget />);
+    fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
+
+    expect(screen.getByTestId("chatbot-test-provider")).toBeTruthy();
+  });
+
+  it("TIDAK menampilkan penanda ketika model sungguhan yang menjawab", () => {
+    availability.value = { available: true, testProvider: false };
+
+    render(<ChatWidget />);
+    fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
+
+    expect(screen.queryByTestId("chatbot-test-provider")).toBeNull();
   });
 });

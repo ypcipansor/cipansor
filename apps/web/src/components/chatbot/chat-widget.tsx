@@ -63,7 +63,9 @@ function isBusyError(error: unknown): boolean {
 }
 
 export function ChatWidget() {
-  const { data: available } = useChatbotAvailability();
+  const { data: status } = useChatbotAvailability();
+  const available = status?.available ?? false;
+  const testProvider = status?.testProvider ?? false;
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -234,6 +236,20 @@ export function ChatWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
+            {testProvider && (
+              // On staging the answers come from a deterministic double, not a
+              // model. Saying so on screen is the difference between a
+              // walkthrough that demonstrates the real corpus and one that
+              // mistakes a stub for a release-ready assistant.
+              <p
+                role="note"
+                data-testid="chatbot-test-provider"
+                className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900"
+              >
+                Lingkungan uji — jawaban diambil langsung dari data publik
+                Cipansor, bukan dari model bahasa.
+              </p>
+            )}
             <Bubble role="assistant">{GREETING}</Bubble>
 
             {turns.length === 0 && (
