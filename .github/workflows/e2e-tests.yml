@@ -176,6 +176,13 @@ jobs:
           # OOMs (exit 134); raise the limit (runners have plenty of RAM).
           NODE_OPTIONS: --max-old-space-size=4096
 
+      # Web Push needs a VAPID key pair on the API, or the settings card reports
+      # push unavailable and the subscribe/disable e2e cannot run. A pair made
+      # for this job and thrown away with it — never a stored secret.
+      - name: Generate a throwaway VAPID key pair
+        run: |
+          node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();console.log('VAPID_PUBLIC_KEY='+c.getPublicKey('base64url'));console.log('VAPID_PRIVATE_KEY='+c.getPrivateKey('base64url'))" >> "$GITHUB_ENV"
+
       - name: Start API and wait for health
         run: |
           cd apps/api
@@ -320,6 +327,13 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      # Web Push needs a VAPID key pair on the API, or the settings card reports
+      # push unavailable and the subscribe/disable e2e cannot run. A pair made
+      # for this job and thrown away with it — never a stored secret.
+      - name: Generate a throwaway VAPID key pair
+        run: |
+          node -e "const c=require('crypto').createECDH('prime256v1');c.generateKeys();console.log('VAPID_PUBLIC_KEY='+c.getPublicKey('base64url'));console.log('VAPID_PRIVATE_KEY='+c.getPrivateKey('base64url'))" >> "$GITHUB_ENV"
+
       - name: Start API and wait for health
         run: |
           cd apps/api
@@ -328,8 +342,14 @@ jobs:
           timeout 90 bash -c 'until curl -fs http://localhost:3001/health >/dev/null; do sleep 2; done' \
             || { echo "API did not become healthy"; cat /tmp/api.log; exit 1; }
 
+      # --max-failures: this job is informational, but a run that hits
+      # timeout-minutes ends "cancelled", and a cancelled E2E run does not
+      # trigger the staging deploy. On 2026-10-03 WebKit failed almost every
+      # test (the CSP's upgrade-insecure-requests, #626); with three attempts
+      # each it ran past 45 minutes and staging was never updated. Stopping
+      # early keeps a broken engine a red, reported job instead.
       - name: Run E2E tests (${{ matrix.browser }})
-        run: pnpm --filter web exec playwright test --project=${{ matrix.browser }}
+        run: pnpm --filter web exec playwright test --project=${{ matrix.browser }} --max-failures=30
 
       - name: Stop API
         if: always()

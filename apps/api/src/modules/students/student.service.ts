@@ -454,6 +454,9 @@ export class StudentService {
           name: input.name,
           email,
           passwordHash,
+          // Someone else chose it: replaced at the first sign-in (also the
+          // column default, stated here so the rule is read where it applies).
+          mustChangePassword: true,
           role: UserRole.STUDENT,
           unitId,
           isActive: withLogin,

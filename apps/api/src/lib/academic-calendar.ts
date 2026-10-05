@@ -13,8 +13,8 @@
  *
  * Note the division of labour: `isActive` stays an administrative flag (an
  * admin closing a wave early), while *whether registration is open* is derived
- * from the window. Callers must consult both — see `getPeriodWindow` on the web
- * side, which encodes the same three states.
+ * from the window. Callers must consult both — see `findPublicIntakes` in the
+ * admissions service, which also lets the waves decide.
  */
 
 /** Indonesian academic years run from mid-July to the end of June. */

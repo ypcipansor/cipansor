@@ -41,3 +41,12 @@ with nothing red on the page. Look at what was recorded:
 `gh api "repos/<org>/<repo>/code-scanning/analyses?ref=refs/pull/<N>/head"`.
 CodeQL's default-setup runs cannot be re-run (HTTP 403); push a new commit to
 the branch — an empty one will do, and a squash merge folds it away.
+
+**CodeQL reads function names.** Its `js/clear-text-storage-of-sensitive-data`
+rule treats whatever a function whose name contains *password* returns as a
+password. On 2026-10-02 two auth methods named `passwordChangeStep` and
+`completeRequiredPasswordChange` returned JWTs that went into HttpOnly cookies
+— the same cookies sign-in sets, unflagged — and the PR got three "high"
+alerts, which the `main` ruleset blocks. Renaming the methods (with a comment
+saying why) cleared them; read the alert's "source" link before treating it
+as a real leak.

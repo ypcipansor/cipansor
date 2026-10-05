@@ -214,6 +214,38 @@ router.put(
 
 /**
  * @swagger
+ * /api/users/{id}/require-password-change:
+ *   post:
+ *     summary: Mark a password as leaked (Admin only)
+ *     description: >
+ *       Ends every session of the account and makes its next sign-in ask for a
+ *       new password. Super Admin for any account; a unit admin for accounts of
+ *       their unit that are not required to use 2FA.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     responses:
+ *       200:
+ *         description: Marked; sessions ended
+ *       403:
+ *         $ref: '#/components/responses/Forbidden'
+ */
+router.post(
+  '/:id/require-password-change',
+  isAdmin,
+  validateParams(userIdParamSchema),
+  controller.requirePasswordChange
+);
+
+/**
+ * @swagger
  * /api/users/{id}:
  *   delete:
  *     summary: Delete user (Admin only)

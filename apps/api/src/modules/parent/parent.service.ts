@@ -3,6 +3,7 @@ import { ApiError, ErrorCode } from '../../middleware/error';
 import { Prisma, AttendanceStatus, Invoice, StudentParent } from '@prisma/client';
 import { getStudentIbadahStats } from '../ibadah/ibadah.service';
 import * as DormitoryService from '../dormitories/dormitories.service';
+import { recentAnnouncements as announcementsAddressedTo } from '@/modules/announcements';
 
 type StudentParentWithStudent = Awaited<ReturnType<typeof prisma.studentParent.findMany>>[0];
 type GradeWithRelations = Awaited<ReturnType<typeof prisma.grade.findMany>>[0];
@@ -790,61 +791,6 @@ export class ParentService {
   }
 
   /**
-   * Get announcements for parent
-   */
-  async getAnnouncements(parentId: string) {
-    // Get parent's children units
-    const children = await prisma.studentParent.findMany({
-      where: { parentId },
-      include: {
-        student: {
-          select: { unitId: true },
-        },
-      },
-    });
-
-    const unitIds = [...new Set(children.map((c) => c.student.unitId))];
-
-    const now = new Date();
-    const announcements = await prisma.announcement.findMany({
-      where: {
-        AND: [
-          {
-            OR: [
-              { unitId: null }, // Global announcements
-              { unitId: { in: unitIds } }, // Unit-specific
-            ],
-          },
-          { targetRoles: { has: 'PARENT' } },
-          {
-            OR: [{ publishedAt: { lte: now } }, { publishedAt: null }],
-          },
-          {
-            OR: [{ expiresAt: { gte: now } }, { expiresAt: null }],
-          },
-        ],
-      },
-      include: {
-        unit: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        createdBy: {
-          select: {
-            name: true,
-          },
-        },
-      },
-      orderBy: [{ priority: 'desc' }, { publishedAt: 'desc' }],
-      take: 20,
-    });
-
-    return announcements;
-  }
-
-  /**
    * Get notifications for parent
    */
   async getNotifications(
@@ -969,7 +915,6 @@ export class ParentService {
     });
 
     // 5. Bulk fetch active academic years for all units involved
-    const unitIds = [...new Set(children.map((c) => c.unitId))];
     // AcademicYear is global (not scoped by unit), so just fetch active years.
     const activeYears = await prisma.academicYear.findMany({
       where: { isActive: true },
@@ -1056,14 +1001,17 @@ export class ParentService {
       where: { userId: parentId, status: 'UNREAD' },
     });
 
-    const recentAnnouncements = await prisma.announcement.findMany({
-      where: {
-        OR: [{ unitId: null }, { unitId: { in: unitIds } }],
-        targetRoles: { has: 'PARENT' },
-      },
-      orderBy: { publishedAt: 'desc' },
-      take: 5,
-    });
+    // The same rule as the board: what is addressed to this wali — the
+    // yayasan's, their children's units', classes' and kamar's — live now.
+    const recentAnnouncements = (
+      await announcementsAddressedTo({ sub: parentId, roleCode: null, unitId: null }, 5)
+    ).map((a) => ({
+      id: a.id,
+      title: a.title,
+      content: a.content,
+      createdAt: a.publishedAt ?? a.createdAt,
+      priority: a.priority,
+    }));
 
     return {
       children: summary,

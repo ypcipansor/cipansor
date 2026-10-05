@@ -253,6 +253,9 @@ Dari `docs/EOFFICE_ESIGN_PLAN.md` §6:
 - `eoffice-revocation-mechanics.md` — passphrase, cap DICABUT, permohonan;
 - `eoffice-verify-by-upload-not-qr.md` — unggah PDF, bukan token;
 - `esign-standards-ceiling.md` — AATL, PSrE, riset yang jangan diulang.
+- `surat-keterangan-lewat-eoffice.md` — surat keterangan santri dibuat sebagai
+  naskah E-Office yang terisi dari data santri, bukan dicetak dengan nomor
+  buatan browser.
 
 Keputusan baru di domain ini disimpan sebagai berkas di `decisions/` dan
 didaftarkan di sini.

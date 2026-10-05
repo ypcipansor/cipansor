@@ -23,6 +23,9 @@ const { authServiceMock } = vi.hoisted(() => ({
     refreshToken: vi.fn(),
     logout: vi.fn(),
     verifyTwoFactorLogin: vi.fn(),
+    getTwoFactorStatus: vi.fn(),
+    completeForcedChange: vi.fn(),
+    changePassword: vi.fn(),
   },
 }));
 
@@ -37,7 +40,15 @@ vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { login, refreshToken, logout, verifyTwoFactorLogin } from '../auth.controller';
+import {
+  login,
+  refreshToken,
+  logout,
+  verifyTwoFactorLogin,
+  getTwoFactorStatus,
+  setRequiredPassword,
+  changePassword,
+} from '../auth.controller';
 import { ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE } from '../auth.cookies';
 
 const USER = {
@@ -55,8 +66,13 @@ function mockRes() {
   const cleared: string[] = [];
   const res = {
     jsonPayload: undefined as unknown,
+    headers: {} as Record<string, string>,
     json(payload: unknown) {
       (this as any).jsonPayload = payload;
+      return this;
+    },
+    setHeader(name: string, value: string) {
+      (this as any).headers[name] = value;
       return this;
     },
     cookie(name: string, value: string, options: any) {
@@ -67,7 +83,7 @@ function mockRes() {
       cleared.push(name);
       return this;
     },
-  } as unknown as Response & { jsonPayload: any };
+  } as unknown as Response & { jsonPayload: any; headers: Record<string, string> };
   return { res, cookies, cleared };
 }
 
@@ -241,9 +257,154 @@ describe('auth controller: cookies, not body tokens', () => {
       vi.fn()
     );
 
-    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1');
+    // No pushEndpoint in the body → null, so the service clears every device
+    // (the safe fallback for an older client that cannot name its endpoint).
+    expect(authServiceMock.logout).toHaveBeenCalledWith('u-1', 'refresh-1', null);
     expect(cleared).toEqual(
       expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
     );
+  });
+
+  it('scopes the push cleanup to the endpoint the browser named', async () => {
+    const { res } = mockRes();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+        body: { pushEndpoint: 'https://push.example.com/abc' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    // Only this device is cleared, so the user's other signed-in devices keep
+    // receiving push.
+    expect(authServiceMock.logout).toHaveBeenCalledWith(
+      'u-1',
+      'refresh-1',
+      'https://push.example.com/abc'
+    );
+  });
+
+  it('clears the cookies even when the service fails after revoking the token', async () => {
+    // The refresh token is revoked first; a later failure (the session check
+    // hitting a dropped connection) must not leave the browser presenting a
+    // session cookie for a token that is already gone.
+    authServiceMock.logout.mockRejectedValueOnce(new Error('connection lost'));
+
+    const { res, cleared } = mockRes();
+    const next = vi.fn();
+    await logout(
+      mockReq({
+        cookies: { [REFRESH_COOKIE]: 'refresh-1' },
+        user: { sub: 'u-1' },
+      }),
+      res,
+      next
+    );
+
+    expect(cleared).toEqual(
+      expect.arrayContaining([ACCESS_COOKIE, REFRESH_COOKIE, CSRF_COOKIE, PRINCIPAL_COOKIE])
+    );
+    // The failure is still surfaced to the caller.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+  });
+
+  it('marks the 2FA status no-store so a revalidation cannot answer 304', async () => {
+    authServiceMock.getTwoFactorStatus.mockResolvedValue({ enabled: false, isInvited: true });
+
+    const { res } = mockRes();
+    await getTwoFactorStatus(mockReq(), res, vi.fn());
+
+    expect(authServiceMock.getTwoFactorStatus).toHaveBeenCalledWith('u-1');
+    expect(res.jsonPayload.data).toEqual({ enabled: false, isInvited: true });
+    // Express would otherwise add an ETag and a 304 on `If-None-Match`; the web
+    // client's post-sign-in invitation waits for a 2xx status answer.
+    expect(res.headers['Cache-Control']).toBe('no-store, private');
+  });
+});
+
+describe('auth controller: a password that must change', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('sign-in sets only the temporary cookie, with its CSRF echo, and no token in the body', async () => {
+    authServiceMock.login.mockResolvedValue({ requiresPasswordChange: true, tempToken: 'temp-1' });
+
+    const { res, cookies } = mockRes();
+    await login(mockReq(), res, vi.fn());
+
+    expect(res.jsonPayload.data).toEqual({ requiresPasswordChange: true });
+    const access = cookies.find((c) => c.name === ACCESS_COOKIE);
+    expect(access?.value).toBe('temp-1');
+    expect(access?.options.httpOnly).toBe(true);
+    expect(access?.options.maxAge).toBe(10 * 60 * 1000);
+    // The new-password POST carries that cookie, so it needs the echo to pass CSRF.
+    expect(cookies.some((c) => c.name === CSRF_COOKIE)).toBe(true);
+    expect(cookies.some((c) => c.name === REFRESH_COOKIE)).toBe(false);
+    expect(cookies.some((c) => c.name === PRINCIPAL_COOKIE)).toBe(false);
+  });
+
+  it('the 2FA step hands over to the change the same way', async () => {
+    authServiceMock.verifyTwoFactorLogin.mockResolvedValue({
+      requiresPasswordChange: true,
+      tempToken: 'temp-2',
+    });
+
+    const { res, cookies } = mockRes();
+    await verifyTwoFactorLogin(
+      mockReq({ body: { token: '123456' }, user: { sub: 'u-1', isTemp: true } }),
+      res,
+      vi.fn()
+    );
+
+    await vi.waitFor(() => expect(res.jsonPayload).toBeDefined());
+    expect(res.jsonPayload.data).toEqual({ requiresPasswordChange: true });
+    expect(cookies.find((c) => c.name === ACCESS_COOKIE)?.value).toBe('temp-2');
+    expect(cookies.some((c) => c.name === REFRESH_COOKIE)).toBe(false);
+  });
+
+  it('saving the new password starts the session in cookies, not in the body', async () => {
+    authServiceMock.completeForcedChange.mockResolvedValue({
+      user: USER,
+      accessToken: 'access-3',
+      refreshToken: 'refresh-3',
+    });
+
+    const { res, cookies } = mockRes();
+    await setRequiredPassword(
+      mockReq({
+        body: { newPassword: 'tiga ekor kucing di serambi' },
+        cookies: { [ACCESS_COOKIE]: 'temp-1' },
+        headers: { 'x-client': 'bearer' },
+      }),
+      res,
+      vi.fn()
+    );
+
+    await vi.waitFor(() => expect(res.jsonPayload).toBeDefined());
+    expect(authServiceMock.completeForcedChange).toHaveBeenCalledWith(
+      'u-1',
+      'tiga ekor kucing di serambi'
+    );
+    // A request carrying the cookie gets no token, whatever header it adds.
+    expect(res.jsonPayload.data).toEqual({ user: USER });
+    expect(cookies.find((c) => c.name === ACCESS_COOKIE)?.value).toBe('access-3');
+    expect(cookies.find((c) => c.name === REFRESH_COOKIE)?.value).toBe('refresh-3');
+    expect(cookies.some((c) => c.name === PRINCIPAL_COOKIE)).toBe(true);
+  });
+
+  it('changing the password from the profile keeps the session that did it', async () => {
+    authServiceMock.changePassword.mockResolvedValue({ message: 'ok' });
+
+    const { res } = mockRes();
+    const input = { currentPassword: 'a', newPassword: 'b' };
+    await changePassword(
+      mockReq({ body: input, cookies: { [REFRESH_COOKIE]: 'this-session' } }),
+      res,
+      vi.fn()
+    );
+
+    await vi.waitFor(() => expect(res.jsonPayload).toBeDefined());
+    expect(authServiceMock.changePassword).toHaveBeenCalledWith('u-1', input, 'this-session');
   });
 });

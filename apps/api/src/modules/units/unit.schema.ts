@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { UnitType } from '@prisma/client';
-import { NPSN_MESSAGE, NPSN_PATTERN } from '@cipansor/shared';
+import { NPSN_MESSAGE, NPSN_PATTERN, unitOfficialIdentityFields } from '@cipansor/shared';
 
 /**
  * Derived from the Prisma enum rather than hand-listed.
@@ -42,6 +42,11 @@ export const updateUnitSchema = z.object({
   email: z.string().trim().email('Email tidak valid').optional().nullable(),
   logoUrl: z.string().url().optional().nullable(),
   npsn: z.string().trim().regex(NPSN_PATTERN, NPSN_MESSAGE).optional().nullable(),
+  // What documents print (`unitDocumentName`); the unit's admin keeps them,
+  // like the NPSN.
+  officialName: unitOfficialIdentityFields.officialName.optional().nullable(),
+  operatingPermitNumber: unitOfficialIdentityFields.operatingPermitNumber.optional().nullable(),
+  operatingPermitDate: unitOfficialIdentityFields.operatingPermitDate.optional().nullable(),
 });
 
 // ID param

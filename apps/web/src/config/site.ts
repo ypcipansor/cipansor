@@ -16,6 +16,8 @@ export {
   addressLines,
   educationUnits,
   featuredPrograms,
+  campusFacilities,
+  annualActivities,
   donationConfig,
   galleryItems,
   galleryThumb,

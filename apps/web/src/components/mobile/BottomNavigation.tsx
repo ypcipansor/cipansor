@@ -33,7 +33,7 @@ const PARENT_NAV_ITEMS: NavItem[] = [
   { href: "/parent/children", label: "Anak", icon: Users },
   { href: "/parent/finance", label: "Keuangan", icon: Wallet },
   { href: "/parent/messages", label: "Pesan", icon: Bell },
-  { href: "/parent/announcements", label: "Info", icon: BookOpen },
+  { href: "/announcements", label: "Info", icon: BookOpen },
 ];
 
 interface BottomNavigationProps {

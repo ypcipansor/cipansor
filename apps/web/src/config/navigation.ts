@@ -65,6 +65,7 @@ import {
   CalendarX,
 } from "lucide-react";
 import {
+  ADMIN_ROLE_CODES,
   GURU_BK_ROLE_CODES,
   PERMIT_STAFF_ROLE_CODES,
   SCHOOL_TEACHER_ROLE_CODES,
@@ -747,7 +748,7 @@ const parentNavigation: NavGroup[] = [
       },
       {
         title: "Pengaturan Notifikasi",
-        href: "/parent/notifications/preferences",
+        href: "/notifications/settings",
         icon: Bell,
       },
     ],
@@ -757,7 +758,7 @@ const parentNavigation: NavGroup[] = [
     items: [
       {
         title: "Pengumuman",
-        href: "/parent/announcements",
+        href: "/announcements",
         icon: Megaphone,
       },
       {
@@ -1410,8 +1411,8 @@ const adminNavigation: NavGroup[] = [
         ],
       },
       {
-        // /spmb is the SPMB hub #439 introduced; /admissions keeps the two
-        // pages that hub has no equivalent of yet, so neither goes unreachable.
+        // /spmb is the SPMB hub #439 introduced; /admissions keeps the one
+        // page that hub has no equivalent of yet, so it does not go unreachable.
         title: "Penerimaan (SPMB)",
         href: "/spmb",
         icon: UserPlus,
@@ -1422,8 +1423,8 @@ const adminNavigation: NavGroup[] = [
             icon: Users,
           },
           {
-            title: "Gelombang",
-            href: "/admissions/waves",
+            title: "Periode & Gelombang",
+            href: "/spmb/periods",
             icon: Calendar,
           },
           {
@@ -1593,16 +1594,12 @@ const adminNavigation: NavGroup[] = [
         icon: IdCard,
       },
       {
-        title: "Notifications",
-        href: "/notifications",
-        icon: Bell,
-        children: [
-          {
-            title: "Quick Send",
-            href: "/notifications/quick-send",
-            icon: Send,
-          },
-        ],
+        // A unit's operator broadcasts to its unit; Super Admin writes no
+        // content (decisions/siaran-pengumuman.md).
+        title: "Pengumuman",
+        href: "/announcements",
+        icon: Megaphone,
+        roleCodes: ADMIN_ROLE_CODES.filter((code) => code !== "SUPER_ADMIN"),
       },
       {
         title: "Unit Usaha",
@@ -1882,12 +1879,7 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: Mail,
       },
       {
-        title: "Notifications",
-        href: "/notifications",
-        icon: Bell,
-      },
-      {
-        title: "Announcements",
+        title: "Pengumuman",
         href: "/announcements",
         icon: Megaphone,
       },
@@ -2313,8 +2305,8 @@ export function getNavigationForRoleCode(roleCode: string): NavGroup[] {
           icon: LayoutDashboard,
         },
         {
-          title: "Notifications",
-          href: "/notifications",
+          title: "Notifikasi Saya",
+          href: "/notifications/me",
           icon: Bell,
         },
       ],

@@ -163,7 +163,8 @@ export default function NewUserPage() {
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {PASSWORD_HINT_NEW_ACCOUNT}
+                  {PASSWORD_HINT_NEW_ACCOUNT} Saat pertama masuk, pengguna
+                  diminta membuat kata sandinya sendiri.
                 </p>
                 {errors.password && (
                   <p className="text-sm text-destructive">

@@ -30,6 +30,8 @@ export const en = {
       profile: "About",
       programs: "Programs",
       units: "Units",
+      facilities: "Facilities",
+      activities: "Activities",
       news: "News",
       // Wakaf (endowment) and infaq (voluntary giving) are distinct
       // instruments with no single English equivalent; the donation page
@@ -177,7 +179,6 @@ export const en = {
     laundry: "Laundry Service",
     reception: "Reception Desk",
     wallet: "Student Dompet",
-    quickSend: "Quick Broadcast",
     wilayah: "Regional Data",
     kurikulumMerdeka: "Kurikulum Merdeka",
     studentCompliance: "Student Compliance",

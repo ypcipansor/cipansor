@@ -7,6 +7,7 @@ import {
   UpdateCampaignInput,
   LogInteractionInput,
   MarketingInteraction,
+  type QuranAbilityCode,
 } from "@cipansor/shared";
 
 // Stats
@@ -32,7 +33,7 @@ export interface RecentLead {
   status: string;
   source: string | null;
   leadScore?: number;
-  quranAbility?: string;
+  quranAbility?: QuranAbilityCode | null;
   campaign?: {
     name: string;
     code: string;

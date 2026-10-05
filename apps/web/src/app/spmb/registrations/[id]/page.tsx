@@ -17,6 +17,7 @@ import type { RegistrationStatus } from "@/hooks/use-admissions";
 import { useAuth } from "@/hooks/use-auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
 import { safeFormat } from "@/lib/date";
+import { quranAbilityLabel } from "@cipansor/shared";
 import { resolveFeeOwed, canPreviewDocument } from "@/lib/spmb-registration";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -402,7 +403,10 @@ export default function RegistrationDetailPage({
                 value={safeFormat(registrant.birthDate, "dd MMM yyyy")}
               />
               <Field label="Asal Sekolah" value={registrant.previousSchool} />
-              <Field label="Kemampuan Qur'an" value={registrant.quranAbility} />
+              <Field
+                label="Kemampuan Al-Qur'an"
+                value={quranAbilityLabel(registrant.quranAbility)}
+              />
               <Field
                 label="Hafalan"
                 value={

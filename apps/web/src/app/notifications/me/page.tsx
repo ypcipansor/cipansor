@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { id as localeId } from "date-fns/locale";
-import { Bell, CheckCheck, Loader2 } from "lucide-react";
+import { Bell, CheckCheck, Loader2, Settings } from "lucide-react";
 
 import { MainLayout } from "@/components/layout/main-layout";
 import { PageHeader } from "@/components/shared/page-header";
@@ -116,6 +116,14 @@ export default function MyNotificationsPage() {
       <PageHeader
         title="Notifikasi Saya"
         description="Pemberitahuan yang dikirim untuk Anda"
+        actions={
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/notifications/settings">
+              <Settings className="mr-2 h-4 w-4" />
+              Pengaturan
+            </Link>
+          </Button>
+        }
       />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">

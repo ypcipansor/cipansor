@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { UserRole, Gender, UnitType } from '@prisma/client';
 import { currentAccreditations } from '@/modules/units';
+import { unitDocumentName } from '@cipansor/shared';
 
 // User type from JwtPayload
 interface AuthenticatedUser {
@@ -347,7 +348,7 @@ class DapodikService {
 
     return {
       npsn: unit.npsn || '',
-      namaSekolah: unit.name,
+      namaSekolah: unitDocumentName(unit),
       bentukPendidikan: this.mapUnitTypeToDapodik(unit.type),
       statusSekolah: 'Swasta',
       alamat: unit.address || '',

@@ -34,6 +34,8 @@ const navItems: Array<{ key: TranslationPath; href: string }> = [
   { key: "public.nav.profile", href: "/profil" },
   { key: "public.nav.programs", href: "/program-unggulan" },
   { key: "public.nav.units", href: "/unit" },
+  { key: "public.nav.facilities", href: "/campus" },
+  { key: "public.nav.activities", href: "/activities" },
   { key: "public.nav.news", href: "/berita" },
   { key: "public.nav.donate", href: "/wakaf-infaq" },
 ];

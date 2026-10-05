@@ -46,5 +46,22 @@ without closing the class just waits for the 44th. Fixed in #492/#493:
   pattern that works is one `audit_logs` row per run, as the identity-document
   purge does.
 
+## It happens again wherever a comment holds the vocabulary
+
+**2026-10-03, `registrants.quran_ability`.** The column's comment listed
+`BELUM_BISA, IQRA, LANCAR, TARTIL, TAHFIDZ`; the seeds and both lead scores
+used them; the public SPMB form, the only writer a parent reaches, sent
+`IQRO` and `HAFIDZ`. A registrant who declared hafalan never scored for it,
+and the admin page showed the raw code. Fixed the same way: a Prisma enum
+(`QuranAbility`), one list with labels in `@cipansor/shared`, `z.enum` at the
+edge, and a migration that maps the two variants and keeps any other value in
+the registrant's notes instead of dropping it.
+
+A comment is not a constraint. On that day **61** free-text columns in
+`schema.prisma` documented a code vocabulary in a comment
+(`grep -E 'String\??\s.*//\s*[A-Z][A-Z_]+(,| \|| /)\s*[A-Z][A-Z_]+'`); each
+is the same bet that every writer read the comment. `known-issues.md` holds
+the sweep.
+
 Same family as [teacher-dashboard-fake-stats](./teacher-dashboard-fake-stats.md):
 a number that looks tidy and is wrong.

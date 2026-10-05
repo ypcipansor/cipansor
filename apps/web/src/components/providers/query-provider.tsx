@@ -2,14 +2,23 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AxiosError } from "axios";
+import { setAppQueryClient } from "@/lib/query-client-registry";
 
 /**
  * Global error handler for API errors
  */
-function handleQueryError(error: unknown) {
+export function handleQueryError(
+  error: unknown,
+  _variables: unknown,
+  _ctx: unknown,
+  mutation: { meta?: { silentError?: boolean } },
+) {
+  // A background mutation that repairs state (the push reconciliation) opts out
+  // entirely: it runs on every authenticated page and must never toast.
+  if (mutation?.meta?.silentError) return;
   // A request that opted out of the error toast (it shows the reason itself,
   // e.g. on a form field) opts out here too; the axios interceptor honours the
   // same flag. Without this the flag silenced one toast and left the other.
@@ -83,6 +92,12 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
         },
       }),
   );
+
+  // Expose the client to non-React code (logout must drop per-account caches).
+  useEffect(() => {
+    setAppQueryClient(queryClient);
+    return () => setAppQueryClient(null);
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

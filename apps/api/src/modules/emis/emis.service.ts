@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { Errors } from '@/middleware/error';
 import { Prisma, UserRole, Gender, UnitType } from '@prisma/client';
-import { STUDENT_STATUS } from '@cipansor/shared';
+import { STUDENT_STATUS, unitDocumentName } from '@cipansor/shared';
 import { nisMapForUnit } from '@/utils/student-nis';
 import { currentAccreditations } from '@/modules/units';
 
@@ -327,7 +327,7 @@ export class EmisService {
 
     return {
       npsn: unit.npsn || '',
-      namaLembaga: unit.name,
+      namaLembaga: unitDocumentName(unit),
       jenjang: jenjangMap[unit.type] || unit.type,
       alamat: unit.address,
       telepon: unit.phone || '',

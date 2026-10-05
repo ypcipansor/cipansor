@@ -75,7 +75,7 @@ describe('signing in with a second factor', () => {
 
     const result = await authService.verifyTwoFactorLogin('user-1', 'A1B2C3D4E5', true);
 
-    expect(result.accessToken).toBe('access');
+    expect(result).toHaveProperty('accessToken', 'access');
     expect(spentCode()).toBe('A1B2C3D4E5');
   });
 
@@ -104,7 +104,7 @@ describe('signing in with a second factor', () => {
       true
     );
 
-    expect(result.accessToken).toBe('access');
+    expect(result).toHaveProperty('accessToken', 'access');
     expect(prismaMock.$executeRaw).not.toHaveBeenCalled();
   });
 

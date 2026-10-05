@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { STATIC_SECURITY_HEADERS } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Enable React Compiler (experimental - only in development for safety)
@@ -38,6 +39,52 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      // The wali's own preferences page asked an API that never existed
+      // (`/notifications/preferences/{id}`) and showed nothing; parents now use
+      // the one settings page every role has.
+      {
+        source: "/parent/notifications/preferences",
+        destination: "/notifications/settings",
+        permanent: true,
+      },
+      // Broadcasting is one feature, Pengumuman (decisions/siaran-pengumuman.md):
+      // the two composers stored rows nobody received, and the wali's own
+      // announcements page read a narrower list than the shared board.
+      {
+        source: "/notifications/quick-send",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source: "/notifications/new",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source: "/parent/announcements",
+        destination: "/announcements",
+        permanent: true,
+      },
+      // No list of everyone's notifications, and no templates (same decision,
+      // 5 and 6): "Notifikasi" is the caller's own bell. A notification's old
+      // detail address (an id) leads there too; `me`, `settings` and
+      // `whatsapp` are pages and are left alone.
+      {
+        source: "/notifications",
+        destination: "/notifications/me",
+        permanent: true,
+      },
+      {
+        source: "/notifications/templates/:path*",
+        destination: "/announcements",
+        permanent: true,
+      },
+      {
+        source:
+          "/notifications/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})",
+        destination: "/notifications/me",
+        permanent: true,
+      },
       {
         source: "/ppdb",
         destination: "/spmb",
@@ -66,6 +113,13 @@ const nextConfig: NextConfig = {
       {
         source: "/public/ppdb/:path*",
         destination: "/public/spmb/:path*",
+        permanent: true,
+      },
+      // The waves page under /admissions listed waves with buttons that did
+      // nothing. An intake's waves are now entered on its period's page.
+      {
+        source: "/admissions/waves",
+        destination: "/spmb/periods",
         permanent: true,
       },
       // "Wakaf & Infaq" is the term the pesantren uses, and the donation page
@@ -168,33 +222,20 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // The service worker script must not be HTTP-cached. The browser's own
+        // update check compares the fetched bytes against the installed worker
+        // (Chrome ignores cache headers for this), but a shared/intermediary
+        // cache in front of the app can still serve a stale `sw.js`, which
+        // pins every client to the old worker until that cache expires. A short
+        // max-age plus revalidation keeps a deploy discoverable.
+        source: "/sw.js",
         headers: [
-          {
-            key: "X-DNS-Prefetch-Control",
-            value: "on",
-          },
-          {
-            key: "X-XSS-Protection",
-            value: "1; mode=block",
-          },
-          {
-            key: "X-Frame-Options",
-            value: "SAMEORIGIN",
-          },
-          {
-            key: "X-Content-Type-Options",
-            value: "nosniff",
-          },
-          {
-            key: "Referrer-Policy",
-            value: "strict-origin-when-cross-origin",
-          },
-          {
-            key: "Permissions-Policy",
-            value: "camera=(self), microphone=(), geolocation=()",
-          },
+          { key: "Cache-Control", value: "public, max-age=0, must-revalidate" },
         ],
+      },
+      {
+        source: "/:path*",
+        headers: STATIC_SECURITY_HEADERS,
       },
     ];
   },

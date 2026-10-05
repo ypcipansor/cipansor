@@ -634,7 +634,16 @@ export async function getReportCardById(
     where: { id, ...onlyScopedStudents(scope) },
     include: {
       student: { select: STUDENT_SAFE_SELECT },
-      class: { select: { id: true, name: true, level: true } },
+      // The print page signs with the issuing unit's head and the wali kelas.
+      class: {
+        select: {
+          id: true,
+          name: true,
+          level: true,
+          unitId: true,
+          homeroomTeacher: { select: { id: true, user: { select: { name: true } } } },
+        },
+      },
       academicYear: { select: { id: true, name: true } },
       details: { orderBy: { subjectName: 'asc' } },
     },
@@ -997,7 +1006,15 @@ function mapToReportCard(data: any): ReportCard {
     updatedAt: data.updatedAt,
 
     student: data.student,
-    class: data.class,
+    class: data.class && {
+      id: data.class.id,
+      name: data.class.name,
+      level: data.class.level,
+      unitId: data.class.unitId,
+      teacher: data.class.homeroomTeacher
+        ? { id: data.class.homeroomTeacher.id, name: data.class.homeroomTeacher.user.name }
+        : undefined,
+    },
     academicYear: data.academicYear,
     details: data.details
       ? data.details.map((d: any) => ({

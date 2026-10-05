@@ -6,6 +6,12 @@ import {
   clearTwoFactorInvite,
   markTwoFactorInvite,
 } from "@/lib/two-factor-invite";
+import {
+  clearPrivateServiceWorkerCaches,
+  currentPushEndpoint,
+  forgetPushStatus,
+} from "@/lib/push-cache";
+import { getAppQueryClient } from "@/lib/query-client-registry";
 
 interface AuthState {
   user: User | null;
@@ -14,9 +20,12 @@ interface AuthState {
   error: string | null;
   requiresTwoFactor: boolean;
   requiresTwoFactorSetup: boolean;
+  /** The password was set by someone else or marked leaked: a new one first. */
+  requiresPasswordChange: boolean;
 
   login: (credentials: LoginRequest) => Promise<void>;
   verifyTwoFactor: (token: string) => Promise<void>;
+  setNewPassword: (newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   switchRole: (roleAssignmentId: string) => Promise<void>;
@@ -90,6 +99,7 @@ export const useAuthStore = create<AuthState>()(
       error: null,
       requiresTwoFactor: false,
       requiresTwoFactorSetup: false,
+      requiresPasswordChange: false,
 
       login: async (credentials: LoginRequest) => {
         set({ isLoading: true, error: null });
@@ -107,6 +117,13 @@ export const useAuthStore = create<AuthState>()(
             // component calls /auth/2fa/generate next, which the cookie
             // authenticates, and then signs in again.
             set({ requiresTwoFactorSetup: true, isLoading: false });
+            return;
+          }
+
+          if (data.requiresPasswordChange) {
+            // Someone else set this password, or it was marked leaked. The
+            // HttpOnly cookie now holds a token that can only set a new one.
+            set({ requiresPasswordChange: true, isLoading: false });
             return;
           }
 
@@ -146,10 +163,19 @@ export const useAuthStore = create<AuthState>()(
           // The temporary token authenticates this call from its HttpOnly
           // cookie, so there is nothing to place in a header first.
           const response = await authApi.verify2FA({ token });
-          const { user } = response.data.data;
+          const data = response.data.data;
+
+          if (data.requiresPasswordChange) {
+            set({
+              requiresTwoFactor: false,
+              requiresPasswordChange: true,
+              isLoading: false,
+            });
+            return;
+          }
 
           set({
-            user,
+            user: data.user,
             isAuthenticated: true,
             isLoading: false,
             requiresTwoFactor: false,
@@ -173,20 +199,51 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      setNewPassword: async (newPassword: string) => {
+        // Errors go to the caller, which shows the API's reason on the field.
+        const response = await authApi.newPassword({ newPassword });
+        // Signed in with a password: the shell may invite this account to
+        // turn 2FA on (the API decides whether it is invited).
+        markTwoFactorInvite();
+        set({
+          user: response.data.data.user,
+          isAuthenticated: true,
+          requiresPasswordChange: false,
+          error: null,
+        });
+      },
+
       logout: async () => {
         try {
+          // Name this browser's push endpoint so the server clears only this
+          // device's row — otherwise a logout here would silently stop push on
+          // the user's other signed-in devices. Read before the session ends;
+          // it is a browser value, not a server one.
+          const pushEndpoint = await currentPushEndpoint();
           // The API revokes the refresh token from its cookie and clears every
           // session cookie. The client only drops its copy of the user.
-          await authApi.logout();
+          await authApi.logout(pushEndpoint);
         } catch {
           // Ignore logout errors — the local wipe below is the important part.
         } finally {
+          // Cached per-user content (pages, private images) outlives the
+          // session; drop it so the next person on this device cannot read a
+          // former user's data from Cache Storage (CWE-524). Best-effort —
+          // never block the logout.
+          void clearPrivateServiceWorkerCaches();
+          // The push-status probe is per-account and survives in the shared
+          // React Query cache; drop it so the next login re-reads the server
+          // instead of trusting a still-fresh result from the account that just
+          // signed out (the browser subscription itself outlives logout).
+          const queryClient = getAppQueryClient();
+          if (queryClient) forgetPushStatus(queryClient);
           clearTwoFactorInvite();
           set({
             user: null,
             isAuthenticated: false,
             requiresTwoFactor: false,
             requiresTwoFactorSetup: false,
+            requiresPasswordChange: false,
           });
         }
       },
@@ -263,6 +320,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           requiresTwoFactor: false,
           requiresTwoFactorSetup: false,
+          requiresPasswordChange: false,
           error: null,
         });
       },
