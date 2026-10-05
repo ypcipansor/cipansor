@@ -66,6 +66,32 @@ const REFUSAL_PATTERNS: RegExp[] = [
   /bukan\s+informasi\s+(publik|yang\s+dapat)/i,
   /di\s?luar\s+(kewenangan|cakupan|informasi)/i,
   /\b(cannot|can't|unable to|do not have|don't have|not able to)\b/i,
+
+  // ARABIC. Rule 6 of the system prompt tells the model to answer in the
+  // questioner's language, and the public site is id/en/ar on every page — so a
+  // visitor asking in Arabic gets an Arabic decline, which the Indonesian and
+  // English patterns above never matched. `refused` then stayed false: the
+  // widget never mounted its escalation offer, and the decline was written into
+  // the answer cache like any other answer.
+  //
+  // Same shape rule as above — the SUBJECT must be the assistant or the
+  // information, never the thing being described. Arabic `لا` negates verbs and
+  // `ليس` negates nominals, so a subject-less negation is not enough:
+  // "الرسوم غير قابلة للاسترداد" (the fee is non-refundable) is an ANSWER, and
+  // the first pattern below deliberately requires a first-person object
+  // (`لديّ`, `أملك`, …) so it does not catch it. The second requires an
+  // information noun as the subject.
+  //
+  //   "ليس لديّ معلومات عن هذا"            — I do not have information about this
+  //   "لا أستطيع الإجابة على هذا السؤال"    — I cannot answer this question
+  /(لا|ليس|لست|ليست|لسنا|لم)\s*(أملك|نملك|لدي|لدينا|لديّ|أستطيع|نستطيع|يمكنني|يمكننا|أعرف|نعرف|أجد|نجد|أقدر|نقدر)/,
+  //   "هذه المعلومات غير متوفرة لديّ"        — this information is not available to me
+  //   "المعلومات غير مدرجة في المصادر الرسمية" — the information is not listed in the official sources
+  /(المعلومات|معلومات|المعلومة|معلومة|البيانات|بيانات|التفاصيل|تفاصيل|المصادر|مصدر)[\s\S]{0,40}(غير\s*(متوفرة|متوفر|متاحة|متاح|موجودة|موجود|مدرجة|مدرج|مذكورة|مذكور)|لا\s*(تتوفر|يتوفر|توجد|يوجد)|لم\s*(تُدرج|تدرج|ترد|توجد|تذكر))/,
+  //   "لا تتوفر لدي المعلومات الكافية"        — the sufficient information is not available to me
+  /(لا|لم)\s*(تتوفر|يتوفر|توجد|يوجد|تُدرج|تدرج|تذكر|تُذكر)\s*(لدي|لدينا|في)?\s*(المعلومات|معلومات|البيانات|بيانات|التفاصيل|تفاصيل)/,
+  //   "هذا السؤال خارج نطاق معلوماتي"         — this question is outside my information
+  /(خارج|لا\s*يقع\s*ضمن)\s*(نطاق|اختصاص|صلاحيات|معلومات|معرفتي|معرفتنا)/,
 ];
 
 export function looksLikeRefusal(answer: string): boolean {

@@ -95,7 +95,8 @@ export const en = {
           "I agree to the details above being passed to the {name} team to answer this question. Data is kept for at most 90 days.",
         next: "Next",
         cancel: "Cancel",
-        reviewIntro: "Here is what I will send. Is it correct?",
+        reviewIntro:
+          "Here is a summary of the details I will pass to the team. Is it correct?",
         reviewSend: "Yes, send it",
         reviewEdit: "Edit",
         sentBody:

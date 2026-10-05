@@ -195,8 +195,21 @@ jobs:
           # configured the assistant stays off rather than falling back to a
           # deterministic double: a stub that answers like a model is the one
           # thing staging must never show a reviewer.
+          #
+          # All THREE settings are required together — `resolveProvider()` needs
+          # key, base URL and model, and returns null (assistant off) if any one
+          # is missing. Testing only the key let `CHATBOT_PROVIDER=openai-compatible`
+          # be written with an empty base URL or model, which deployed
+          # successfully but left the assistant invisible: the exact failure this
+          # PR exists to fix, reappearing silently. If the key is set, the other
+          # two are now REQUIRED — a half-configured assistant fails the release
+          # loudly instead of hiding.
           settings=(DOCUMENT_TEST_COPY=true APP_ENV=staging)
           if [ -n "$CHATBOT_API_KEY" ]; then
+            if [ -z "$CHATBOT_API_BASE_URL" ] || [ -z "$CHATBOT_MODEL" ]; then
+              echo "::error::CHATBOT_API_KEY is set for staging, so CHATBOT_API_BASE_URL and CHATBOT_MODEL are required too — an assistant that is configured halfway comes up invisible. Set both variables, or unset the key to keep the assistant deliberately off."
+              exit 1
+            fi
             settings+=(
               CHATBOT_PROVIDER=openai-compatible
               CHATBOT_API_BASE_URL="$CHATBOT_API_BASE_URL"

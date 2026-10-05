@@ -196,8 +196,12 @@ with `permission denied for schema public`. After `CREATE DATABASE … OWNER
 - Variables: `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TURNSTILE_SITE_KEY`
   (repository), and `AZURE_CLIENT_ID` (per environment).
 - The `staging` environment also carries `vars.CHATBOT_API_BASE_URL` and
-  `vars.CHATBOT_MODEL`, plus `secrets.CHATBOT_API_KEY`. Without the secret,
-  `deploy-staging.yml` sets `CHATBOT_PROVIDER=disabled` and warns — the
-  assistant is invisible on staging, which is the very bug the `APP_ENV` split
+  `vars.CHATBOT_MODEL`, plus `secrets.CHATBOT_API_KEY`. The three are required
+  together: `resolveProvider()` needs all of key, base URL and model, and with
+  any one missing the assistant is off. Without the secret,
+  `deploy-staging.yml` sets `CHATBOT_PROVIDER=disabled` and warns; with the
+  secret but a missing variable it now **fails the release** instead of writing
+  a half-configured provider that deploys cleanly and shows no assistant. Either
+  way the assistant is invisible on staging — the very bug the `APP_ENV` split
   exists to fix. Treat a missing staging key as a release blocker, not a silent
   degradation.

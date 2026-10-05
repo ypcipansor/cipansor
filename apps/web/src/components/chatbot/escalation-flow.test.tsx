@@ -76,13 +76,17 @@ describe("EscalationFlow", () => {
     ).toBe(PERTANYAAN);
   });
 
-  it("memperlihatkan persis apa yang akan dikirim sebelum mengirimnya", async () => {
+  it("memperlihatkan ringkasan data yang akan disampaikan sebelum mengirimnya", async () => {
     // Orang berhak melihat apa yang dikirim atas namanya. Ini juga yang membuat
-    // langkah "apakah sudah tepat?" berarti sesuatu — meninjau ringkasan yang
-    // BUKAN isi suratnya hanya memindahkan kepercayaan, tidak memberikannya.
+    // langkah "apakah sudah tepat?" berarti sesuatu. Yang ditampilkan adalah
+    // RINGKASAN data — bukan salinan surat internal tim, yang berbahasa
+    // Indonesia dan memuat nomor rujukan yang baru ada setelah barisnya
+    // tersimpan. Karena itu langkahnya menyebut dirinya ringkasan (lihat
+    // `reviewIntro`), bukan "pesan yang akan dikirim".
     renderFlow(PERTANYAAN);
     sampaiTinjau();
 
+    expect(screen.getByText(/ringkasan data/i)).toBeTruthy();
     const ringkasan = screen.getByText(/Halo Cipansor/);
     expect(ringkasan.textContent).toContain("Nama: Ibu Aminah");
     expect(ringkasan.textContent).toContain("Email: aminah@example.test");
@@ -133,5 +137,40 @@ describe("EscalationFlow", () => {
       expect(screen.getByText(/belum bisa dikirim/i)).toBeTruthy(),
     );
     expect(screen.queryByText(/500/)).toBeNull();
+  });
+});
+
+/**
+ * Peninjauan memakai bahasa pengunjung, dan itu memang yang diinginkan: dialah
+ * yang membacanya. Kuncinya adalah langkah itu tidak boleh MENJANJIKAN salinan
+ * surat internal tim, yang berbahasa Indonesia dan memuat nomor rujukan yang
+ * baru ada setelah barisnya tersimpan. Uji ini mengunci labelnya.
+ */
+describe("EscalationFlow dan bahasa", () => {
+  it("menampilkan ringkasan berlabel Inggris untuk pengunjung berbahasa Inggris", () => {
+    render(
+      <I18nProvider initialLocale="en">
+        <EscalationFlow
+          question="Is there a scholarship?"
+          onDismiss={vi.fn()}
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByText("Yes, pass it on"));
+    fireEvent.change(screen.getByLabelText(/full name/i), {
+      target: { value: "Mrs Aminah" },
+    });
+    fireEvent.change(screen.getByLabelText(/^email$/i), {
+      target: { value: "aminah@example.test" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByText("Next"));
+
+    expect(screen.getByText(/summary of the details/i)).toBeTruthy();
+    const ringkasan = screen.getByText(/Hello Cipansor/);
+    expect(ringkasan.textContent).toContain("Name: Mrs Aminah");
+    expect(ringkasan.textContent).toContain(
+      "Question: Is there a scholarship?",
+    );
   });
 });

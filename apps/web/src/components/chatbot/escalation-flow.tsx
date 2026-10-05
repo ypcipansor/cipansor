@@ -51,12 +51,19 @@ interface Fields {
 }
 
 /**
- * Teks yang BENAR-BENAR akan dibaca tim, disusun di sini supaya yang
- * dikonfirmasi penanya adalah isi suratnya, bukan ringkasan lain yang mirip.
- * Suratnya sendiri dirakit ulang di peladen dari kolom yang sama.
+ * A SUMMARY of the details the visitor is about to submit — deliberately not a
+ * mirror of the outgoing e-mail.
  *
- * The labels follow the visitor's language — they are reading it — while the
- * body the API mails the team stays Indonesian, as internal mail.
+ * This once claimed to be "the text the team will actually read". It cannot be:
+ * the team's mail is internal and stays Indonesian, while this preview follows
+ * the visitor's language (they are the one reading it), and the reference
+ * number is only assigned when the row is recorded — so the two were never
+ * going to be identical. Saying otherwise asked a visitor to confirm a message
+ * that did not match what arrived, and hid the reference the mail carries.
+ *
+ * So the review step is labelled as a summary (see `reviewIntro`), and this
+ * shows the fields that will be passed on, in the visitor's language. The
+ * outgoing mail is rendered separately in `escalation.service.ts`.
  */
 export function summarise(
   fields: Fields,

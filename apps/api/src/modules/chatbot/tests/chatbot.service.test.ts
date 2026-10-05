@@ -271,6 +271,30 @@ describe('ask', () => {
       await ask({ question: 'harga emas', provider: declining() });
       expect(writeCached).not.toHaveBeenCalled();
     });
+
+    it('mengenali penolakan berbahasa Arab, dan tidak menyimpannya', async () => {
+      // Situs publik id/en/ar, dan aturan 6 menyuruh model menjawab dalam bahasa
+      // penanya — jadi pertanyaan berbahasa Arab menghasilkan penolakan
+      // berbahasa Arab. Tanpa pola Arab, `refused` tetap `false`: tawaran
+      // penerusan tidak pernah muncul bagi pengunjung Arab, dan penolakannya
+      // ikut ditulis ke cache.
+      const arabic: LlmProvider = {
+        name: 'arabic-declining',
+        complete: async () => ({
+          text: 'عذرًا، ليس لديّ معلومات عن هذا.\nSUMBER: -',
+          model: 'arabic-model',
+        }),
+      };
+
+      const result = await ask({
+        question: 'هل توجد منحة للأيتام؟',
+        provider: arabic,
+        retriever: { search: () => [] },
+      });
+
+      expect(result.refused).toBe(true);
+      expect(writeCached).not.toHaveBeenCalled();
+    });
   });
 
   it('answers from the corpus and attributes its sources', async () => {

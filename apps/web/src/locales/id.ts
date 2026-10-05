@@ -109,7 +109,8 @@ export const id = {
           "Saya berkenan data di atas diteruskan kepada tim {name} untuk menjawab pertanyaan ini. Data disimpan paling lama 90 hari.",
         next: "Lanjut",
         cancel: "Batal",
-        reviewIntro: "Berikut yang akan saya kirimkan. Apakah sudah tepat?",
+        reviewIntro:
+          "Ringkasan data yang akan saya sampaikan kepada tim. Apakah sudah tepat?",
         reviewSend: "Sudah tepat, kirim",
         reviewEdit: "Ubah",
         sentBody:
