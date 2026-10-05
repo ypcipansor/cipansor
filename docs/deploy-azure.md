@@ -50,7 +50,7 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 | Setting | Production | Staging | Why |
 |---|---|---|---|
-| `APP_ENV` | `production`, set by `deploy-production.yml` | `staging`, set by `deploy-staging.yml` | Which deployed copy this is — distinct from `NODE_ENV`, which is `production` on both because both run the same images. It is what `/health` reports as `environment`, and what lets a guard say "not in production" and mean it (the chatbot's deterministic provider). A production build with it unset resolves to `production`; anything else to `local`. |
+| `APP_ENV` | `production`, set by `deploy-production.yml` | `staging`, set by `deploy-staging.yml` | Which deployed copy this is — distinct from `NODE_ENV`, which is `production` on both because both run the same images. It is what `/health` reports as `environment`, and what lets a guard say "not in production" and mean it: the chatbot refuses its `stub` provider in production, so staging — where the assistant is exercised with the real provider — needs to be distinguishable. A production build with it unset resolves to `production`; anything else to `local`. |
 | `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
 | `DOCUMENT_TEST_COPY` | unset (off) | `true`, set by `deploy-staging.yml` on every release | Every PDF the api renders and every page printed from the web is stamped "SALINAN UJI — BUKAN DOKUMEN SAH": staging's demo accounts carry the names of real office holders, their passwords are public, and the letterhead is the real one |
@@ -195,3 +195,9 @@ with `permission denied for schema public`. After `CREATE DATABASE … OWNER
 - Environments `staging` and `production`, each limited to the `main` branch.
 - Variables: `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TURNSTILE_SITE_KEY`
   (repository), and `AZURE_CLIENT_ID` (per environment).
+- The `staging` environment also carries `vars.CHATBOT_API_BASE_URL` and
+  `vars.CHATBOT_MODEL`, plus `secrets.CHATBOT_API_KEY`. Without the secret,
+  `deploy-staging.yml` sets `CHATBOT_PROVIDER=disabled` and warns — the
+  assistant is invisible on staging, which is the very bug the `APP_ENV` split
+  exists to fix. Treat a missing staging key as a release blocker, not a silent
+  degradation.
