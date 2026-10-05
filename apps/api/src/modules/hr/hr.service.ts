@@ -1726,76 +1726,78 @@ export async function enforceAttendanceRetention(now = new Date()) {
   // upload. Unlinking the file for one record therefore breaks the other, so a
   // file is only removed once no *unexpired* record still references it.
   //
-  // Only rows that can have expired are read — `scanDays` is the shortest
-  // window in force, so this set is bounded by the retention horizon and does
-  // not grow with the full photo history. The unexpired references that could
-  // still share a file are counted with one grouped query rather than by
-  // loading every stored row.
-  const scanDays = Math.min(
-    globalPhotoDays,
-    ...units.map((u) => photoDaysByUnit.get(u.id) ?? globalPhotoDays)
-  );
-  const photoCutoff = new Date(now.getTime() - scanDays * 86_400_000);
-  const [expirablePhotos, unexpiredGroups] = await Promise.all([
-    prisma.attendanceRecord.findMany({
-      where: { photoUrl: { not: null }, capturedAt: { lt: photoCutoff } },
-      select: {
-        id: true,
-        photoUrl: true,
-        capturedAt: true,
-        attendance: { select: { staff: { select: { unitId: true } } } },
-      },
-    }),
-    prisma.attendanceRecord.groupBy({
-      by: ['photoUrl'],
-      where: { photoUrl: { not: null }, capturedAt: { gte: photoCutoff } },
-      _count: { _all: true },
-    }),
-  ]);
-
-  const unexpiredByUrl = new Map<string, number>();
-  for (const group of unexpiredGroups) {
-    if (group.photoUrl) unexpiredByUrl.set(group.photoUrl, group._count._all);
-  }
-
-  const expiredPhotos: typeof expirablePhotos = [];
-  for (const row of expirablePhotos) {
-    if (!row.photoUrl) continue;
-    const unitId = row.attendance.staff.unitId;
-    const days = (unitId ? photoDaysByUnit.get(unitId) : undefined) ?? globalPhotoDays;
-    if (row.capturedAt < new Date(now.getTime() - days * 86_400_000)) expiredPhotos.push(row);
-    else unexpiredByUrl.set(row.photoUrl, (unexpiredByUrl.get(row.photoUrl) ?? 0) + 1);
+  // The scan runs per retention window, not once across the whole history: each
+  // window's query returns only the rows that are due under it, so a unit with
+  // a long window is never revisited day after day before its deadline, and the
+  // unexpired references that could still share a file are counted with one
+  // grouped query per window rather than by loading every stored row. A shared
+  // file belongs to one staff member, so its unexpired twin is in the same
+  // window.
+  const unitsByWindow = new Map<number, string[]>();
+  for (const unit of units) {
+    const days = photoDaysByUnit.get(unit.id) ?? globalPhotoDays;
+    const list = unitsByWindow.get(days) ?? [];
+    list.push(unit.id);
+    unitsByWindow.set(days, list);
   }
 
   // A file is deleted at most once per run even when several expired rows share
   // it; the later rows then just drop their reference.
   const fileDeleted = new Set<string>();
-  for (const photo of expiredPhotos) {
-    if (!photo.photoUrl) continue;
-    const url = photo.photoUrl;
-    // Another unexpired record still points at this file: clearing this row's
-    // reference is safe, deleting the file is not.
-    if ((unexpiredByUrl.get(url) ?? 0) > 0) {
+  for (const [days, unitIds] of unitsByWindow) {
+    const cutoff = new Date(now.getTime() - days * 86_400_000);
+    const [duePhotos, unexpiredGroups] = await Promise.all([
+      prisma.attendanceRecord.findMany({
+        where: {
+          photoUrl: { not: null },
+          capturedAt: { lt: cutoff },
+          attendance: { staff: { unitId: { in: unitIds } } },
+        },
+        select: { id: true, photoUrl: true },
+      }),
+      prisma.attendanceRecord.groupBy({
+        by: ['photoUrl'],
+        where: {
+          photoUrl: { not: null },
+          capturedAt: { gte: cutoff },
+          attendance: { staff: { unitId: { in: unitIds } } },
+        },
+        _count: { _all: true },
+      }),
+    ]);
+
+    const unexpiredByUrl = new Map<string, number>();
+    for (const group of unexpiredGroups) {
+      if (group.photoUrl) unexpiredByUrl.set(group.photoUrl, group._count._all);
+    }
+
+    for (const photo of duePhotos) {
+      if (!photo.photoUrl) continue;
+      const url = photo.photoUrl;
+      // Another unexpired record still points at this file: clearing this row's
+      // reference is safe, deleting the file is not.
+      if ((unexpiredByUrl.get(url) ?? 0) > 0) {
+        const cleared = await prisma.attendanceRecord.updateMany({
+          where: { id: photo.id, photoUrl: url },
+          data: { photoUrl: null },
+        });
+        photosErased += cleared.count;
+        continue;
+      }
+      // Delete the bytes first; clear the URL only after they are gone (or were
+      // already gone). An external URL has no adapter to remove it, and clearing
+      // the field would lose the only reference to a photo still stored there.
+      if (!fileDeleted.has(url)) {
+        const result = await deleteManagedUpload(url);
+        if (result === 'unsupported') continue;
+        fileDeleted.add(url);
+      }
       const cleared = await prisma.attendanceRecord.updateMany({
         where: { id: photo.id, photoUrl: url },
         data: { photoUrl: null },
       });
       photosErased += cleared.count;
-      continue;
     }
-    // Delete the bytes first; clear the URL only after they are gone (or were
-    // already gone). An external URL has no adapter to remove it, and clearing
-    // the field would lose the only reference to a photo still stored there.
-    if (!fileDeleted.has(url)) {
-      const result = await deleteManagedUpload(url);
-      if (result === 'unsupported') continue;
-      fileDeleted.add(url);
-    }
-    const cleared = await prisma.attendanceRecord.updateMany({
-      where: { id: photo.id, photoUrl: url },
-      data: { photoUrl: null },
-    });
-    photosErased += cleared.count;
   }
 
   for (const unit of units) {

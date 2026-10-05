@@ -79,8 +79,12 @@ is a stranded record.
 The selfie retention job read *every* record that had a photo on each daily
 run to decide which shared uploads could still be referenced — memory and scan
 time grew with the full retained history, not with the day's work. Only rows
-that can have expired need reading: bound the scan by the shortest retention
-window in force, and count the unexpired references that could still share a
-file with one grouped query (`groupBy` on the URL) instead of loading them.
-Also delete each file at most once per run when several expired rows share it.
-A sweep that runs daily must cost O(what is due), not O(all history).
+that can have expired need reading, and "expired" is per unit: run the scan
+once per distinct retention window (each query filtered to that window's units
+and cutoff), so a unit with a long window is never revisited day after day
+before its deadline. Count the unexpired references that could still share a
+file with one grouped query (`groupBy` on the URL) per window instead of
+loading them, and delete each file at most once per run when several expired
+rows share it. A sweep that runs daily must cost O(what is due), not O(all
+history) — and with mixed policies, O(what is due *under each policy*), not
+O(everything past the shortest one).

@@ -625,6 +625,28 @@ describe('enforceAttendanceRetention — shared photos', () => {
     );
   });
 
+  it('scopes the scan per retention window so a long window is not revisited daily', async () => {
+    // unit-1 keeps photos 365 days, unit-2 only 30.
+    m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }, { id: 'unit-2' }]);
+    m.attendancePolicy.findMany.mockResolvedValue([
+      { unitId: 'unit-1', photoRetentionDays: 365 },
+      { unitId: 'unit-2', photoRetentionDays: 30 },
+    ]);
+    m.attendanceRecord.findMany.mockResolvedValue([]);
+
+    await enforceAttendanceRetention(now);
+
+    // One due-set query per distinct window, each scoped to its own units and
+    // cutoff, so unit-1's not-yet-due rows are never loaded before day 365.
+    const calls = m.attendanceRecord.findMany.mock.calls.map((c) => c[0].where);
+    expect(calls).toHaveLength(2);
+    const short = calls.find((w) => w.attendance.staff.unitId.in.includes('unit-2'));
+    const long = calls.find((w) => w.attendance.staff.unitId.in.includes('unit-1'));
+    expect(short.attendance.staff.unitId.in).toEqual(['unit-2']);
+    expect(long.attendance.staff.unitId.in).toEqual(['unit-1']);
+    expect(short.capturedAt.lt.getTime()).toBeGreaterThan(long.capturedAt.lt.getTime());
+  });
+
   it('leaves an external URL and its reference alone', async () => {
     const url = 'https://photos.example/selfie.jpg';
     m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-1', url, expiredAt)]);
