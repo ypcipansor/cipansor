@@ -95,6 +95,19 @@ test.describe("public chatbot widget", () => {
  * exercise the widget as a visitor meets it, with the contract stubbed at the
  * network boundary — which is also the only honest way to e2e a feature whose
  * real backend costs money per request and answers non-deterministically.
+ *
+ * WHAT THESE DO NOT COVER, and where that lives instead. Because `stubChatRoutes`
+ * supplies both the answer and the `refused` flag, these tests prove the WIDGET
+ * reacts to the contract — it renders the answer, shows its sources, and offers
+ * escalation when told the answer was a refusal. They cannot prove the API
+ * produces that contract, because the API is not involved. The two behaviours a
+ * review pointed at specifically are covered where the real code runs:
+ *   - an Arabic question producing a cache KEY (not a null one) — `retrieval`
+ *     and `cache` unit tests, and the real-module round trip in
+ *     `apps/api/src/modules/chatbot/tests/answer-cache.test.ts`;
+ *   - an Arabic decline being DETECTED as a refusal — `refusal` unit tests and
+ *     `chatbot.service.test.ts`, both against the real `looksLikeRefusal`.
+ * A browser test cannot exercise either without calling the real provider.
  */
 const ANSWER =
   "Pendaftaran dibuka sampai 7 September 2026 dengan biaya Rp 350.000.";

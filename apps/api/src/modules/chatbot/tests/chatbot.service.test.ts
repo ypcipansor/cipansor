@@ -295,6 +295,29 @@ describe('ask', () => {
       expect(result.refused).toBe(true);
       expect(writeCached).not.toHaveBeenCalled();
     });
+
+    it('TIDAK menuduh jawaban biaya berbahasa Arab sebagai penolakan', async () => {
+      // Temuan review: kata benda informasi bisa mendahului negasi tentang hal
+      // lain. "وفق المعلومات الرسمية، لا توجد رسوم للتسجيل" MENJAWAB biaya,
+      // tetapi pola Arab kedua versi pertama menangkapnya — pengunjung menerima
+      // tawaran penerusan yang tidak perlu dan jawabannya tidak di-cache.
+      const arabic: LlmProvider = {
+        name: 'arabic-answering',
+        complete: async () => ({
+          text: 'وفق المعلومات الرسمية، لا توجد رسوم للتسجيل.\nSUMBER: -',
+          model: 'arabic-model',
+        }),
+      };
+
+      const result = await ask({
+        question: 'هل هناك رسوم للتسجيل؟',
+        provider: arabic,
+        retriever: { search: () => [] },
+      });
+
+      expect(result.refused).toBe(false);
+      expect(writeCached).toHaveBeenCalled();
+    });
   });
 
   it('answers from the corpus and attributes its sources', async () => {

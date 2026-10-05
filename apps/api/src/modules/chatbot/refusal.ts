@@ -87,9 +87,17 @@ const REFUSAL_PATTERNS: RegExp[] = [
   /(لا|ليس|لست|ليست|لسنا|لم)\s*(أملك|نملك|لدي|لدينا|لديّ|أستطيع|نستطيع|يمكنني|يمكننا|أعرف|نعرف|أجد|نجد|أقدر|نقدر)/,
   //   "هذه المعلومات غير متوفرة لديّ"        — this information is not available to me
   //   "المعلومات غير مدرجة في المصادر الرسمية" — the information is not listed in the official sources
-  /(المعلومات|معلومات|المعلومة|معلومة|البيانات|بيانات|التفاصيل|تفاصيل|المصادر|مصدر)[\s\S]{0,40}(غير\s*(متوفرة|متوفر|متاحة|متاح|موجودة|موجود|مدرجة|مدرج|مذكورة|مذكور)|لا\s*(تتوفر|يتوفر|توجد|يوجد)|لم\s*(تُدرج|تدرج|ترد|توجد|تذكر))/,
+  //
+  // The negation must attach to the information noun ITSELF. An earlier
+  // version allowed any 40 characters between the noun and the negation,
+  // which marked the fee sentence "According to official information, there
+  // is no registration fee" as a refusal - a valid fee answer that then got
+  // an escalation offer and lost its cache entry. The gap is now only the
+  // noun's own adjectives, and the negation is a copular form (ghayr + stative,
+  // lam + passive) describing the noun, not an existential "there is no X".
+  /(المعلومات|معلومات|المعلومة|معلومة|البيانات|بيانات|التفاصيل|تفاصيل|المصادر|مصدر)(\s*(المذكورة|الرسمية|المتاحة|الموجودة|المتوفرة|الوارد|أعلاه|أدناه))*\s*(غير\s*(متوفرة|متوفر|متاحة|متاح|موجودة|موجود|مدرجة|مدرج|مذكورة|مذكور)|لم\s*(تُدرج|تدرج|ترد|توجد|تذكر)|معدومة|ناقصة)/,
   //   "لا تتوفر لدي المعلومات الكافية"        — the sufficient information is not available to me
-  /(لا|لم)\s*(تتوفر|يتوفر|توجد|يوجد|تُدرج|تدرج|تذكر|تُذكر)\s*(لدي|لدينا|في)?\s*(المعلومات|معلومات|البيانات|بيانات|التفاصيل|تفاصيل)/,
+  /(لا|لم)\s*(تتوفر|يتوفر|توجد|يوجد|تُدرج|تدرج|تذكر|تُذكر)\s*(لدي|لدينا|في)?\s*(هذه|هذا|ذلك|تلك|هؤلاء)?\s*(المعلومات|معلومات|المعلومة|معلومة|البيانات|بيانات|التفاصيل|تفاصيل|المصادر|مصدر)/,
   //   "هذا السؤال خارج نطاق معلوماتي"         — this question is outside my information
   /(خارج|لا\s*يقع\s*ضمن)\s*(نطاق|اختصاص|صلاحيات|معلومات|معرفتي|معرفتنا)/,
 ];
