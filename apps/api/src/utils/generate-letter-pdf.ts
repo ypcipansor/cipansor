@@ -1133,6 +1133,19 @@ export async function stampSignatureVisualisation(
     explanationY -= 12;
   }
 
+  /**
+   * Salinan uji ikut dicap di sini, bukan hanya pada naskah GENERATED.
+   *
+   * `generateLetterPdfBuffer` mencap hasil rendernya, tetapi naskah unggahan
+   * melewati fungsi itu: byte-nya datang dari berkas penyusun, dan yang kita
+   * tambahkan hanya lembar visualisasi. Tanpa cap di sini, sebuah naskah
+   * unggahan yang ditandatangani di staging terarsip resmi tanpa tanda
+   * "SALINAN UJI" — persis yang hendak dicegah oleh sakelar itu. Cap dipasang
+   * atas seluruh naskah (halaman penyusun dan lembar visualisasi) sebelum byte
+   * di-hash, sehingga tak ada salinan yang lolos tanpa tanda.
+   */
+  await stampIfTestCopy(pdfDoc);
+
   // Tanggal pembuatan dikosongkan supaya byte-nya tidak berubah karena waktu
   // render — sama seperti `stampRevoked`. Hash-nya dihitung atas byte ini.
   pdfDoc.setCreationDate(new Date(0));
