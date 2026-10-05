@@ -166,7 +166,7 @@ di portal mengotori data dan berisiko privasi. Bangun **host-aware**, mengikuti
 pola yang sudah ada di `apps/web/src/lib/host-split.ts` (mis.
 `pwaEnabledForHost`, `indexableHost`).
 
-Dua hal yang harus diputuskan sebelum menandai konversi:
+Tiga hal yang harus dipahami sebelum menandai konversi:
 
 - **Form SPMB juga hidup di host portal.** Matcher middleware
   (`apps/web/middleware.ts`) mengecualikan `public`, dan `PUBLIC_PATH_PREFIXES`
