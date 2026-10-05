@@ -3361,8 +3361,12 @@ rute dinamis (detail/edit yang tak ada tautannya) yang punya URL di sana. Isi
 ulang dengan `../api/node_modules/.bin/tsx scripts/resolve-dynamic-routes.ts`
 saat stack menyala — skrip itu **menggabung** ke peta lama (URL yang tak
 terjawab di satu jalan tidak hilang) dan **gagal** bila ada pola tanpa URL yang
-tidak tercatat di `dynamic-routes.unresolved.json`. Uji `dynamic-routes.guard.test.ts`
-memastikan setiap pola dinamis terjawab atau terdaftar beralasan.
+tidak tercatat di `dynamic-routes.unresolved.json`. Bila sebuah URL lama dipakai
+kembali karena daftarnya tak menjawab, skrip menamainya; bila id di URL itu
+sudah tidak ada lagi di data (mis. setelah reseed), skrip **gagal** dan tidak
+menulis peta, sehingga sweep tidak pernah menyusuri id lama. Peta hanya ditulis
+setelah semua pemeriksaan lolos. Uji `dynamic-routes.guard.test.ts` memastikan
+setiap pola dinamis terjawab atau terdaftar beralasan.
 
 Setelah sweep, dua skrip membangun galeri di README dan
 `docs/images` dari tangkapan terbaru:

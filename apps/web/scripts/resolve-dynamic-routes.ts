@@ -16,7 +16,11 @@
 import fs from "fs";
 import path from "path";
 import { loginAs } from "./lib/auth-state";
-import { mergeResolved, unaccountedPatterns } from "./lib/dynamic-routes";
+import {
+  firstParamValue,
+  mergeResolved,
+  unaccountedPatterns,
+} from "./lib/dynamic-routes";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 const APP_DIR = path.join(__dirname, "../src/app");
@@ -272,12 +276,44 @@ function routeFromFile(file: string): string {
   return route === "/" ? "/" : route;
 }
 
+/**
+ * How a list fetch went. `empty` is a real answer with no rows (the seed holds
+ * none); `unreachable` is no answer (a 5xx or a network error). The two are kept
+ * apart because they mean opposite things to the caller: an empty list means the
+ * detail page has no seeded row, while an unreachable list means we must not
+ * conclude anything about the id the previous map holds.
+ */
+type ListStatus = "ok" | "empty" | "unreachable";
+
+async function getJsonWithStatus(
+  apiPath: string,
+  bearer: string,
+): Promise<{ payload: any; status: ListStatus }> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${apiPath}`, {
+      headers: { authorization: `Bearer ${bearer}` },
+    });
+  } catch {
+    return { payload: null, status: "unreachable" };
+  }
+  if (!res.ok) return { payload: null, status: "unreachable" };
+  return { payload: await res.json(), status: "ok" };
+}
+
 async function getJson(apiPath: string, bearer: string) {
-  const res = await fetch(`${API_URL}${apiPath}`, {
-    headers: { authorization: `Bearer ${bearer}` },
-  });
-  if (!res.ok) return null;
-  return res.json();
+  const { payload, status } = await getJsonWithStatus(apiPath, bearer);
+  return status === "ok" ? payload : null;
+}
+
+/** The endpoint that answers `pattern`'s first parameter, resolved as above. */
+interface FirstParamSource {
+  /** The list endpoint tried, for the dead-id probe. Empty for a custom hint. */
+  listPath: string;
+  /** The query the list needs (unit/year scope), as it was applied. */
+  listQuery: Record<string, string> | undefined;
+  /** The unit the list answered for, when it is unit-scoped. */
+  unitId: string | undefined;
 }
 
 /** Pull an id from the widest selection of envelope shapes we can. */
@@ -347,17 +383,26 @@ let firstUnitId = "";
 /** All seeded unit ids, tried in order for unit-scoped list queries. */
 let unitIds: string[] = [];
 
+/** What `resolveOne` learned, so `run` can tell a live id from a dead one. */
+interface ResolveOutcome {
+  url: string | null;
+  /** Present when the run got as far as a list for the first parameter. */
+  source?: FirstParamSource;
+  /** A fresh list answered with no rows: the page has no seeded row at all. */
+  listEmpty?: boolean;
+}
+
 async function resolveOne(
   pattern: string,
   bearer: string,
-): Promise<string | null> {
+): Promise<ResolveOutcome> {
   const hint = HINTS[pattern] ?? {};
   const segments = pattern.split("/").filter(Boolean);
   const out: string[] = [];
 
   // index of the first dynamic segment
   const firstDyn = segments.findIndex((s) => s.startsWith("["));
-  if (firstDyn === -1) return pattern;
+  if (firstDyn === -1) return { url: pattern };
 
   const staticPrefix = "/" + segments.slice(0, firstDyn).join("/");
 
@@ -375,7 +420,7 @@ async function resolveOne(
   const listQuery = hint.listQuery;
   if (hint.custom) {
     const url = await hint.custom(bearer);
-    return url;
+    return { url };
   }
   // Some modules are unit-scoped and the seed populates exactly one unit; trying
   // only `units[0]` resolves to a unit with zero rows, so `<entity>/[id]` is
@@ -383,20 +428,41 @@ async function resolveOne(
   const unitCandidates = Object.values(listQuery ?? {}).includes("unitWithRow")
     ? unitIds
     : [undefined];
+  // The entity's own list is the most specific prefix (or the hint's `list`).
+  // Shorter prefixes are only fallbacks for finding a row, so a liveness probe
+  // must ask this one — asking a parent collection would report every id dead.
+  const entityPath = listPaths[0] ?? "";
+  let entityAnswered = false;
+  let listAnswered = false;
   outer: for (const unitId of unitCandidates) {
     for (const candidate of listPaths) {
-      const payload = await getJson(
+      const { payload, status } = await getJsonWithStatus(
         withListQuery(candidate, listQuery, unitId),
         bearer,
       );
+      if (status === "unreachable") continue;
+      if (candidate === entityPath) entityAnswered = true;
       const arr = toRows(unwrap(payload));
       if (arr.length > 0) {
         rows = arr;
         resolvedUnitId = unitId;
+        listAnswered = true;
         break outer;
       }
     }
   }
+  const source: FirstParamSource = {
+    listPath: entityPath,
+    listQuery,
+    unitId: resolvedUnitId,
+  };
+  // We may only probe a previous id when the entity's own list answered; a list
+  // that never answered says nothing about the id.
+  const canProbe = entityAnswered;
+
+  // The entity's list answered with no rows at all: this entity has no seeded
+  // row, so a previous map's id for it cannot be current either.
+  const listEmpty = entityAnswered && !listAnswered;
 
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
@@ -411,7 +477,9 @@ async function resolveOne(
     }
     if (i === firstDyn) {
       const picked = hint.pick ? hint.pick(rows) : rows[0]?.id;
-      if (!picked) return null;
+      if (!picked) {
+        return { url: null, source: canProbe ? source : undefined, listEmpty };
+      }
       out.push(picked);
       continue;
     }
@@ -425,7 +493,7 @@ async function resolveOne(
       });
       const payload = await getJson(parentUrl, bearer);
       const id = payload ? nested.pick(unwrap(payload)) : undefined;
-      if (!id) return null;
+      if (!id) return { url: null };
       out.push(id);
       continue;
     }
@@ -449,18 +517,19 @@ async function resolveOne(
           ? list.data
           : [];
       const id = arr[0]?.id;
-      if (!id) return null;
+      if (!id) return { url: null };
       out.push(id);
       continue;
     }
-    return null;
+    return { url: null };
   }
 
   const base = out.length ? "/" + out.join("/") : null;
-  if (!base) return null;
-  return hint.query
+  if (!base) return { url: null };
+  const url = hint.query
     ? base + "?" + buildQuery(hint.query, resolvedUnitId)
     : base;
+  return { url, source: canProbe ? source : undefined, listEmpty };
 }
 
 /** The unit id a unit-scoped list actually answered for; used in the final URL. */
@@ -480,6 +549,60 @@ function buildQuery(query: Record<string, string>, unitId?: string): string {
     if (value) params.set(k, value);
   }
   return params.toString();
+}
+
+/**
+ * The first-parameter id a previous map URL holds, or null when the URL is not
+ * an instance of the pattern (a hand-edited entry, say). `firstParamValue`
+ * already extracts it from both a detail URL (`/counseling/<id>`) and an action
+ * URL (`/counseling/<id>/edit`), so both are probed for liveness.
+ */
+function previousIdOf(url: string | undefined, pattern: string): string | null {
+  if (!url) return null;
+  return firstParamValue(url, pattern);
+}
+
+/**
+ * The ids the previous map holds that the current data no longer answers for.
+ *
+ * For each such id we re-fetch its list and ask whether the id is still in it.
+ * The list comes from the source `resolveOne` recorded for that pattern, so the
+ * unit/year scope is the same one that answered before. An empty list, or a
+ * list that does not return the id, means the id is dead — the page would 404.
+ *
+ * This is what tells a reseed apart from a transient API failure: the caller
+ * only treats a carried URL as stale when the probe positively says the id is
+ * gone, so a list that never answered leaves the entry carried, not failed.
+ */
+async function findStaleIds(
+  previous: Record<string, string>,
+  patterns: string[],
+  sourcesByPreviousId: Map<string, FirstParamSource>,
+  emptyLists: Set<string>,
+  bearer: string,
+): Promise<Set<string>> {
+  const stale = new Set<string>();
+  for (const pattern of patterns) {
+    const id = previousIdOf(previous[pattern], pattern);
+    if (!id) continue;
+    const source = sourcesByPreviousId.get(id);
+    if (!source) continue;
+    if (emptyLists.has(id)) {
+      stale.add(id);
+      continue;
+    }
+    if (!source.listPath) continue;
+    const { payload, status } = await getJsonWithStatus(
+      withListQuery(source.listPath, source.listQuery, source.unitId),
+      bearer,
+    );
+    if (status !== "ok") continue;
+    const ids = toRows(unwrap(payload))
+      .map((r) => r?.id)
+      .filter(Boolean);
+    if (!ids.includes(id)) stale.add(id);
+  }
+  return stale;
 }
 
 async function run() {
@@ -504,27 +627,62 @@ async function run() {
   const all = walk(APP_DIR).map(routeFromFile);
   const patterns = all.filter((r) => r.includes("[")).sort();
 
+  // The map this run will merge into; read before the loop so `run` can decide
+  // which previous ids are worth probing for liveness.
+  const outFile = path.join(__dirname, "dynamic-routes.json");
+  const previous: Record<string, string> = fs.existsSync(outFile)
+    ? JSON.parse(fs.readFileSync(outFile, "utf8"))
+    : {};
+
   const resolved: Record<string, string> = {};
   const unresolved: string[] = [];
+  // Sources for the liveness probe, keyed by the id the previous map held.
+  const sourcesByPreviousId = new Map<string, FirstParamSource>();
+  const emptyLists = new Set<string>();
+
   for (const pattern of patterns) {
-    const url = await resolveOne(pattern, bearer).catch(() => null);
-    if (url) resolved[pattern] = url;
-    else unresolved.push(pattern);
+    const outcome = await resolveOne(pattern, bearer).catch(() => ({
+      url: null,
+    }));
+    if (outcome.url) {
+      resolved[pattern] = outcome.url;
+    } else {
+      unresolved.push(pattern);
+    }
+    // The previous map's id for this pattern: does it still exist? An empty
+    // list, or a list that does not return it, says no.
+    // Only an unresolved pattern can end up carried, so only it needs the
+    // liveness probe; a fresh resolution is already current.
+    const previousId = previousIdOf(previous[pattern], pattern);
+    if (!outcome.url && previousId && outcome.source) {
+      sourcesByPreviousId.set(previousId, outcome.source);
+      if (outcome.listEmpty) emptyLists.add(previousId);
+    }
   }
+
+  const staleIds = await findStaleIds(
+    previous,
+    patterns,
+    sourcesByPreviousId,
+    emptyLists,
+    bearer,
+  );
 
   // Merge into the committed map rather than replacing it. A pattern that was
   // resolved on an earlier run but not this one (a list page scrolled, an API
   // hiccup) used to be dropped from the file outright — and with it every page
   // only that entry reached. `screenshot-all` treats the map as the coverage
   // contract, so a silent shrink is a silent coverage loss.
-  const outFile = path.join(__dirname, "dynamic-routes.json");
-  const previous: Record<string, string> = fs.existsSync(outFile)
-    ? JSON.parse(fs.readFileSync(outFile, "utf8"))
-    : {};
-  const { merged, dropped } = mergeResolved(patterns, resolved, previous);
-  fs.writeFileSync(outFile, JSON.stringify(merged, null, 2));
+  const {
+    merged,
+    resolved: fresh,
+    carried,
+    stale,
+    dropped,
+  } = mergeResolved(patterns, resolved, previous, staleIds);
   console.log(
-    `${Object.keys(merged).length}/${patterns.length} patterns resolved -> ${outFile}`,
+    `${Object.keys(merged).length}/${patterns.length} patterns resolved ` +
+      `(${fresh.length} fresh, ${carried.length} carried)`,
   );
 
   // A pattern with no URL this run is a failure, not a note: silently carrying
@@ -550,13 +708,35 @@ async function run() {
     );
     process.exit(1);
   }
-  const carried = dropped.filter((p) => p in merged);
+
+  // Carried URLs are always named: an unreachable list can hide a reseed, so
+  // every one is reported rather than quietly reused. The ones whose id the
+  // data positively no longer holds are a failure — the sweep would visit an
+  // old id and capture a 404 while the gallery calls the page covered.
   if (carried.length) {
     console.log(
-      `\n${carried.length} pattern(s) kept the URL from the previous map:`,
+      `\n${carried.length} pattern(s) reused the previous map's URL ` +
+        `(this run's list did not answer):`,
     );
-    for (const p of carried) console.log("  " + p);
+    for (const p of carried) console.log("  " + p + " -> " + merged[p]);
   }
+  if (stale.length) {
+    console.error(
+      `\n${stale.length} carried pattern(s) point at an id the current data no ` +
+        `longer holds — a reseed replaced it:`,
+    );
+    for (const p of stale) console.error("  " + p + " -> " + merged[p]);
+    console.error(
+      "Re-run with the API up so these resolve to the new ids, or delete the " +
+        "entry from dynamic-routes.json to drop it from the sweep.",
+    );
+    process.exit(1);
+  }
+
+  // Persist only a map that passed every check, so a failing run leaves the
+  // committed coverage contract as it found it.
+  fs.writeFileSync(outFile, JSON.stringify(merged, null, 2));
+  console.log(`\nwrote ${Object.keys(merged).length} entries -> ${outFile}`);
   if (unresolved.length) {
     console.log("\nUnresolved (allowlisted):");
     for (const p of unresolved) console.log("  " + p);
