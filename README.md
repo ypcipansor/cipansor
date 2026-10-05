@@ -60,15 +60,15 @@ Angka-angka berikut diambil langsung dari basis kode (per September 2026):
 
 | Metrik                               | Jumlah    |
 | ------------------------------------ | --------- |
-| Modul API (`apps/api/src/modules`)   | **94**    |
-| Model Prisma                         | **289**   |
-| Enum Prisma                          | **157**   |
-| Halaman web (`page.tsx`)             | **435**   |
+| Modul API (`apps/api/src/modules`)   | **95**    |
+| Model Prisma                         | **292**   |
+| Enum Prisma                          | **162**   |
+| Halaman web (`page.tsx`)             | **432**   |
 | Peran (`RoleCode`)                   | **53**    |
 | Akun demo                            | **65**    |
-| Spesifikasi Playwright e2e           | **102**   |
-| Berkas test API (vitest)             | **342**   |
-| Berkas test web (vitest)             | **40**    |
+| Spesifikasi Playwright e2e           | **125**   |
+| Berkas test API (vitest)             | **378**   |
+| Berkas test web (vitest)             | **61**    |
 | Halaman terverifikasi visual (sweep) | **746**   |
 | Halaman per peran terverifikasi      | **920**   |
 
@@ -3224,7 +3224,7 @@ Modul API tersusun per domain. Ringkasannya:
 | Keuangan & SDM     | `finance`, `payroll`, `hr`, `procurement`, `inventory`, `suppliers`                                                                                      |
 | Layanan            | `library`, `health`, `meals`, `laundry`, `canteen`, `facilities`                                                                                         |
 | Komunikasi         | `announcements`, `messages`, `notifications`, `correspondence`, `chatbot`                                                                                |
-| Yayasan & mutu     | `foundation`, `quality`, `risk`, `research`, `marketing`, `spmb`                                                                                         |
+| Yayasan & mutu     | `foundation`, `quality`, `risk`, `research`, `marketing`, `admissions`                                                                                    |
 | Portal             | `parent`, `portfolio`, `wallet`, `alumni`                                                                                                                |
 
 Dokumentasi API interaktif tersedia di `/api/docs` ketika service API berjalan.
@@ -3305,8 +3305,10 @@ pnpm dev
 
 ### Login demo
 
-Halaman login (`/login`) menampilkan kartu akun demo — satu per peran.
-Kata sandi default ada di `DEMO_PASSWORD` (`packages/shared/src/types/demo-accounts.ts`).
+Halaman login (`/login`) tidak menampilkan daftar akun demo (panel itu dihapus
+bersama `DEMO_MODE` pada 2026-09-23). Akun demo ada di
+`packages/shared/src/types/demo-accounts.ts` — satu per `RoleCode`, semuanya
+berkata sandi sama (`DEMO_PASSWORD`).
 
 ---
 

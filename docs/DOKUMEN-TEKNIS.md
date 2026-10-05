@@ -11,6 +11,7 @@
 | 0.7 | 30 September 2026 | commit `18f853f2` | Pemeriksaan ulang standar 2026 (arc42 v9, C4, Diátaxis, MADR 4.0, ISO/IEC/IEEE 26514:2022, 42010:2022, IEC/IEEE 82079-1:2019) tanpa perubahan kerangka; angka diukur ulang: ~1.413 hulu rute API (dari ~1.412). Pemeriksa `check_docs.py` kini juga mencocokkan angka hulu rute terhadap `facts.json` | Agen OpenHands |
 | 0.8 | 30 September 2026 | commit `9b0efdc5` + pohon kerja (perbaikan modul `certificates`, `rewards`, `violations`, `hr` belum dikomit) | Lampiran A diukur ulang baris demi baris terhadap kode: `certificates` 9→10, `rewards` 9→10, `violations` 7→8, `hr` 37→42, `organisasi` 11→12 handler. Pemeriksa `check_docs.py` kini memeriksa **tiap baris** Lampiran A (jumlah handler, alamat mount, penandaan Prisma di route/controller), bukan hanya jumlah barisnya — jumlah baris yang cocok pernah menyembunyikan lima baris yang basi | Agen OpenHands |
 | 0.9 | 30 September 2026 | commit `7e985a08` + pohon kerja (temuan Devin: akses sertifikat, lingkup unit HR, poin kategori penghargaan) | Angka diukur ulang: **1.412 hulu rute API** (dari 1.413) dan Lampiran A baris `certificates` 10→9 — rute PDF sertifikat tidak lagi terdaftar di router; berkas PDF diunduh lewat rute `download`. Riwayat revisi dikecualikan dari gerbang angka (ia mencatat keadaan lama). Perkakas dokumen diberi uji regresi `scripts/test_tooling.py` | Agen OpenHands |
+| 1.0 | 5 Oktober 2026 | commit `3ba5cb974` (`main` digabung ke cabang README/galeri; 33 commit sejak `aefc719`) | Seluruh angka diukur ulang terhadap pohon hasil gabung: **95 modul API**, **292 model**, **162 enum**, ~**1.407 hulu rute API**, **432 halaman web**, **16 entri jadwal** atas **14 berkas pekerjaan**, **81 kunci** `.env.example`; Lampiran A diganti baris demi baris; modul `environment` masuk tabel ranah 5.3; alamat SPMB publik di bab 6 diperbaiki menjadi `GET /api/admissions/public/intakes`; lima keputusan baru (`fasilitas-dan-kegiatan-situs-publik`, `notifikasi-push`, `siaran-pengumuman`, `spmb-2027-2028`, `surat-keterangan-lewat-eoffice`) ditambahkan ke bab 9. `check_docs.py` 0 ERROR/0 WARN | Agen OpenHands |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -31,9 +32,9 @@ wali santri dan santri. Sistem mencatat **53 kode peran** yang dikelompokkan ke
 dalam **13 keluarga menu** (diukur pada commit `40780b26`, 30 September 2026);
 setiap peran melihat menu, dasbor, dan data yang berbeda.
 
-Pada commit ini, basis kode berisi **94 modul API**, **289 model data** dan
-**157 enum**, sekitar **1.412 hulu rute API**, **435 halaman web**, serta
-**15 entri jadwal** (dari 13 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
+Pada commit ini, basis kode berisi **95 modul API**, **292 model data** dan
+**162 enum**, sekitar **1.407 hulu rute API**, **432 halaman web**, serta
+**16 entri jadwal** (dari 14 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
 diakses lewat Prisma 7. Aplikasi berjalan sebagai dua layanan: API (Express 5)
 dan web (Next.js 16), dengan paket tipe bersama `@cipansor/shared`.
 
@@ -278,13 +279,13 @@ memakai satu amplop `{ success, data, meta? }` lewat `src/utils/response.ts`.
 | Komunikasi | `announcements`, `messages`, `notifications`, `chatbot` | Chatbot memakai penyedia model bahasa |
 | Persuratan & TTE | `correspondence`, `esign`, `reception`, `complaints` | Verifikasi naskah dengan unggah PDF |
 | Publik & lainnya | `marketing`, `alumni`, `portfolio`, `project`, `social-service`, `non-formal`, `practicum`, `research`, `talenta`, `extracurricular`, `student-org`, `student-compliance`, `teacher-compliance`, `assignments`, `duty-roster`, `calendar`, `academic-years` | Beberapa nama menyimpang dari isinya (lihat bab 11) |
-| Platform | `auth`, `users`, `roles`, `units`, `upload`, `analytics`, `dashboard`, `dashboard-enhancement`, `reporting` | Fondasi lintas ranah |
+| Platform | `auth`, `users`, `roles`, `units`, `upload`, `analytics`, `dashboard`, `dashboard-enhancement`, `reporting`, `environment` | Fondasi lintas ranah |
 
 Katalog lengkap ada di Lampiran A.
 
 # 6. Tampak Runtime
 
-Empat skenario di bawah dibaca langsung dari kode pada commit `40780b26`. Berkas
+Empat skenario di bawah dibaca langsung dari kode pada commit `3ba5cb974`. Berkas
 rujukan tiap skenario ada di Lampiran E.
 
 ## 6.1 Masuk, verifikasi dua langkah, dan penyegaran sesi
@@ -410,7 +411,7 @@ sequenceDiagram
   participant W as Web publik
   participant A as API
   participant T as Cloudflare Turnstile
-  W->>A: GET /api/admissions/public/active-period
+  W->>A: GET /api/admissions/public/intakes
   A-->>W: gelombang aktif dan unit
   C->>W: mengisi formulir pendaftaran
   W->>A: POST /api/admissions/public/registrants (dan token Turnstile)
@@ -428,8 +429,8 @@ tentang siapa yang berhak memutuskan).
 
 ## 6.6 Pekerjaan terjadwal
 
-`jobs/scheduler.ts` memuat **15 entri jadwal** atas **13 berkas pekerjaan**
-(diukur pada commit `40780b26`), berzona waktu `Asia/Jakarta` dan berjalan di
+`jobs/scheduler.ts` memuat **16 entri jadwal** atas **14 berkas pekerjaan**
+(diukur pada commit `3ba5cb974`, 5 Oktober 2026), berzona waktu `Asia/Jakarta` dan berjalan di
 dalam proses API. Satu berkas bisa dijadwalkan lebih dari sekali
 (`dashboard-snapshot` tiga kali).
 
@@ -489,7 +490,7 @@ kontainer yang menyala.
 
 ## 7.1 Variabel lingkungan
 
-Nama dan fungsi saja; nilai tidak pernah ditulis. Ada **78 kunci** di
+Nama dan fungsi saja; nilai tidak pernah ditulis. Ada **81 kunci** di
 `.env.example`, dikelompokkan menurut awalan (CHATBOT, SMTP, WA, RATE, DB, JWT,
 TURNSTILE, GOOGLE, NEXT, REDIS, COOKIE, MAIL, dan lain-lain). Daftar nama dan
 fungsinya ada di Lampiran C. Setiap variabel baru harus ditambahkan ke blok
@@ -556,6 +557,11 @@ satu kalimat; buka berkasnya untuk alasannya.
 | Pengawasan & rapat Pembina | Keputusan Pembina sebagai rapat tercatat atau resolusi tertulis bulat; WBS di Aduan & Aspirasi; TPPK/Satgas per unit. | `pengawasan-dan-rapat-pembina.md` |
 | Fotografi situs publik | Foto asli berasal dari pesantrencipansor.com; klaim hanya yang tampak pada foto. | `public-site-photography.md` |
 | Dokumentasi bergambar | Dokumen dan tangkapan layar tetap dua skill dengan satu jalur kerja; hanya gambar yang tersemat di naskah masuk git. | `dokumentasi-bergambar.md` |
+| Fasilitas & kegiatan situs publik | Fasilitas (`/campus`) dan Kegiatan (`/activities`) sebagai dua butir menu; fasilitas dari konfigurasi situs tiga bahasa, ekstrakurikuler dari modul portal. | `fasilitas-dan-kegiatan-situs-publik.md` |
+| Notifikasi push | Pengirim Web Push dibangun; teks layar kunci per kategori; preferensi tersimpan; satu pasangan VAPID per lingkungan. | `notifikasi-push.md` |
+| Siaran | Pengumuman satu-satunya jalan siaran: lonceng + push menurut relasi, tanpa persetujuan, dapat ditarik. | `siaran-pengumuman.md` |
+| SPMB 2027/2028 | Pendaftaran berjalan di portal dan situs publik; data brosur masuk modul SPMB, bukan kode. | `spmb-2027-2028.md` |
+| Surat keterangan lewat E-Office | Surat keterangan santri adalah naskah E-Office bernomor agenda dan bertanda tangan TTE, bukan cetakan bernomor sendiri di peramban. | `surat-keterangan-lewat-eoffice.md` |
 
 # 10. Persyaratan Kualitas
 
@@ -624,7 +630,7 @@ ditinjau ulang setiap kuartal.
 
 # Lampiran A — Katalog Modul API
 
-Diukur pada commit `9b0efdc5` (30 September 2026). "Handler" adalah perkiraan
+Diukur pada commit `3ba5cb974` (5 Oktober 2026). "Handler" adalah perkiraan
 jumlah `router.get/post/put/patch/delete`. "Layering" menandai modul yang
 memanggil Prisma dari rute/controller.
 
@@ -634,16 +640,16 @@ memanggil Prisma dari rute/controller.
 | admissions | /api/admissions | 38 | ya | ok |
 | alumni | /api/alumni | 30 | ya | ok |
 | analytics | /api/analytics | 26 | ya | ok |
-| announcements | /api/announcements | 7 | ya | ok |
+| announcements | /api/announcements | 8 | - | ok |
 | assessment | /api/assessment | 49 | ya | Prisma di route/controller |
 | assignments | /api/assignments | 8 | - | ok |
 | attendance | /api/attendance | 12 | ya | ok |
-| auth | /api/auth | 13 | ya | ok |
+| auth | /api/auth | 14 | ya | ok |
 | business-unit | /api/business-units | 7 | - | ok |
 | calendar | /api/calendar | 12 | - | ok |
 | canteen | /api/canteen | 19 | - | ok |
-| certificates | /api/certificates | 9 | - | ok |
 | cbt | /api/cbt | 20 | - | Prisma di route/controller |
+| certificates | /api/certificates | 10 | - | ok |
 | chatbot | /api/chatbot | 9 | - | Prisma di route/controller |
 | classes | /api/classes | 9 | ya | ok |
 | complaints | /api/complaints | 6 | - | Prisma di route/controller |
@@ -658,8 +664,9 @@ memanggil Prisma dari rute/controller.
 | dormitories | /api/dormitories | 23 | ya | ok |
 | duty-roster | /api/duty-roster | 18 | - | ok |
 | emis | /api/emis | 5 | - | ok |
+| environment | /api/environment | 1 | - | ok |
 | esign | /api/esign | 18 | - | ok |
-| extracurricular | /api/extracurricular | 17 | - | ok |
+| extracurricular | /api/extracurricular | 18 | - | ok |
 | facilities | /api/facilities | 21 | - | ok |
 | finance | /api/finance | 47 | ya | ok |
 | finance-enhancement | /api/finance-enhancement | 34 | - | Prisma di route/controller |
@@ -682,9 +689,9 @@ memanggil Prisma dari rute/controller.
 | muhasabah | /api/muhasabah | 13 | - | ok |
 | murojaah | /api/murojaah | 15 | - | ok |
 | non-formal | /api/non-formal | 5 | - | ok |
-| notifications | /api/notifications | 29 | ya | Prisma di route/controller |
+| notifications | /api/notifications | 18 | ya | Prisma di route/controller |
 | organisasi | /api/organisasi | 12 | - | ok |
-| parent | /api/parent | 17 | ya | ok |
+| parent | /api/parent | 16 | ya | ok |
 | paud-assessment | /api/paud-assessment | 22 | ya | ok |
 | paud-report | /api/paud-report | 13 | - | ok |
 | payroll | /api/payroll | 24 | - | ok |
@@ -718,9 +725,9 @@ memanggil Prisma dari rute/controller.
 | talenta | /api/talenta | 19 | - | ok |
 | tatalaksana | /api/tata-laksana | 9 | - | ok |
 | teacher-compliance | /api/teacher-compliance | 6 | - | ok |
-| units | /api/units | 13 | ya | ok |
+| units | /api/units | 14 | ya | ok |
 | upload | /api/upload | 1 | - | ok |
-| users | /api/users | 5 | ya | ok |
+| users | /api/users | 6 | ya | ok |
 | violations | /api/violations | 8 | ya | ok |
 | wallet | /api/wallet | 10 | - | ok |
 | wilayah | /api/wilayah | 12 | - | ok |
@@ -729,7 +736,7 @@ Modul tanpa routes (pustaka internal, bukan endpoint): `scholarship`.
 
 # Lampiran B — Model Data Tingkat Ranah
 
-Skema Prisma adalah rujukan tunggal (**289 model, 157 enum** pada commit ini).
+Skema Prisma adalah rujukan tunggal (**292 model, 162 enum** pada commit ini).
 Berikut kelompok entitas utama dan hubungannya, bukan ratusan model satu per satu.
 
 ```mermaid
@@ -761,7 +768,7 @@ pendaftaran ke unit adalah `StudentUnitEnrollment` (tidak digambar).
 
 # Lampiran C — Variabel Lingkungan
 
-Diukur dari `.env.example` (78 kunci). Nama dan fungsi saja, tanpa nilai.
+Diukur dari `.env.example` (81 kunci). Nama dan fungsi saja, tanpa nilai.
 
 | Kelompok | Nama | Fungsi |
 |---|---|---|
@@ -801,7 +808,7 @@ Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure)
 
 | Hal | Sumber |
 |---|---|
-| Commit dan tanggal ukur | `40780b26`, 30 September 2026 (skrip `collect_facts.py`) |
+| Commit dan tanggal ukur | `3ba5cb974`, 5 Oktober 2026 (skrip `collect_facts.py`) |
 | Ringkasan sistem | `README.md`, `docs/ARCHITECTURE.md` |
 | Alamat rute yang disebut | `apps/api/src/modules/*/*.routes.ts` (dicek otomatis oleh `check_docs.py`) |
 | Model data | `apps/api/prisma/schema.prisma` |
