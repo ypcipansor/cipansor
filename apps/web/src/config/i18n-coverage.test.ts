@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LOCALES, type Locale } from "@/locales";
+import { LOCALES, translations, type Locale } from "@/locales";
 import { articles } from "./content";
 import { homeContentFor } from "./home.i18n";
 import { siteTextFor } from "./site.i18n";
@@ -60,6 +60,12 @@ const KEPT_VERBATIM: Record<string, string> = {
   // A format hint showing the shape of an Indonesian mobile number.
   "en:form.phonePlaceholder": "A number format, not prose",
   "ar:form.phonePlaceholder": "A number format, not prose",
+  // The public assistant (public.chatbot). "Email" and "WhatsApp" are the same
+  // word in all three locales.
+  "en:escalation.email": "'Email' is the same word in Indonesian",
+  "ar:escalation.email": "'Email' is transliterated identically in Arabic",
+  "en:escalation.whatsapp": "A product name",
+  "ar:escalation.whatsapp": "A product name",
 };
 
 /**
@@ -105,6 +111,11 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
   { name: "accreditation", of: accreditationContentFor },
   { name: "spmb", of: spmbContentFor },
   { name: "spmb form", of: spmbFormContentFor },
+  // The public assistant's own strings. They are not a `config/*.i18n.ts`
+  // surface — the widget reads them straight off the locale tree — so this is
+  // what notices when the greeting or a suggestion is added in one language
+  // only. It is on the public site, where the rule is id/en/ar on every page.
+  { name: "public chatbot", of: (l) => translations[l].public.chatbot },
 ];
 
 describe.each(SURFACES)("$name content", ({ of }) => {
