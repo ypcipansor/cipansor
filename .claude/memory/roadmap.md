@@ -120,23 +120,23 @@ items before 2026-09-25 is in the history of this file and of
 
 0a. **Absensi pegawai** — audited 2026-09-29 (`decisions/absensi-pegawai.md`,
     defects in `known-issues.md`). **The user asked to be reminded when it is
-    time to implement this.** Phase 0 first, each its own PR with a regression
-    test that fails before the fix, in this order:
-    1. bulk attendance accepts `yyyy-MM-dd` — the feature is dead today;
-    2. selfie and location default to required when a unit has no
-       `AttendancePolicy` row, and a missing `AttendanceSite` must not fail
-       open;
-    3. one identity for the basic salary: drop the `GAJI_POKOK` /
-       `BASIC_SALARY` split, read `classification = 'POKOK'` in `resolveBasis`,
-       reconcile `baseSalary` with its payslip line;
-    4. a night shift's check-out looks back for an open CHECK_IN;
-    5. pick one, not both: an evening job marks `ABSENT` for a work day with no
-       row, or payroll stops blocking on `unresolvedDates`;
-    6. corrections carry a reason, write an `AuditLog`, get a UI, and delete
-       becomes soft;
-    7. a retention job for selfies, with one retention number (UU 27/2022
-       Ps. 42);
-    8. e2e for `/hr/attendance/me`, `/bulk` and `/settings`.
+    time to implement this.** PR #630 is the implementation branch; phase 0 is
+    mostly in (`f301fda`, `c43bd1b`, `1bb39b5`, fourth review round), each with
+    a regression test:
+    1. ~~bulk attendance accepts `yyyy-MM-dd`~~ — shared `attendanceDate`;
+    2. ~~selfie and location default to required when a unit has no
+       `AttendancePolicy` row~~ — still **needs a seeded default row**: the read
+       is still `policy?.requireSelfie`, so a fresh DB (no row) fails open;
+    3. ~~one identity for the basic salary~~ — `classification = 'POKOK'` read
+       in `resolveBasis`; **`baseSalary` vs its payslip line still disagree**;
+    4. ~~a night shift's check-out looks back for an open CHECK_IN~~;
+    5. **open** — pick one, not both: an evening job marks `ABSENT` for a work
+       day with no row, or payroll stops blocking on `unresolvedDates`
+       (it still blocks, now scoped to the requested staff);
+    6. **open** — corrections carry a reason and write an `AuditLog`, but there
+       is **no UI** and `delete` is still a hard delete;
+    7. ~~a retention job for selfies~~ — daily job, one number;
+    8. ~~e2e for `/hr/attendance/me`, `/bulk` and `/settings`~~.
     Then phase 1: `tiersJson` as an array; `EARLY_LEAVE`/`OVERTIME` derived
     from check-out; the 1/173 overtime basis per PP 35/2021 Ps. 32; enforce
     `legalBasisDoc`; `annualQuota` from `LeaveTypeConfig`; seed every

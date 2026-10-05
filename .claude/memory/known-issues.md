@@ -16,11 +16,19 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   weakness that is still open is recorded outside the repository until it is
   fixed; say here only that a module needs review.
 
-## Absensi pegawai — audit 2026-09-29 (belum diperbaiki)
+## Absensi pegawai — audit 2026-09-29 (sisa)
 
 Audited against the code, the standard practice and the regulation the same day
 (`decisions/absensi-pegawai.md` has the sources). Ordered by severity in
 `roadmap.md` §0. The decision it breaks is named on each line.
+
+PR #630 (`f301fda`, `c43bd1b`, `1bb39b5`, fourth review round) closed most of
+this list — the bulk date, the night-shift check-out, the deduction basis, the
+correction reason/audit, the retention job, the holiday draft, the shared DTOs,
+the unit scoping. What is genuinely still open is noted inline below and in
+`roadmap.md` §0a: the fail-open policy read needs a seeded default row; payroll
+still blocks on `unresolvedDates`; the correction UI is missing and `delete` is
+still hard. Each entry was re-read against the branch, not the old note.
 
 - **Absensi massal selalu gagal 400.** `bulkAttendanceSchema` wants
   `date: z.string().datetime()`, the page sends a `<input type="date">` value

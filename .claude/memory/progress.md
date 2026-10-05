@@ -23,17 +23,15 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Waiting on the user
 
-- **Absensi pegawai — audited 2026-09-29, not implemented.** The user asked to
-  be reminded when it is time to build it (`roadmap.md` §0a, defects in
-  `known-issues.md`). Eight questions were put to them with a recommendation
-  each, none answered yet: night-shift attribution (recommended: the check-out
-  looks back for an open CHECK_IN); who fills the register (recommended: an
-  evening job marks ABSENT, the admin corrects); the overtime basis
-  (recommended: PP 35/2021 Ps. 32, mandatory by law); the selfie/location
-  default (recommended: required yayasan-wide); the device reality
-  (recommended: add a gate kiosk mode beside personal phones); retention
-  (recommended: one number in `RetentionPolicy`); consent (recommended: a
-  one-time page that can be proven); and whether to start now.
+- **Absensi pegawai — on a branch, not merged.** The 2026-09-29 audit and four
+  Devin review rounds are addressed on PR #630
+  (`feat/staff-attendance-audit-and-policy`); the API suite, `build:strict`,
+  web build and web tests are green there. Still open before merge:
+  `roadmap.md` §0a items 5 and 6 (payroll still blocks on `unresolvedDates`;
+  the correction UI is missing and `delete` is still hard), and §0a item 2 —
+  the policy read is still `policy?.requireSelfie`, so a database with no
+  `AttendancePolicy` row fails open and needs a seeded default. The audit
+  questions were answered 2026-09-29 (`decisions/absensi-pegawai.md`).
 
 - Approval for the next production release — deferred by the user on
   2026-09-27; ask again at the end of every report. Passwords parts A and B

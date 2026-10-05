@@ -999,6 +999,41 @@ async function nearestSite(lat?: number, lon?: number, unitId?: string | null) {
   return { site: best, distanceMeters: bestDistance };
 }
 
+/**
+ * Advisory-lock namespace for staff-attendance writes. A per-staff key
+ * (`hashtext(staffId)`) serializes one person's punches; the two-argument form
+ * keeps this namespace separate from other modules' advisory locks. The lock
+ * is released when the enclosing transaction commits or rolls back.
+ */
+const ATTENDANCE_LOCK_NAMESPACE = 1002;
+
+/** Hold the staff member's attendance lock for the rest of the transaction. */
+async function lockStaffAttendance(tx: Prisma.TransactionClient, staffId: string) {
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ATTENDANCE_LOCK_NAMESPACE}::int, hashtext(${staffId})::int)`;
+}
+
+/** The evidence row for a punch; check-in and check-out share its shape. */
+function attendanceEvidence(
+  attendanceId: string,
+  kind: 'CHECK_IN' | 'CHECK_OUT',
+  input: SelfAttendanceInput,
+  match: Awaited<ReturnType<typeof nearestSite>>,
+  withinRadius: boolean | null
+) {
+  return {
+    attendanceId,
+    kind,
+    photoUrl: input.photoUrl,
+    latitude: input.latitude,
+    longitude: input.longitude,
+    accuracyMeters: input.accuracyMeters,
+    siteId: match?.site.id,
+    distanceMeters: match?.distanceMeters,
+    isWithinRadius: withinRadius,
+    deviceInfo: input.deviceInfo,
+  };
+}
+
 export async function selfCheckIn(input: SelfAttendanceInput) {
   const staff = await prisma.staff.findUnique({
     where: { id: input.staffId },
@@ -1029,14 +1064,6 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
   const now = new Date();
   const date = dayOf(day);
 
-  const existing = await prisma.staffAttendance.findUnique({
-    where: { staffId_date: { staffId: input.staffId, date } },
-    select: { id: true, checkIn: true },
-  });
-  if (existing?.checkIn) {
-    throw Errors.badRequest('Anda sudah absen masuk hari ini');
-  }
-
   const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
   const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
   if (policy?.outsideRadiusAction === 'REJECT' && withinRadius === false) {
@@ -1050,8 +1077,20 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
 
   // The day row and its evidence are one write: if the evidence fails, the
   // punch must not remain recorded without it (a retry would otherwise be
-  // refused as "already checked in", stranding the row).
+  // refused as "already checked in", stranding the row). The staff member's
+  // lock serializes concurrent punches, and "already checked in" is re-read
+  // inside it so two requests cannot both see an empty day and both write.
   const { attendance, record } = await prisma.$transaction(async (tx) => {
+    await lockStaffAttendance(tx, input.staffId);
+
+    const existing = await tx.staffAttendance.findUnique({
+      where: { staffId_date: { staffId: input.staffId, date } },
+      select: { id: true, checkIn: true },
+    });
+    if (existing?.checkIn) {
+      throw Errors.badRequest('Anda sudah absen masuk hari ini');
+    }
+
     const attendance = await tx.staffAttendance.upsert({
       where: { staffId_date: { staffId: input.staffId, date } },
       update: { checkIn: now, shiftId: shift?.id, status, lateMinutes },
@@ -1065,21 +1104,8 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
       },
     });
 
-    // create, not upsert: an existing CHECK_IN row means a punch already
-    // happened, and the evidence for it must not be swapped out afterwards.
     const record = await tx.attendanceRecord.create({
-      data: {
-        attendanceId: attendance.id,
-        kind: 'CHECK_IN',
-        photoUrl: input.photoUrl,
-        latitude: input.latitude,
-        longitude: input.longitude,
-        accuracyMeters: input.accuracyMeters,
-        siteId: match?.site.id,
-        distanceMeters: match?.distanceMeters,
-        isWithinRadius: withinRadius,
-        deviceInfo: input.deviceInfo,
-      },
+      data: attendanceEvidence(attendance.id, 'CHECK_IN', input, match, withinRadius),
     });
     return { attendance, record };
   });
@@ -1092,17 +1118,24 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
  * that crosses midnight — the previous day's row that is still open. Attendance
  * rows key on the check-in day, so a 22:00–06:00 shift's checkout belongs to
  * yesterday's row; looking only at today left such a shift unable to close.
+ *
+ * Takes the transaction client so the lookup and the write that follows it are
+ * guarded by the same staff lock.
  */
-async function findOpenCheckInRow(staffId: string, today: string) {
+async function findOpenCheckInRow(
+  staffId: string,
+  today: string,
+  client: Prisma.TransactionClient | typeof prisma = prisma
+) {
   const include = { records: { where: { kind: 'CHECK_OUT' }, select: { id: true } } } as const;
-  const current = await prisma.staffAttendance.findUnique({
+  const current = await client.staffAttendance.findUnique({
     where: { staffId_date: { staffId, date: dayOf(today) } },
     include,
   });
   if (current?.checkIn && !current.checkOut) return current;
 
   const yesterday = dayString(new Date(dayOf(today).getTime() - 86_400_000));
-  const previous = await prisma.staffAttendance.findUnique({
+  const previous = await client.staffAttendance.findUnique({
     where: { staffId_date: { staffId, date: dayOf(yesterday) } },
     include: { ...include, shift: true },
   });
@@ -1130,34 +1163,26 @@ export async function selfCheckOut(input: SelfAttendanceInput) {
   const now = new Date();
   const day = todayWib();
 
-  const existing = await findOpenCheckInRow(input.staffId, day);
-  if (!existing?.checkIn) throw Errors.badRequest('Belum ada absen masuk hari ini');
-  if (existing.checkOut) throw Errors.badRequest('Anda sudah absen keluar hari ini');
-
   const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
   const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
 
   // The checkout time and its evidence are one write, for the same reason as
-  // the check-in: a failure between them leaves the row closed with no evidence.
+  // the check-in. The open row is found inside the staff lock so a concurrent
+  // check-in cannot slip in between the read and the close.
   const { attendance, record } = await prisma.$transaction(async (tx) => {
+    await lockStaffAttendance(tx, input.staffId);
+
+    const existing = await findOpenCheckInRow(input.staffId, day, tx);
+    if (!existing?.checkIn) throw Errors.badRequest('Belum ada absen masuk hari ini');
+    if (existing.checkOut) throw Errors.badRequest('Anda sudah absen keluar hari ini');
+
     const attendance = await tx.staffAttendance.update({
       where: { id: existing.id },
       data: { checkOut: now },
     });
 
     const record = await tx.attendanceRecord.create({
-      data: {
-        attendanceId: attendance.id,
-        kind: 'CHECK_OUT',
-        photoUrl: input.photoUrl,
-        latitude: input.latitude,
-        longitude: input.longitude,
-        accuracyMeters: input.accuracyMeters,
-        siteId: match?.site.id,
-        distanceMeters: match?.distanceMeters,
-        isWithinRadius: withinRadius,
-        deviceInfo: input.deviceInfo,
-      },
+      data: attendanceEvidence(attendance.id, 'CHECK_OUT', input, match, withinRadius),
     });
     return { attendance, record };
   });
@@ -1699,33 +1724,60 @@ export async function enforceAttendanceRetention(now = new Date()) {
 
   // A selfie URL can be shared: a check-in and its check-out may store the same
   // upload. Unlinking the file for one record therefore breaks the other, so a
-  // file is only removed once no *unexpired* record still references it. All
-  // rows are read up front so the decision does not depend on visit order.
-  const photoRows = await prisma.attendanceRecord.findMany({
-    where: { photoUrl: { not: null } },
-    select: {
-      id: true,
-      photoUrl: true,
-      capturedAt: true,
-      attendance: { select: { staff: { select: { unitId: true } } } },
-    },
-  });
-  const expiredPhotos: typeof photoRows = [];
-  const stillReferenced = new Set<string>();
-  for (const row of photoRows) {
+  // file is only removed once no *unexpired* record still references it.
+  //
+  // Only rows that can have expired are read — `scanDays` is the shortest
+  // window in force, so this set is bounded by the retention horizon and does
+  // not grow with the full photo history. The unexpired references that could
+  // still share a file are counted with one grouped query rather than by
+  // loading every stored row.
+  const scanDays = Math.min(
+    globalPhotoDays,
+    ...units.map((u) => photoDaysByUnit.get(u.id) ?? globalPhotoDays)
+  );
+  const photoCutoff = new Date(now.getTime() - scanDays * 86_400_000);
+  const [expirablePhotos, unexpiredGroups] = await Promise.all([
+    prisma.attendanceRecord.findMany({
+      where: { photoUrl: { not: null }, capturedAt: { lt: photoCutoff } },
+      select: {
+        id: true,
+        photoUrl: true,
+        capturedAt: true,
+        attendance: { select: { staff: { select: { unitId: true } } } },
+      },
+    }),
+    prisma.attendanceRecord.groupBy({
+      by: ['photoUrl'],
+      where: { photoUrl: { not: null }, capturedAt: { gte: photoCutoff } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const unexpiredByUrl = new Map<string, number>();
+  for (const group of unexpiredGroups) {
+    if (group.photoUrl) unexpiredByUrl.set(group.photoUrl, group._count._all);
+  }
+
+  const expiredPhotos: typeof expirablePhotos = [];
+  for (const row of expirablePhotos) {
     if (!row.photoUrl) continue;
     const unitId = row.attendance.staff.unitId;
     const days = (unitId ? photoDaysByUnit.get(unitId) : undefined) ?? globalPhotoDays;
     if (row.capturedAt < new Date(now.getTime() - days * 86_400_000)) expiredPhotos.push(row);
-    else stillReferenced.add(row.photoUrl);
+    else unexpiredByUrl.set(row.photoUrl, (unexpiredByUrl.get(row.photoUrl) ?? 0) + 1);
   }
+
+  // A file is deleted at most once per run even when several expired rows share
+  // it; the later rows then just drop their reference.
+  const fileDeleted = new Set<string>();
   for (const photo of expiredPhotos) {
     if (!photo.photoUrl) continue;
-    // Another record that has not expired still points at this file: clearing
-    // this row's reference is safe, deleting the file is not.
-    if (stillReferenced.has(photo.photoUrl)) {
+    const url = photo.photoUrl;
+    // Another unexpired record still points at this file: clearing this row's
+    // reference is safe, deleting the file is not.
+    if ((unexpiredByUrl.get(url) ?? 0) > 0) {
       const cleared = await prisma.attendanceRecord.updateMany({
-        where: { id: photo.id, photoUrl: photo.photoUrl },
+        where: { id: photo.id, photoUrl: url },
         data: { photoUrl: null },
       });
       photosErased += cleared.count;
@@ -1734,10 +1786,13 @@ export async function enforceAttendanceRetention(now = new Date()) {
     // Delete the bytes first; clear the URL only after they are gone (or were
     // already gone). An external URL has no adapter to remove it, and clearing
     // the field would lose the only reference to a photo still stored there.
-    const result = await deleteManagedUpload(photo.photoUrl);
-    if (result === 'unsupported') continue;
+    if (!fileDeleted.has(url)) {
+      const result = await deleteManagedUpload(url);
+      if (result === 'unsupported') continue;
+      fileDeleted.add(url);
+    }
     const cleared = await prisma.attendanceRecord.updateMany({
-      where: { id: photo.id, photoUrl: photo.photoUrl },
+      where: { id: photo.id, photoUrl: url },
       data: { photoUrl: null },
     });
     photosErased += cleared.count;

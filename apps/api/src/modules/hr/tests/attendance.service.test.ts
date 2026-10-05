@@ -5,7 +5,7 @@ vi.mock('../../../lib/prisma', () => ({
     staff: { findUnique: vi.fn() },
     attendanceSite: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     attendancePolicy: { findFirst: vi.fn(), findMany: vi.fn() },
-    attendanceRecord: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() },
+    attendanceRecord: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), groupBy: vi.fn() },
     staffAttendance: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     shiftAssignment: { findFirst: vi.fn() },
     shiftRotation: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
@@ -19,6 +19,7 @@ vi.mock('../../../lib/prisma', () => ({
     retentionPolicy: { findMany: vi.fn() },
     unit: { findMany: vi.fn() },
     $transaction: vi.fn(),
+    $queryRaw: vi.fn(),
   },
 }));
 
@@ -49,6 +50,7 @@ import { bulkAttendanceSchema } from '../hr.schema';
 
 const m = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
   $transaction: ReturnType<typeof vi.fn>;
+  $queryRaw: ReturnType<typeof vi.fn>;
 };
 
 /** A shift that starts at 07:00 WIB with a 15-minute grace. */
@@ -77,11 +79,13 @@ beforeEach(() => {
   m.auditLog.create.mockResolvedValue({});
   m.attendanceRecord.findMany.mockResolvedValue([]);
   m.attendanceRecord.updateMany.mockResolvedValue({ count: 1 });
+  m.attendanceRecord.groupBy.mockResolvedValue([]);
   m.staffAttendance.deleteMany.mockResolvedValue({ count: 0 });
   m.leave.findMany.mockResolvedValue([]);
   m.retentionPolicy.findMany.mockResolvedValue([]);
   m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }]);
   m.attendancePolicy.findMany.mockResolvedValue([]);
+  m.$queryRaw.mockResolvedValue([]);
   vi.mocked(deleteManagedUpload).mockResolvedValue('deleted');
   // The punch and its evidence are one write; run the callback against the mock.
   m.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
@@ -225,6 +229,28 @@ describe('selfCheckIn', () => {
       vi.useRealTimers();
     }
   });
+
+  it('takes the staff lock and re-reads the day inside one transaction', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+
+    await selfCheckIn({ staffId: 'staff-1' });
+
+    expect(m.$queryRaw).toHaveBeenCalled();
+    expect(m.$transaction).toHaveBeenCalledTimes(1);
+    // Both the day row and its evidence are written inside that transaction.
+    expect(m.staffAttendance.upsert).toHaveBeenCalledTimes(1);
+    expect(m.attendanceRecord.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an evidence failure out of the transaction so the punch rolls back', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendanceRecord.create.mockRejectedValue(new Error('evidence failed'));
+
+    // The rejection escapes the callback, which is what makes a real database
+    // roll the day row back; it is not swallowed or compensated afterwards.
+    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/evidence failed/);
+    expect(m.$transaction).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('selfCheckOut', () => {
@@ -262,6 +288,38 @@ describe('selfCheckOut', () => {
     await selfCheckOut({ staffId: 'staff-1', photoUrl: 'https://example.test/out.jpg' });
 
     expect(m.attendanceRecord.create.mock.calls[0][0].data.kind).toBe('CHECK_OUT');
+  });
+
+  it('finds the open row and writes the close under the same lock', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.staffAttendance.findUnique.mockResolvedValue({
+      id: 'att-1',
+      checkIn: new Date(),
+      checkOut: null,
+      records: [],
+    });
+    m.staffAttendance.update.mockResolvedValue({ id: 'att-1' });
+
+    await selfCheckOut({ staffId: 'staff-1' });
+
+    expect(m.$queryRaw).toHaveBeenCalled();
+    expect(m.$transaction).toHaveBeenCalledTimes(1);
+    // The row lookup happens inside the transaction, not before it.
+    expect(m.staffAttendance.findUnique).toHaveBeenCalled();
+  });
+
+  it('propagates an evidence failure out of the transaction so the close rolls back', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.staffAttendance.findUnique.mockResolvedValue({
+      id: 'att-1',
+      checkIn: new Date(),
+      checkOut: null,
+      records: [],
+    });
+    m.attendanceRecord.create.mockRejectedValue(new Error('evidence failed'));
+
+    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/evidence failed/);
+    expect(m.$transaction).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -524,10 +582,10 @@ describe('enforceAttendanceRetention — shared photos', () => {
 
   it('keeps a file another, unexpired record still points at', async () => {
     const shared = 'http://localhost:3000/uploads/shared.jpg';
-    m.attendanceRecord.findMany.mockResolvedValue([
-      photoRow('r-old', shared, expiredAt),
-      photoRow('r-new', shared, new Date('2026-09-30T00:00:00Z')),
-    ]);
+    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-old', shared, expiredAt)]);
+    // The unexpired row that shares the file is found by the grouped count, not
+    // by loading every stored photo row.
+    m.attendanceRecord.groupBy.mockResolvedValue([{ photoUrl: shared, _count: { _all: 1 } }]);
 
     const result = await enforceAttendanceRetention(now);
 
@@ -551,6 +609,20 @@ describe('enforceAttendanceRetention — shared photos', () => {
       where: { id: 'r-1', photoUrl: url },
       data: { photoUrl: null },
     });
+  });
+
+  it('reads only the rows that can have expired, not the whole photo history', async () => {
+    m.attendanceRecord.findMany.mockResolvedValue([]);
+
+    await enforceAttendanceRetention(now);
+
+    const where = m.attendanceRecord.findMany.mock.calls[0][0].where;
+    expect(where.photoUrl).toEqual({ not: null });
+    // Bounded by the retention horizon, so the scan cannot grow without limit.
+    expect(where.capturedAt.lt).toBeInstanceOf(Date);
+    expect(m.attendanceRecord.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ by: ['photoUrl'] })
+    );
   });
 
   it('leaves an external URL and its reference alone', async () => {

@@ -11,20 +11,20 @@ jangan disatukan.
 
 ## Aturannya
 
-| Hal | Diputuskan | Status di kode (2026-09-29) |
+| Hal | Diputuskan | Status di kode (2026-09-29; PR #630, belum merge) |
 |---|---|---|
 | Bukti masuk/pulang | Selfie **dan** lokasi (geotag) — keduanya bisa diwajibkan atau tidak per unit lewat `AttendancePolicy` | Model + endpoint ada. **Default tidak aman:** unit yang belum punya baris `AttendancePolicy` tidak mewajibkan apa pun, jadi selfie dan lokasi lolos |
 | Siapa yang diwajibkan | Pengaturan per unit: per **peran** atau per **orang** (`AttendanceExemption`); tanpa baris berarti wajib | Ada; pengecualian berbasis peran selalu yayasan-wide — admin unit tidak bisa mengecualikan peran di unitnya |
 | Jam kerja | `WorkWeekConfig` per unit: hari kerja, jam per hari, jam pulang Jumat — bukan Senin–Jumat hardcode | Ada; kalau barisnya belum ada, kode jatuh ke Senin–Sabtu 7 jam (tidak aman) |
 | Shift | `WorkShift` + `ShiftAssignment` (per orang, rentang tanggal) + `ShiftRotation` (piket bergilir, `cycleDays`) | Ada |
-| Shift lintas tengah malam | Ada (`crossesMidnight`); check-out hari berikutnya mencari baris masuk yang belum ditutup | **Belum.** `selfCheckOut` hanya mencari baris hari ini, jadi shift 22:00–06:00 tidak bisa pulang |
-| Potongan | Dari **tunjangan**, bukan gaji pokok. Basis (`TUNJANGAN_KEHADIRAN`, kode komponen, `UPAH_SEHARI`, …), bentuk (`NOMINAL`/`PERSENTASE`/`PRORATA`/`PENGALI`/`BERTINGKAT`/`FORMULA`), batas per hari/bulan, dasar hukum — semuanya baris `PayrollPolicyRule` | Mesin ada. **Dua celah:** kode gaji pokok tidak konsisten (`GAJI_POKOK` di `seedDefaults` vs `BASIC_SALARY` di `seed.ts`), sehingga baris gaji pokok ikut terhitung sebagai tunjangan; dan `classification` (`POKOK`) tidak pernah dibaca |
+| Shift lintas tengah malam | Ada (`crossesMidnight`); check-out hari berikutnya mencari baris masuk yang belum ditutup | Ada. `findOpenCheckInRow` mencari baris hari ini lalu baris kemarin yang belum ditutup untuk shift lintas tengah malam |
+| Potongan | Dari **tunjangan**, bukan gaji pokok. Basis (`TUNJANGAN_KEHADIRAN`, kode komponen, `UPAH_SEHARI`, …), bentuk (`NOMINAL`/`PERSENTASE`/`PRORATA`/`PENGALI`/`BERTINGKAT`/`FORMULA`), batas per hari/bulan, dasar hukum — semuanya baris `PayrollPolicyRule` | Mesin ada; `classification === 'POKOK'` (atau kode literal) menentukan gaji pokok, dan cap tunjangan bersih dari potongan yang sudah ada |
 | Batas potongan | `PayrollGuardConfig`: maks % potongan, min % gaji pokok yang harus tetap utuh, dan UMK. **Batasnya ditegakkan, bukan sekadar peringatan** | Cap tunjangan ditegakkan (`deductionCapFor`); breach gaji pokok memblokir dengan alasan override — benar |
-| Cuti tahunan | Per **tahun kalender**, jatah dari `LeaveTypeConfig` (bukan 12 hari hardcode) | **Belum.** `getLeaveBalance` masih `const annualQuota = 12` |
+| Cuti tahunan | Per **tahun kalender**, jatah dari `LeaveTypeConfig` (bukan 12 hari hardcode) | Ada. `annualQuota` dari `LeaveTypeConfig.entitlementDays`, 12 hanya sebagai jalan terakhir |
 | Cuti melahirkan/ayah/menikah/kematian | `LeaveTypeConfig` per tipe: jatah, dibayar atau tidak, wajib dokumen atau tidak | Model + endpoint ada; **tanpa UI** (`/hr/leave-type-configs` yatim) |
-| Libur nasional | Diambil dari API publik lalu **disimpan** ke kalender; sumber dan URL-nya pengaturan, bukan kode | Sinkron ada; **draf tinjauan belum disimpan** — hasil tarikan langsung masuk kalender |
-| Koreksi absensi | Hanya Super Admin dan Admin Unit, **wajib alasan**, **berjejak audit** | **Belum.** Tanpa `reason`, tanpa `AuditLog`, tanpa UI koreksi, dan `delete` menghapus baris (hard delete) |
-| Retensi selfie | **1 tahun** (default), diatur per unit; job retensi benar-benar berjalan | **Belum.** Tidak ada job retensi; dua sumber angka (`AttendancePolicy.photoRetentionDays` vs `RetentionPolicy`) |
+| Libur nasional | Diambil dari API publik lalu **disimpan** ke kalender; sumber dan URL-nya pengaturan, bukan kode | Ada. Hasil tarikan masuk sebagai **draf** (`isDraft`), diabaikan absensi/payroll sampai disetujui admin; impor dan tinjauan dibatasi unit pemanggil |
+| Koreksi absensi | Hanya Super Admin dan Admin Unit, **wajib alasan**, **berjejak audit** | Sebagian. `reason` wajib dan `AuditLog` ditulis; **belum ada UI koreksi**, dan `delete` masih hard delete |
+| Retensi selfie | **1 tahun** (default), diatur per unit; job retensi benar-benar berjalan | Ada. Job harian; satu nomor dari `AttendancePolicy` lalu `RetentionPolicy`; baris yang masih tertaut cuti APPROVED dan berkas yang masih dirujuk baris belum kedaluwarsa dipertahankan |
 | Consent | Setiap pengguna menyetujui Syarat & Ketentuan + Kebijakan Privasi sekali di awal — lihat [`persetujuan-pengguna.md`](persetujuan-pengguna.md) | **Belum** dibangun |
 
 ## Standar praktik (diriset 2026-09-29, jangan diulang)

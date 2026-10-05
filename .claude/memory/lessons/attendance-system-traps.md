@@ -1,8 +1,8 @@
 # Attendance-system traps
 
-Six shapes that made a working-looking attendance feature wrong, found in one
-audit (2026-09-29). Each is generic: look for it wherever a policy, a date, a
-pay rule or a retention period is read.
+Eight shapes that made a working-looking attendance feature wrong, found across
+the 2026-09-29 audit and the Devin review that followed it. Each is generic:
+look for it wherever a policy, a date, a pay rule or a retention period is read.
 
 ## A policy read as `policy?.flag` fails open
 
@@ -59,3 +59,28 @@ payslip could be produced. Time-and-attendance practice is the other way
 round: record the exception, assume present. Before blocking on "the data is
 incomplete", ask who is supposed to complete it and whether that writer
 exists.
+
+## A punch written in two statements with no transaction
+
+`selfCheckIn` saved the day row, then created its evidence row. The two writes
+were sequential, so a failure between them left a recorded punch with no
+selfie — and the retry was then refused as "already checked in", stranding the
+row for good. `selfCheckOut` had the same split. Worse, the "already checked
+in" read sat *before* the write, so two concurrent requests could both see an
+empty day and both write. The fix is one transaction around both writes plus a
+per-staff advisory lock (`pg_advisory_xact_lock`, namespaced) held for the
+whole unit of work, with the existence check re-read inside the lock. A state
+change whose precondition is another row must make both writes and the check
+one atomic step; a guard read outside the write is a race, and a partial write
+is a stranded record.
+
+## A retention sweep that loads the whole history
+
+The selfie retention job read *every* record that had a photo on each daily
+run to decide which shared uploads could still be referenced — memory and scan
+time grew with the full retained history, not with the day's work. Only rows
+that can have expired need reading: bound the scan by the shortest retention
+window in force, and count the unexpired references that could still share a
+file with one grouped query (`groupBy` on the URL) instead of loading them.
+Also delete each file at most once per run when several expired rows share it.
+A sweep that runs daily must cost O(what is due), not O(all history).
