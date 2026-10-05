@@ -169,12 +169,13 @@ pola yang sudah ada di `apps/web/src/lib/host-split.ts` (mis.
 Tiga hal yang harus dipahami sebelum menandai konversi:
 
 - **Form SPMB juga hidup di host portal.** Matcher middleware
-  (`apps/web/middleware.ts`) mengecualikan `public`, dan `PUBLIC_PATH_PREFIXES`
-  tidak memuat `/public/*`, jadi `/public/spmb` **tidak tersentuh** host-split —
-  ia dilayani di **kedua** host (di portal pun tidak menabrak sesi staf). Tag
-  khusus host publik karena itu **tidak menghitung** submit yang dibuat di
-  portal. Untuk grant ini **tidak masalah**, karena iklan selalu menunjuk
-  host publik; jangan pasang tag menyeluruh hanya untuk mengejar kasus itu.
+  (`apps/web/middleware.ts`) mengecualikan semua path yang diawali `/public`,
+  jadi middleware (termasuk host-split) tidak pernah berjalan untuk
+  `/public/spmb` — ia dilayani di **kedua** host (di portal pun tidak menabrak
+  sesi staf). Tag khusus host publik karena itu **tidak menghitung** submit yang
+  dibuat di portal. Untuk grant ini **tidak masalah**, karena iklan selalu
+  menunjuk host publik; jangan pasang tag menyeluruh hanya untuk mengejar kasus
+  itu.
 - **Pelacak tidak butuh sesi.** `/public/spmb/track` memakai **nomor
   pendaftaran + tanggal lahir**, bukan sesi, jadi ia bekerja di host mana pun
   tanpa login (matcher middleware memang mengecualikan `/public/*`). Alasan
