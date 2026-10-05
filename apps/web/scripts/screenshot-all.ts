@@ -15,6 +15,7 @@ import path from "path";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
 import { API_URL, BASE_URL, loginAs, storageStateFor } from "./lib/auth-state";
+import { matchesDynamicPattern } from "./lib/dynamic-routes";
 
 const OUT_DIR = process.argv[2] || path.join(__dirname, "../.qa-all");
 const ONLY = process.argv[3];
@@ -71,29 +72,13 @@ const RESOLVED_DYNAMIC: string[] = (() => {
   }
 })();
 
-function matchesPattern(routePath: string, pattern: string): boolean {
-  const rx = new RegExp(
-    "^" +
-      pattern
-        .split("/")
-        .map((seg) =>
-          /^\[.*\]$/.test(seg)
-            ? "[^/]+"
-            : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
-        )
-        .join("/") +
-      "/?$",
-  );
-  return rx.test(routePath);
-}
-
 function isKnownRoute(p: string): boolean {
   if (ONLY && !p.includes(ONLY)) return false;
   const pathname = p.split("?")[0];
   return (
     STATIC_ROUTES.includes(pathname) ||
     pathname === "/" ||
-    DYNAMIC_PATTERNS.some((dp) => matchesPattern(pathname, dp))
+    DYNAMIC_PATTERNS.some((dp) => matchesDynamicPattern(pathname, dp))
   );
 }
 
@@ -491,7 +476,7 @@ async function run() {
   // Show dynamic patterns we never reached (candidate gaps).
   const reached = new Set(results.map((r) => r.path));
   const missingDynamic = DYNAMIC_PATTERNS.filter(
-    (dp) => ![...reached].some((p) => matchesPattern(p, dp)),
+    (dp) => ![...reached].some((p) => matchesDynamicPattern(p, dp)),
   );
   console.log(`\nDynamic patterns not covered (${missingDynamic.length}):`);
   for (const m of missingDynamic) console.log("  " + m);

@@ -16,6 +16,7 @@
 import fs from "fs";
 import path from "path";
 import { loginAs } from "./lib/auth-state";
+import { mergeResolved, unaccountedPatterns } from "./lib/dynamic-routes";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 const APP_DIR = path.join(__dirname, "../src/app");
@@ -511,15 +512,54 @@ async function run() {
     else unresolved.push(pattern);
   }
 
-  const fresh = resolved;
+  // Merge into the committed map rather than replacing it. A pattern that was
+  // resolved on an earlier run but not this one (a list page scrolled, an API
+  // hiccup) used to be dropped from the file outright — and with it every page
+  // only that entry reached. `screenshot-all` treats the map as the coverage
+  // contract, so a silent shrink is a silent coverage loss.
   const outFile = path.join(__dirname, "dynamic-routes.json");
-  fs.writeFileSync(outFile, JSON.stringify(fresh, null, 2));
+  const previous: Record<string, string> = fs.existsSync(outFile)
+    ? JSON.parse(fs.readFileSync(outFile, "utf8"))
+    : {};
+  const { merged, dropped } = mergeResolved(patterns, resolved, previous);
+  fs.writeFileSync(outFile, JSON.stringify(merged, null, 2));
   console.log(
-    `${Object.keys(fresh).length}/${patterns.length} patterns resolved -> ${outFile}`,
+    `${Object.keys(merged).length}/${patterns.length} patterns resolved -> ${outFile}`,
   );
+
+  // A pattern with no URL this run is a failure, not a note: silently carrying
+  // it over means the sweep keeps a stale URL, and dropping it loses the pages.
+  // `dynamic-routes.unresolved.json` is the conscious backlog — it must name
+  // the pattern (and why) before the run is allowed to pass.
+  const allowFile = path.join(__dirname, "dynamic-routes.unresolved.json");
+  const allowlisted: Record<string, { reason?: string }> = fs.existsSync(
+    allowFile,
+  )
+    ? JSON.parse(fs.readFileSync(allowFile, "utf8"))
+    : {};
+  const unaccounted = unaccountedPatterns(dropped, allowlisted);
+  if (unaccounted.length) {
+    console.error(
+      `\n${unaccounted.length} dynamic pattern(s) resolved to no URL and are ` +
+        `not in dynamic-routes.unresolved.json:`,
+    );
+    for (const p of unaccounted) console.error("  " + p);
+    console.error(
+      "Add a hint in HINTS, or list the pattern with a reason in " +
+        "dynamic-routes.unresolved.json.",
+    );
+    process.exit(1);
+  }
+  const carried = dropped.filter((p) => p in merged);
+  if (carried.length) {
+    console.log(
+      `\n${carried.length} pattern(s) kept the URL from the previous map:`,
+    );
+    for (const p of carried) console.log("  " + p);
+  }
   if (unresolved.length) {
-    console.log("\nUnresolved:");
-    for (const u of unresolved) console.log("  " + u);
+    console.log("\nUnresolved (allowlisted):");
+    for (const p of unresolved) console.log("  " + p);
   }
 }
 

@@ -3356,6 +3356,14 @@ Skrip juga menghapus toast Sonner sebelum menangkap gambar, sehingga banner
 baik. Permintaan API yang ditolak karena RBAC (403/404 yang memang disengaja)
 dicatat sebagai **peringatan**, bukan kegagalan.
 
+`dynamic-routes.json` adalah kontrak cakupan: `screenshot-all` hanya menangkap
+rute dinamis (detail/edit yang tak ada tautannya) yang punya URL di sana. Isi
+ulang dengan `../api/node_modules/.bin/tsx scripts/resolve-dynamic-routes.ts`
+saat stack menyala — skrip itu **menggabung** ke peta lama (URL yang tak
+terjawab di satu jalan tidak hilang) dan **gagal** bila ada pola tanpa URL yang
+tidak tercatat di `dynamic-routes.unresolved.json`. Uji `dynamic-routes.guard.test.ts`
+memastikan setiap pola dinamis terjawab atau terdaftar beralasan.
+
 Setelah sweep, dua skrip membangun galeri di README dan
 `docs/images` dari tangkapan terbaru:
 

@@ -15,6 +15,7 @@
  */
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
 import { generate as generateTotp } from "otplib";
+import { parseSetCookies } from "./set-cookie";
 
 export const API_URL = process.env.API_URL || "http://localhost:3001/api";
 export const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
@@ -38,23 +39,17 @@ export interface Session {
   cookies: SessionCookie[];
 }
 
-/** Parse `Set-Cookie` strings down to the name/value/path Playwright needs. */
-function parseSetCookies(header: string | null): SessionCookie[] {
-  if (!header) return [];
-  return header
-    .split(/,(?=[^;=]+=)/)
-    .map((part) => part.split(";")[0].trim())
-    .filter(Boolean)
-    .map((pair) => {
-      const eq = pair.indexOf("=");
-      return { name: pair.slice(0, eq), value: pair.slice(eq + 1) };
-    })
-    .map((c) => ({
-      name: c.name,
-      value: c.value,
-      // The refresh cookie is scoped to the auth endpoints; the rest to `/`.
-      path: c.name === "cipansor_rt" ? "/api/auth" : "/",
-    }));
+/** The cookie paths the API scopes its session cookies to. */
+const REFRESH_COOKIE_PATH = "/api/auth";
+
+/** Parse a response's `Set-Cookie` fields down to name/value/path. */
+function sessionCookies(res: Response): SessionCookie[] {
+  return parseSetCookies(res.headers).map((c) => ({
+    name: c.name,
+    value: c.value,
+    // The refresh cookie is scoped to the auth endpoints; the rest to `/`.
+    path: c.name === "cipansor_rt" ? REFRESH_COOKIE_PATH : "/",
+  }));
 }
 
 export async function loginAs(roleCode: string): Promise<Session> {
@@ -71,7 +66,7 @@ export async function loginAs(roleCode: string): Promise<Session> {
     },
     body: JSON.stringify({ email: acc.email, password: acc.password }),
   });
-  const cookies = parseSetCookies(res.headers.get("set-cookie"));
+  const cookies = sessionCookies(res);
   const login = (await res.json()) as { data?: Record<string, any> };
   const data = login.data;
 
@@ -89,9 +84,7 @@ export async function loginAs(roleCode: string): Promise<Session> {
       },
       body: JSON.stringify({ token }),
     });
-    const verifiedCookies = parseSetCookies(
-      verifyRes.headers.get("set-cookie"),
-    );
+    const verifiedCookies = sessionCookies(verifyRes);
     const verified = (await verifyRes.json()) as { data?: Record<string, any> };
     if (!verified.data?.accessToken) {
       throw new Error(

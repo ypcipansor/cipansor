@@ -56,16 +56,36 @@ const API_URL = process.env.API_URL || "http://localhost:3001/api";
  * headless Chromium. The popup is not what this test checks, so replace
  * `window.open` with the exact surface `performPrint` touches: the print branch
  * still runs (so the number is generated) without a window.
+ *
+ * The stub records every `document.write` payload, so the test can assert what
+ * the printed document *says* — the preview is copied into that payload by
+ * `printDocument`, and the musyrif line lives only there.
  */
-async function suppressPrintPopup(page: Page) {
+async function capturePrintPopup(page: Page) {
   await page.addInitScript(() => {
+    const docs: string[] = [];
+    (window as unknown as { __printedDocuments: string[] }).__printedDocuments =
+      docs;
     (window as unknown as { open: () => unknown }).open = () => ({
-      document: { write() {}, close() {} },
+      document: {
+        write: (html: string) => docs.push(html),
+        close() {},
+      },
       focus() {},
       print() {},
       close() {},
     });
   });
+}
+
+/** The HTML handed to the print window, as the user's print dialog sees it. */
+async function printedHtml(page: Page): Promise<string> {
+  return page.evaluate(
+    () =>
+      (
+        window as unknown as { __printedDocuments?: string[] }
+      ).__printedDocuments?.join("\n") ?? "",
+  );
 }
 
 async function pickFirstStudent(page: Page) {
@@ -94,7 +114,7 @@ test.describe("Sanad tahfidz — cetakan dan unduhan berbicara sama", () => {
     test.setTimeout(180_000);
 
     const session = await loginAs(page, "superAdmin");
-    await suppressPrintPopup(page);
+    await capturePrintPopup(page);
 
     await page.goto("/tahfidz/certificate");
     await waitForLoadingComplete(page);
@@ -142,6 +162,25 @@ test.describe("Sanad tahfidz — cetakan dan unduhan berbicara sama", () => {
       await expect(preview).toContainText("30 Juz");
       await expect(preview).toContainText(silsilah);
       await expect(preview).toContainText(musyrif);
+
+      // What the print window receives: `performPrint` copies the preview's
+      // innerHTML into the popup, so the musyrif line the paper carries must be
+      // in that payload too — not only in the on-screen preview. A print button
+      // that dropped it would still pass a preview-only assertion. `performPrint`
+      // fires on a short timeout after minting, so poll for the payload.
+      await expect
+        .poll(async () => printedHtml(page), {
+          message: "the print window never received a document",
+        })
+        .toContain("<body");
+      await expect
+        .poll(async () => printedHtml(page), {
+          message: "the musyrif line is missing from the printed document",
+        })
+        .toContain(musyrif);
+      expect(await printedHtml(page)).toMatch(
+        /Musyrif:\s*<span[^>]*>Ust\. Ahmad Fauzi<\/span>/,
+      );
 
       // What the download says: the public, session-free route a recipient's
       // printed QR opens.

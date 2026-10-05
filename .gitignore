@@ -166,3 +166,6 @@ docs/alur/
 docs/*.build.json
 docs/*.docx
 docs/*.pdf
+
+# Agent working notes (session memory), never part of the repo
+.openhands/
