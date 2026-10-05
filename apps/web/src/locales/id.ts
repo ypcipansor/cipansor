@@ -49,6 +49,78 @@ export const id = {
     // Screen-reader label for the trail. "Remah roti" is the literal
     // translation and means bread crumbs; the navigational sense is "jejak".
     breadcrumbLabel: "Jejak navigasi",
+    /**
+     * The public customer-service assistant, shown bottom-right on every public
+     * page (mounted from the footer).
+     *
+     * Every string a visitor reads lives here, in all three locales, because the
+     * widget is on the PUBLIC site and the site is id/en/ar on every page. It
+     * was hardcoded Indonesian until this block existed — the greeting, the
+     * suggestions and the escalation flow all shipped in one language while the
+     * rest of the page switched. The `{name}`, `{phone}` and `{reference}`
+     * placeholders are filled from `siteConfig` and the API's reference number;
+     * a key with no placeholder is used verbatim.
+     */
+    chatbot: {
+      launcherOpen: "Buka asisten informasi",
+      launcherClose: "Tutup asisten informasi",
+      launcherInvite: "Ada pertanyaan? Tanya di sini",
+      dialogLabel: "Asisten informasi Pesantren Cipansor",
+      title: "Asisten {name}",
+      subtitle: "Informasi umum & pendaftaran",
+      greeting:
+        "Assalamu'alaikum warahmatullahi wabarakatuh. Saya asisten informasi Pesantren Cipansor. Ada yang bisa saya bantu seputar profil, program, atau pendaftaran?",
+      suggestions: {
+        register: "Bagaimana cara mendaftar?",
+        fee: "Berapa biaya pendaftaran?",
+        units: "Ada unit pendidikan apa saja?",
+        address: "Di mana alamat pesantren?",
+      },
+      inputPlaceholder: "Tulis pertanyaan Anda…",
+      inputLabel: "Pertanyaan",
+      send: "Kirim",
+      typing: "Sedang mengetik",
+      sourcesLabel: "Sumber:",
+      disclaimer:
+        "Asisten ini hanya menjawab informasi umum dan tidak memiliki akses ke data pribadi.",
+      errors: {
+        busy: "Maaf, asisten sedang ramai. Mohon coba lagi sebentar lagi 🙏",
+        unavailable:
+          "Maaf, asisten sedang tidak dapat menjawab. Silakan hubungi kami di {phone} atau melalui WhatsApp.",
+      },
+      escalation: {
+        offerBody:
+          "Pertanyaan ini di luar informasi yang saya miliki 🙏 Tapi saya bisa menyampaikannya kepada tim Cipansor, dan mereka akan menjawab langsung ke Bapak/Ibu.",
+        offerQuestion: "Berkenan saya teruskan?",
+        offerYes: "Ya, teruskan",
+        offerNo: "Tidak, terima kasih",
+        formIntro:
+          "Baik. Mohon lengkapi agar tim dapat menghubungi Bapak/Ibu kembali.",
+        name: "Nama lengkap",
+        email: "Email",
+        phone: "Telepon",
+        whatsapp: "WhatsApp",
+        optional: "(opsional)",
+        question: "Pertanyaan",
+        summaryIntro:
+          "Halo Cipansor, ada pertanyaan yang tidak mampu saya jawab sebagai asisten AI Cipansor. Berikut rinciannya:",
+        summaryName: "Nama",
+        consent:
+          "Saya berkenan data di atas diteruskan kepada tim {name} untuk menjawab pertanyaan ini. Data disimpan paling lama 90 hari.",
+        next: "Lanjut",
+        cancel: "Batal",
+        reviewIntro: "Berikut yang akan saya kirimkan. Apakah sudah tepat?",
+        reviewSend: "Sudah tepat, kirim",
+        reviewEdit: "Ubah",
+        sentBody:
+          "Sudah saya sampaikan kepada tim Cipansor 🙏 Mereka akan menghubungi Bapak/Ibu lewat email yang tadi dituliskan.",
+        sentReference:
+          "Nomor rujukan: {reference} — sebutkan nomor ini bila Bapak/Ibu menghubungi kami lewat telepon.",
+        sentClose: "Tutup",
+        error:
+          "Maaf, pertanyaannya belum bisa dikirim. Bapak/Ibu dapat menghubungi kami langsung di {phone}.",
+      },
+    },
   },
   login: {
     welcome: "Selamat Datang di Cipansor",

@@ -7,7 +7,6 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('../chatbot.service', () => ({
   ask: vi.fn(),
   resolveProvider: vi.fn(),
-  isTestProvider: vi.fn(),
   ChatbotUnavailableError: class extends Error {},
   ChatbotBusyError: class extends Error {
     constructor(readonly retryAfterSeconds: number) {
@@ -343,41 +342,25 @@ describe('escalate', () => {
 
 /**
  * GET /chatbot/public/status — what the widget reads before it renders.
- *
- * `testProvider` is the difference between a walkthrough on staging that knows
- * it is reading a deterministic double and one that mistakes it for a model.
  */
 describe('GET /chatbot/public/status', () => {
   const resolveProvider = vi.mocked(chatbotService.resolveProvider);
-  const isTestProvider = vi.mocked(chatbotService.isTestProvider);
 
-  it('reports unavailable, with no test provider, when the assistant is off', async () => {
+  it('reports unavailable when the assistant is off', async () => {
     resolveProvider.mockReturnValue(null);
 
     const res = fakeRes();
     await status(fakeReq({}), res, vi.fn());
 
-    expect(res.body.data).toEqual({ available: false, testProvider: false });
-    expect(isTestProvider).not.toHaveBeenCalled();
+    expect(res.body.data).toEqual({ available: false });
   });
 
-  it('reports a real provider as available and not a test provider', async () => {
+  it('reports available when a provider is configured', async () => {
     resolveProvider.mockReturnValue({ name: 'openai-compatible', complete: vi.fn() });
-    isTestProvider.mockReturnValue(false);
 
     const res = fakeRes();
     await status(fakeReq({}), res, vi.fn());
 
-    expect(res.body.data).toEqual({ available: true, testProvider: false });
-  });
-
-  it('flags the deterministic provider as a test provider', async () => {
-    resolveProvider.mockReturnValue({ name: 'echo', complete: vi.fn() });
-    isTestProvider.mockReturnValue(true);
-
-    const res = fakeRes();
-    await status(fakeReq({}), res, vi.fn());
-
-    expect(res.body.data).toEqual({ available: true, testProvider: true });
+    expect(res.body.data).toEqual({ available: true });
   });
 });

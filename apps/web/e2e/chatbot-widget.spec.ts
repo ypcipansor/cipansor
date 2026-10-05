@@ -155,36 +155,4 @@ test.describe("public chatbot widget, assistant available", () => {
       page.getByText(/tidak memiliki akses ke data pribadi/i),
     ).toBeVisible();
   });
-
-  test("names itself a test copy when the provider is a deterministic double", async ({
-    page,
-  }) => {
-    // On staging the assistant answers from a copy of the real corpus, not a
-    // model. The widget says so, so a walkthrough never mistakes a stub for a
-    // release-ready assistant.
-    await page.route("**/chatbot/public/status", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: { available: true, testProvider: true },
-        }),
-      }),
-    );
-
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.locator(LAUNCHER).click();
-
-    await expect(page.getByTestId("chatbot-test-provider")).toBeVisible();
-  });
-
-  test("does not name itself a test copy when a real model answers", async ({
-    page,
-  }) => {
-    await page.goto("/", { waitUntil: "domcontentloaded" });
-    await page.locator(LAUNCHER).click();
-
-    await expect(page.getByTestId("chatbot-test-provider")).toHaveCount(0);
-  });
 });

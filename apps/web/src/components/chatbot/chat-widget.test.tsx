@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mutateAsync = vi.fn();
 const availability = vi.hoisted(() => ({
-  value: { available: true, testProvider: false },
+  value: { available: true },
 }));
 
 vi.mock("@/hooks/use-chatbot", () => ({
@@ -27,7 +27,24 @@ vi.mock("@/components/security/turnstile-widget", () => ({
   }),
 }));
 
+// The widget reads its text from `useI18n()`, so every render goes through the
+// provider — and the provider calls `router.refresh()`, which throws outside a
+// Next app-router tree. Mocking it is not incidental: a component that lost its
+// i18n wiring would throw here rather than quietly render Indonesian.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
 import { ChatWidget } from "./chat-widget";
+import { I18nProvider } from "@/providers/i18n-provider";
+
+function renderWidget() {
+  return render(
+    <I18nProvider initialLocale="id">
+      <ChatWidget />
+    </I18nProvider>,
+  );
+}
 
 /** Galat axios sebagaimana bentuknya sampai ke komponen. */
 function apiError(status: number, code: string) {
@@ -35,7 +52,7 @@ function apiError(status: number, code: string) {
 }
 
 async function tanya(pertanyaan: string) {
-  render(<ChatWidget />);
+  renderWidget();
   fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
   fireEvent.change(screen.getByLabelText("Pertanyaan"), {
     target: { value: pertanyaan },
@@ -48,7 +65,7 @@ async function tanya(pertanyaan: string) {
 // yang tidak ada hubungannya dengan yang sedang diperiksa.
 beforeEach(() => {
   vi.clearAllMocks();
-  availability.value = { available: true, testProvider: false };
+  availability.value = { available: true };
   Element.prototype.scrollTo = vi.fn();
 });
 
@@ -144,29 +161,42 @@ describe("ChatWidget dan tawaran meneruskan pertanyaan", () => {
 });
 
 /**
- * Penanda "lingkungan uji".
- *
- * Di staging asistennya menjawab dari salinan deterministik atas data publik,
- * bukan dari model. Menampilkan penanda itu di layar adalah bedanya antara
- * walkthrough yang memperagakan korpus sungguhan dan satu yang menyangka
- * sebuah stub sudah layak rilis.
+ * Widget ada di situs PUBLIK, dan situs publik id/en/ar di setiap halaman.
+ * Sebelum blok i18n-nya ada, seluruh kalimatnya hardcoded Indonesia: pengunjung
+ * berbahasa Inggris atau Arab mendapat asisten berbahasa Indonesia di halaman
+ * yang tombol bahasanya sendiri sudah berganti. Uji ini mengunci terjemahannya
+ * pada tempatnya.
  */
-describe("ChatWidget dan penanda penyedia uji", () => {
-  it("menyebut dirinya lingkungan uji ketika penyedianya deterministik", () => {
-    availability.value = { available: true, testProvider: true };
+describe("ChatWidget dan bahasa", () => {
+  function renderLocale(locale: "id" | "en" | "ar") {
+    render(
+      <I18nProvider initialLocale={locale}>
+        <ChatWidget />
+      </I18nProvider>,
+    );
+  }
 
-    render(<ChatWidget />);
-    fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
+  it("menyapa dalam bahasa Inggris ketika lokalnya Inggris", () => {
+    renderLocale("en");
+    fireEvent.click(screen.getByLabelText("Open the information assistant"));
 
-    expect(screen.getByTestId("chatbot-test-provider")).toBeTruthy();
+    expect(screen.getByText(/How can I help/i)).toBeTruthy();
+    expect(screen.queryByText(/Ada yang bisa saya bantu/i)).toBeNull();
   });
 
-  it("TIDAK menampilkan penanda ketika model sungguhan yang menjawab", () => {
-    availability.value = { available: true, testProvider: false };
+  it("menyapa dalam bahasa Arab ketika lokalnya Arab", () => {
+    renderLocale("ar");
+    fireEvent.click(screen.getByLabelText("افتح مساعد المعلومات"));
 
-    render(<ChatWidget />);
-    fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
+    expect(screen.getByText(/كيف أستطيع مساعدتك/)).toBeTruthy();
+  });
 
-    expect(screen.queryByTestId("chatbot-test-provider")).toBeNull();
+  it("memakai label tombol berbahasa Inggris, bukan Indonesia", () => {
+    renderLocale("en");
+
+    expect(
+      screen.getByLabelText("Open the information assistant"),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Buka asisten informasi")).toBeNull();
   });
 });

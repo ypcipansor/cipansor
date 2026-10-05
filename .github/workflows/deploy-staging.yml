@@ -185,16 +185,30 @@ jobs:
           # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
           # so a rebuilt app cannot come up without it; production never sets it.
           #
-          # APP_ENV=staging is the identity that lets the chatbot run its
-          # deterministic provider here. Without it the assistant was inert on
-          # staging — the only environment meant to exercise it before a release
-          # — because NODE_ENV is `production` on both copies and the "no doubles
-          # in production" guard could not tell them apart. CHATBOT_PROVIDER=echo
-          # answers from the real public corpus and the live SPMB rows, with no
-          # API key and no spend. Production sets its own real provider and
-          # APP_ENV=production, so `echo` can never reach visitors there.
+          # APP_ENV=staging is the deployed-copy identity, distinct from NODE_ENV
+          # (`production` on both copies because both run the same images). It is
+          # what /health reports as `environment`, and what lets a guard say "not
+          # in production" and mean it.
+          #
+          # The chatbot runs the REAL provider here, with staging's own key, so a
+          # walkthrough answers the way production answers. When the key is not
+          # configured the assistant stays off rather than falling back to a
+          # deterministic double: a stub that answers like a model is the one
+          # thing staging must never show a reviewer.
+          settings=(DOCUMENT_TEST_COPY=true APP_ENV=staging)
+          if [ -n "$CHATBOT_API_KEY" ]; then
+            settings+=(
+              CHATBOT_PROVIDER=openai-compatible
+              CHATBOT_API_BASE_URL="$CHATBOT_API_BASE_URL"
+              CHATBOT_API_KEY="$CHATBOT_API_KEY"
+              CHATBOT_MODEL="$CHATBOT_MODEL"
+            )
+          else
+            echo "::warning::CHATBOT_API_KEY is not set for the staging environment; the assistant stays disabled there"
+            settings+=(CHATBOT_PROVIDER=disabled)
+          fi
           az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
-            --settings DOCUMENT_TEST_COPY=true APP_ENV=staging CHATBOT_PROVIDER=echo -o none
+            --settings "${settings[@]}" -o none
           # Web Push: this environment's own VAPID pair (decisions/
           # notifikasi-push.md), from the environment's secret and variable.
           # Absent = push stays off, so nothing here forces a pair on anyone.
@@ -209,6 +223,9 @@ jobs:
         env:
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
+          CHATBOT_API_BASE_URL: ${{ vars.CHATBOT_API_BASE_URL }}
+          CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
 
       # The api container applies pending migrations before it starts
       # (MIGRATE_ON_START=true on staging), so a migration that fails shows up

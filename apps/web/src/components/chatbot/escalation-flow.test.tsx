@@ -15,7 +15,21 @@ vi.mock("@/components/security/turnstile-widget", () => ({
   }),
 }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
 import { EscalationFlow } from "./escalation-flow";
+import { I18nProvider } from "@/providers/i18n-provider";
+
+/** Teks alurnya kini dari `useI18n()`, jadi setiap render lewat provider. */
+function renderFlow(question: string) {
+  return render(
+    <I18nProvider initialLocale="id">
+      <EscalationFlow question={question} onDismiss={vi.fn()} />
+    </I18nProvider>,
+  );
+}
 
 const PERTANYAAN = "Apakah ada beasiswa untuk anak yatim?";
 
@@ -41,14 +55,14 @@ describe("EscalationFlow", () => {
   it("tidak meminta satu kolom pun sebelum penanya menyatakan berkenan", () => {
     // Meminta nama dan nomor telepon kepada orang yang belum menyatakan mau
     // adalah pengumpulan data yang tidak diminta, bukan sekadar tidak sopan.
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
 
     expect(screen.getByText(/berkenan saya teruskan/i)).toBeTruthy();
     expect(screen.queryByLabelText(/nama lengkap/i)).toBeNull();
   });
 
   it("mengisi pertanyaannya sendiri, dan membiarkannya disunting", () => {
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     fireEvent.click(screen.getByText("Ya, teruskan"));
 
     // `getByLabelText(/pertanyaan/i)` cocok dengan dua hal — labelnya dan
@@ -66,7 +80,7 @@ describe("EscalationFlow", () => {
     // Orang berhak melihat apa yang dikirim atas namanya. Ini juga yang membuat
     // langkah "apakah sudah tepat?" berarti sesuatu — meninjau ringkasan yang
     // BUKAN isi suratnya hanya memindahkan kepercayaan, tidak memberikannya.
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     sampaiTinjau();
 
     const ringkasan = screen.getByText(/Halo Cipansor/);
@@ -78,7 +92,7 @@ describe("EscalationFlow", () => {
   });
 
   it("tidak mencantumkan baris untuk kolom yang tidak diisi", () => {
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     sampaiTinjau();
 
     expect(screen.getByText(/Halo Cipansor/).textContent).not.toContain(
@@ -87,7 +101,7 @@ describe("EscalationFlow", () => {
   });
 
   it("mengirim hanya sesudah penanya membenarkan ringkasannya", async () => {
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     sampaiTinjau();
     fireEvent.click(screen.getByText("Sudah tepat, kirim"));
 
@@ -101,17 +115,17 @@ describe("EscalationFlow", () => {
   });
 
   it("memberi nomor rujukan yang bisa disebut lewat telepon", async () => {
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     sampaiTinjau();
     fireEvent.click(screen.getByText("Sudah tepat, kirim"));
 
-    await waitFor(() => expect(screen.getByText("ABCD1234")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/ABCD1234/)).toBeTruthy());
   });
 
   it("menunjuk ke telepon ketika pengirimannya gagal, bukan menyebut galat teknisnya", async () => {
     mutateAsync.mockRejectedValueOnce(new Error("500"));
 
-    render(<EscalationFlow question={PERTANYAAN} onDismiss={vi.fn()} />);
+    renderFlow(PERTANYAAN);
     sampaiTinjau();
     fireEvent.click(screen.getByText("Sudah tepat, kirim"));
 

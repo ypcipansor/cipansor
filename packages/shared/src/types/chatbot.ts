@@ -82,20 +82,15 @@ export interface PublicChatResponse {
 }
 
 /**
- * Whether the public assistant is available, and how it is configured.
+ * Whether the public assistant is available.
  *
  * GET /api/chatbot/public/status
  *
- * `available` is the field the widget acts on. `testProvider` is informational:
- * on staging the assistant answers from a deterministic double rather than a
- * model, and the widget says so on screen, so a person walking through the
- * feature is never misled about what they are looking at. It is never true in
- * production (`resolveProvider()` refuses the doubles there).
+ * `available` is the field the widget acts on: false means no provider is
+ * configured, and the widget does not render at all.
  */
 export interface PublicChatStatus {
   available: boolean;
-  /** The assistant answers without a model (staging / local). Never production. */
-  testProvider: boolean;
 }
 
 /**

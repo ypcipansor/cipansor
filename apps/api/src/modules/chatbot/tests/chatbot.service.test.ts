@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ask, ChatbotUnavailableError, resolveProvider, isTestProvider } from '../chatbot.service';
+import { ask, ChatbotUnavailableError, resolveProvider } from '../chatbot.service';
 import { StubProvider } from '../providers/stub';
 import { collectLiveFacts } from '../live-facts';
 import { knowledgeBase, knowledgeById, topicLabels } from '../knowledge-base';
@@ -532,31 +532,33 @@ describe('resolveProvider', () => {
     expect(resolveProvider()).toBeNull();
   });
 
-  it('never selects the echo provider in production', () => {
-    Object.assign(config.chatbot, { provider: 'echo' });
-    (config as { appEnv: string }).appEnv = 'production';
-    expect(resolveProvider()).toBeNull();
-  });
-
   it('allows the stub outside production', () => {
     Object.assign(config.chatbot, { provider: 'stub' });
     (config as { appEnv: string }).appEnv = 'local';
     expect(resolveProvider()?.name).toBe('stub');
   });
 
-  it('allows the echo provider on staging, where NODE_ENV is also production', () => {
+  it('allows the stub on staging, where NODE_ENV is also production', () => {
     // The whole point of the APP_ENV split: staging compiles as production, so
     // keying this guard off `config.env` would disable the provider on the one
     // environment built to exercise the feature.
-    Object.assign(config.chatbot, { provider: 'echo' });
+    Object.assign(config.chatbot, { provider: 'stub' });
     (config as { env: string }).env = 'production';
     (config as { appEnv: string }).appEnv = 'staging';
-    expect(resolveProvider()?.name).toBe('echo');
+    expect(resolveProvider()?.name).toBe('stub');
   });
 
-  it('names the deterministic providers as test providers', () => {
-    expect(isTestProvider('stub')).toBe(true);
-    expect(isTestProvider('echo')).toBe(true);
-    expect(isTestProvider('openai-compatible')).toBe(false);
+  it('selects the real provider on staging, where the walkthrough runs', () => {
+    // Staging is meant to answer the way production answers — a double there
+    // would demonstrate a service that does not exist. It runs the same
+    // openai-compatible provider, with staging's own key.
+    Object.assign(config.chatbot, {
+      provider: 'openai-compatible',
+      baseUrl: 'https://staging.example',
+      apiKey: 'staging-key',
+      model: 'some-model',
+    });
+    (config as { appEnv: string }).appEnv = 'staging';
+    expect(resolveProvider()?.name).toBe('openai-compatible');
   });
 });

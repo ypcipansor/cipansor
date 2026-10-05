@@ -44,6 +44,69 @@ export const en = {
       toggleMenu: "Open menu",
     },
     breadcrumbLabel: "Breadcrumb",
+    // The public assistant, shown bottom-right on every public page. Domain
+    // terms (pesantren, SPMB, santri) are kept, as elsewhere on the public site;
+    // `{name}`, `{phone}` and `{reference}` are filled at render time.
+    chatbot: {
+      launcherOpen: "Open the information assistant",
+      launcherClose: "Close the information assistant",
+      launcherInvite: "Got a question? Ask here",
+      dialogLabel: "Pesantren Cipansor information assistant",
+      title: "{name} assistant",
+      subtitle: "General information & admissions",
+      greeting:
+        "Assalamu'alaikum warahmatullahi wabarakatuh. I am the Pesantren Cipansor information assistant. How can I help with our profile, programmes or admissions?",
+      suggestions: {
+        register: "How do I register?",
+        fee: "What is the registration fee?",
+        units: "Which education units are there?",
+        address: "Where is the pesantren located?",
+      },
+      inputPlaceholder: "Type your question…",
+      inputLabel: "Question",
+      send: "Send",
+      typing: "Typing",
+      sourcesLabel: "Sources:",
+      disclaimer:
+        "This assistant only answers general information and has no access to personal data.",
+      errors: {
+        busy: "Sorry, the assistant is busy right now. Please try again shortly 🙏",
+        unavailable:
+          "Sorry, the assistant cannot answer right now. Please contact us at {phone} or via WhatsApp.",
+      },
+      escalation: {
+        offerBody:
+          "This question is beyond the information I have 🙏 But I can pass it to the Cipansor team, and they will reply to you directly.",
+        offerQuestion: "Shall I pass it on?",
+        offerYes: "Yes, pass it on",
+        offerNo: "No, thank you",
+        formIntro:
+          "Alright. Please complete the details so the team can get back to you.",
+        name: "Full name",
+        email: "Email",
+        phone: "Phone",
+        whatsapp: "WhatsApp",
+        optional: "(optional)",
+        question: "Question",
+        summaryIntro:
+          "Hello Cipansor, there is a question I cannot answer as the Cipansor AI assistant. Here are the details:",
+        summaryName: "Name",
+        consent:
+          "I agree to the details above being passed to the {name} team to answer this question. Data is kept for at most 90 days.",
+        next: "Next",
+        cancel: "Cancel",
+        reviewIntro: "Here is what I will send. Is it correct?",
+        reviewSend: "Yes, send it",
+        reviewEdit: "Edit",
+        sentBody:
+          "I have passed it to the Cipansor team 🙏 They will contact you through the email you wrote.",
+        sentReference:
+          "Reference number: {reference} — mention this number if you contact us by phone.",
+        sentClose: "Close",
+        error:
+          "Sorry, the question could not be sent. You can contact us directly at {phone}.",
+      },
+    },
   },
   login: {
     welcome: "Welcome to Cipansor",

@@ -445,15 +445,14 @@ export const config = {
    * about fees and admission dates is worse than no assistant.
    *
    * `provider` accepts `openai-compatible` (Azure AI Foundry, Azure OpenAI, or
-   * any gateway speaking POST {base}/chat/completions), `echo` (deterministic,
-   * answers from the real public corpus and live SPMB data, for staging and
-   * local walkthroughs), `stub` (deterministic, echoes the whole context,
-   * development/unit tests), or `disabled`.
+   * any gateway speaking POST {base}/chat/completions), `stub` (deterministic,
+   * echoes the whole context, development and unit tests only), or `disabled`.
    *
-   * `echo` and `stub` are refused when `config.appEnv` is `production`, not
-   * when `NODE_ENV` is: staging runs the same images and is also
-   * `NODE_ENV=production`, so keying off `NODE_ENV` would disable the test
-   * provider on the one environment built to use it.
+   * Staging runs `openai-compatible` with its own key — the real provider, so a
+   * walkthrough there answers the way production answers. The stub is refused
+   * when `config.appEnv` is `production`, not when `NODE_ENV` is: staging runs
+   * the same images and is also `NODE_ENV=production`, so keying off `NODE_ENV`
+   * would disable the test provider on the one environment built to use it.
    */
   chatbot: {
     provider: process.env.CHATBOT_PROVIDER || 'disabled',
