@@ -268,6 +268,10 @@ describe('test-copy markings sit inside the visible page', () => {
     // because the logic shrinks it — a midpoint check would pass here while the
     // ends hang off both sides.
     [0, 0, 320, 400],
+    // Narrower than either marking even at a 4pt font, so a floor on the shrink
+    // (or no shrink at all) would leave the warning off the visible page.
+    [0, 0, 100, 100],
+    [0, 0, 40, 40],
   ];
   const rotations = [0, 90, 180, 270] as const;
 

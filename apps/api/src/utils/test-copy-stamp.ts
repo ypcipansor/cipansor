@@ -7,8 +7,6 @@ const STAMP_SIZE = 34;
 const NOTE_SIZE = 7.5;
 /** Space kept between a marking's box and the edge of the visible page. */
 const EDGE_MARGIN = 12;
-/** A marking is never shrunk below this, however small the page. */
-const MIN_MARK_SIZE = 4;
 const RED = rgb(0.75, 0.1, 0.1);
 
 /**
@@ -63,9 +61,10 @@ function displayedSize(
  * at the page's centre hangs past the edges even when its midpoint is well
  * inside. This computes the box the run will occupy (length `runWidth`, height
  * the font's, rising from the baseline) and shifts the anchor so the box is
- * centred; `size` is shrunk when the turned box cannot fit within the margin.
- * The result is in the displayed coordinate system — hand it to
- * `displayedPointToPage`.
+ * centred; `size` is shrunk to fit inside the margin, however small the page —
+ * a marking that cannot fit must still be contained, or it is only visible on a
+ * page the reader is not looking at. The result is in the displayed coordinate
+ * system — hand it to `displayedPointToPage`.
  */
 function placeMark(
   font: PDFFont,
@@ -91,7 +90,7 @@ function placeMark(
     boxAtSize > 0 ? maxWidth / boxAtSize : 1,
     boxAtSizeHeight > 0 ? maxHeight / boxAtSizeHeight : 1
   );
-  const finalSize = Math.max(size * fit, MIN_MARK_SIZE);
+  const finalSize = size * fit;
 
   const l = font.widthOfTextAtSize(text, finalSize);
   const h = font.heightAtSize(finalSize);
