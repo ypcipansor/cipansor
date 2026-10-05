@@ -341,20 +341,6 @@ router.get('/children/:studentId/health', parentController.getChildHealth.bind(p
 
 /**
  * @swagger
- * /api/parent/announcements:
- *   get:
- *     summary: Get announcements for parent
- *     tags: [Parent Portal]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Relevant announcements
- */
-router.get('/announcements', parentController.getAnnouncements.bind(parentController));
-
-/**
- * @swagger
  * /api/parent/notifications:
  *   get:
  *     summary: Get notifications for parent

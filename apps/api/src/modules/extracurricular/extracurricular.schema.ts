@@ -1,20 +1,15 @@
 import { z } from 'zod';
-import { partialUpdateSchema } from '@/lib/partial';
+import {
+  EXTRACURRICULAR_CATEGORIES,
+  EXTRACURRICULAR_STATUSES,
+  createExtracurricularSchema,
+  updateExtracurricularSchema,
+} from '@cipansor/shared';
 
 // Enums matching Prisma
-export const ExtracurricularCategory = z.enum([
-  'SPORTS',
-  'ARTS',
-  'ACADEMIC',
-  'RELIGIOUS',
-  'SCOUTING',
-  'LEADERSHIP',
-  'LANGUAGE',
-  'TECHNOLOGY',
-  'OTHER',
-]);
+export const ExtracurricularCategory = z.enum(EXTRACURRICULAR_CATEGORIES);
 
-export const ExtracurricularStatus = z.enum(['ACTIVE', 'INACTIVE', 'SUSPENDED']);
+export const ExtracurricularStatus = z.enum(EXTRACURRICULAR_STATUSES);
 export const EnrollmentStatus = z.enum(['ACTIVE', 'GRADUATED', 'WITHDRAWN', 'DISMISSED']);
 export const DayOfWeek = z.enum([
   'MONDAY',
@@ -41,33 +36,10 @@ export const listExtracurricularsQuerySchema = z.object({
 
 export type ListExtracurricularsQuery = z.infer<typeof listExtracurricularsQuerySchema>;
 
-// Create extracurricular
-export const createExtracurricularSchema = z.object({
-  unitId: z.string().uuid(),
-  name: z.string().min(1).max(100),
-  code: z.string().min(1).max(20).optional(),
-  category: ExtracurricularCategory,
-  description: z.string().optional(),
-  scheduleDay: z.array(DayOfWeek).optional(),
-  scheduleTime: z.string().optional(),
-  venue: z.string().optional(),
-  maxParticipants: z.number().int().positive().optional(),
-  minParticipants: z.number().int().positive().optional(),
-  coachId: z.string().uuid().optional(),
-  assistantCoachId: z.string().uuid().optional(),
-  isCompulsory: z.boolean().default(false),
-  academicYearId: z.string().uuid(),
-  imageUrl: z.string().url().optional(),
-});
-
-export type CreateExtracurricularInput = z.infer<typeof createExtracurricularSchema>;
-
-// Update extracurricular
-export const updateExtracurricularSchema = partialUpdateSchema(createExtracurricularSchema).extend({
-  status: ExtracurricularStatus.optional(),
-});
-
-export type UpdateExtracurricularInput = z.infer<typeof updateExtracurricularSchema>;
+// Create and update: one contract with the portal's forms (@cipansor/shared).
+export { createExtracurricularSchema, updateExtracurricularSchema };
+export type CreateExtracurricularInput = z.output<typeof createExtracurricularSchema>;
+export type UpdateExtracurricularInput = z.output<typeof updateExtracurricularSchema>;
 
 // Enrollment
 export const enrollStudentSchema = z.object({

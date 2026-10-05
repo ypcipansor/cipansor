@@ -77,9 +77,31 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
  * Delete user
  * DELETE /api/users/:id
  */
+/**
+ * Mark a password as leaked: sessions end, the next sign-in asks for a new one.
+ * POST /api/users/:id/require-password-change
+ */
+export const requirePasswordChange = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await userService.requirePasswordChange(id, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+    sub: req.user!.sub,
+  });
+
+  res.json({
+    success: true,
+    data: result,
+  });
+});
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
-  const result = await userService.delete(id);
+  const result = await userService.delete(id, {
+    roleCode: req.user!.roleCode,
+    unitId: req.user!.unitId,
+    sub: req.user!.sub,
+  });
 
   res.json({
     success: true,

@@ -20,6 +20,7 @@ import {
   getGradeFromScore,
 } from './rapor-pesantren.schema';
 import type { Prisma } from '@prisma/client';
+import { unitDocumentName } from '@cipansor/shared';
 import { createNotification } from '../notifications/notifications.service';
 import { nisForUnit, nisMapForUnit } from '@/utils/student-nis';
 
@@ -1172,7 +1173,7 @@ export async function getRaporPesantrenById(id: string): Promise<RaporPesantren 
     unitId: rapor.unitId,
     unit: {
       id: rapor.unit.id,
-      name: rapor.unit.name,
+      name: unitDocumentName(rapor.unit),
       address: rapor.unit.address,
       phone: rapor.unit.phone,
       email: rapor.unit.email,

@@ -22,9 +22,9 @@ A lawan C untuk jangka panjang): **A — hapus, dengan syarat pembuka dicatat.**
   - pesan tiap 60 detik;
   - dasbor tiap 1–5 menit;
   - ditambah muat ulang saat jendela kembali difokuskan.
-- **Web Push baru separuh.** `apps/web/public/sw.js` sudah menangani `push`
-  dan `notificationclick`, dan web memanggil `/notifications/push/subscribe`.
-  Sisi server belum ada: tidak ada kunci VAPID, rutenya, maupun pengirimnya.
+- **Web Push** (diukur 2026-09-28: baru separuh, tanpa kunci VAPID dan tanpa
+  pengirim). Dilengkapi 2026-10-03 lewat PR #626; keputusan dan cara kerjanya
+  ada di [`notifikasi-push.md`](notifikasi-push.md).
 - **Infrastruktur tidak menghalangi WebSocket.** App Service mengaktifkan
   WebSocket dan afinitas ARR, dan saat ini berjalan satu instans. Hambatan
   baru muncul bila instans ditambah: Socket.IO lalu butuh sticky session dan

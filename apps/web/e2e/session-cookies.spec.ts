@@ -108,12 +108,16 @@ test.describe("HttpOnly session cookies", () => {
         if (r.url().endsWith("/auth/refresh")) statuses.push(r.status());
       });
     }
-    await Promise.all([
-      pageA.reload({ waitUntil: "networkidle" }),
-      pageB.reload({ waitUntil: "networkidle" }),
-    ]);
+    await Promise.all([pageA.reload(), pageB.reload()]);
 
-    expect(statuses.length).toBeGreaterThan(0);
+    // Wait for the refresh itself. `networkidle` is no signal: under load the
+    // app boots more than 500 ms after the page loads, so the reload settled
+    // before any refresh was sent and this counted none (seen 2026-10-02).
+    await expect
+      .poll(() => statuses.length, { timeout: 15000 })
+      .toBeGreaterThan(0);
+    await pageA.waitForLoadState("networkidle");
+    await pageB.waitForLoadState("networkidle");
     expect(
       statuses.every((s) => s === 200),
       `refreshes: ${statuses}`,

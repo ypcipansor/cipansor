@@ -38,8 +38,11 @@ export default async function PublicSpmbPage() {
   // The landmark lives inside SpmbForm, which renders the page's own <main>
   // after its hero <section>. Wrapping it in a second one here would nest two.
   //
-  // The locale is read here only to resolve the hero photograph's alt text
-  // server-side; the form takes the rest of its copy from the provider.
+  // The locale resolves the hero photograph's alt text server-side; the form
+  // takes it for its words (config/spmb-form.i18n.ts), its dates and its
+  // direction.
   const locale = await getServerLocale();
-  return <SpmbForm photo={galleryPhoto("disiplin", 4, locale)} />;
+  return (
+    <SpmbForm photo={galleryPhoto("disiplin", 4, locale)} locale={locale} />
+  );
 }

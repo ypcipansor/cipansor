@@ -44,5 +44,7 @@ export * from "./roles";
 export * from "./types/session";
 export * from "./password-policy";
 export * from "./types/demo-accounts";
+export * from "./types/office-holders";
 export * from "./types/admissions";
 export * from "./types/unit";
+export * from "./types/environment";

@@ -314,6 +314,7 @@ export const roleRouteAccess: Record<LegacyRole, string[]> = {
     "/wallet",
   ],
   PARENT: [
+    "/announcements",
     "/notifications",
     "/parent",
     "/profile",

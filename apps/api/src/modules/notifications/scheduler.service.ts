@@ -21,7 +21,7 @@ import { CreateNotificationInput } from './notifications.schema';
 import { NotificationType, AttendanceStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { NotificationPriority, NotificationChannel, RecipientType } from '@cipansor/shared';
 import { logger } from '../../lib/logger';
-import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
+import { STUDENT_STATUS } from '@cipansor/shared';
 
 interface ScheduledTask {
   id: string;
@@ -807,139 +807,6 @@ export class SchedulerService {
     }
 
     logger.info('Sent ' + notifications.length + ' monthly reports');
-  }
-
-  // ============== BROADCAST API ==============
-
-  static async broadcastNotification(params: {
-    title: string;
-    message: string;
-    type: NotificationType;
-    targetType: 'ALL' | 'STUDENTS' | 'TEACHERS' | 'UNIT' | 'CLASS';
-    targetId?: string;
-    useWhatsApp?: boolean;
-  }): Promise<{ total: number; sent: number; failed: number }> {
-    const { title, message, type, targetType, targetId, useWhatsApp } = params;
-
-    let users: Array<{ id: string; phone: string | null }> = [];
-
-    switch (targetType) {
-      case 'ALL':
-        users = await prisma.user.findMany({
-          where: { isActive: true },
-          select: { id: true, phone: true },
-          take: 1000,
-        });
-        break;
-
-      case 'STUDENTS': {
-        const students = await prisma.student.findMany({
-          where: { status: STUDENT_STATUS.ACTIVE },
-          include: { user: { select: { id: true, phone: true } } },
-          take: 500,
-        });
-        users = students
-          .filter((s) => s.user !== null)
-          .map((s) => ({ id: s.user!.id, phone: s.user!.phone }));
-        break;
-      }
-
-      case 'TEACHERS': {
-        const teachers = await prisma.teacher.findMany({
-          include: { user: { select: { id: true, phone: true, isActive: true } } },
-          take: 200,
-        });
-        users = teachers
-          .filter((t) => t.user !== null && t.user.isActive)
-          .map((t) => ({ id: t.user!.id, phone: t.user!.phone }));
-        break;
-      }
-
-      case 'UNIT':
-        if (targetId) {
-          const unitStudents = await prisma.student.findMany({
-            where: {
-              status: STUDENT_STATUS.ACTIVE,
-              unitId: targetId,
-            },
-            include: { user: { select: { id: true, phone: true } } },
-          });
-          users = unitStudents
-            .filter((s) => s.user !== null)
-            .map((s) => ({ id: s.user!.id, phone: s.user!.phone }));
-        }
-        break;
-
-      case 'CLASS':
-        if (targetId) {
-          const enrollments = await prisma.classEnrollment.findMany({
-            where: {
-              classId: targetId,
-              status: CLASS_ENROLLMENT_STATUS.ACTIVE,
-            },
-            include: {
-              student: {
-                include: { user: { select: { id: true, phone: true } } },
-              },
-            },
-          });
-          users = enrollments
-            .filter((e) => e.student?.user !== null && e.student?.user !== undefined)
-            .map((e) => ({ id: e.student.user!.id, phone: e.student.user!.phone }));
-        }
-        break;
-    }
-
-    let sent = 0;
-    let failed = 0;
-
-    try {
-      // 1. Bulk create in-app notifications
-      // This is atomic and much faster than creating one by one
-      if (users.length > 0) {
-        await createBulkNotifications({
-          userIds: users.map((u) => u.id),
-          title,
-          message,
-          type,
-          priority: 'NORMAL',
-          channels: ['IN_APP'],
-        });
-      }
-
-      // 2. Bulk send via WhatsApp if enabled
-      if (useWhatsApp) {
-        const waRecipients = users
-          .filter((u) => u.phone)
-          .map((u) => ({ phone: u.phone!, userId: u.id }));
-
-        if (waRecipients.length > 0) {
-          const waMessage = '*' + title + '*\n\n' + message;
-          // Use our optimized concurrent sender
-          const result = await whatsAppService.sendBulk(waRecipients, waMessage);
-
-          // For WhatsApp, we track success/fail based on the bulk result
-          sent = result.success;
-          failed = result.failed;
-        } else {
-          // If no WA recipients, we count all as sent (since DB insert succeeded)
-          sent = users.length;
-        }
-      } else {
-        // If WA disabled, we count all as sent (since DB insert succeeded)
-        sent = users.length;
-      }
-    } catch (error) {
-      // If bulk operation fails, we mark all as failed
-      failed = users.length;
-      logger.error('Failed to broadcast notifications', error);
-    }
-
-    return {
-      total: users.length,
-      sent,
-      failed,
-    };
   }
 }
 

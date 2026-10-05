@@ -233,6 +233,9 @@ export interface ReportCard {
     id: string;
     name: string;
     level: string;
+    /** The unit that issues the rapor: the class's, that academic year. */
+    unitId?: string;
+    /** The wali kelas (`Class.homeroomTeacherId`). */
     teacher?: { id: string; name: string | null };
   };
   academicYear?: { id: string; name: string };

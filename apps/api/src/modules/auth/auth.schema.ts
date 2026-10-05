@@ -97,6 +97,12 @@ export const resetPasswordSchema = z.object({
   newPassword: newPasswordInput,
 });
 
+// The new password a sign-in asked for (requiresPasswordChange). The old one
+// is not asked again: the temporary token already proved it.
+export const newPasswordSchema = z.object({
+  newPassword: newPasswordInput,
+});
+
 // Types
 export type LoginInput = z.infer<typeof loginSchema>;
 export type SendPasswordResetInput = z.infer<typeof sendPasswordResetSchema>;
@@ -107,5 +113,6 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RefreshTokenInput = z.infer<typeof refreshTokenSchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type NewPasswordInput = z.infer<typeof newPasswordSchema>;
 export type TwoFactorCodeInput = z.infer<typeof twoFactorCodeSchema>;
 export type DisableTwoFactorInput = z.infer<typeof disableTwoFactorSchema>;

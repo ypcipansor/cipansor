@@ -97,6 +97,8 @@ export interface HomeContent {
       legal: string;
       programs: string;
       units: string;
+      facilities: string;
+      activities: string;
       news: string;
       gallery: string;
       spmb: string;
@@ -160,11 +162,11 @@ const ID: HomeContent = {
     allLink: "Lihat semua program unggulan",
   },
   news: {
-    eyebrow: "Berita & Kegiatan",
+    eyebrow: "Berita",
     heading: "Kabar Terbaru dari Pondok",
     lead: "Catatan kegiatan dan capaian santri di berbagai unit pendidikan.",
     readMore: "Baca selengkapnya",
-    allLink: "Lihat semua berita & kegiatan",
+    allLink: "Lihat semua berita",
   },
   cta: {
     spmb: {
@@ -194,7 +196,9 @@ const ID: HomeContent = {
       legal: "Legalitas & Transparansi",
       programs: "Program Unggulan",
       units: "Unit Pendidikan",
-      news: "Berita & Kegiatan",
+      facilities: "Fasilitas",
+      activities: "Kegiatan",
+      news: "Berita",
       gallery: "Galeri",
       spmb: "Pendaftaran (SPMB)",
       donate: "Wakaf & Infaq",
@@ -259,11 +263,11 @@ const EN: HomeContent = {
     allLink: "See all flagship programmes",
   },
   news: {
-    eyebrow: "News & Activities",
+    eyebrow: "News",
     heading: "The Latest from the Pesantren",
     lead: "A record of what santri are doing and achieving across the educational units.",
     readMore: "Read the article",
-    allLink: "See all news & activities",
+    allLink: "See all news",
   },
   cta: {
     spmb: {
@@ -293,7 +297,9 @@ const EN: HomeContent = {
       legal: "Legal Status & Transparency",
       programs: "Flagship Programmes",
       units: "Educational Units",
-      news: "News & Activities",
+      facilities: "Facilities",
+      activities: "Student Activities",
+      news: "News",
       gallery: "Gallery",
       spmb: "Admissions (SPMB)",
       donate: "Wakaf & Infaq",
@@ -356,11 +362,11 @@ const AR: HomeContent = {
     allLink: "عرض جميع البرامج المتميّزة",
   },
   news: {
-    eyebrow: "الأخبار والأنشطة",
+    eyebrow: "الأخبار",
     heading: "آخر أخبار المعهد",
     lead: "تسجيلٌ لأنشطة الطلاب وإنجازاتهم في مختلف الوحدات التعليمية.",
     readMore: "قراءة الخبر",
-    allLink: "عرض جميع الأخبار والأنشطة",
+    allLink: "عرض جميع الأخبار",
   },
   cta: {
     spmb: {
@@ -390,7 +396,9 @@ const AR: HomeContent = {
       legal: "الوضع القانوني والشفافية",
       programs: "البرامج المتميّزة",
       units: "الوحدات التعليمية",
-      news: "الأخبار والأنشطة",
+      facilities: "المرافق",
+      activities: "الأنشطة",
+      news: "الأخبار",
       gallery: "معرض الصور",
       spmb: "التسجيل (SPMB)",
       donate: "الوقف والإنفاق",

@@ -131,6 +131,13 @@ vi.mock('@/config', () => ({
   },
 }));
 
+// auth.service emits `auth:logged_out` on logout/password reset; the real bus
+// pulls in the notifications stack (and its config) at import time, so stub it.
+const mockEmit = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/event-bus', () => ({
+  eventBus: { emit: mockEmit },
+}));
+
 // otplib (functional API) and qrcode are used by the 2FA flow.
 vi.mock('otplib', () => ({
   generateSecret: mockGenerateSecret,
@@ -514,6 +521,8 @@ describe('AuthService', () => {
   describe('logout', () => {
     it('should delete specific refresh token when provided', async () => {
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      // Last session gone: the listener is told so it clears every device.
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(null);
 
       await authService.logout('user-1', 'specific-token');
 
@@ -523,16 +532,113 @@ describe('AuthService', () => {
           token: 'specific-token',
         },
       });
+      // Push endpoints outlive the session; logout asks the bus to drop them.
+      // No endpoint named → null, and no session left → every device cleared.
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: null,
+        hasActiveSession: false,
+      });
+    });
+
+    it('scopes the push cleanup to the endpoint when the client names one', async () => {
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      // Another device is still signed in, so only this endpoint may be cleared.
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({ id: 'session-2' });
+
+      await authService.logout('user-1', 'specific-token', 'https://push.example.com/laptop');
+
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: 'https://push.example.com/laptop',
+        hasActiveSession: true,
+      });
+    });
+
+    it('reports no active session once the last token is revoked', async () => {
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(null);
+
+      await authService.logout('user-1', 'specific-token', 'https://push.example.com/stale');
+
+      // The endpoint is client-supplied and may be stale; with no session left
+      // the listener must clear every device, not just this one (CWE-200).
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: 'https://push.example.com/stale',
+        hasActiveSession: false,
+      });
     });
 
     it('should delete all refresh tokens when no specific token provided', async () => {
       mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 3 });
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(null);
 
       await authService.logout('user-1');
 
       expect(mockPrisma.refreshToken.deleteMany).toHaveBeenCalledWith({
         where: { userId: 'user-1' },
       });
+    });
+
+    it('still emits the cleanup and resolves when the session check fails', async () => {
+      // The token is revoked, then the follow-up read drops its connection. The
+      // logout must not reject — the controller clears the cookies in a
+      // `finally`, but the push cleanup must still be asked for. The answer is
+      // unknown, so the cleanup is scoped to the named endpoint: reporting
+      // "no session" would clear a phone that is still signed in (the harm this
+      // follow-up fixes), and reporting nothing would leave this device's row.
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        authService.logout('user-1', 'specific-token', 'https://push.example.com/this')
+      ).resolves.toBeUndefined();
+
+      expect(mockEmit).toHaveBeenCalledWith('auth:logged_out', {
+        userId: 'user-1',
+        endpoint: 'https://push.example.com/this',
+        hasActiveSession: true,
+      });
+    });
+
+    it('clears nothing on an unknown session with no endpoint to scope to', async () => {
+      // Password reset passes no endpoint. With the session lookup failing,
+      // there is no row attributable to this caller, so the safe move is to
+      // leave every device alone rather than clear them all on a guess.
+      mockPrisma.refreshToken.deleteMany.mockResolvedValue({ count: 1 });
+      mockPrisma.refreshToken.findFirst.mockRejectedValue(new Error('db down'));
+
+      await authService.logout('user-1');
+
+      expect(mockEmit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hasActiveSession', () => {
+    it('is true while an unexpired refresh token remains', async () => {
+      mockPrisma.refreshToken.findFirst.mockResolvedValue({ id: 'session-1' });
+
+      await expect(authService.hasActiveSession('user-1')).resolves.toBe(true);
+      expect(mockPrisma.refreshToken.findFirst).toHaveBeenCalledWith({
+        where: { userId: 'user-1', expiresAt: { gt: expect.any(Date) } },
+        select: { id: true },
+      });
+    });
+
+    it('is false when no unexpired token remains', async () => {
+      mockPrisma.refreshToken.findFirst.mockResolvedValue(null);
+
+      await expect(authService.hasActiveSession('user-1')).resolves.toBe(false);
+    });
+
+    it('answers unknown, not a rejection, when the lookup fails', async () => {
+      // Asked after the token is revoked; a failure must not block logout. It
+      // answers `null` — "unknown", distinct from "no session" — so the caller
+      // does not clear every device on a transient read error.
+      mockPrisma.refreshToken.findFirst.mockRejectedValue(new Error('db down'));
+
+      await expect(authService.hasActiveSession('user-1')).resolves.toBeNull();
     });
   });
 

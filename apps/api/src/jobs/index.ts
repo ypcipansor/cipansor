@@ -1,5 +1,10 @@
 export { initializeScheduler, stopScheduler, runJob } from './scheduler';
 export {
+  startWebPushDispatcher,
+  stopWebPushDispatcher,
+  runWebPushDispatch,
+} from './web-push-dispatch.job';
+export {
   createDailySnapshots,
   createWeeklySummary,
   cleanupOldSnapshots,

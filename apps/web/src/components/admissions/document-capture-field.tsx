@@ -13,9 +13,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import type { SpmbFormContent } from "@/config/spmb-form.i18n";
 
 interface DocumentCaptureFieldProps {
   label: string;
+  /** The field's own words, in the public page's language. */
+  content: SpmbFormContent["documents"];
   documentType: "ktp" | "kk" | "akta" | "foto" | "lainnya";
   file: File | null;
   onFileSelect: (file: File) => void;
@@ -36,6 +39,7 @@ interface DocumentCaptureFieldProps {
 
 export function DocumentCaptureField({
   label,
+  content,
   documentType,
   file,
   onFileSelect,
@@ -90,32 +94,24 @@ export function DocumentCaptureField({
           });
         }
         if (data.validation?.status === "VALID") {
-          toast.success(
-            "Data metadata dokumen cocok. Visual tetap diverifikasi manual oleh petugas.",
-          );
+          toast.success(content.toastValid);
         } else if (data.validation?.status === "WARNING") {
-          toast.warning(
-            "Dokumen berhasil diunggah. OCR visual tidak tersedia, verifikasi dilakukan manual oleh petugas.",
-          );
+          toast.warning(content.toastRecheck);
         } else {
-          toast.error("Dokumen dipindai tetapi terdapat ketidakcocokan data.");
+          toast.error(content.toastMismatch);
         }
       }
     } catch (err) {
       console.error("Failed to parse document OCR:", err);
       const fallbackStatus = {
         status: "WARNING" as const,
-        notes: [
-          "Gagal melakukan verifikasi otomatis dokumen. Petugas akan memverifikasi secara manual.",
-        ],
+        notes: [content.uncheckedNote],
       };
       setOcrStatus(fallbackStatus);
       if (onOcrResult) {
         onOcrResult(fallbackStatus);
       }
-      toast.warning(
-        "Gagal memverifikasi otomatis, dokumen akan diverifikasi manual oleh petugas.",
-      );
+      toast.warning(content.toastUnchecked);
     } finally {
       setIsParsing(false);
     }
@@ -145,10 +141,10 @@ export function DocumentCaptureField({
             className="text-xs"
           >
             {ocrStatus.status === "VALID"
-              ? "Data Valid"
+              ? content.valid
               : ocrStatus.status === "WARNING"
-                ? "Perlu Cek Ulang"
-                : "Data Tidak Cocok"}
+                ? content.recheck
+                : content.mismatch}
           </Badge>
         )}
       </div>
@@ -168,8 +164,8 @@ export function DocumentCaptureField({
           size="sm"
           onClick={() => fileInputRef.current?.click()}
         >
-          <Upload className="h-4 w-4 mr-2" />
-          Pilih File
+          <Upload className="h-4 w-4 me-2" />
+          {content.chooseFile}
         </Button>
 
         {/* Camera Capture Input */}
@@ -187,8 +183,8 @@ export function DocumentCaptureField({
           size="sm"
           onClick={() => cameraInputRef.current?.click()}
         >
-          <Camera className="h-4 w-4 mr-2 text-primary" />
-          Kamera / Foto Langsung
+          <Camera className="h-4 w-4 me-2 text-primary" />
+          {content.camera}
         </Button>
 
         {file && (
@@ -200,8 +196,7 @@ export function DocumentCaptureField({
 
       {isParsing && (
         <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse mt-2">
-          <RefreshCw className="h-3 w-3 animate-spin" /> Memeriksa metadata
-          dokumen... (atau gambar akan diverifikasi manual oleh petugas)
+          <RefreshCw className="h-3 w-3 animate-spin" /> {content.checking}
         </p>
       )}
 

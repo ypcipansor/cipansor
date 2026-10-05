@@ -1,5 +1,6 @@
 import { Prisma, NotificationStatus } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
+import { Errors } from '../../middleware/error';
 import {
   notificationService as channelService,
   type NotificationChannel,
@@ -9,14 +10,7 @@ import type {
   CreateNotificationInput,
   CreateBulkNotificationInput,
   QueryNotificationInput,
-  CreateAnnouncementInput,
-  UpdateAnnouncementInput,
-  QueryAnnouncementInput,
-  CreateTemplateInput,
-  UpdateTemplateInput,
-  QueryTemplateInput,
 } from './notifications.schema';
-import type { NotificationTemplate } from '@cipansor/shared';
 
 // Helper to map shared types to Prisma Enum
 export const mapTypeToPrisma = (type: string): { dbType: string; originalType: string | null } => {
@@ -98,71 +92,9 @@ export async function getUserNotifications(userId: string, query: QueryNotificat
   };
 }
 
-export async function getAllNotifications(query: QueryNotificationInput) {
-  const { page, limit, type, startDate, endDate } = query;
-  const skip = (page - 1) * limit;
-
-  const where: Prisma.NotificationWhereInput = {
-    ...(startDate &&
-      endDate && {
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      }),
-  };
-
-  if (type) {
-    const { dbType, originalType } = mapTypeToPrisma(type);
-    where.type = dbType as any;
-    if (originalType) {
-      // Prisma JSON filter workaround
-      (where as any).data = {
-        path: ['originalType'],
-        equals: originalType,
-      };
-    }
-  }
-
-  const [data, total] = await Promise.all([
-    prisma.notification.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: { select: { id: true, name: true, email: true } },
-      },
-    }),
-    prisma.notification.count({ where }),
-  ]);
-
-  const transformedData = data.map((n) => {
-    const originalType = (n.data as any)?.originalType;
-    if (originalType) {
-      return { ...n, type: originalType };
-    }
-    return n;
-  });
-
-  return {
-    data: transformedData,
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
-}
-
-export async function getNotificationById(id: string) {
-  const notification = await prisma.notification.findUnique({
-    where: { id },
-    include: {
-      user: { select: { id: true, name: true } },
-    },
-  });
+/** One of the owner's notifications; null for anyone else's. */
+export async function getNotificationById(id: string, userId: string) {
+  const notification = await prisma.notification.findFirst({ where: { id, userId } });
 
   if (notification) {
     const originalType = (notification.data as any)?.originalType;
@@ -361,290 +293,134 @@ export async function markAllAsRead(userId: string) {
   });
 }
 
-export async function deleteNotification(id: string, userId: string, isAdmin = false) {
-  const where: Prisma.NotificationWhereInput = { id };
-  // If not admin, restrict to user ownership
-  if (!isAdmin) {
-    where.userId = userId;
+export async function deleteNotification(id: string, userId: string) {
+  return prisma.notification.deleteMany({ where: { id, userId } });
+}
+
+// ==================== WEB PUSH (browser) ====================
+
+/**
+ * How many devices one account may register a push endpoint from.
+ *
+ * A person plausibly uses a few (phone, tablet, laptop); an unbounded table lets
+ * one authenticated client create unlimited rows with distinct endpoints
+ * (CWE-770). Generous enough that a real user never hits it, small enough to
+ * bound the table.
+ */
+export const MAX_PUSH_SUBSCRIPTIONS_PER_USER = 10;
+
+/**
+ * Store the caller's browser push subscription.
+ *
+ * A browser endpoint identifies a *device*, not a person, and it is stable
+ * across sign-ins: the same endpoint returns on every re-subscribe. Reassigning
+ * it to whoever last registered would let anyone who learns the endpoint
+ * silently hijack a device's notification routing (CWE-639), so an endpoint
+ * already owned by another user is refused rather than moved.
+ *
+ * Re-subscribing with the *same* user is the normal case (keys rotate, the
+ * device changes UA) and refreshes the row in place — so an existing endpoint is
+ * never counted against the per-user cap.
+ */
+export async function subscribePush(
+  userId: string,
+  subscription: {
+    endpoint: string;
+    keys: { p256dh: string; auth: string };
+  },
+  userAgent: string | null
+): Promise<'created' | 'updated'> {
+  const existing = await prisma.pushSubscription.findUnique({
+    where: { endpoint: subscription.endpoint },
+    select: { id: true, userId: true },
+  });
+
+  if (existing && existing.userId !== userId) {
+    // Do not name the device or the current owner; the caller must not be able
+    // to probe whose endpoint it is.
+    throw Errors.conflict('This push endpoint is already registered to another account');
   }
 
-  return prisma.notification.deleteMany({
-    where,
-  });
-}
-
-export async function sendNotification(id: string) {
-  return prisma.notification.update({
-    where: { id },
-    data: { createdAt: new Date() },
-  });
-}
-
-export async function scheduleNotification(id: string, scheduledAt: Date) {
-  return prisma.notification.update({
-    where: { id },
-    data: { scheduledAt },
-  });
-}
-
-// ==================== STATS ====================
-
-export async function getNotificationStats(startDate?: Date, endDate?: Date) {
-  const where: Prisma.NotificationWhereInput = {
-    ...(startDate &&
-      endDate && {
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      }),
-  };
-
-  const [total, unread, rawNotifications] = await Promise.all([
-    prisma.notification.count({ where }),
-    prisma.notification.count({ where: { ...where, status: NotificationStatus.UNREAD } }),
-    prisma.notification.findMany({
-      where,
-      select: { type: true, data: true },
-    }),
-  ]);
-
-  const byTypeMap: Record<string, number> = {};
-
-  rawNotifications.forEach((n) => {
-    const originalType = (n.data as any)?.originalType || n.type;
-    byTypeMap[originalType] = (byTypeMap[originalType] || 0) + 1;
-  });
-
-  return {
-    total,
-    readRate: total > 0 ? ((total - unread) / total) * 100 : 0,
-    deliveryRate: 100,
-    byType: byTypeMap,
-    todayCount: 0,
-    weekCount: 0,
-  };
-}
-
-// ==================== TEMPLATES ====================
-
-export async function getTemplates(query: QueryTemplateInput, unitId?: string) {
-  const where: Prisma.SettingWhereInput = { key: 'NOTIFICATION_TEMPLATES' };
-  if (unitId) {
-    where.unitId = unitId;
-  }
-
-  const setting = await prisma.setting.findFirst({
-    where,
-  });
-
-  let templates = (setting?.value as any[]) || [];
-
-  if (query.type) {
-    templates = templates.filter((t) => t.type === query.type);
-  }
-  if (query.isActive !== undefined) {
-    templates = templates.filter((t) => t.isActive === query.isActive);
-  }
-
-  return templates;
-}
-
-export async function getTemplateById(id: string, unitId?: string) {
-  const where: Prisma.SettingWhereInput = { key: 'NOTIFICATION_TEMPLATES' };
-  if (unitId) {
-    where.unitId = unitId;
-  }
-
-  const setting = await prisma.setting.findFirst({
-    where,
-  });
-
-  const templates = (Array.isArray(setting?.value)
-    ? setting.value
-    : []) as unknown as NotificationTemplate[];
-  return templates.find((t) => t.id === id) || null;
-}
-
-export async function createTemplate(data: CreateTemplateInput, unitId?: string) {
-  // If unitId is provided, we use it. If not, we fallback to finding the first unit.
-  // Ideally, this should always be provided by the controller.
-  let targetUnitId = unitId;
-
-  if (!targetUnitId) {
-    // Fallback logic kept for compatibility but should be avoided
-    const unit = await prisma.unit.findFirst();
-    if (!unit) throw new Error('No unit found to store settings');
-    targetUnitId = unit.id;
-  }
-
-  // Use transaction to minimize race condition window, though simplistic
-  return prisma.$transaction(async (tx) => {
-    const setting = await tx.setting.findUnique({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-    });
-
-    const templates = (setting?.value as any[]) || [];
-
-    const newTemplate = {
-      id: crypto.randomUUID(),
-      ...data,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    templates.push(newTemplate);
-
-    await tx.setting.upsert({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-      update: { value: templates },
-      create: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES', value: templates },
-    });
-
-    return newTemplate;
-  });
-}
-
-export async function updateTemplate(id: string, data: UpdateTemplateInput, unitId?: string) {
-  let targetUnitId = unitId;
-  if (!targetUnitId) {
-    const unit = await prisma.unit.findFirst();
-    if (!unit) throw new Error('No unit found');
-    targetUnitId = unit.id;
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const setting = await tx.setting.findUnique({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-    });
-
-    let templates = (setting?.value as any[]) || [];
-    const index = templates.findIndex((t) => t.id === id);
-
-    if (index === -1) throw new Error('Template not found');
-
-    templates[index] = { ...templates[index], ...data, updatedAt: new Date() };
-
-    await tx.setting.update({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-      data: { value: templates },
-    });
-
-    return templates[index];
-  });
-}
-
-export async function deleteTemplate(id: string, unitId?: string) {
-  let targetUnitId = unitId;
-  if (!targetUnitId) {
-    const unit = await prisma.unit.findFirst();
-    if (!unit) throw new Error('No unit found');
-    targetUnitId = unit.id;
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const setting = await tx.setting.findUnique({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-    });
-
-    let templates = (setting?.value as any[]) || [];
-    templates = templates.filter((t) => t.id !== id);
-
-    await tx.setting.update({
-      where: { unitId_key: { unitId: targetUnitId!, key: 'NOTIFICATION_TEMPLATES' } },
-      data: { value: templates },
-    });
-
-    return true;
-  });
-}
-
-// ==================== ANNOUNCEMENT ====================
-
-export async function getAnnouncements(query: QueryAnnouncementInput) {
-  const { page, limit, unitId, priority, active } = query;
-  const skip = (page - 1) * limit;
-  const now = new Date();
-
-  const where: Prisma.AnnouncementWhereInput = {
-    ...(unitId && { unitId }),
-    ...(priority !== undefined && { priority }),
-    ...(active && {
-      publishedAt: { lte: now },
-      OR: [{ expiresAt: null }, { expiresAt: { gte: now } }],
-    }),
-  };
-
-  const [data, total] = await Promise.all([
-    prisma.announcement.findMany({
-      where,
-      skip,
-      take: limit,
-      include: {
-        unit: { select: { id: true, name: true } },
-        createdBy: { select: { id: true, name: true } },
+  if (existing) {
+    await prisma.pushSubscription.update({
+      where: { id: existing.id },
+      data: {
+        p256dh: subscription.keys.p256dh,
+        auth: subscription.keys.auth,
+        userAgent,
       },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-    }),
-    prisma.announcement.count({ where }),
-  ]);
+    });
+    return 'updated';
+  }
 
-  return {
-    data,
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
-}
+  // A brand-new endpoint: refuse once the account already holds the maximum, so
+  // one client cannot grow the table without bound (CWE-770).
+  const current = await prisma.pushSubscription.count({ where: { userId } });
+  if (current >= MAX_PUSH_SUBSCRIPTIONS_PER_USER) {
+    throw Errors.badRequest(
+      `Batas ${MAX_PUSH_SUBSCRIPTIONS_PER_USER} perangkat untuk notifikasi push tercapai. ` +
+        'Matikan push di salah satu perangkat lalu coba lagi.'
+    );
+  }
 
-export async function getAnnouncementById(id: string) {
-  return prisma.announcement.findUnique({
-    where: { id },
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
-    },
-  });
-}
-
-export async function createAnnouncement(data: CreateAnnouncementInput, createdById: string) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const createData: any = {
-    ...data,
-    createdById,
-    publishedAt: data.publishedAt || new Date(),
-  };
-
-  return prisma.announcement.create({
-    data: createData,
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
-    },
-  });
-}
-
-export async function updateAnnouncement(id: string, data: UpdateAnnouncementInput) {
-  const { unitId, type, ...rest } = data;
-  const { dbType } = type ? mapTypeToPrisma(type) : { dbType: undefined };
-
-  return prisma.announcement.update({
-    where: { id },
+  await prisma.pushSubscription.create({
     data: {
-      ...rest,
-      ...(type && { type: dbType as any }), // Cast to any because of enum mismatch in Zod vs Prisma
-      ...(unitId && { unit: { connect: { id: unitId } } }),
-    },
-    include: {
-      unit: { select: { id: true, name: true } },
-      createdBy: { select: { id: true, name: true } },
+      userId,
+      endpoint: subscription.endpoint,
+      p256dh: subscription.keys.p256dh,
+      auth: subscription.keys.auth,
+      userAgent,
     },
   });
+  return 'created';
 }
 
-export async function deleteAnnouncement(id: string) {
-  return prisma.announcement.delete({ where: { id } });
+/** Remove the caller's subscription for one endpoint (on unsubscribe/logout). */
+export async function unsubscribePush(userId: string, endpoint: string): Promise<number> {
+  // Scoped to the caller: another user's endpoint is not theirs to delete, and
+  // matching on userId makes a stale/foreign endpoint a no-op.
+  const { count } = await prisma.pushSubscription.deleteMany({
+    where: { endpoint, userId },
+  });
+  return count;
+}
+
+/** Whether this user has a stored row for the given endpoint. */
+export async function hasPushSubscription(userId: string, endpoint: string): Promise<boolean> {
+  const row = await prisma.pushSubscription.findFirst({
+    where: { userId, endpoint },
+    select: { id: true },
+  });
+  return row !== null;
+}
+
+/**
+ * Drop every push subscription a user has.
+ *
+ * Called on logout and on password reset: an endpoint left behind would keep
+ * delivering that person's private notifications to a device they no longer
+ * control (CWE-200). A device re-subscribes on its next login, so clearing is
+ * safe.
+ */
+export async function deleteAllPushSubscriptions(userId: string): Promise<number> {
+  const { count } = await prisma.pushSubscription.deleteMany({ where: { userId } });
+  return count;
+}
+
+/**
+ * Drop every push subscription for a user *except* one endpoint.
+ *
+ * The logout path uses this when the client named an endpoint it no longer
+ * trusts (a stale or foreign value): the account is no longer signed in
+ * anywhere, so every device must be cleared, but the named endpoint was already
+ * removed by `unsubscribePush` and deleting it twice would double-count.
+ */
+export async function deleteAllPushSubscriptionsExcept(
+  userId: string,
+  endpoint: string
+): Promise<number> {
+  const { count } = await prisma.pushSubscription.deleteMany({
+    where: { userId, endpoint: { not: endpoint } },
+  });
+  return count;
 }

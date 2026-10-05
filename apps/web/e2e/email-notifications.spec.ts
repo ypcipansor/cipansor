@@ -85,3 +85,153 @@ test.describe("Outgoing mail configuration", () => {
     await expect(page.getByText("halo@cipansor.or.id").first()).toBeVisible();
   });
 });
+
+/**
+ * Browser Web Push is per-device, unlike the per-user "Push" channel above it.
+ * The page used to carry only the per-user toggle; the control that actually
+ * subscribes this browser is the new card. These check it renders with a real
+ * state and that it does not lie about being ready.
+ */
+test.describe("Browser push control", () => {
+  test.beforeEach(async ({ page }) => {
+    await loginAs(page, "superAdmin");
+    await page.goto("/notifications/settings");
+  });
+
+  test("shows a per-device push control with one honest state", async ({
+    page,
+  }) => {
+    await expect(
+      page.getByText("Notifikasi Push di Perangkat Ini"),
+    ).toBeVisible();
+
+    // Exactly one of the states must render, and headless Chromium never grants
+    // push, so the toggle is either offered or explains why it is not. Wait out
+    // the moment the page is still asking the API for its key.
+    await expect(page.getByText("Memeriksa…")).toBeHidden();
+    const states = [
+      "Browser ini tidak mendukung notifikasi push.",
+      /pasang dulu portal ini ke Layar Utama/,
+      "Notifikasi push belum tersedia di server ini.",
+      /Izin notifikasi diblokir/,
+      /Aktif\. Perangkat ini menerima notifikasi push\./,
+      /Perangkat ini terdaftar, tetapi saluran Push/,
+      "Belum aktif di perangkat ini.",
+    ];
+    const visible = await Promise.all(
+      states.map(async (s) =>
+        page
+          .getByText(s)
+          .isVisible()
+          .catch(() => false),
+      ),
+    );
+    expect(visible.filter(Boolean)).toHaveLength(1);
+  });
+
+  test("enables then disables push through the real API", async ({
+    page,
+    context,
+  }) => {
+    // The card is only offered when the API has a VAPID key pair; CI makes a
+    // throwaway one (e2e-tests.yml), and a local run must give the API one too
+    // (VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY). The browser half below is a
+    // stand-in, so its keys need not be real: the API stores them as given, and
+    // the dispatcher cannot encrypt to them, so nothing ever leaves for FCM.
+    await context.grantPermissions(["notifications"], {
+      origin: "http://localhost:3000",
+    });
+
+    // `ServiceWorkerRegister` skips registration under automation, so the real
+    // PushManager never appears. Provide a faithful stand-in with the two
+    // methods the hook uses (`getRegistration`, then `pushManager`), so the
+    // flow exercises the hook + real API rather than a mocked service.
+    await context.addInitScript(() => {
+      const w = window as unknown as { __pushSub: unknown };
+      // Playwright's bundled `chrome-headless-shell` reports
+      // `Notification.permission === "denied"` even when `grantPermissions`
+      // actually granted it (verified: the same context reports "granted" on a
+      // full Chrome). The hook reads that property to decide whether the enable
+      // control may be offered, so without this the button stays disabled and
+      // the real flow can never run. Pin it to the granted state the browser
+      // really holds.
+      Object.defineProperty(Notification, "permission", {
+        get: () => "granted",
+        configurable: true,
+      });
+      // `requestPermission` is the other half: the hook awaits it before
+      // subscribing, and the headless shell would resolve it to "denied" for the
+      // same reason. Make it agree with the stubbed state.
+      Object.defineProperty(Notification, "requestPermission", {
+        value: async () => "granted",
+        configurable: true,
+        writable: true,
+      });
+      // A push-service host the API accepts (it refuses any other: SSRF).
+      const endpoint = `https://fcm.googleapis.com/fcm/send/e2e-${Date.now()}`;
+      const subscription = {
+        endpoint,
+        expirationTime: null,
+        toJSON: () => ({
+          endpoint,
+          expirationTime: null,
+          keys: { p256dh: "B".repeat(87), auth: "A".repeat(22) },
+        }),
+        unsubscribe: async () => {
+          w.__pushSub = null;
+          return true;
+        },
+      };
+      const registration = {
+        pushManager: {
+          getSubscription: async () => w.__pushSub ?? null,
+          subscribe: async () => {
+            w.__pushSub = subscription;
+            return subscription;
+          },
+        },
+      };
+      Object.defineProperty(navigator, "serviceWorker", {
+        value: {
+          controller: null,
+          getRegistration: async () => registration,
+          addEventListener() {},
+          removeEventListener() {},
+        },
+        configurable: true,
+      });
+    });
+
+    await loginAs(page, "superAdmin");
+    await page.goto("/notifications/settings");
+
+    const enable = page.getByRole("button", {
+      name: "Aktifkan di perangkat ini",
+    });
+    await expect(enable).toBeEnabled();
+
+    const [subscribeRes] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/notifications/push/subscribe") &&
+          r.request().method() === "POST",
+      ),
+      enable.click(),
+    ]);
+    expect(subscribeRes.ok()).toBe(true);
+    await expect(
+      page.getByText("Aktif. Perangkat ini menerima notifikasi push."),
+    ).toBeVisible();
+
+    const [unsubscribeRes] = await Promise.all([
+      page.waitForResponse(
+        (r) =>
+          r.url().includes("/notifications/push/unsubscribe") &&
+          r.request().method() === "POST",
+      ),
+      page.getByRole("button", { name: "Matikan" }).click(),
+    ]);
+    expect(unsubscribeRes.ok()).toBe(true);
+    await expect(page.getByText("Belum aktif di perangkat ini.")).toBeVisible();
+  });
+});

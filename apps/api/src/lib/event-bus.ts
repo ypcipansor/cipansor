@@ -8,6 +8,7 @@
  */
 
 import { EventEmitter } from 'events';
+import type { NotificationType, Prisma } from '@prisma/client';
 import { logger } from '@/lib/logger';
 import { invalidateDashboardCache } from '@/lib/dashboard-metrics';
 import { prisma } from '@/lib/prisma';
@@ -15,6 +16,10 @@ import { tahfidzMilestones } from '@/modules/tahfidz/quran-surahs';
 import { notificationService } from '@/modules/notifications/email-sms.service';
 import {
   getChannelPolicy,
+  mapTypeToPrisma,
+  deleteAllPushSubscriptions,
+  deleteAllPushSubscriptionsExcept,
+  unsubscribePush,
   type ChannelPolicy,
 } from '@/modules/notifications/notifications.service';
 import {
@@ -145,6 +150,9 @@ export interface AppEvents {
   // Notification Events
   'notification:send': NotificationSendEvent;
   'email:send_reset_token': EmailSendResetTokenEvent;
+
+  // Auth Events
+  'auth:logged_out': AuthLoggedOutEvent;
 
   // Dashboard Events
   'dashboard:refresh': DashboardRefreshEvent;
@@ -352,6 +360,35 @@ export interface DashboardRefreshEvent {
   reason: string;
 }
 
+export interface AuthLoggedOutEvent {
+  userId: string;
+  /**
+   * The push endpoint this browser belongs to, when the client could name it.
+   *
+   * A browser push endpoint identifies a *device*, not a person. On a normal
+   * logout we clear only this device's row, so the user's other signed-in
+   * devices keep receiving push. `endpoint: null` (or absent) means "clear
+   * every device" — the deliberate choice for a password reset, which must end
+   * every session everywhere, and the safe fallback when the client could not
+   * name the endpoint.
+   */
+  endpoint?: string | null;
+  /**
+   * Whether the account still has a live session after this logout.
+   *
+   * The client's `endpoint` cannot be trusted on its own: a stale or unrelated
+   * value deletes the wrong row and leaves the real device reachable (CWE-200).
+   * `AuthService.logout` therefore checks its refresh tokens after revoking and
+   * reports the answer here. `false` (or absent) means this was the last
+   * session, so the listener clears every device the user owns.
+   *
+   * When that check itself fails, `logout` does not report "no session" — it
+   * would clear devices that are still signed in. It scopes the cleanup to the
+   * named endpoint instead, which arrives here as `true`.
+   */
+  hasActiveSession?: boolean;
+}
+
 /**
  * Typed Event Emitter
  */
@@ -377,9 +414,38 @@ class TypedEventEmitter extends EventEmitter {
 export const eventBus = new TypedEventEmitter();
 
 /**
- * Initialize event bus handlers
- * Sets up listeners for cross-module integration
+ * Decide which push rows a logout should clear, and clear them.
+ *
+ * Split out of the event listener so the policy can be unit-tested directly,
+ * with the notification service mocked, instead of only through the bus.
+ *
+ * The endpoint is client-supplied. The caller (`AuthService.logout`) revoked
+ * the refresh tokens and then reports, in `hasActiveSession`, whether any other
+ * live session remains:
+ *
+ *  - no endpoint → the caller is a password reset (or an old client): clear
+ *    every device.
+ *  - endpoint and the user still has another live session → clear only the named
+ *    endpoint; the other signed-in device keeps push.
+ *  - endpoint but no session remains → clear every row except the named one (the
+ *    client's endpoint may be stale or foreign, so trusting it alone would leave
+ *    the real device receiving the signed-out user's notifications).
  */
+export async function resolvePushCleanup(
+  userId: string,
+  endpoint: string | null | undefined,
+  hasActiveSession: boolean
+): Promise<number> {
+  if (!endpoint) {
+    return deleteAllPushSubscriptions(userId);
+  }
+  const removed = await unsubscribePush(userId, endpoint);
+  if (hasActiveSession) {
+    return removed;
+  }
+  return removed + (await deleteAllPushSubscriptionsExcept(userId, endpoint));
+}
+
 export function initializeEventBus(): void {
   logger.info('Initializing event bus...');
 
@@ -596,23 +662,78 @@ export function initializeEventBus(): void {
     }
   });
 
+  // ===== AUTH EVENT HANDLERS =====
+
+  /**
+   * Logout clears a device's push subscription.
+   *
+   * A browser push endpoint identifies a device, not a person. Left behind, it
+   * would keep delivering the signed-out user's private notifications to anyone
+   * who later uses that device (CWE-200).
+   *
+   * Which rows to clear depends on *why* the user is leaving, and on whether the
+   * account is really gone:
+   *
+   *  - A password reset ends every session everywhere and passes no endpoint, so
+   *    every device is cleared.
+   *  - A normal logout names the endpoint the browser holds, but that value is
+   *    client-supplied and may be stale or unrelated. After the refresh tokens
+   *    were revoked, if the user still has a live session somewhere else (a
+   *    phone that stayed signed in) we trust the named endpoint and clear only
+   *    it, so the other device keeps push.
+   *  - If *no* session remains, this was the account's last logout: clearing only
+   *    a possibly-wrong endpoint would leave the real device reachable, so we
+   *    clear every row the user owns (the named one is already gone).
+   *
+   * The old behaviour — always trust the client's endpoint — is the bug this
+   * closes: a stale endpoint deleted one row and left the real subscription
+   * active, so a signed-out device kept receiving the user's notifications.
+   */
+  eventBus.on('auth:logged_out', async (event) => {
+    try {
+      const removed = await resolvePushCleanup(
+        event.userId,
+        event.endpoint,
+        event.hasActiveSession ?? false
+      );
+      if (removed > 0) {
+        logger.info('Cleared push subscriptions on logout', {
+          userId: event.userId,
+          scope: event.endpoint ? 'endpoint-or-all' : 'all-devices',
+          count: removed,
+        });
+      }
+    } catch (err) {
+      // Never let this turn a successful logout into a 500.
+      logger.error('Failed to clear push subscriptions on logout', { err });
+    }
+  });
+
   eventBus.on('notification:send', async (event) => {
     logger.info('Notification send requested', {
       type: event.type,
       broadcast: event.broadcast,
     });
 
-    // This would integrate with the notifications module
-    // For now, just log it - actual implementation in notifications module
+    // `event.type` is the app's vocabulary ('TAHFIDZ', 'ATTENDANCE', …), wider
+    // than the database enum. Writing it straight in failed Prisma's enum check
+    // for every such type, so the tahfidz milestone notification was never
+    // created — only an error in the log. Map it the way createNotification
+    // does, and keep the original in `data` (the push dispatcher reads it to
+    // pick the preference toggle).
     try {
       if (event.userId) {
+        const { dbType, originalType } = mapTypeToPrisma(event.type);
         await prisma.notification.create({
           data: {
             userId: event.userId,
-            type: event.type as any,
+            type: dbType as NotificationType,
             title: event.title,
             message: event.message,
-            data: event.data || {},
+            data: {
+              ...(event.data ?? {}),
+              ...(originalType ? { originalType } : {}),
+            } as Prisma.InputJsonValue,
             status: 'UNREAD',
           },
         });

@@ -30,6 +30,7 @@ import {
 } from "@/lib/rbac";
 import { TwoFactorVerify } from "@/components/auth/TwoFactorVerify";
 import { TwoFactorSetup } from "@/components/auth/TwoFactorSetup";
+import { RequiredPasswordChange } from "@/components/auth/RequiredPasswordChange";
 import { toast } from "sonner";
 
 /**
@@ -63,7 +64,9 @@ function LoginPageContent() {
     clearError,
     requiresTwoFactor,
     requiresTwoFactorSetup,
+    requiresPasswordChange,
     verifyTwoFactor,
+    setNewPassword,
     resetAuth,
   } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
@@ -95,6 +98,7 @@ function LoginPageContent() {
       if (
         !state.requiresTwoFactor &&
         !state.requiresTwoFactorSetup &&
+        !state.requiresPasswordChange &&
         state.isAuthenticated
       ) {
         router.push(landingRouteForCurrentUser());
@@ -133,6 +137,34 @@ function LoginPageContent() {
     );
   }
 
+  if (requiresPasswordChange) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader>
+            <CardTitle>Buat Kata Sandi Baru</CardTitle>
+            <CardDescription>
+              Kata sandi akun ini dibuat oleh orang lain atau ditandai bocor.
+              Buat kata sandi yang hanya Anda ketahui untuk melanjutkan.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <RequiredPasswordChange
+              onSubmit={async (newPassword) => {
+                await setNewPassword(newPassword);
+                toast.success("Kata sandi baru tersimpan.");
+                router.push(landingRouteForCurrentUser());
+              }}
+            />
+            <Button variant="link" className="mt-4 w-full" onClick={resetAuth}>
+              Kembali ke halaman masuk
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (requiresTwoFactor) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
@@ -146,7 +178,11 @@ function LoginPageContent() {
               onVerify={async (token) => {
                 try {
                   await verifyTwoFactor(token);
-                  router.push(landingRouteForCurrentUser());
+                  // A password set by someone else is changed first; the
+                  // card for it replaces this one.
+                  if (useAuthStore.getState().isAuthenticated) {
+                    router.push(landingRouteForCurrentUser());
+                  }
                 } catch {}
               }}
               isLoading={isLoading}

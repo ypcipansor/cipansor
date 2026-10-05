@@ -41,7 +41,10 @@ import { toast } from "sonner";
 
 import { id as idLocale } from "date-fns/locale";
 import { api } from "@/lib/api";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { LETTERHEAD, STUDENT_STATUS } from "@cipansor/shared";
+import { certificateSigners } from "@/lib/tahfidz-certificate-signers";
+import { printDocument } from "@/lib/print-document";
+import { useEnvironment } from "@/hooks/use-environment";
 
 // ========================================
 // JUZ DATA & SANAD TYPES
@@ -148,6 +151,7 @@ interface FormData {
 }
 
 export default function TahfidzCertificatePage() {
+  const { data: environment } = useEnvironment();
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -223,49 +227,36 @@ export default function TahfidzCertificatePage() {
   };
 
   const performPrint = () => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
+    const printContent = printRef.current?.innerHTML || "";
+
+    const printed = printDocument({
+      title: `Sertifikat Tahfidz - ${selectedStudent?.name ?? ""}`,
+      head: `
+        <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          @page {
+            size: A4 landscape;
+            margin: 0;
+          }
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Amiri', 'Noto Naskh Arabic', serif;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        </style>
+      `,
+      body: printContent,
+      testCopy: environment?.testCopy,
+    });
+    if (!printed) {
       toast.error("Popup diblokir. Izinkan popup untuk mencetak.");
       return;
     }
-
-    const printContent = printRef.current?.innerHTML || "";
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Sertifikat Tahfidz - ${selectedStudent?.name}</title>
-          <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cinzel:wght@400;600;700&family=Great+Vibes&family=Noto+Naskh+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
-          <style>
-            @page {
-              size: A4 landscape;
-              margin: 0;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Amiri', 'Noto Naskh Arabic', serif;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
     toast.success("Sertifikat siap dicetak");
   };
 
@@ -401,7 +392,8 @@ export default function TahfidzCertificatePage() {
           {/* Header */}
           <div className="text-center mb-4">
             <p className="text-xs tracking-[0.3em] uppercase opacity-80">
-              Yayasan Pendidikan Islam
+              {/* The yayasan's name, not a generic one. */}
+              {LETTERHEAD.organisation}
             </p>
             <h1
               className="text-2xl font-bold tracking-wide mt-1"
@@ -536,44 +528,30 @@ export default function TahfidzCertificatePage() {
 
           {/* Date */}
           <p className="text-sm mb-6">
-            Ditetapkan di Bandung,{" "}
+            Ditetapkan di {LETTERHEAD.city},{" "}
             {safeFormat(new Date(formData.tanggalSertifikat), "d MMMM yyyy", {
               locale: idLocale,
             })}
           </p>
 
-          {/* Signatures */}
-          <div className="flex justify-center gap-24 w-full">
-            <div className="text-center">
-              <p className="text-xs mb-12">Musyrif/ah Tahfidz</p>
-              <div
-                className="w-40 border-b mb-1"
-                style={{ borderColor: accentColor }}
-              />
-              <p className="text-sm font-semibold">
-                {formData.musyrifName || "(.................................)"}
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs mb-12">Mudir Tahfidz</p>
-              <div
-                className="w-40 border-b mb-1"
-                style={{ borderColor: accentColor }}
-              />
-              <p className="text-sm font-semibold">
-                Ust. Muhammad Ridwan, Lc., M.Hum
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs mb-12">Pimpinan Pondok</p>
-              <div
-                className="w-40 border-b mb-1"
-                style={{ borderColor: accentColor }}
-              />
-              <p className="text-sm font-semibold">
-                KH. Ahmad Fauzi, S.Pd.I., M.Pd.
-              </p>
-            </div>
+          {/* Signatures — as on the yayasan's own signed certificate: the
+              Direktur Tahfidz of the santri's side, the Pimpinan Pesantren,
+              and the Ketua Yayasan who acknowledges. Names from the published
+              structure (office-holders.ts), never typed into this page. */}
+          <div className="flex justify-center gap-16 w-full">
+            {certificateSigners(selectedStudent?.gender).map((signer) => (
+              <div key={signer.role} className="text-center">
+                <p className="text-xs">{signer.lead ?? "\u00a0"}</p>
+                <p className="text-xs mb-12">{signer.role}</p>
+                <div
+                  className="w-48 border-b mb-1"
+                  style={{ borderColor: accentColor }}
+                />
+                <p className="text-sm font-semibold" data-testid="cert-signer">
+                  {signer.name}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
 

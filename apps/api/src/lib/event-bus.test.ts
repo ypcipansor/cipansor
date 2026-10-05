@@ -14,6 +14,7 @@ vi.mock('@/lib/prisma', () => ({
     tahfidzRecord: { groupBy: vi.fn().mockResolvedValue([]) },
     notification: { create: vi.fn().mockResolvedValue({ id: 'notif-1' }) },
     setting: { findFirst: vi.fn() },
+    pushSubscription: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
   },
 }));
 
@@ -352,7 +353,7 @@ describe('Event bus — tahfidz milestones', () => {
   const milestoneNotifications = () =>
     (prisma.notification.create as ReturnType<typeof vi.fn>).mock.calls
       .map(([args]) => args.data)
-      .filter((data) => data.type === 'TAHFIDZ');
+      .filter((data) => data.data?.originalType === 'TAHFIDZ');
 
   it('notifies the santri’s USER when a setoran completes a juz', async () => {
     (
@@ -366,6 +367,12 @@ describe('Event bus — tahfidz milestones', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].userId).toBe('u-student'); // the User id, never the Student id
     expect(sent[0].message).toContain('Juz 30');
+    // The database enum has no TAHFIDZ: writing it raw failed Prisma's check on
+    // every milestone. The mock accepted anything, so this suite stayed green
+    // while no milestone notification was ever stored.
+    expect(['INFO', 'ANNOUNCEMENT', 'REMINDER', 'ALERT', 'PAYMENT', 'ACADEMIC']).toContain(
+      sent[0].type
+    );
   });
 
   it('says nothing for a setoran that leaves the juz incomplete, or for murojaah', async () => {
@@ -383,5 +390,128 @@ describe('Event bus — tahfidz milestones', () => {
     await settle();
 
     expect(milestoneNotifications()).toHaveLength(0);
+  });
+});
+
+describe('Event bus — logout clears push subscriptions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    eventBus.removeAllListeners();
+    initializeEventBus();
+  });
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('drops every push row for the signed-out user (CWE-200)', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 2,
+    });
+
+    eventBus.emit('auth:logged_out', { userId: 'user-1' });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1' },
+    });
+  });
+
+  it('drops only the named device when another session is still signed in', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: true,
+    });
+    await settle();
+
+    // Scoped to this endpoint: logging out on the laptop must not stop push on
+    // the still-signed-in phone, so no second, broader delete runs.
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+  });
+
+  it('clears every other device on the account’s last logout', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: false,
+    });
+    await settle();
+
+    // No session remains anywhere, so the named endpoint is cleared and then
+    // everything else the user owns — a client-named endpoint is not trusted to
+    // be the whole story (CWE-200).
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
+        endpoint: { not: 'https://push.example.com/laptop' },
+      },
+    });
+  });
+
+  it('clears the real device even when the client names a stale endpoint', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    // The client sent an endpoint it no longer holds; the account has no other
+    // session. Trusting the stale value alone would leave the actual
+    // subscription delivering notifications to a signed-out browser.
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/stale',
+      hasActiveSession: false,
+    });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { userId: 'user-1', endpoint: { not: 'https://push.example.com/stale' } },
+    });
+  });
+
+  it('never clears other devices when the session status is unknown', async () => {
+    // `AuthService.logout` answers `null` when its session lookup fails, and
+    // deliberately does NOT forward that as `hasActiveSession: false` — doing so
+    // reached this listener's broad sweep and stopped push on a phone that was
+    // still signed in. An unknown status must arrive as `true` (endpoint-only)
+    // or not at all; the guard below fails if a future change forwards it as
+    // `false` again.
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockResolvedValue({
+      count: 1,
+    });
+
+    eventBus.emit('auth:logged_out', {
+      userId: 'user-1',
+      endpoint: 'https://push.example.com/laptop',
+      hasActiveSession: true,
+    });
+    await settle();
+
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prisma.pushSubscription.deleteMany).toHaveBeenCalledWith({
+      where: { endpoint: 'https://push.example.com/laptop', userId: 'user-1' },
+    });
+  });
+
+  it('swallows a cleanup failure so logout still succeeds', async () => {
+    (prisma.pushSubscription.deleteMany as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error('db down')
+    );
+
+    // Must not reject out of the emit path.
+    eventBus.emit('auth:logged_out', { userId: 'user-1' });
+    await settle();
   });
 });

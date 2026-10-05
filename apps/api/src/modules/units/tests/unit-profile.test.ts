@@ -88,6 +88,54 @@ describe('editing a unit', () => {
     expect(prismaMock.unit.update).not.toHaveBeenCalled();
   });
 
+  it("the unit's admin records the official name and operating permit", async () => {
+    signIn('SMPIT_ADMIN', SMP);
+
+    const res = await request(app).patch(`/units/${SMP}`).set(auth).send({
+      officialName: '  SMP IT Pesantren Cipansor ',
+      operatingPermitNumber: '503/0671/Kep.07/DPMPTSP/2019',
+      operatingPermitDate: '2019-05-02',
+    });
+
+    expect(res.status).toBe(200);
+    const { data } = prismaMock.unit.update.mock.calls[0][0];
+    expect(data).toMatchObject({
+      officialName: 'SMP IT Pesantren Cipansor',
+      operatingPermitNumber: '503/0671/Kep.07/DPMPTSP/2019',
+    });
+    // A calendar day, stored as that day — not shifted by a time zone.
+    expect(data.operatingPermitDate.toISOString()).toBe('2019-05-02T00:00:00.000Z');
+  });
+
+  it('null clears them; a field left out is left alone', async () => {
+    signIn('SMPIT_ADMIN', SMP);
+
+    await request(app)
+      .patch(`/units/${SMP}`)
+      .set(auth)
+      .send({ operatingPermitNumber: null, operatingPermitDate: null })
+      .expect(200);
+
+    const { data } = prismaMock.unit.update.mock.calls[0][0];
+    expect(data.operatingPermitNumber).toBeNull();
+    expect(data.operatingPermitDate).toBeNull();
+    expect(data.officialName).toBeUndefined();
+  });
+
+  it.each([
+    [{ operatingPermitDate: '02-05-2019' }, 'Tanggal tidak valid'],
+    [{ operatingPermitDate: '2019-02-30' }, 'Tanggal tidak valid'],
+    [{ officialName: 'SM' }, 'Nama resmi minimal 3 karakter'],
+  ])('refuses %j with "%s"', async (body, message) => {
+    signIn('SMPIT_ADMIN', SMP);
+
+    const res = await request(app).patch(`/units/${SMP}`).set(auth).send(body);
+
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.body)).toContain(message);
+    expect(prismaMock.unit.update).not.toHaveBeenCalled();
+  });
+
   it("another unit's admin does not reach it", async () => {
     await expect(
       unitService.update(SMP, { name: 'Diganti' }, { roleCode: 'SDIT_ADMIN', unitId: SD })

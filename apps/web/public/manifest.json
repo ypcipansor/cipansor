@@ -1,80 +1,140 @@
 {
   "id": "/",
-  "name": "Cipansor - Pesantren Management System",
+  "name": "Cipansor — Sistem Informasi Pesantren",
   "short_name": "Cipansor",
-  "description": "Yayasan Pesantren Cipansor Management System",
+  "description": "Sistem Informasi Yayasan Pesantren Cipansor — layanan digital untuk pengajar, santri, dan wali santri.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#16a34a",
-  "orientation": "portrait-primary",
   "scope": "/",
   "icons": [
     {
       "src": "/icons/icon-72.png",
       "sizes": "72x72",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-96.png",
       "sizes": "96x96",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-128.png",
       "sizes": "128x128",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-144.png",
       "sizes": "144x144",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-152.png",
       "sizes": "152x152",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-384.png",
       "sizes": "384x384",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "categories": ["education", "productivity"],
+  "categories": [
+    "education",
+    "productivity"
+  ],
   "lang": "id",
   "dir": "ltr",
-  "screenshots": [],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-dashboard.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Dasbor portal"
+    },
+    {
+      "src": "/screenshots/desktop-attendance.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Pencatatan kehadiran"
+    },
+    {
+      "src": "/screenshots/mobile-dashboard.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dasbor di ponsel"
+    },
+    {
+      "src": "/screenshots/mobile-parent.png",
+      "sizes": "720x1280",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Portal orang tua"
+    }
+  ],
   "shortcuts": [
     {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "url": "/dashboard",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+      "name": "Beranda",
+      "short_name": "Beranda",
+      "description": "Dasbor sesuai peran Anda",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icons/icon-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
     },
     {
-      "name": "Kehadiran",
-      "short_name": "Kehadiran",
-      "url": "/attendance",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
-    },
-    {
-      "name": "Santri",
-      "short_name": "Santri",
-      "url": "/students",
-      "icons": [{ "src": "/icons/icon-96.png", "sizes": "96x96" }]
+      "name": "Notifikasi Saya",
+      "short_name": "Notifikasi",
+      "url": "/notifications/me",
+      "icons": [
+        {
+          "src": "/icons/icon-96.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
     }
+  ],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
   ]
 }

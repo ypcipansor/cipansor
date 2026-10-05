@@ -100,6 +100,15 @@ export function switchEnabled(raw: string | undefined): boolean {
   return !['false', '0', 'off', 'no'].includes((raw ?? '').trim().toLowerCase());
 }
 
+/**
+ * An on/off switch that defaults to OFF: only `true`, `1`, `on` or `yes` turns
+ * it on. For behaviour production must never pick up by accident — a typo or
+ * a missing setting leaves production as it was.
+ */
+export function switchOn(raw: string | undefined): boolean {
+  return ['true', '1', 'on', 'yes'].includes((raw ?? '').trim().toLowerCase());
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT || '3001', 10),
@@ -123,6 +132,20 @@ export const config = {
   },
   outboundMessages: {
     enabled: switchEnabled(process.env.OUTBOUND_MESSAGES_ENABLED),
+  },
+
+  /**
+   * `testCopy` — every document this copy produces is stamped "SALINAN UJI —
+   * BUKAN DOKUMEN SAH": naskah dinas (signed ones included), the Rapor Merdeka
+   * PDF, and through the web's print watermark everything printed from a
+   * browser. Staging turns it on (`DOCUMENT_TEST_COPY=true`): its demo accounts
+   * carry the names of the yayasan's real office holders and their passwords
+   * are in the public repository, so without the stamp anyone could produce a
+   * naskah "signed" by the real Ketua on the real letterhead (decided
+   * 2026-10-02, decisions/spmb-2027-2028.md item 5). Off unless set.
+   */
+  documents: {
+    testCopy: switchOn(process.env.DOCUMENT_TEST_COPY),
   },
 
   jwt: {
@@ -278,6 +301,33 @@ export const config = {
           .filter((h) => h.length > 0);
       }
       return ['cipansor.or.id', 'www.cipansor.or.id', 'portal.cipansor.or.id'];
+    },
+  },
+
+  /**
+   * Web Push (VAPID, RFC 8292) — the key pair that identifies this server to
+   * the browsers' push services.
+   *
+   * No defaults, like Turnstile's secret: with either half missing push is off,
+   * the settings page says so, and nothing is asked of the browser. Each
+   * environment gets its own pair. A subscription is bound to the public key it
+   * was made with, so staging's pair cannot deliver to a production device even
+   * if production's rows were copied into staging — the push service refuses
+   * the signature. Getters, so tests that stub the environment see the change.
+   *
+   * The public half is not a secret (the browser needs it to subscribe) and
+   * reaches the web through `GET /notifications/push/config`, read at run time,
+   * not baked into the web bundle.
+   */
+  webPush: {
+    get publicKey(): string | undefined {
+      return process.env.VAPID_PUBLIC_KEY || undefined;
+    },
+    get privateKey(): string | undefined {
+      return process.env.VAPID_PRIVATE_KEY || undefined;
+    },
+    get subject(): string {
+      return process.env.VAPID_SUBJECT || 'mailto:halo@cipansor.or.id';
     },
   },
 

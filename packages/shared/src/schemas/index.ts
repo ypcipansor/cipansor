@@ -16,3 +16,8 @@ export * from "./attendance";
 export * from "./hr-attendance";
 export * from "./donation";
 export * from "./accreditation";
+export * from "./unit";
+export * from "./board-member";
+export * from "./notifications";
+export * from "./announcements";
+export * from "./extracurricular";

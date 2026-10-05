@@ -26,6 +26,9 @@ export const USER_SECRET_OMIT = {
     twoFactorSecretPending: true,
     twoFactorRecoveryCodes: true,
     resetTokenHash: true,
+    // Says the password is under 15 characters: a hint about the credential,
+    // read only where 2FA is turned off.
+    passwordNeedsSecondFactor: true,
   },
 } as const;
 

@@ -52,6 +52,7 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 |---|---|---|---|
 | `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
+| `DOCUMENT_TEST_COPY` | unset (off) | `true`, set by `deploy-staging.yml` on every release | Every PDF the api renders and every page printed from the web is stamped "SALINAN UJI — BUKAN DOKUMEN SAH": staging's demo accounts carry the names of real office holders, their passwords are public, and the letterhead is the real one |
 | `MIGRATE_ON_START` | `true` | `true` | The database is private; CI cannot reach it |
 | `PERSISTENT_DIR` | `/home/data` | `/home/data` | Uploads and identity documents survive restarts ([Files](#files)) |
 | Gmail / SMTP / WhatsApp credentials | Key Vault references | none | Second line of defence behind the switch above |

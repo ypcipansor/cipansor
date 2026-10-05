@@ -1,7 +1,11 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { RoleCode } from '@prisma/client';
-import { parseDocumentSchema, createPublicRegistrantDocumentSchema } from '@cipansor/shared';
+import {
+  parseDocumentSchema,
+  createPublicRegistrantDocumentSchema,
+  replaceAdmissionFeesSchema,
+} from '@cipansor/shared';
 import { config } from '../../config';
 import * as controller from './admissions.controller';
 import { authenticate, authorize } from '../../middleware/auth';
@@ -59,13 +63,12 @@ const documentUploadLimiter = rateLimit({
 router.use('/waves', waveRoutes);
 
 // ==================== PUBLIC ENDPOINTS ====================
-// Mounted BEFORE `authenticate` so the unauthenticated public PPDB page
-// (`apps/web/src/app/public/spmb/page.tsx`) can bootstrap the registration
-// form and submit a new registrant without a session. The handlers return a
+// Mounted BEFORE `authenticate` so the unauthenticated public SPMB page
+// (`apps/web/src/app/public/spmb/page.tsx`) can show each unit's intake and
+// submit a new registrant without a session. The handlers return a
 // deliberately trimmed projection of the underlying records — see the JSDoc
-// on the corresponding controllers for the exact whitelist.
-router.get('/public/active-period', controller.getPublicActiveAdmissionPeriod);
-router.get('/public/units', controller.getPublicUnits);
+// on `findPublicIntakes` and on the registrant controllers for the whitelist.
+router.get('/public/intakes', controller.getPublicIntakes);
 router.post(
   '/public/registrants',
   publicRegistrantLimiter,
@@ -250,8 +253,33 @@ router.get(
 
 /**
  * @swagger
- * /api/admissions/periods/{id}:
+ * /api/admissions/periods/{id}/fees:
  *   put:
+ *     summary: Replace an intake's fee table (the brochure's Rincian Biaya)
+ *     tags: [Admissions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: The fee lines, in order
+ */
+router.put(
+  '/periods/:id/fees',
+  authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
+  validate(replaceAdmissionFeesSchema),
+  controller.replaceAdmissionFees
+);
+
+/**
+ * @swagger
+ * /api/admissions/periods/{id}:
+ *   patch:
  *     summary: Update admission period
  *     tags: [Admissions]
  *     security:
@@ -266,7 +294,7 @@ router.get(
  *       200:
  *         description: Admission period updated
  */
-router.put(
+router.patch(
   '/periods/:id',
   authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   controller.updateAdmissionPeriod

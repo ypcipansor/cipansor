@@ -31,7 +31,7 @@ import {
 } from "@/hooks/use-tahfidz";
 import { useReportCards, useStudentGrades } from "@/hooks/use-assessment";
 import { ReportCard } from "@cipansor/shared";
-import { useUnits } from "@/hooks/use-units";
+import { useUnitHead, useUnits } from "@/hooks/use-units";
 import { useClasses } from "@/hooks/use-classes";
 import { useAcademicYears } from "@/hooks/use-academic-years";
 import {
@@ -51,9 +51,12 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { id as idLocale } from "date-fns/locale";
-import { STUDENT_STATUS } from "@cipansor/shared";
+import { LETTERHEAD, STUDENT_STATUS, unitDocumentName } from "@cipansor/shared";
+import { printDocument } from "@/lib/print-document";
+import { useEnvironment } from "@/hooks/use-environment";
 
 export default function StudentTranscriptPage() {
+  const { data: environment } = useEnvironment();
   const [selectedUnitId, setSelectedUnitId] = useState<string>("");
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -61,6 +64,7 @@ export default function StudentTranscriptPage() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const { data: units = [] } = useUnits();
+  const { data: head } = useUnitHead(selectedStudent?.unit?.id);
   const { data: classesData } = useClasses({
     unitId: selectedUnitId || undefined,
   });
@@ -116,72 +120,59 @@ export default function StudentTranscriptPage() {
       return;
     }
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) {
+    const printContent = printRef.current?.innerHTML || "";
+
+    const printed = printDocument({
+      title: `Transkrip - ${selectedStudent.name}`,
+      head: `
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
+        <style>
+          @page {
+            size: A4;
+            margin: 1.5cm;
+          }
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          body {
+            font-family: 'Noto Serif', serif;
+            font-size: 11pt;
+            line-height: 1.5;
+            color: #000;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
+          th, td {
+            border: 1px solid #000;
+            padding: 6px 8px;
+            text-align: left;
+          }
+          th {
+            background-color: #f3f4f6;
+            font-weight: 600;
+          }
+          .text-center { text-align: center; }
+          .text-right { text-align: right; }
+          .font-bold { font-weight: 700; }
+          .mb-4 { margin-bottom: 1rem; }
+          .mb-6 { margin-bottom: 1.5rem; }
+          .border-b { border-bottom: 2px solid #000; }
+          .pb-4 { padding-bottom: 1rem; }
+        </style>
+      `,
+      body: printContent,
+      testCopy: environment?.testCopy,
+    });
+    if (!printed) {
       toast.error("Popup diblokir. Izinkan popup untuk mencetak.");
       return;
     }
-
-    const printContent = printRef.current?.innerHTML || "";
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Transkrip - ${selectedStudent.name}</title>
-          <link href="https://fonts.googleapis.com/css2?family=Noto+Serif:wght@400;600;700&display=swap" rel="stylesheet">
-          <style>
-            @page {
-              size: A4;
-              margin: 1.5cm;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Noto Serif', serif;
-              font-size: 11pt;
-              line-height: 1.5;
-              color: #000;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-            }
-            th, td {
-              border: 1px solid #000;
-              padding: 6px 8px;
-              text-align: left;
-            }
-            th {
-              background-color: #f3f4f6;
-              font-weight: 600;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .font-bold { font-weight: 700; }
-            .mb-4 { margin-bottom: 1rem; }
-            .mb-6 { margin-bottom: 1.5rem; }
-            .border-b { border-bottom: 2px solid #000; }
-            .pb-4 { padding-bottom: 1rem; }
-          </style>
-        </head>
-        <body>
-          ${printContent}
-        </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 500);
 
     toast.success("Transkrip siap dicetak");
   };
@@ -216,10 +207,13 @@ export default function StudentTranscriptPage() {
           <h1 className="text-xl font-bold tracking-wide mb-1">
             TRANSKRIP AKADEMIK
           </h1>
-          <h2 className="text-lg font-semibold">
-            YAYASAN PENDIDIKAN ISLAM CIPANSOR
-          </h2>
-          <p className="text-sm">{selectedStudent.unit?.name}</p>
+          <h2 className="text-lg font-semibold">{LETTERHEAD.organisation}</h2>
+          <p className="text-sm">
+            {(() => {
+              const unit = units.find((u) => u.id === selectedStudent.unit?.id);
+              return unit ? unitDocumentName(unit) : selectedStudent.unit?.name;
+            })()}
+          </p>
         </div>
 
         {/* Student Info */}
@@ -466,10 +460,11 @@ export default function StudentTranscriptPage() {
               <p>Dokumen ini digenerate otomatis oleh sistem CIPANSOR.</p>
             </div>
             <div className="text-center">
-              <p className="text-sm mb-12">Kepala Madrasah</p>
+              <p className="text-sm mb-12">{head?.title ?? "Kepala Sekolah"}</p>
               <p className="text-sm font-semibold">
-                (.............................)
+                {head?.name ?? "(.............................)"}
               </p>
+              {head?.nip && <p className="text-sm">NIP. {head.nip}</p>}
             </div>
           </div>
         </div>

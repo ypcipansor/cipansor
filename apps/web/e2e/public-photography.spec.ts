@@ -26,6 +26,8 @@ const PAGES_WITH_PHOTOGRAPHS = [
   "/profil",
   "/profil/pimpinan",
   "/program-unggulan",
+  "/campus",
+  "/activities",
   "/unit",
   "/unit/tkq",
   "/unit/sdit",

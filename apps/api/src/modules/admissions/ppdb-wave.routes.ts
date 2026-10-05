@@ -79,11 +79,11 @@ router.post(
 );
 
 /**
- * @route PUT /api/ppdb-wave/:id
- * @desc Update wave
+ * @route PATCH /api/admissions/waves/:id
+ * @desc Update a wave; fields left out are kept
  * @access Private - Admin
  */
-router.put(
+router.patch(
   '/:id',
   authorize(RoleCode.SUPER_ADMIN, 'UNIT_ADMIN'),
   validate(updateWaveSchema),

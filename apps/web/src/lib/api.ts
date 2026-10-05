@@ -217,6 +217,7 @@ api.interceptors.response.use(
       "/auth/register",
       "/auth/refresh",
       "/auth/2fa/login",
+      "/auth/new-password",
     ];
     const requestUrl = originalRequest?.url ?? "";
     const isAuthEndpoint = authPaths.some((p) => requestUrl.includes(p));
@@ -308,7 +309,10 @@ export const authApi = {
   login: (data: LoginRequest) =>
     api.post<ApiResponse<LoginResponse>>("/auth/login", data),
 
-  logout: () => api.post("/auth/logout"),
+  // `pushEndpoint` scopes the server's push cleanup to this browser, so a
+  // logout here does not stop push on the user's other signed-in devices.
+  logout: (pushEndpoint?: string | null) =>
+    api.post("/auth/logout", pushEndpoint ? { pushEndpoint } : {}),
 
   me: () => api.get<ApiResponse<User>>("/auth/me"),
 
@@ -320,13 +324,24 @@ export const authApi = {
     api.post<ApiResponse<TwoFactorGenerateResponse>>("/auth/2fa/generate"),
   enable2FA: (data: { token: string }) =>
     api.post<ApiResponse<TwoFactorEnableResponse>>("/auth/2fa/enable", data),
+  // The new password a sign-in asked for (`requiresPasswordChange`); the
+  // form shows the reason for a refusal on its field.
+  newPassword: (data: { newPassword: string }) =>
+    api.post<ApiResponse<LoginResponse>>("/auth/new-password", data, {
+      skipErrorToast: true,
+    }),
   // The sign-in card shows the error inline; a toast would say it twice.
   verify2FA: (data: { token: string }) =>
     api.post<ApiResponse<LoginResponse>>("/auth/2fa/login", data, {
       skipErrorToast: true,
     }),
+  // `mustChangePassword`: the password is under 15 characters, allowed only
+  // with 2FA on, so a new one is due before the next sign-in completes.
   disable2FA: (data: { token: string; userId?: string }) =>
-    api.post<ApiResponse<void>>("/auth/2fa/disable", data),
+    api.post<ApiResponse<{ message: string; mustChangePassword: boolean }>>(
+      "/auth/2fa/disable",
+      data,
+    ),
   get2FAStatus: () =>
     api.get<ApiResponse<TwoFactorStatusResponse>>("/auth/2fa/status"),
 };

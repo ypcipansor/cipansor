@@ -26,6 +26,8 @@ export const ar = {
       profile: "نبذة عنّا",
       programs: "البرامج",
       units: "الوحدات",
+      facilities: "المرافق",
+      activities: "الأنشطة",
       news: "الأخبار",
       donate: "الوقف والإنفاق",
       // SPMB: قبول الطلاب الجدد — الاسم المستخدم في كل مراسلات المعهد.
@@ -168,7 +170,6 @@ export const ar = {
     laundry: "خدمة المغسلة",
     reception: "مكتب الاستقبال",
     wallet: "المحفظة الرقمية للطالب",
-    quickSend: "الإرسال الجماعي السريع",
     wilayah: "المناطق والمواقع",
     kurikulumMerdeka: "منهج ميرديكا التعليمي",
     studentCompliance: "انضباط الطلاب",

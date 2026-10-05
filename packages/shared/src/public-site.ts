@@ -210,6 +210,129 @@ export const featuredPrograms = [
  */
 
 /**
+ * The campus as the 2027/2028 brochure lists it under "Sarana dan Prasarana"
+ * (decided 2026-10-04, decisions/fasilitas-dan-kegiatan-situs-publik.md).
+ *
+ * Each says what the place is for — nothing about its size, age or how new it
+ * is, which the brochure does not state. `photo` points into the gallery only
+ * where a photograph there actually shows that place; the brochure's own
+ * pictures are about 270 pixels wide, and the originals are to be asked of
+ * the brochure's designer.
+ * Translations are in `site.i18n.ts` under `facilities`, keyed by slug.
+ */
+export const campusFacilities: {
+  slug: string;
+  name: string;
+  description: string;
+  /** `[album, index]` into `galleryItems`, only when the photo shows this place. */
+  photo?: [album: string, index: number];
+}[] = [
+  {
+    slug: "masjid",
+    name: "Masjid",
+    description:
+      "Pusat ibadah santri: salat berjamaah, tadarus Al-Qur'an, dan kajian.",
+    photo: ["karakter", 0],
+  },
+  {
+    slug: "asrama",
+    name: "Asrama",
+    description:
+      "Asrama putra dan putri tempat santri tinggal dan belajar, didampingi musyrif dan musyrifah.",
+    photo: ["fasilitas", 4],
+  },
+  {
+    slug: "ruang-kelas",
+    name: "Ruang Kelas",
+    description:
+      "Ruang belajar setiap jenjang, dari TK Qur'an sampai SMA Qur'an.",
+    photo: ["fasilitas", 1],
+  },
+  {
+    slug: "lapangan-upacara",
+    name: "Lapangan Upacara",
+    description: "Tempat upacara bendera dan apel santri.",
+    photo: ["disiplin", 1],
+  },
+  {
+    slug: "aula-utama",
+    name: "Aula Utama",
+    description:
+      "Ruang pertemuan besar untuk acara bersama santri, asatidz, dan wali santri.",
+  },
+  {
+    slug: "gelanggang-olahraga",
+    name: "Gelanggang Olahraga",
+    description: "Gedung olahraga beratap untuk latihan dan pertandingan.",
+  },
+  {
+    slug: "lapangan-olahraga",
+    name: "Lapangan Olahraga",
+    description: "Lapangan terbuka untuk olahraga dan permainan santri.",
+  },
+  {
+    slug: "laboratorium-komputer",
+    name: "Laboratorium Komputer",
+    description: "Ruang praktik komputer dan teknologi informasi.",
+  },
+  {
+    slug: "laboratorium-ipa",
+    name: "Laboratorium IPA",
+    description: "Ruang praktikum ilmu pengetahuan alam.",
+  },
+  {
+    slug: "kantin",
+    name: "Kantin",
+    description: "Tempat santri membeli makanan dan kebutuhan sehari-hari.",
+  },
+  {
+    slug: "sarana-outbound",
+    name: "Sarana Outbound",
+    description:
+      "Arena kegiatan di alam terbuka untuk melatih keberanian dan kerja sama.",
+  },
+  {
+    slug: "sumber-mata-air",
+    name: "Sumber Mata Air",
+    description: "Mata air alami di lingkungan pesantren.",
+  },
+];
+
+/**
+ * The four events the brochure lists under "Agenda Tahunan", each with what it
+ * is. No dates: they move every year and the portal's calendar holds them.
+ */
+export const annualActivities: {
+  slug: string;
+  name: string;
+  description: string;
+}[] = [
+  {
+    slug: "rihlah-tarbawi",
+    name: "Rihlah Tarbawi",
+    description:
+      "Perjalanan pendidikan bersama: belajar langsung di luar pesantren sambil mempererat ukhuwah.",
+  },
+  {
+    slug: "study-tour",
+    name: "Study Tour",
+    description: "Kunjungan belajar ke kampus, lembaga, dan tempat bersejarah.",
+  },
+  {
+    slug: "wisuda-tahfidz",
+    name: "Wisuda Tahfidz",
+    description:
+      "Wisuda bagi santri yang menuntaskan target hafalan Al-Qur'an, disaksikan orang tua.",
+  },
+  {
+    slug: "mukhoyam",
+    name: "Mukhoyam",
+    description:
+      "Perkemahan santri untuk melatih kemandirian, kedisiplinan, dan kerja sama.",
+  },
+];
+
+/**
  * Donation details, as published on the pesantren's own wakaf-infaq page.
  * Treat these as financial data: never substitute placeholder digits here. A
  * wrong account number sends real donations to a stranger.

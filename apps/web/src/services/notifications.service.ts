@@ -5,6 +5,12 @@
 
 import { api } from "@/lib/api";
 import type { ApiResponse, PaginatedResponse, PaginationParams } from "./types";
+import type {
+  NotificationPreferencesDTO,
+  UpdateNotificationPreferencesInput,
+  WebPushConfigDTO,
+  WebPushSubscriptionPayload,
+} from "@cipansor/shared";
 
 export type NotificationType =
   | "INFO"
@@ -42,19 +48,6 @@ export interface CreateNotificationInput {
   data?: Record<string, any>;
   channels?: NotificationChannel[];
   scheduledAt?: string;
-}
-
-export interface NotificationPreferences {
-  inApp: boolean;
-  email: boolean;
-  sms: boolean;
-  push: boolean;
-  types: {
-    [key in NotificationType]?: {
-      enabled: boolean;
-      channels: NotificationChannel[];
-    };
-  };
 }
 
 export interface ListNotificationParams extends PaginationParams {
@@ -186,22 +179,22 @@ export const notificationsService = {
   },
 
   /**
-   * Get notification preferences
+   * The caller's notification preferences (the defaults until first saved).
    */
-  async getPreferences(): Promise<NotificationPreferences> {
-    const response = await api.get<ApiResponse<NotificationPreferences>>(
+  async getPreferences(): Promise<NotificationPreferencesDTO> {
+    const response = await api.get<ApiResponse<NotificationPreferencesDTO>>(
       "/notifications/preferences",
     );
     return response.data.data;
   },
 
   /**
-   * Update notification preferences
+   * Change any subset of the caller's preferences; returns what was stored.
    */
   async updatePreferences(
-    preferences: Partial<NotificationPreferences>,
-  ): Promise<NotificationPreferences> {
-    const response = await api.patch<ApiResponse<NotificationPreferences>>(
+    preferences: UpdateNotificationPreferencesInput,
+  ): Promise<NotificationPreferencesDTO> {
+    const response = await api.patch<ApiResponse<NotificationPreferencesDTO>>(
       "/notifications/preferences",
       preferences,
     );
@@ -209,18 +202,53 @@ export const notificationsService = {
   },
 
   /**
-   * Subscribe to push notifications
+   * The server's VAPID public key, or null when it does not send push.
    */
-  async subscribePush(subscription: PushSubscription): Promise<void> {
-    await api.post("/notifications/push/subscribe", {
-      subscription: subscription.toJSON(),
-    });
+  async pushConfig(): Promise<WebPushConfigDTO> {
+    const response = await api.get<ApiResponse<WebPushConfigDTO>>(
+      "/notifications/push/config",
+      { skipErrorToast: true },
+    );
+    return response.data.data;
   },
 
   /**
-   * Unsubscribe from push notifications
+   * Subscribe to push notifications.
+   *
+   * Takes the raw endpoint + keys rather than a `PushSubscription` because the
+   * caller (the settings page) has already read them off the live subscription;
+   * sending exactly what the API stores keeps the two in step.
    */
-  async unsubscribePush(): Promise<void> {
-    await api.post("/notifications/push/unsubscribe");
+  async subscribePush(subscription: WebPushSubscriptionPayload): Promise<void> {
+    await api.post("/notifications/push/subscribe", { subscription });
+  },
+
+  /**
+   * Unsubscribe from push notifications.
+   *
+   * The endpoint identifies which device to drop — a user may have several.
+   */
+  async unsubscribePush(endpoint: string): Promise<void> {
+    await api.post("/notifications/push/unsubscribe", { endpoint });
+  },
+
+  /**
+   * Whether the API has a stored row for this browser endpoint.
+   *
+   * Distinct from "the browser holds a subscription": the two can disagree
+   * after a failed registration or a logout-time purge, and the settings card
+   * must reflect the server, not the browser.
+   */
+  async pushStatus(endpoint: string): Promise<boolean> {
+    const response = await api.get<ApiResponse<{ registered: boolean }>>(
+      "/notifications/push/status",
+      {
+        params: { endpoint },
+        // A failed probe should read as "not registered"; the card explains
+        // itself, so don't toast a permission/route error at the user.
+        skipErrorToast: true,
+      },
+    );
+    return response.data.data.registered;
   },
 };
