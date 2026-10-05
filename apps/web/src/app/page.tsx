@@ -63,12 +63,14 @@ export default async function Home() {
           renders too — it now travels with every public page instead of only
           this one. See config/organization-jsonld.ts. */}
       <LandingNavbar />
-      <SpmbAnnouncement
-        locale={locale}
-        enabled={showAnnouncement}
-        className="mt-16"
-      />
       <main id="main-content" className="flex-1">
+        {/* First child of `<main>`, as on every `PublicPage`. Its `sticky
+            top-16` pins it under the fixed navbar, and the hero's own top
+            padding (`pt-24`) is the space it needs below. The old `mt-16`
+            cleared the navbar while the banner sat outside `<main>`; inside,
+            that offset belongs to the hero, and the banner's flow box starts
+            at the top of the page. */}
+        <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
         <HeroSection locale={locale} />
         <StatsSection locale={locale} />
         <AboutSection locale={locale} />

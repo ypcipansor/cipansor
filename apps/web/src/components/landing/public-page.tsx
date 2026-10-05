@@ -56,11 +56,14 @@ export async function PublicPage({
   return (
     <div className="flex min-h-screen flex-col">
       <LandingNavbar />
-      {/* The SPMB announcement rides every public page here. It sits after the
-          fixed navbar and before the page body; `sticky top-16` keeps it under
-          the header without any page needing extra padding. */}
-      <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
       <main id="main-content" className="flex-1 pt-16">
+        {/* The SPMB announcement rides every public page here. It is the first
+            child of `<main>`, so its `sticky top-16` pins it directly under the
+            fixed navbar (64px) without ever being covered by it, and it takes
+            its own space in the flow so the page body below is not hidden. The
+            `pt-16` on `<main>` already clears the navbar for both the banner
+            and the body. */}
+        <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
         <header className="border-b border-border bg-muted/30">
           <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
             {breadcrumb && breadcrumb.length > 0 && (

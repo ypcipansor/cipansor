@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, within } from "@testing-library/react";
 import type { PublicIntakeDTO } from "@cipansor/shared";
 import { spmbAnnouncementOf } from "@cipansor/shared";
 
@@ -157,6 +157,40 @@ describe("SpmbAnnouncement", () => {
     intakes.mockReturnValue({ data: [intake({ window: "closed" })] });
     render(<SpmbAnnouncement locale="id" />);
     expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("before it opens, offers info rather than a registration that cannot be made", () => {
+    // An "upcoming" intake must not invite a registration the API would refuse:
+    // the banner says when it opens and links to the details, and neither the
+    // banner nor the dialog claims it is already open.
+    intakes.mockReturnValue({
+      data: [
+        intake({
+          window: "upcoming",
+          opensAt: "2026-12-31T17:00:00.000Z",
+          id: "period-upcoming",
+        }),
+      ],
+    });
+    render(<SpmbAnnouncement locale="id" />);
+
+    const banner = screen.getByTestId("spmb-announcement-banner");
+    expect(banner).toHaveTextContent("Pendaftaran SPMB 2027/2028 dibuka");
+    expect(banner).not.toHaveTextContent("telah dibuka");
+    // The link still goes to the SPMB page, but its label is not "Daftar sekarang".
+    const link = screen.getByRole("link", { name: "Lihat info SPMB" });
+    expect(link).toHaveAttribute("href", "/public/spmb");
+    expect(screen.queryByRole("link", { name: "Daftar sekarang" })).toBeNull();
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    const dialog = screen.getByTestId("spmb-announcement-dialog");
+    expect(dialog).toHaveTextContent("belum dibuka");
+    expect(dialog).not.toHaveTextContent("sudah dibuka");
+    expect(
+      within(dialog).getByRole("button", { name: "Lihat info SPMB" }),
+    ).toBeInTheDocument();
   });
 
   it("shows nothing on the portal (enabled={false})", () => {

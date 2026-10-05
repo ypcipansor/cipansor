@@ -51,24 +51,46 @@ Baymard (pengguna refleks menutup overlay saat halaman dimuat); GOV.UK
   paling awal);
 - jika tidak ada, tidak ada pengumuman.
 
-Banner, dialog, badge hero dan chatbot memakai aturan yang sama, jadi tidak
-mungkin berbeda kalimat.
+Banner, dialog dan badge hero memakai aturan yang sama, jadi ketiganya tidak
+mungkin berbeda kalimat. **Chatbot tidak memakainya**: ia membaca sumber yang
+sama (`findPublicIntakes`) tetapi menjelaskan **setiap** unit satu per satu
+(jadwal gelombang, biaya, persyaratan) dalam `modules/chatbot/live-facts.ts`,
+bukan memilih satu pengumuman. Aturan turunan ini sengaja satu unit; chatbot
+butuh semuanya. Yang dijaga tetap sama: sumbernya satu, jadi tidak ada dua
+kebenaran tentang status pendaftaran.
 
 ## Syarat yang mudah dilupakan
 
-- **Hanya host publik.** Dijaga `isPortalHost` di `app/page.tsx` dan
-  `components/landing/public-page.tsx`. Polaritas: "mati di portal", bukan
-  "hidup di portal" — `isPortalHost` salah untuk localhost, jadi bentuk
-  terbalik akan mematikan fitur ini di `pnpm dev` dan staging.
+- **Hanya host publik.** Dijaga `isPortalHost` di `app/page.tsx`,
+  `components/landing/public-page.tsx` dan `app/wakaf-infaq/page.tsx`. Polaritas:
+  "mati di portal", bukan "hidup di portal" — `isPortalHost` salah untuk
+  localhost, jadi bentuk terbalik akan mematikan fitur ini di `pnpm dev` dan
+  staging.
+- **Dipasang sebagai anak pertama `<main>`** (di `PublicPage` dan beranda),
+  supaya `sticky top-16` menempel persis di bawah navbar `fixed` (64px) tanpa
+  tertutup, dan kotak alirnya tidak menutup konten di bawahnya. Beranda tidak
+  lagi memakai `mt-16`: offset navbar dibawa hero-nya sendiri (`pt-24`).
+- **`/wakaf-infaq` memasang banner sendiri** (`withDialog={false}`): halaman itu
+  punya chrome sendiri, bukan `PublicPage`, dan dialog lima detik tidak boleh
+  menyela alur donasi. Hanya bannernya yang tampil.
 - **Dismissal disimpan per periode** (`spmb-announcement-banner` /
   `spmb-announcement-dialog` = `period.id`), jadi pengumuman tahun berikutnya
-  muncul lagi. Nilai `"off"` = jangan pernah tampil (dipakai suite e2e lain).
+  muncul lagi. `isDismissed()` hanya membandingkan dengan `period.id`; tidak ada
+  nilai ajaib "off".
+- **Kesegaran status dijaga di komponen ini**, bukan default global:
+  `usePublicIntakes({ staleTime: 15 menit, refetchInterval: 15 menit,
+  refetchOnWindowFocus: true })`. Tanpa itu, tab yang terbuka sejak pagi masih
+  menampilkan status kemarin (`QueryProvider` mematikan refetch-on-focus dan
+  `usePublicIntakes` tidak polling).
 - **Mundur di bawah otomasi** (`navigator.webdriver`), seperti
   `ServiceWorkerRegister`, kecuali `spmb-announcement-force = "1"` — supaya
   dialog 5 detik tidak menabrak suite e2e yang bukan tentang pengumuman ini.
 - **Trilingual** (`config/announcement.i18n.ts`, dijaga
   `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
-  adanya di semua bahasa, seperti halaman SPMB.
+  adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
+  saat `upcoming`, banner/dialog tidak boleh berbunyi "telah dibuka" atau
+  "Daftar sekarang" (belum ada yang bisa mendaftar) — ajakannya "Lihat info
+  SPMB".
 
 ## Uji
 

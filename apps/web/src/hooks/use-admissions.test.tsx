@@ -9,7 +9,11 @@ vi.mock("@/lib/api", () => {
   return { api, default: api };
 });
 
-import { useInternalCandidates, useOnboardRegistrant } from "./use-admissions";
+import {
+  useInternalCandidates,
+  useOnboardRegistrant,
+  usePublicIntakes,
+} from "./use-admissions";
 
 function makeClient() {
   return new QueryClient({
@@ -112,5 +116,55 @@ describe("useOnboardRegistrant — progresi internal", () => {
       unitId: "unit-smp",
       existingStudentId: "stud-1",
     });
+  });
+});
+
+describe("usePublicIntakes — freshness", () => {
+  beforeEach(() => {
+    get.mockResolvedValue({ data: { data: [] } });
+  });
+
+  it("keeps the shared cache key whatever freshness options are passed", async () => {
+    // The SPMB announcement and the hero badge must read the same cache entry,
+    // or an announcement could disagree with the badge beside it. Only the
+    // query *options* differ per surface, never the key.
+    const client = makeClient();
+    const { result } = renderHook(
+      () =>
+        usePublicIntakes({
+          staleTime: 15 * 60 * 1000,
+          refetchInterval: 15 * 60 * 1000,
+          refetchOnWindowFocus: true,
+        }),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(get).toHaveBeenCalledWith("/admissions/public/intakes");
+    const [entry] = client.getQueryCache().getAll();
+    expect(entry.queryKey).toEqual(["admissions", "public", "intakes"]);
+    const options = entry.options as {
+      staleTime?: number;
+      refetchInterval?: number;
+      refetchOnWindowFocus?: boolean;
+    };
+    expect(options.refetchInterval).toBe(15 * 60 * 1000);
+    expect(options.refetchOnWindowFocus).toBe(true);
+  });
+
+  it("leaves refetchInterval unset by default, as before", async () => {
+    const client = makeClient();
+    const { result } = renderHook(() => usePublicIntakes(), {
+      wrapper: wrapper(client),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const [entry] = client.getQueryCache().getAll();
+    const options = entry.options as {
+      staleTime?: number;
+      refetchInterval?: number;
+    };
+    expect(options.refetchInterval).toBeUndefined();
+    expect(options.staleTime).toBe(5 * 60 * 1000);
   });
 });

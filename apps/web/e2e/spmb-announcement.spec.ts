@@ -120,10 +120,42 @@ test.describe("Pengumuman SPMB di situs publik", () => {
     ).toHaveAttribute("href", "/public/spmb");
   });
 
+  test("the banner clears the fixed navbar on the homepage and an inner page", async ({
+    page,
+  }) => {
+    // Point 1 of the review: the banner is the first child of `<main>`, so on a
+    // fresh (unscrolled) page its top must sit at or below the fixed navbar's
+    // bottom edge — never behind it — on both the homepage and a `PublicPage`.
+    await arm(page);
+    for (const path of ["/", "/profil"]) {
+      await page.goto(path);
+      const banner = page.getByTestId("spmb-announcement-banner");
+      await expect(banner).toBeVisible();
+      const bannerBox = await banner.boundingBox();
+      const navBox = await page.locator("header.fixed").first().boundingBox();
+      expect(bannerBox, `banner box on ${path}`).not.toBeNull();
+      expect(navBox, `navbar box on ${path}`).not.toBeNull();
+      // 1px tolerance for sub-pixel rounding.
+      expect(bannerBox!.y).toBeGreaterThanOrEqual(navBox!.height - 1);
+    }
+  });
+
   test("shows the banner on an inner public page too", async ({ page }) => {
     await arm(page);
     await page.goto("/profil");
     await expect(page.getByTestId("spmb-announcement-banner")).toBeVisible();
+  });
+
+  test("shows the banner — but no dialog — on the donation page", async ({
+    page,
+  }) => {
+    // /wakaf-infaq builds its own chrome, so it mounts the banner by hand with
+    // `withDialog={false}`: a five-second dialog must not interrupt giving.
+    await arm(page);
+    await page.goto("/wakaf-infaq");
+    await expect(page.getByTestId("spmb-announcement-banner")).toBeVisible();
+    await page.waitForTimeout(6000);
+    await expect(page.getByTestId("spmb-announcement-dialog")).toHaveCount(0);
   });
 
   test("opens the dialog a few seconds in, not at once", async ({ page }) => {

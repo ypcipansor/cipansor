@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo } from "react";
+import { spmbAnnouncementOf } from "@cipansor/shared";
 import { usePublicIntakes } from "@/hooks/use-admissions";
 import { spmbContentFor } from "@/config/spmb.i18n";
 import { dateFormatterFor } from "@/lib/locale-format";
@@ -14,11 +16,12 @@ import type { Locale } from "@/locales";
  * /public/spmb correctly showed "Pendaftaran Telah Ditutup" while the homepage
  * invited people to register. It also named a year no record contained.
  *
- * It reads the units' intakes, as the SPMB page and the chatbot do, so the
- * three cannot disagree: "dibuka" only while some unit takes registrations —
- * not between two waves, when the API refuses them — else the day the next
- * one opens, else nothing at all. The year comes from the intake's academic
- * year rather than being written into the markup.
+ * It reads the units' intakes through the same rule as the site-wide
+ * announcement — `spmbAnnouncementOf` — so the two cannot disagree: "dibuka"
+ * only while some unit takes registrations (not between two waves, when the
+ * API refuses them), else the day the next one opens, else nothing at all. The
+ * year comes from the intake's academic year rather than being written into the
+ * markup.
  *
  * The wrapper keeps its height whether or not a badge renders, so resolving
  * the query cannot shift the <h1> beneath it.
@@ -27,19 +30,18 @@ export function SpmbStatusBadge({ locale }: { locale: Locale }) {
   const { data: intakes = [] } = usePublicIntakes();
   const copy = spmbContentFor(locale);
 
-  const open = intakes.find((i) => i.period.window === "open");
-  const next = intakes
-    .filter((i) => i.period.window === "upcoming" && i.period.opensAt)
-    .sort((a, b) => a.period.opensAt!.localeCompare(b.period.opensAt!))[0];
-  const year = (open ?? next)?.period.academicYear ?? "";
-  const label = open
-    ? copy.badgeOpen(year)
-    : next
-      ? copy.badgeOpens(
+  const announcement = useMemo(() => spmbAnnouncementOf(intakes), [intakes]);
+  const year = announcement?.period.academicYear ?? "";
+  const label = !announcement
+    ? null
+    : announcement.window === "open"
+      ? copy.badgeOpen(year)
+      : copy.badgeOpens(
           year,
-          dateFormatterFor(locale).format(new Date(next.period.opensAt!)),
-        )
-      : null;
+          dateFormatterFor(locale).format(
+            new Date(announcement.period.opensAt!),
+          ),
+        );
 
   return (
     <div className="flex h-6 items-center justify-center">

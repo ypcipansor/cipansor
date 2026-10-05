@@ -104,20 +104,22 @@ export function SpmbAnnouncement({
   locale,
   enabled = true,
   withDialog = true,
-  className,
 }: {
   locale: Locale;
   enabled?: boolean;
   withDialog?: boolean;
-  /**
-   * Extra classes for the bar. Used to clear the fixed navbar where the page
-   * does not already do so: the homepage has no `pt-16` on its `<main>` (its
-   * hero carries the offset), so it passes `mt-16`; `PublicPage` mounts the bar
-   * inside a `<main>` that already has `pt-16` and passes nothing.
-   */
-  className?: string;
 }) {
-  const { data: intakes = [] } = usePublicIntakes();
+  const { data: intakes = [] } = usePublicIntakes({
+    // The announcement's whole job is to appear the moment an intake opens (or
+    // to go away when it closes). The global defaults — 1-minute stale time and
+    // no refetch on focus — let a tab open since morning still show yesterday's
+    // status, so tighten freshness for this surface only: a quarter-hour poll
+    // plus a refetch whenever the visitor returns to the tab. The global
+    // defaults are untouched for every other `usePublicIntakes` caller.
+    staleTime: 15 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
   const copy = announcementContentFor(locale);
   // Memoised so the derivation returns the same object across renders and the
   // effects below depend on a stable value, not on a fresh one each time.
@@ -159,14 +161,18 @@ export function SpmbAnnouncement({
     ? dateFormatterFor(locale).format(new Date(announcement.period.opensAt))
     : "";
   const year = announcement.period.academicYear ?? "";
-  const bannerText =
-    announcement.window === "open"
-      ? copy.bannerOpen(year)
-      : copy.bannerOpens(year, date);
-  const dialogTitle =
-    announcement.window === "open"
-      ? copy.dialogTitleOpen(year)
-      : copy.dialogTitleOpens(year, date);
+  const open = announcement.window === "open";
+  const bannerText = open
+    ? copy.bannerOpen(year)
+    : copy.bannerOpens(year, date);
+  const bannerCta = open ? copy.bannerCtaOpen : copy.bannerCtaOpens;
+  const dialogTitle = open
+    ? copy.dialogTitleOpen(year)
+    : copy.dialogTitleOpens(year, date);
+  const dialogBody = open
+    ? copy.dialogBodyOpen(announcement.unit.name)
+    : copy.dialogBodyOpens(announcement.unit.name, date);
+  const dialogCta = open ? copy.dialogCtaOpen : copy.dialogCtaOpens;
   const headingId = "spmb-announcement-text";
 
   const closeBanner = () => {
@@ -185,12 +191,12 @@ export function SpmbAnnouncement({
           role="region"
           aria-labelledby={headingId}
           data-testid="spmb-announcement-banner"
-          // `sticky top-16` (64px = the navbar's height) parks the bar under the
-          // fixed header on every public page, whether or not the page already
-          // offsets its content for the navbar, so no page needs its padding
-          // touched to make room. `className` carries the `mt-16` the homepage
-          // needs because its `<main>` has no top padding of its own.
-          className={`sticky top-16 z-40 border-b border-primary/20 bg-primary/10 ${className ?? ""}`}
+          // `sticky top-16` (64px = the navbar's height) parks the bar directly
+          // under the fixed header on every public page. The bar is the first
+          // child of `<main>`, so its flow box already starts below the navbar
+          // (`PublicPage`/`/wakaf-infaq` put `pt-16` on `<main>`; the homepage's
+          // hero carries its own `pt-24`), and sticky pins it there on scroll.
+          className="sticky top-16 z-40 border-b border-primary/20 bg-primary/10"
         >
           <div className="container mx-auto flex items-start gap-3 px-4 py-3 sm:items-center sm:px-6 lg:px-8">
             <Megaphone
@@ -207,7 +213,7 @@ export function SpmbAnnouncement({
               href="/public/spmb"
               className="shrink-0 text-sm font-semibold text-primary underline-offset-4 hover:underline"
             >
-              {copy.bannerCta}
+              {bannerCta}
             </Link>
             {/* 36 px hit area around a 16 px glyph: WCAG 2.5.8 asks for at
                 least 24 px, and this sits under a thumb on a phone. */}
@@ -232,16 +238,14 @@ export function SpmbAnnouncement({
           <DialogContent data-testid="spmb-announcement-dialog">
             <DialogHeader>
               <DialogTitle>{dialogTitle}</DialogTitle>
-              <DialogDescription>
-                {copy.dialogBody(announcement.unit.name)}
-              </DialogDescription>
+              <DialogDescription>{dialogBody}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="ghost" onClick={closeDialog}>
                 {copy.dialogLater}
               </Button>
               <Link href="/public/spmb" onClick={closeDialog}>
-                <Button>{copy.dialogCta}</Button>
+                <Button>{dialogCta}</Button>
               </Link>
             </DialogFooter>
           </DialogContent>
