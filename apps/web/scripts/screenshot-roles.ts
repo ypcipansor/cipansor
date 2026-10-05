@@ -14,11 +14,10 @@
 import fs from "fs";
 import path from "path";
 import { chromium, type Browser, type Page } from "@playwright/test";
-import { generate as generateTotp } from "otplib";
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
 import { getNavigationForRoleCode } from "../src/config/navigation";
 import { getDashboardForRole, deriveLegacyRole } from "../src/lib/rbac";
-import { storageStateFor } from "./lib/auth-state";
+import { BASE_URL, loginAs, storageStateFor } from "./lib/auth-state";
 
 /** Flatten a role's navigation groups into the list of menu paths to visit. */
 function menuPathsForRole(roleCode: string): string[] {
@@ -27,84 +26,23 @@ function menuPathsForRole(roleCode: string): string[] {
   );
 }
 
-const API_URL = process.env.API_URL || "http://localhost:3001/api";
-const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
-const FIXED_2FA_SECRET =
-  process.env.E2E_2FA_SECRET || "NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE";
-
 const OUT_DIR = process.argv[2] || path.join(__dirname, "../.qa-screens");
 const ROLE_FILTER = process.argv[3];
 
 interface RoleAccount {
   label: string;
   roleCode: string;
-  email: string;
-  password: string;
 }
 
 // Drive the sweep off the canonical DEMO_ACCOUNTS — the single list that the API
 // seed (apps/api/prisma/seed.ts) provisions, one login per RoleCode. Using it
 // here guarantees every account we try to log in as actually exists in a freshly
-// seeded database. Admin accounts are always behind 2FA (there is no demo
-// exemption any more): seed with E2E_FIXED_2FA=1 and the TOTP branch in
-// `login()` below answers the challenge from the fixed secret.
+// seeded database. `loginAs` answers the 2FA challenge every admin account sits
+// behind; seed with E2E_FIXED_2FA=1 so it can.
 const ACCOUNTS: RoleAccount[] = DEMO_ACCOUNTS.map((acc) => ({
   label: acc.roleCode.toLowerCase().replace(/_/g, "-"),
   roleCode: acc.roleCode,
-  email: acc.email,
-  password: acc.password,
 }));
-
-interface Session {
-  user: Record<string, unknown>;
-  accessToken: string;
-  refreshToken: string;
-}
-
-async function postJson(apiPath: string, body: unknown, bearer?: string) {
-  const res = await fetch(`${API_URL}${apiPath}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  return res.json() as Promise<{ data?: Record<string, unknown> }>;
-}
-
-async function login(account: RoleAccount): Promise<Session> {
-  const login = await postJson("/auth/login", {
-    email: account.email,
-    password: account.password,
-  });
-  const data = login?.data as Record<string, unknown> | undefined;
-  if (!data)
-    throw new Error(
-      `Login failed for ${account.email}: ${JSON.stringify(login)}`,
-    );
-
-  if (data.requiresTwoFactor) {
-    const token = await generateTotp({ secret: FIXED_2FA_SECRET });
-    const verified = await postJson(
-      "/auth/2fa/login",
-      { token },
-      data.tempToken as string,
-    );
-    if (!verified?.data?.accessToken) {
-      throw new Error(
-        `2FA failed for ${account.email}: ${JSON.stringify(verified)}`,
-      );
-    }
-    return verified.data as unknown as Session;
-  }
-  if (!data.accessToken) {
-    throw new Error(
-      `Unexpected login response for ${account.email}: ${JSON.stringify(data)}`,
-    );
-  }
-  return data as unknown as Session;
-}
 
 interface PageResult {
   role: string;
@@ -309,9 +247,9 @@ async function run() {
     const roleDir = path.join(OUT_DIR, account.label);
     fs.mkdirSync(roleDir, { recursive: true });
 
-    let session: Session;
+    let session;
     try {
-      session = await login(account);
+      session = await loginAs(account.roleCode);
     } catch (e) {
       console.error(`✗ LOGIN ${account.label}: ${(e as Error).message}`);
       results.push({

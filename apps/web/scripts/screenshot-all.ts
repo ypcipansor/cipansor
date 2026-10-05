@@ -107,25 +107,6 @@ function slug(p: string): string {
   return `${base}__q_${query.replace(/[^a-z0-9]+/gi, "-").replace(/-+$/, "")}`;
 }
 
-async function postJson(apiPath: string, body: unknown, bearer?: string) {
-  const res = await fetch(`${API_URL}${apiPath}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  return res.json();
-}
-
-async function getJson(apiPath: string, bearer: string) {
-  const res = await fetch(`${API_URL}${apiPath}`, {
-    headers: { authorization: `Bearer ${bearer}` },
-  });
-  return res.json();
-}
-
 interface Result {
   path: string;
   finalPath: string;
@@ -385,14 +366,9 @@ async function run() {
     executablePath: process.env.PLAYWRIGHT_CHROMIUM || undefined,
   });
 
-  const superAdmin = DEMO_ACCOUNTS.find((a) => a.roleCode === "SUPER_ADMIN")!;
-  const login = await postJson("/auth/login", {
-    email: superAdmin.email,
-    password: superAdmin.password,
-  });
-  const session = login?.data;
-  if (!session?.accessToken)
-    throw new Error("super-admin login failed: " + JSON.stringify(login));
+  // Admin accounts are behind a 2FA gate (no demo exemption); `loginAs`
+  // answers it from the fixed secret the seed writes with E2E_FIXED_2FA=1.
+  const session = await loginAs("SUPER_ADMIN");
 
   // -------- authenticated crawl --------
   const ctx = await browser.newContext({
@@ -436,11 +412,7 @@ async function run() {
     a.roleCode.endsWith("_ORANG_TUA"),
   );
   if (parentAccount) {
-    const parentLogin = await postJson("/auth/login", {
-      email: parentAccount.email,
-      password: parentAccount.password,
-    });
-    const parentSession = parentLogin?.data;
+    const parentSession = await loginAs(parentAccount.roleCode);
     if (parentSession?.accessToken) {
       const parentCtx = await browser.newContext({
         storageState: storageStateFor(parentSession),

@@ -15,7 +15,7 @@
 
 import fs from "fs";
 import path from "path";
-import { DEMO_ACCOUNTS } from "@cipansor/shared";
+import { loginAs } from "./lib/auth-state";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
 const APP_DIR = path.join(__dirname, "../src/app");
@@ -79,14 +79,8 @@ const HINTS: Record<string, Hint> = {
     // list can return any student, and the parent module 403s on the rest. Log
     // in as the demo parent and take its first child.
     custom: async () => {
-      const acc = DEMO_ACCOUNTS.find((a) => a.roleCode === "TKQ_ORANG_TUA")!;
-      const res = await fetch(`${API_URL}/auth/login`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: acc.email, password: acc.password }),
-      });
-      const login: any = await res.json();
-      const bearer = login?.data?.accessToken;
+      const session = await loginAs("TKQ_ORANG_TUA").catch(() => null);
+      const bearer = session?.accessToken;
       if (!bearer) return null;
       const kids = toRows(unwrap(await getJson("/parent/children", bearer)));
       const studentId = kids[0]?.id;
@@ -488,15 +482,8 @@ function buildQuery(query: Record<string, string>, unitId?: string): string {
 }
 
 async function run() {
-  const acc = DEMO_ACCOUNTS.find((a) => a.roleCode === "SUPER_ADMIN")!;
-  const res = await fetch(`${API_URL}/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: acc.email, password: acc.password }),
-  });
-  const login: any = await res.json();
-  const bearer = login?.data?.accessToken;
-  if (!bearer) throw new Error("login failed: " + JSON.stringify(login));
+  const session = await loginAs("SUPER_ADMIN");
+  const bearer = session.accessToken;
 
   const years = unwrap(await getJson("/academic-years", bearer));
   const activeYear = (Array.isArray(years) ? years : []).find(

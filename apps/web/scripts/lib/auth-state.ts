@@ -2,32 +2,59 @@
  * Session bootstrapping shared by every visual/QA script.
  *
  * `storageStateFor` existed twice — once in `screenshot-all.ts` and a slimmer,
- * subtly different copy in `probe-pages.ts` — and the two drifted: the probe
- * dropped `role.realm` from the persisted user, so the sidebar threw and every
- * probed page looked blank. Keeping one definition here means a change to the
- * session shape reaches every script at once.
+ * subtly different copy in `probe-pages.ts` — and the two drifted. Keeping one
+ * definition here means a change to the session shape reaches every script at
+ * once.
  *
- * The persisted user is split deliberately:
- *  - localStorage (`auth-storage`) gets the **full** user, because that is what
- *    zustand persist rehydrates and what client components read.
- *  - the `auth-storage` cookie gets a **slim** user, because `middleware.ts`
- *    only reads `id`/`role`/`unitId`/`userRoles[].role.code` and the full object
- *    can exceed the 4 KB cookie limit (CDP rejects an oversized cookie outright).
+ * The API signs a browser in with HttpOnly cookies (`cipansor_at` et al.), not
+ * a token the page's JavaScript can read. So the session is captured *from the
+ * API's own `Set-Cookie` headers* and handed to Playwright verbatim — a
+ * hand-built `accessToken` cookie the API never reads is what silently bounced
+ * every sweep page back to `/login`. Only `auth-storage` (the user the zustand
+ * store rehydrates) is written by hand.
  */
 import { DEMO_ACCOUNTS } from "@cipansor/shared";
+import { generate as generateTotp } from "otplib";
 
 export const API_URL = process.env.API_URL || "http://localhost:3001/api";
 export const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
-interface SlimRole {
-  isPrimary?: boolean;
-  role?: { code?: string; name?: string; realm?: string };
+/** The fixed secret the seed writes when `E2E_FIXED_2FA=1` (see seed.ts). */
+const FIXED_2FA_SECRET =
+  process.env.E2E_2FA_SECRET || "NTGHH5U5LDHIYARFFNGFQKQHARJU7GBE";
+
+/** A cookie exactly as the API set it, ready for Playwright's `addCookies`. */
+export interface SessionCookie {
+  name: string;
+  value: string;
+  path: string;
 }
 
 export interface Session {
   accessToken: string;
   refreshToken?: string;
   user: Record<string, any>;
+  /** The API's own session cookies, captured from its `Set-Cookie` headers. */
+  cookies: SessionCookie[];
+}
+
+/** Parse `Set-Cookie` strings down to the name/value/path Playwright needs. */
+function parseSetCookies(header: string | null): SessionCookie[] {
+  if (!header) return [];
+  return header
+    .split(/,(?=[^;=]+=)/)
+    .map((part) => part.split(";")[0].trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const eq = pair.indexOf("=");
+      return { name: pair.slice(0, eq), value: pair.slice(eq + 1) };
+    })
+    .map((c) => ({
+      name: c.name,
+      value: c.value,
+      // The refresh cookie is scoped to the auth endpoints; the rest to `/`.
+      path: c.name === "cipansor_rt" ? "/api/auth" : "/",
+    }));
 }
 
 export async function loginAs(roleCode: string): Promise<Session> {
@@ -36,66 +63,73 @@ export async function loginAs(roleCode: string): Promise<Session> {
 
   const res = await fetch(`${API_URL}/auth/login`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      // Ask for the tokens in the body too; the browser path returns no token a
+      // script could reuse, only HttpOnly cookies.
+      "x-client": "bearer",
+    },
     body: JSON.stringify({ email: acc.email, password: acc.password }),
   });
-  const login = (await res.json()) as { data?: Session };
-  if (!login.data?.accessToken) {
+  const cookies = parseSetCookies(res.headers.get("set-cookie"));
+  const login = (await res.json()) as { data?: Record<string, any> };
+  const data = login.data;
+
+  // Admin and organ accounts sit behind a 2FA gate. Seed with E2E_FIXED_2FA=1
+  // and the challenge is answerable from the fixed secret, so a sweep script
+  // can still log in unattended.
+  if (data?.requiresTwoFactor) {
+    const token = await generateTotp({ secret: FIXED_2FA_SECRET });
+    const verifyRes = await fetch(`${API_URL}/auth/2fa/login`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-client": "bearer",
+        authorization: `Bearer ${data.tempToken}`,
+      },
+      body: JSON.stringify({ token }),
+    });
+    const verifiedCookies = parseSetCookies(
+      verifyRes.headers.get("set-cookie"),
+    );
+    const verified = (await verifyRes.json()) as { data?: Record<string, any> };
+    if (!verified.data?.accessToken) {
+      throw new Error(
+        `2FA failed for ${roleCode}: ${JSON.stringify(verified)}`,
+      );
+    }
+    return { ...(verified.data as Session), cookies: verifiedCookies };
+  }
+
+  if (!data?.accessToken) {
     throw new Error(`login failed for ${roleCode}: ${JSON.stringify(login)}`);
   }
-  return login.data;
+  return { ...(data as Session), cookies };
 }
 
 export function storageStateFor(session: Session) {
   const { origin, hostname } = new URL(BASE_URL);
-  const u = session.user;
-  const slimUser = {
-    id: u.id,
-    role: u.role,
-    unitId: u.unitId,
-    // `name` and `realm` are kept even though the middleware ignores them: the
-    // cookie and localStorage share this shape, and dropping them here is what
-    // previously crashed the sidebar's realm badge.
-    userRoles: (u.userRoles ?? []).map((a: SlimRole) => ({
-      isPrimary: a.isPrimary,
-      role: {
-        code: a.role?.code,
-        name: a.role?.name,
-        realm: a.role?.realm,
-      },
-    })),
-  };
+  const expires = Math.floor(Date.now() / 1000) + 86400;
 
-  const mk = (name: string, value: string) => ({
-    name,
-    value,
+  const cookies = session.cookies.map((c) => ({
+    name: c.name,
+    value: c.value,
     domain: hostname,
-    path: "/",
-    expires: Math.floor(Date.now() / 1000) + 86400,
-    httpOnly: false,
+    path: c.path,
+    expires,
+    // The CSRF cookie is the one the axios interceptor echoes; it must stay
+    // readable by page JS. Every other session cookie is HttpOnly.
+    httpOnly: c.name !== "cipansor_csrf",
     secure: false,
     sameSite: "Lax" as const,
-  });
+  }));
 
   return {
-    cookies: [
-      mk("accessToken", session.accessToken),
-      mk(
-        "auth-storage",
-        encodeURIComponent(
-          JSON.stringify({
-            state: { user: slimUser, isAuthenticated: true },
-            version: 0,
-          }),
-        ),
-      ),
-    ],
+    cookies,
     origins: [
       {
         origin,
         localStorage: [
-          { name: "accessToken", value: session.accessToken },
-          { name: "refreshToken", value: session.refreshToken ?? "" },
           {
             name: "auth-storage",
             value: JSON.stringify({
