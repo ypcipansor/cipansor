@@ -101,19 +101,32 @@ rata-rata akun — jadikan penyelamat.
 
 ### Konversi — jantung efektivitas sekaligus syarat wajib
 Definisikan **≥1 aksi bermakna/bulan**. Kandidat di aplikasi Cipansor:
-- **Formulir SPMB terkirim** (ada halaman sukses + nomor registrasi) →
-  konversi utama terbaik.
-- **Formulir donasi/wakaf terkirim** (ada `successData`) → konversi donasi.
+- **Formulir SPMB terkirim** (menampilkan nomor registrasi) → konversi utama
+  terbaik.
+- **Formulir donasi/wakaf terkirim** (menampilkan jumlah donasi) → konversi
+  donasi.
 - **Klik WhatsApp / telepon / email** dari `/kontak` → konversi mikro.
 - **Unduh brosur SPMB** → konversi mikro.
 - ❌ Jangan jadikan "waktu di situs" / "kunjungan beranda" sebagai konversi
   utama.
 
+**Cara menandai konversi di repo ini — bukan lewat halaman "terima kasih".**
+Kedua form sukses adalah **dialog di halaman yang sama**, bukan halaman
+terpisah: SPMB (`public/spmb/spmb-form.tsx`) dan donasi
+(`wakaf-infaq/donation-portal.tsx`) memanggil `setSuccessData(...)` lalu
+merender `<Dialog open={!!successData}>`. **Tidak ada navigasi**, jadi pemicu
+berbasis *pageview* (URL konfirmasi) tidak akan pernah menyala. Tandai konversi
+di **titik sukses program** — tepat sesudah panggilan API sukses, di dalam
+handler — lewat `window.gtag('event', …)` (atau `dataLayer.push`) dengan nama
+event khusus (mis. `spmb_submit`). Itu lebih tahan lama daripada URL dan tetap
+benar walau UI-nya kelak berubah jadi halaman penuh.
+
 ### Landing page
 - Jangan arahkan semua ke beranda. Ad → halaman yang **persis** menjawab kata
   kuncinya.
 - HTTPS, mobile-friendly, cepat, CTA jelas, sedikit tautan keluar, **bukan
-  PDF**. Halaman "terima kasih" tiap form dipakai sebagai pemicu konversi.
+  PDF**. Pemicu konversi **tidak** bergantung pada halaman "terima kasih" —
+  lihat catatan di atas (keduanya dialog).
 
 ## Rencana kampanye Cipansor (dibingkai misi yayasan)
 
@@ -130,6 +143,10 @@ hanya untuk brand/program. Aset: sitelink *Pendaftaran SPMB · Wakaf & Infaq ·
 Program Unggulan · Lokasi & Kontak*; callout *Terakreditasi · Tahfidz 30 Juz ·
 NPSN terdaftar*; structured snippet *Unit: TK Qur'an, SD IT, SMP IT, SMA
 Qur'an*.
+
+**Landing SPMB selalu memakai host publik** (`cipansor.or.id/public/spmb`),
+bukan portal — iklan hanya menunjuk domain yang disetujui, dan portal
+`noindex`.
 
 ## Celah teknis di repo ini — tutup sebelum iklan serius
 
@@ -148,6 +165,20 @@ boleh aktif di host publik**; kalau dipasang menyeluruh, aktivitas staf/santri
 di portal mengotori data dan berisiko privasi. Bangun **host-aware**, mengikuti
 pola yang sudah ada di `apps/web/src/lib/host-split.ts` (mis.
 `pwaEnabledForHost`, `indexableHost`).
+
+Dua hal yang harus diputuskan sebelum menandai konversi:
+
+- **Form SPMB juga hidup di host portal.** Matcher middleware
+  (`apps/web/middleware.ts`) mengecualikan `public`, dan `PUBLIC_PATH_PREFIXES`
+  tidak memuat `/public/*`, jadi `/public/spmb` **tidak tersentuh** host-split —
+  ia dilayani di **kedua** host (di portal pun tidak menabrak sesi staf). Tag
+  khusus host publik karena itu **tidak menghitung** submit yang dibuat di
+  portal. Untuk grant ini **tidak masalah**, karena iklan selalu menunjuk
+  host publik; jangan pasang tag menyeluruh hanya untuk mengejar kasus itu.
+- **Sesi tidak melintasi host** (lihat `host-split.ts`). Setelah submit di
+  `/public/spmb`, orang tua melacak berkas di `/public/spmb/track` **di host
+  yang sama**; tautan portal akan minta login lagi. Jangan arahkan konversi ke
+  pelacakan portal.
 
 Landing page publik yang sudah hidup & layak dipakai: `/`, `/profil`,
 `/profil/pimpinan`, `/profil/legalitas`, `/program-unggulan`, `/unit`
