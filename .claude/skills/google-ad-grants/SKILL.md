@@ -175,10 +175,15 @@ Dua hal yang harus diputuskan sebelum menandai konversi:
   khusus host publik karena itu **tidak menghitung** submit yang dibuat di
   portal. Untuk grant ini **tidak masalah**, karena iklan selalu menunjuk
   host publik; jangan pasang tag menyeluruh hanya untuk mengejar kasus itu.
-- **Sesi tidak melintasi host** (lihat `host-split.ts`). Setelah submit di
-  `/public/spmb`, orang tua melacak berkas di `/public/spmb/track` **di host
-  yang sama**; tautan portal akan minta login lagi. Jangan arahkan konversi ke
-  pelacakan portal.
+- **Pelacak tidak butuh sesi.** `/public/spmb/track` memakai **nomor
+  pendaftaran + tanggal lahir**, bukan sesi, jadi ia bekerja di host mana pun
+  tanpa login (matcher middleware memang mengecualikan `/public/*`). Alasan
+  tetap mengarahkan tautan ke host publik **bukan** "kalau tidak, diminta
+  login", melainkan karena host publik adalah alamat **kanonik yang terindeks**
+  (`sitemap.ts`), sedangkan portal `noindex` — alamat portal hanya duplikat.
+- **Sesi memang tidak melintasi host** (`host-split.ts`), tetapi ini berlaku
+  untuk fitur portal yang butuh login (mis. portal wali), **bukan** untuk
+  pelacak publik.
 
 Landing page publik yang sudah hidup & layak dipakai: `/`, `/profil`,
 `/profil/pimpinan`, `/profil/legalitas`, `/program-unggulan`, `/unit`
