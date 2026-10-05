@@ -1,12 +1,22 @@
 import { PDFDocument, PDFFont, StandardFonts, degrees, reduceRotation, rgb } from 'pdf-lib';
 import { TEST_COPY_NOTE, TEST_COPY_STAMP } from '@cipansor/shared';
 import { config } from '@/config';
+import { Errors } from '@/middleware/error';
 
 const ANGLE = 45;
 const STAMP_SIZE = 34;
 const NOTE_SIZE = 7.5;
 /** Space kept between a marking's box and the edge of the visible page. */
 const EDGE_MARGIN = 12;
+/**
+ * The smallest a marking is drawn. A page that cannot carry both markings at
+ * least this large is refused, not stamped anyway: the bytes are signed and
+ * archived, so a page without a readable warning is a test copy no one can tell
+ * is one. It is also a correctness floor, not just legibility — pdf-lib's
+ * `drawText` reads `options.size || this.fontSize`, so a fitted size of 0 would
+ * be silently replaced by its 24pt default and drawn *outside* the tiny page.
+ */
+const MIN_MARK_SIZE = 4;
 const RED = rgb(0.75, 0.1, 0.1);
 
 /**
@@ -61,10 +71,11 @@ function displayedSize(
  * at the page's centre hangs past the edges even when its midpoint is well
  * inside. This computes the box the run will occupy (length `runWidth`, height
  * the font's, rising from the baseline) and shifts the anchor so the box is
- * centred; `size` is shrunk to fit inside the margin, however small the page —
- * a marking that cannot fit must still be contained, or it is only visible on a
- * page the reader is not looking at. The result is in the displayed coordinate
- * system — hand it to `displayedPointToPage`.
+ * centred; `size` is shrunk to fit inside the margin. `size` is returned as 0
+ * when even `MIN_MARK_SIZE` cannot fit, so the caller can refuse the page
+ * instead of drawing a marking larger than it — or one pdf-lib would silently
+ * restore to its default size. The result is in the displayed coordinate system
+ * — hand it to `displayedPointToPage`.
  */
 function placeMark(
   font: PDFFont,
@@ -91,6 +102,7 @@ function placeMark(
     boxAtSizeHeight > 0 ? maxHeight / boxAtSizeHeight : 1
   );
   const finalSize = size * fit;
+  if (finalSize < MIN_MARK_SIZE) return { x: 0, y: 0, size: 0 };
 
   const l = font.widthOfTextAtSize(text, finalSize);
   const h = font.heightAtSize(finalSize);
@@ -138,6 +150,28 @@ export async function stampIfTestCopy(pdfDoc: PDFDocument): Promise<void> {
     // The diagonal stamp, centred: its whole turned box is kept inside the
     // visible area, shrunk if the page is too small for it at full size.
     const stamp = placeMark(bold, TEST_COPY_STAMP, STAMP_SIZE, ANGLE, width, height);
+    // The note along the top edge, its box clear of the corner by the margin.
+    const note = placeMark(regular, TEST_COPY_NOTE, NOTE_SIZE, 0, width, height);
+
+    /**
+     * A page too small for both markings is refused, not stamped anyway.
+     *
+     * Below `MIN_MARK_SIZE` the fitted size reaches 0, and pdf-lib's `drawText`
+     * reads `options.size || this.fontSize` — so it would draw at its 24pt
+     * default, outside a page this small, leaving a signed and archived page
+     * whose warning no one can read. Refusing the document is the honest
+     * failure: the switch is on precisely so no test copy goes out unmarked.
+     * `badRequest` because the page came from the drafter's own upload, so the
+     * fix is theirs — a normally sized page — not a server fault.
+     */
+    if (stamp.size === 0 || note.size === 0) {
+      throw Errors.badRequest(
+        `Salinan uji tidak dapat dicap: halaman ${Math.round(width)}×${Math.round(height)}pt ` +
+          'terlalu kecil untuk memuat tanda "SALINAN UJI". Unggah PDF dengan ukuran ' +
+          'halaman yang wajar.'
+      );
+    }
+
     const stampAt = displayedPointToPage(stamp.x, stamp.y, crop, rotation);
     page.drawText(TEST_COPY_STAMP, {
       x: stampAt.x,
@@ -151,8 +185,6 @@ export async function stampIfTestCopy(pdfDoc: PDFDocument): Promise<void> {
       rotate: degrees(ANGLE + stampAt.angle),
     });
 
-    // The note along the top edge, its box clear of the corner by the margin.
-    const note = placeMark(regular, TEST_COPY_NOTE, NOTE_SIZE, 0, width, height);
     const noteAt = displayedPointToPage(
       note.x,
       height - EDGE_MARGIN - regular.heightAtSize(note.size),

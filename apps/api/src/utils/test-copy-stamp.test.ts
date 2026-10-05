@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { PDFDocument, PDFPage, PDFArray, PDFRawStream, StandardFonts, degrees } from 'pdf-lib';
 import zlib from 'zlib';
 import { TEST_COPY_NOTE, TEST_COPY_STAMP } from '@cipansor/shared';
+import { ApiError, ErrorCode } from '@/middleware/error';
 
 const { documents } = vi.hoisted(() => ({ documents: { testCopy: false } }));
 vi.mock('@/config', async (importOriginal) => {
@@ -260,6 +261,7 @@ describe('test-copy markings sit inside the visible page', () => {
     expect(point.y).toBeLessThanOrEqual(y1 + h + slack);
   };
 
+  // Pages big enough to carry both markings (each ≥ MIN_MARK_SIZE at 4pt).
   const crops: Array<[number, number, number, number]> = [
     [0, 0, 400, 400],
     [60, 90, 400, 400],
@@ -268,10 +270,10 @@ describe('test-copy markings sit inside the visible page', () => {
     // because the logic shrinks it — a midpoint check would pass here while the
     // ends hang off both sides.
     [0, 0, 320, 400],
-    // Narrower than either marking even at a 4pt font, so a floor on the shrink
-    // (or no shrink at all) would leave the warning off the visible page.
-    [0, 0, 100, 100],
-    [0, 0, 40, 40],
+    // The strongest shrink that is still above the legibility floor, so the
+    // containment check covers a heavily shrunk marking, not only a full-size
+    // one.
+    [0, 0, 240, 240],
   ];
   const rotations = [0, 90, 180, 270] as const;
 
@@ -283,6 +285,9 @@ describe('test-copy markings sit inside the visible page', () => {
         const { bytes } = await cropped(rotation, crop);
         const content = await contentOf(bytes);
         const run = runFor(content, TEST_COPY_NOTE);
+        // The mark must be visible at all — a size of 0 is what the guard
+        // refuses, and what pdf-lib would redraw at its own default size.
+        expect(run.size).toBeGreaterThan(0);
         const { width, height } = await measure(TEST_COPY_NOTE, run.size);
         for (const corner of cornersOf(run, width, height)) inside(corner, crop);
       }
@@ -297,9 +302,63 @@ describe('test-copy markings sit inside the visible page', () => {
         const { bytes } = await cropped(rotation, crop);
         const content = await contentOf(bytes);
         const run = runFor(content, TEST_COPY_STAMP);
+        expect(run.size).toBeGreaterThan(0);
         const { width, height } = await measure(TEST_COPY_STAMP, run.size, true);
         for (const corner of cornersOf(run, width, height)) inside(corner, crop);
       }
     }
   );
+});
+
+/**
+ * A page too small to carry the markings is refused, not stamped at a size that
+ * cannot be seen.
+ *
+ * pdf-lib's `drawText` reads `options.size || this.fontSize`, so a fitted size
+ * of 0 would be drawn at its 24pt default — outside a page this small — and the
+ * signed, archived page would carry no readable warning. The reported case (a
+ * 20×200 CropBox, whose width leaves no room once the margin is reserved), the
+ * 24pt boundary the finding names, and the point just below where the note
+ * reaches `MIN_MARK_SIZE` are all covered.
+ */
+describe('a test copy refuses a page too small to mark', () => {
+  const tooSmall: Array<[number, number, number, number]> = [
+    [0, 0, 20, 200],
+    [0, 0, 24, 24],
+    [0, 0, 100, 100],
+    [0, 0, 209, 209],
+  ];
+
+  it.each(tooSmall.map((c) => [c]))(
+    'rejects a %o-cropped page instead of signing it unmarked',
+    async (crop) => {
+      documents.testCopy = true;
+      const doc = await PDFDocument.create();
+      const page = doc.addPage([595.28, 841.89]);
+      page.setCropBox(...crop);
+
+      // A drafter-actionable problem, not a server fault: answered 400.
+      const failure = stampIfTestCopy(doc);
+      await expect(failure).rejects.toBeInstanceOf(ApiError);
+      await expect(failure).rejects.toMatchObject({
+        code: ErrorCode.BAD_REQUEST,
+        message: expect.stringContaining('SALINAN UJI'),
+      });
+      // The guard runs before either marking, so nothing is drawn on it.
+      expect(pagesWith(TEST_COPY_STAMP).size).toBe(0);
+      expect(pagesWith(TEST_COPY_NOTE).size).toBe(0);
+    }
+  );
+
+  it('accepts the smallest page that can carry both markings', async () => {
+    documents.testCopy = true;
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([595.28, 841.89]);
+    page.setCropBox(0, 0, 210, 210);
+
+    await stampIfTestCopy(doc);
+
+    expect(pagesWith(TEST_COPY_STAMP).size).toBe(1);
+    expect(pagesWith(TEST_COPY_NOTE).size).toBe(1);
+  });
 });
