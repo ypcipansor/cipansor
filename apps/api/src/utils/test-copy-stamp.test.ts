@@ -8,7 +8,8 @@
  * renders exactly as before.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PDFDocument, PDFPage } from 'pdf-lib';
+import { PDFDocument, PDFPage, PDFArray, PDFRawStream, StandardFonts, degrees } from 'pdf-lib';
+import zlib from 'zlib';
 import { TEST_COPY_NOTE, TEST_COPY_STAMP } from '@cipansor/shared';
 
 const { documents } = vi.hoisted(() => ({ documents: { testCopy: false } }));
@@ -22,6 +23,7 @@ import {
   stampSignatureVisualisation,
   type LetterPdfInput,
 } from './generate-letter-pdf';
+import { stampIfTestCopy } from './test-copy-stamp';
 import {
   generateRaportMerdekaPdfBuffer,
   type RaportMerdekaPdfData,
@@ -122,4 +124,131 @@ describe('a test copy stamps its documents', () => {
     expect(pagesWith(TEST_COPY_STAMP).size).toBe(0);
     expect(pagesWith(TEST_COPY_NOTE).size).toBe(0);
   });
+});
+
+/**
+ * Where the markings land, read back from the saved bytes.
+ *
+ * A viewer shows the CropBox and applies `/Rotate`; `page.getSize()` measures
+ * the MediaBox. A mark placed with the MediaBox can sit outside the visible
+ * area — in the signed bytes but invisible to the reader — so these tests place
+ * the CropBox off-origin and rotate the page, then read the text matrices back
+ * out of the page's content stream and check they fall inside what is shown.
+ *
+ * (No rasteriser is installed in this repo, so the bytes are the closest
+ * available witness to what a viewer would draw.)
+ */
+describe('test-copy markings sit inside the visible page', () => {
+  /** One content stream, decompressed. */
+  const contentOf = async (pdf: Buffer) => {
+    const doc = await PDFDocument.load(pdf);
+    const page = doc.getPage(0);
+    const streams: PDFRawStream[] = [];
+    const collect = (obj: unknown) => {
+      if (obj instanceof PDFRawStream) streams.push(obj);
+      else if (obj instanceof PDFArray) {
+        for (let i = 0; i < obj.size(); i++) collect(obj.lookup(i));
+      }
+    };
+    collect(page.node.Contents());
+    return streams
+      .map((s) => {
+        try {
+          return zlib.inflateSync(Buffer.from(s.contents)).toString('latin1');
+        } catch {
+          return Buffer.from(s.contents).toString('latin1');
+        }
+      })
+      .join('\n');
+  };
+
+  /** The text matrix of the run whose encoded text is `needle`. */
+  const matrixFor = (content: string, needle: string) => {
+    // pdf-lib encodes text as WinAnsi hex; the em-dash in the stamp is 0x97
+    // there, not its code point.
+    const winAnsi = (ch: string) => (ch === '—' ? 0x97 : ch.charCodeAt(0));
+    const encoded = Buffer.from([...needle].map(winAnsi))
+      .toString('hex')
+      .toUpperCase();
+    const re = new RegExp(
+      `([-\\d.]+) ([-\\d.]+) ([-\\d.]+) ([-\\d.]+) ([-\\d.]+) ([-\\d.]+) Tm\\s*\\n?<${encoded}> Tj`,
+      'g'
+    );
+    const m = re.exec(content);
+    if (!m) throw new Error(`no text run for ${JSON.stringify(needle.slice(0, 12))}`);
+    return { a: Number(m[1]), b: Number(m[2]), e: Number(m[5]), f: Number(m[6]) };
+  };
+
+  /**
+   * The middle of a text run, in the page's coordinates: the anchor plus half
+   * its length along the run's own angle. The middle is what the stamping logic
+   * deliberately centres, and unlike the anchor it cannot fall outside a page
+   * merely because the text is long or diagonal.
+   */
+  const midpointOf = (run: { a: number; b: number; e: number; f: number }, length: number) => {
+    const angle = Math.atan2(run.b, run.a);
+    return {
+      x: run.e + (length / 2) * Math.cos(angle),
+      y: run.f + (length / 2) * Math.sin(angle),
+    };
+  };
+
+  const measure = async (text: string, size: number, bold = false) => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(bold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica);
+    return font.widthOfTextAtSize(text, size);
+  };
+
+  /**
+   * A page cropped to its lower-left 400×400 of a 595×842 media box, optionally
+   * rotated. The media box centre (≈298, 421) and top edge (≈842) both fall
+   * outside the crop, so a mark placed from the media box lands where the
+   * reader cannot see it.
+   */
+  const cropped = async (rotation: 0 | 90 | 180 | 270, crop: [number, number, number, number]) => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([595.28, 841.89]);
+    page.setCropBox(...crop);
+    if (rotation) page.setRotation(degrees(rotation));
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    page.drawText('isi naskah', { x: crop[0] + 4, y: crop[1] + 4, size: 9, font });
+    const reopened = await PDFDocument.load(Buffer.from(await doc.save()));
+    await stampIfTestCopy(reopened);
+    reopened.setCreationDate(new Date(0));
+    reopened.setModificationDate(new Date(0));
+    return { bytes: Buffer.from(await reopened.save()), crop };
+  };
+
+  const inside = (
+    point: { x: number; y: number },
+    [x1, y1, w, h]: [number, number, number, number],
+    slack = 1
+  ) => {
+    expect(point.x).toBeGreaterThanOrEqual(x1 - slack);
+    expect(point.x).toBeLessThanOrEqual(x1 + w + slack);
+    expect(point.y).toBeGreaterThanOrEqual(y1 - slack);
+    expect(point.y).toBeLessThanOrEqual(y1 + h + slack);
+  };
+
+  it.each([0, 90, 180, 270] as const)(
+    'keeps the note inside a cropped, %i°-rotated page',
+    async (rotation) => {
+      documents.testCopy = true;
+      const { bytes, crop } = await cropped(rotation, [0, 0, 400, 400]);
+      const content = await contentOf(bytes);
+      const noteWidth = await measure(TEST_COPY_NOTE, 7.5);
+      inside(midpointOf(matrixFor(content, TEST_COPY_NOTE), noteWidth), crop);
+    }
+  );
+
+  it.each([0, 90, 180, 270] as const)(
+    'keeps the diagonal stamp inside a cropped, %i°-rotated page',
+    async (rotation) => {
+      documents.testCopy = true;
+      const { bytes, crop } = await cropped(rotation, [0, 0, 400, 400]);
+      const content = await contentOf(bytes);
+      const stampWidth = await measure(TEST_COPY_STAMP, 34, true);
+      inside(midpointOf(matrixFor(content, TEST_COPY_STAMP), stampWidth), crop);
+    }
+  );
 });
