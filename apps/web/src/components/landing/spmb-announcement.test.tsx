@@ -193,6 +193,39 @@ describe("SpmbAnnouncement", () => {
     ).toBeInTheDocument();
   });
 
+  it("scopes the opening date to the named unit, not to every school", () => {
+    // Reviewer's example: TK opens 1 January, SD opens 1 February. Nothing is
+    // open yet, so the announcement leads with TK — but the date is TK's, and
+    // the dialog must not tell SD families that SD opens on 1 January too.
+    intakes.mockReturnValue({
+      data: [
+        intake({
+          id: "tk",
+          window: "upcoming",
+          opensAt: "2027-01-01T00:00:00.000Z",
+          unitName: "TK Qur'an Cipansor",
+        }),
+        intake({
+          id: "sd",
+          window: "upcoming",
+          opensAt: "2027-02-01T00:00:00.000Z",
+          unitName: "SD IT Cipansor",
+        }),
+      ],
+    });
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    const dialog = screen.getByTestId("spmb-announcement-dialog");
+    // The date belongs to the unit the announcement leads with…
+    expect(dialog).toHaveTextContent("TK Qur'an Cipansor");
+    expect(dialog).toHaveTextContent("1 Januari 2027");
+    // …and the dialog does not attach it to the other units, which can differ.
+    expect(dialog).not.toHaveTextContent("dan unit lainnya");
+    expect(dialog).toHaveTextContent("Jadwal unit lainnya");
+  });
+
   it("shows nothing on the portal (enabled={false})", () => {
     render(<SpmbAnnouncement locale="id" enabled={false} />);
     expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();

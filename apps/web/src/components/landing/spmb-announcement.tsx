@@ -82,9 +82,11 @@ function rememberDismissed(key: string, periodId: string) {
  * a dialog that appears a few seconds in.
  *
  * What it says is derived from the units' intakes (`findPublicIntakes`), the
- * same source the SPMB page, the hero badge and the chatbot read, so the four
- * cannot disagree. It is never typed by hand, so it cannot outlive the intake
- * it announces the way the old hardcoded "SPMB 2026 Telah Dibuka" badge did.
+ * same source the SPMB page and the chatbot read, so they cannot disagree. It
+ * is never typed by hand, so it cannot outlive the intake it announces the way
+ * the old hardcoded "SPMB 2026 Telah Dibuka" badge did — a badge the hero used
+ * to carry until this announcement replaced it (the banner says the same thing,
+ * so the badge was removed rather than repeated).
  *
  * The shape follows the standards, deliberately:
  * - Google Search Central says to "use banners instead of interstitials" and
