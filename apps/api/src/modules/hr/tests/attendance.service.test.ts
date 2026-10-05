@@ -574,18 +574,29 @@ describe('scoped settings writes cannot change unit', () => {
 
 describe('enforceAttendanceRetention — shared photos', () => {
   const now = new Date('2026-10-01T00:00:00Z');
-  const expiredAt = new Date('2025-01-01T00:00:00Z'); // well past the 365-day window
 
-  function photoRow(id: string, photoUrl: string, capturedAt: Date) {
-    return { id, photoUrl, capturedAt, attendance: { staff: { unitId: 'unit-1' } } };
+  /**
+   * Route the two scans: a due query (`photoUrl: { not: null }`) returns the
+   * rows due in the requested units; the live-eligibility query
+   * (`photoUrl: { in: … }`) returns the URLs still referenced by a live record.
+   */
+  function mockRetentionScan(
+    dueRows: { id: string; photoUrl: string; unitId: string }[],
+    liveUrls: string[]
+  ) {
+    m.attendanceRecord.findMany.mockImplementation(async (args: { where: Record<string, any> }) => {
+      const where = args.where;
+      if (where.photoUrl?.in) return liveUrls.map((photoUrl) => ({ photoUrl }));
+      const unitIds: string[] = where.attendance.staff.unitId.in;
+      return dueRows
+        .filter((r) => unitIds.includes(r.unitId))
+        .map((r) => ({ id: r.id, photoUrl: r.photoUrl }));
+    });
   }
 
   it('keeps a file another, unexpired record still points at', async () => {
     const shared = 'http://localhost:3000/uploads/shared.jpg';
-    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-old', shared, expiredAt)]);
-    // The unexpired row that shares the file is found by the grouped count, not
-    // by loading every stored photo row.
-    m.attendanceRecord.groupBy.mockResolvedValue([{ photoUrl: shared, _count: { _all: 1 } }]);
+    mockRetentionScan([{ id: 'r-old', photoUrl: shared, unitId: 'unit-1' }], [shared]);
 
     const result = await enforceAttendanceRetention(now);
 
@@ -598,9 +609,30 @@ describe('enforceAttendanceRetention — shared photos', () => {
     expect(result.photosErased).toBe(1);
   });
 
+  it('keeps a file a live record in another unit window still points at', async () => {
+    // Unit A keeps 30 days, unit B 365. A's record is 40 days old (due); B's is
+    // 10 days old (live). The shared file must not be deleted for A.
+    const shared = 'http://localhost:3000/uploads/shared.jpg';
+    m.unit.findMany.mockResolvedValue([{ id: 'unit-a' }, { id: 'unit-b' }]);
+    m.attendancePolicy.findMany.mockResolvedValue([
+      { unitId: 'unit-a', photoRetentionDays: 30 },
+      { unitId: 'unit-b', photoRetentionDays: 365 },
+    ]);
+    mockRetentionScan([{ id: 'r-a', photoUrl: shared, unitId: 'unit-a' }], [shared]);
+
+    const result = await enforceAttendanceRetention(now);
+
+    expect(deleteManagedUpload).not.toHaveBeenCalled();
+    expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
+      where: { id: 'r-a', photoUrl: shared },
+      data: { photoUrl: null },
+    });
+    expect(result.photosErased).toBe(1);
+  });
+
   it('deletes a file once no unexpired record references it', async () => {
     const url = 'http://localhost:3000/uploads/solo.jpg';
-    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-1', url, expiredAt)]);
+    mockRetentionScan([{ id: 'r-1', photoUrl: url, unitId: 'unit-1' }], []);
 
     await enforceAttendanceRetention(now);
 
@@ -612,7 +644,7 @@ describe('enforceAttendanceRetention — shared photos', () => {
   });
 
   it('reads only the rows that can have expired, not the whole photo history', async () => {
-    m.attendanceRecord.findMany.mockResolvedValue([]);
+    mockRetentionScan([], []);
 
     await enforceAttendanceRetention(now);
 
@@ -620,36 +652,56 @@ describe('enforceAttendanceRetention — shared photos', () => {
     expect(where.photoUrl).toEqual({ not: null });
     // Bounded by the retention horizon, so the scan cannot grow without limit.
     expect(where.capturedAt.lt).toBeInstanceOf(Date);
-    expect(m.attendanceRecord.groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({ by: ['photoUrl'] })
-    );
   });
 
-  it('scopes the scan per retention window so a long window is not revisited daily', async () => {
+  it('scopes the due-scan per retention window so a long window is not revisited daily', async () => {
     // unit-1 keeps photos 365 days, unit-2 only 30.
     m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }, { id: 'unit-2' }]);
     m.attendancePolicy.findMany.mockResolvedValue([
       { unitId: 'unit-1', photoRetentionDays: 365 },
       { unitId: 'unit-2', photoRetentionDays: 30 },
     ]);
-    m.attendanceRecord.findMany.mockResolvedValue([]);
+    mockRetentionScan([], []);
 
     await enforceAttendanceRetention(now);
 
     // One due-set query per distinct window, each scoped to its own units and
     // cutoff, so unit-1's not-yet-due rows are never loaded before day 365.
-    const calls = m.attendanceRecord.findMany.mock.calls.map((c) => c[0].where);
-    expect(calls).toHaveLength(2);
-    const short = calls.find((w) => w.attendance.staff.unitId.in.includes('unit-2'));
-    const long = calls.find((w) => w.attendance.staff.unitId.in.includes('unit-1'));
+    const due = m.attendanceRecord.findMany.mock.calls
+      .map((c) => c[0].where)
+      .filter((w) => w.photoUrl?.not === null);
+    expect(due).toHaveLength(2);
+    const short = due.find((w) => w.attendance.staff.unitId.in.includes('unit-2'));
+    const long = due.find((w) => w.attendance.staff.unitId.in.includes('unit-1'));
     expect(short.attendance.staff.unitId.in).toEqual(['unit-2']);
     expect(long.attendance.staff.unitId.in).toEqual(['unit-1']);
     expect(short.capturedAt.lt.getTime()).toBeGreaterThan(long.capturedAt.lt.getTime());
   });
 
+  it('judges deletion eligibility globally, not per window', async () => {
+    // Two windows; the due row is in the short one, the live reference in the
+    // long one. The live query must be able to see across both.
+    const shared = 'http://localhost:3000/uploads/shared.jpg';
+    m.unit.findMany.mockResolvedValue([{ id: 'unit-a' }, { id: 'unit-b' }]);
+    m.attendancePolicy.findMany.mockResolvedValue([
+      { unitId: 'unit-a', photoRetentionDays: 30 },
+      { unitId: 'unit-b', photoRetentionDays: 365 },
+    ]);
+    mockRetentionScan([{ id: 'r-a', photoUrl: shared, unitId: 'unit-a' }], [shared]);
+
+    await enforceAttendanceRetention(now);
+
+    const liveQuery = m.attendanceRecord.findMany.mock.calls
+      .map((c) => c[0].where)
+      .find((w) => Array.isArray(w.photoUrl?.in));
+    expect(liveQuery.photoUrl.in).toEqual([shared]);
+    // One clause per window, so a reference in either unit counts as live.
+    expect(liveQuery.OR).toHaveLength(2);
+  });
+
   it('leaves an external URL and its reference alone', async () => {
     const url = 'https://photos.example/selfie.jpg';
-    m.attendanceRecord.findMany.mockResolvedValue([photoRow('r-1', url, expiredAt)]);
+    mockRetentionScan([{ id: 'r-1', photoUrl: url, unitId: 'unit-1' }], []);
     vi.mocked(deleteManagedUpload).mockResolvedValue('unsupported');
 
     const result = await enforceAttendanceRetention(now);

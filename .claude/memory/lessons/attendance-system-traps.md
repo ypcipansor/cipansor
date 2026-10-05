@@ -79,12 +79,29 @@ is a stranded record.
 The selfie retention job read *every* record that had a photo on each daily
 run to decide which shared uploads could still be referenced — memory and scan
 time grew with the full retained history, not with the day's work. Only rows
-that can have expired need reading, and "expired" is per unit: run the scan
+that can have expired need reading, and "expired" is per unit: run the due-scan
 once per distinct retention window (each query filtered to that window's units
 and cutoff), so a unit with a long window is never revisited day after day
-before its deadline. Count the unexpired references that could still share a
-file with one grouped query (`groupBy` on the URL) per window instead of
-loading them, and delete each file at most once per run when several expired
-rows share it. A sweep that runs daily must cost O(what is due), not O(all
-history) — and with mixed policies, O(what is due *under each policy*), not
-O(everything past the shortest one).
+before its deadline. A sweep that runs daily must cost O(what is due), not
+O(all history) — and with mixed policies, O(what is due *under each policy*),
+not O(everything past the shortest one).
+
+## A shared file judged only within the current window
+
+Narrowing the due-scan per window also narrowed the *eligibility* check if you
+reuse it: the grouped count of "still referenced" records saw only the units in
+the current window, so a file shared with a record in another unit's window was
+deleted out from under it. The two questions are different and must not share
+one scope: **what is due** is per policy (a window), **whether a file may be
+removed** is global (any live reference anywhere, judged by *that record's own*
+policy). Keep the candidate set bounded — the URLs of the rows actually due —
+and resolve their live references in one query across every window (`OR` of
+per-window clauses), rather than loading the whole photo history. A URL on a
+still-live record must survive even when the row that triggered the sweep is
+past its own deadline.
+
+## A file is deleted at most once per run
+
+When several expired rows share one upload, the first deletes the bytes and the
+rest must only drop their reference — but the "already deleted" set has to be
+per *file*, checked before every delete, not per row.

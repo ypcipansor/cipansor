@@ -135,7 +135,9 @@ items before 2026-09-25 is in the history of this file and of
        (it still blocks, now scoped to the requested staff);
     6. **open** — corrections carry a reason and write an `AuditLog`, but there
        is **no UI** and `delete` is still a hard delete;
-    7. ~~a retention job for selfies~~ — daily job, one number;
+    7. ~~a retention job for selfies~~ — daily job, one number; the due-scan is
+       per retention window and deletion eligibility is judged globally across
+       all live references;
     8. ~~e2e for `/hr/attendance/me`, `/bulk` and `/settings`~~.
     Then phase 1: `tiersJson` as an array; `EARLY_LEAVE`/`OVERTIME` derived
     from check-out; the 1/173 overtime basis per PP 35/2021 Ps. 32; enforce
