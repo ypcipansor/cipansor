@@ -1,10 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight } from "lucide-react";
+import { headers } from "next/headers";
 import { LandingNavbar } from "@/components/landing/navbar";
 import { LandingFooter } from "@/components/landing/footer";
+import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import type { ContentBlock } from "@/config/content";
 import { getServerLocale } from "@/lib/server-locale";
+import { isPortalHost } from "@/lib/host-split";
 import { translations } from "@/locales";
 
 /**
@@ -43,11 +46,20 @@ export async function PublicPage({
   heroImage?: { src: string; alt: string };
   children: React.ReactNode;
 }) {
-  const dict = translations[await getServerLocale()];
+  const locale = await getServerLocale();
+  const dict = translations[locale];
+  // The portal does not show the announcement — it is for prospective families.
+  // `isPortalHost` is false for localhost and previews, so dev and staging keep
+  // it (the same polarity as `pwaEnabledForHost`).
+  const showAnnouncement = !isPortalHost((await headers()).get("host"));
 
   return (
     <div className="flex min-h-screen flex-col">
       <LandingNavbar />
+      {/* The SPMB announcement rides every public page here. It sits after the
+          fixed navbar and before the page body; `sticky top-16` keeps it under
+          the header without any page needing extra padding. */}
+      <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
       <main id="main-content" className="flex-1 pt-16">
         <header className="border-b border-border bg-muted/30">
           <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 lg:py-16">

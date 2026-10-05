@@ -1,5 +1,6 @@
 import { LandingNavbar } from "@/components/landing/navbar";
 import { LandingFooter } from "@/components/landing/footer";
+import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import { HeroSection } from "@/components/landing/sections/hero";
 import { StatsSection } from "@/components/landing/sections/stats";
 import { AboutSection } from "@/components/landing/sections/about";
@@ -12,6 +13,8 @@ import { siteConfig } from "@/config/site";
 import { publicContentFor } from "@/config/content.i18n";
 import { siteTextFor } from "@/config/site.i18n";
 import { getServerLocale } from "@/lib/server-locale";
+import { isPortalHost } from "@/lib/host-split";
+import { headers } from "next/headers";
 import { Metadata } from "next";
 import type { Locale } from "@/locales";
 
@@ -48,6 +51,11 @@ export default async function Home() {
   // sections stay pure functions of the locale and the cookie is touched once.
   const locale = await getServerLocale();
   const content = publicContentFor(locale);
+  // The portal never shows the announcement: it is for prospective families,
+  // and a visitor already signed in to the system does not need to be told that
+  // registration is open. `isPortalHost` is false for localhost and previews,
+  // so `pnpm dev` and staging keep it (the same polarity as `pwaEnabledForHost`).
+  const showAnnouncement = !isPortalHost((await headers()).get("host"));
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -55,6 +63,11 @@ export default async function Home() {
           renders too — it now travels with every public page instead of only
           this one. See config/organization-jsonld.ts. */}
       <LandingNavbar />
+      <SpmbAnnouncement
+        locale={locale}
+        enabled={showAnnouncement}
+        className="mt-16"
+      />
       <main id="main-content" className="flex-1">
         <HeroSection locale={locale} />
         <StatsSection locale={locale} />

@@ -1,0 +1,211 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, act } from "@testing-library/react";
+import type { PublicIntakeDTO } from "@cipansor/shared";
+import { spmbAnnouncementOf } from "@cipansor/shared";
+
+/**
+ * The SPMB announcement on the public site.
+ *
+ * The interesting part is the *rule*, not the markup: it must speak for a unit
+ * whose registration is open, else for the one that opens soonest, else stay
+ * silent — and it must never come back once dismissed for the intake it
+ * announced, but must return for the next one. That last distinction is what a
+ * permanent "1" in storage used to get wrong (the same bug the install banner
+ * had), so it is pinned here.
+ */
+
+// --- fixtures -------------------------------------------------------------
+
+/** The fields `spmbAnnouncementOf` reads; the rest is filled to satisfy the DTO. */
+function intake(
+  over: Partial<PublicIntakeDTO["period"]> & {
+    unitName?: string;
+  } = {},
+): PublicIntakeDTO {
+  const { unitName = "SMP IT Cipansor", ...period } = over;
+  return {
+    unit: { id: "u1", name: unitName, officialName: null, type: "SMP_IT" },
+    period: {
+      id: period.id ?? "p1",
+      name: "SPMB",
+      academicYear: "2027/2028",
+      startDate: "2026-10-01T00:00:00.000Z",
+      endDate: "2027-07-10T00:00:00.000Z",
+      window: "open",
+      opensAt: null,
+      closesAt: null,
+      registrationFee: 0,
+      requirements: [],
+      minAgeMonths: null,
+      ageReferenceDate: null,
+      contactName: null,
+      contactPhone: null,
+      ...period,
+    },
+    waves: [],
+    fees: [],
+  };
+}
+
+describe("spmbAnnouncementOf", () => {
+  it("speaks for a unit whose registration is open today", () => {
+    const a = spmbAnnouncementOf([
+      intake({ id: "closed", window: "closed" }),
+      intake({ id: "open", window: "open", unitName: "SD IT Cipansor" }),
+    ]);
+    expect(a?.window).toBe("open");
+    expect(a?.unit.name).toBe("SD IT Cipansor");
+    expect(a?.period.id).toBe("open");
+    expect(a?.period.academicYear).toBe("2027/2028");
+  });
+
+  it("prefers an open intake over one that opens later", () => {
+    // Otherwise the announcement would read "opens 1 January" while a sibling
+    // school is taking registrations today.
+    const a = spmbAnnouncementOf([
+      intake({
+        id: "later",
+        window: "upcoming",
+        opensAt: "2027-01-01T00:00:00.000Z",
+      }),
+      intake({ id: "now", window: "open", unitName: "SMP IT Cipansor" }),
+    ]);
+    expect(a?.window).toBe("open");
+    expect(a?.period.id).toBe("now");
+  });
+
+  it("announces the soonest opening when nothing is open", () => {
+    const a = spmbAnnouncementOf([
+      intake({
+        id: "mar",
+        window: "upcoming",
+        opensAt: "2027-03-08T00:00:00.000Z",
+      }),
+      intake({
+        id: "jan",
+        window: "upcoming",
+        opensAt: "2027-01-01T00:00:00.000Z",
+      }),
+    ]);
+    expect(a?.window).toBe("upcoming");
+    expect(a?.period.id).toBe("jan");
+    expect(a?.period.opensAt).toBe("2027-01-01T00:00:00.000Z");
+  });
+
+  it("announces nothing when every intake is closed", () => {
+    expect(
+      spmbAnnouncementOf([
+        intake({ window: "closed" }),
+        intake({ window: "closed" }),
+      ]),
+    ).toBeNull();
+    expect(spmbAnnouncementOf([])).toBeNull();
+  });
+
+  it("ignores an upcoming intake with no opening date", () => {
+    expect(
+      spmbAnnouncementOf([intake({ window: "upcoming", opensAt: null })]),
+    ).toBeNull();
+  });
+});
+
+// --- the component --------------------------------------------------------
+
+const defaultIntakes = () => ({
+  data: [intake({ window: "open", id: "period-1" })],
+});
+
+const intakes = vi.fn<() => { data: PublicIntakeDTO[] }>(defaultIntakes);
+
+vi.mock("@/hooks/use-admissions", () => ({
+  usePublicIntakes: () => intakes(),
+}));
+
+vi.mock("next/link", () => ({
+  default: ({ children, ...rest }: { children: React.ReactNode }) => (
+    <a {...rest}>{children}</a>
+  ),
+}));
+
+import { SpmbAnnouncement } from "./spmb-announcement";
+
+beforeEach(() => {
+  localStorage.clear();
+  vi.useFakeTimers();
+  intakes.mockReturnValue(defaultIntakes());
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+});
+
+describe("SpmbAnnouncement", () => {
+  it("shows a dismissible banner when a unit is open", () => {
+    render(<SpmbAnnouncement locale="id" />);
+    expect(screen.getByTestId("spmb-announcement-banner")).toBeInTheDocument();
+    expect(
+      screen.getByText("Pendaftaran SPMB 2027/2028 telah dibuka"),
+    ).toBeInTheDocument();
+    // The banner links to the real registration page.
+    expect(
+      screen.getByRole("link", { name: "Daftar sekarang" }),
+    ).toHaveAttribute("href", "/public/spmb");
+  });
+
+  it("shows nothing when no intake is open or upcoming", () => {
+    intakes.mockReturnValue({ data: [intake({ window: "closed" })] });
+    render(<SpmbAnnouncement locale="id" />);
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("shows nothing on the portal (enabled={false})", () => {
+    render(<SpmbAnnouncement locale="id" enabled={false} />);
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("does not show a banner the visitor already dismissed for this intake", () => {
+    localStorage.setItem("spmb-announcement-banner", "period-1");
+    render(<SpmbAnnouncement locale="id" />);
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("shows a later-intake announcement again after an earlier one was dismissed", () => {
+    // The dismissal is remembered against the period id, so next year's intake
+    // returns. A permanent "1" would hide it forever. The mock returns one
+    // stable value, as React Query's cache does, so the second render sees the
+    // same intake and the banner is not re-hidden.
+    localStorage.setItem("spmb-announcement-banner", "period-1");
+    intakes.mockReturnValue({
+      data: [intake({ window: "open", id: "period-2" })],
+    });
+    render(<SpmbAnnouncement locale="id" />);
+    expect(screen.getByTestId("spmb-announcement-banner")).toBeInTheDocument();
+  });
+
+  it("opens the dialog only after the delay, not at once", () => {
+    render(<SpmbAnnouncement locale="id" />);
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("spmb-announcement-dialog")).toBeInTheDocument();
+  });
+
+  it("does not open the dialog when the visitor dismissed it for this intake", () => {
+    localStorage.setItem("spmb-announcement-dialog", "period-1");
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+  });
+
+  it("does not open the dialog where the page asked for the banner only", () => {
+    render(<SpmbAnnouncement locale="id" withDialog={false} />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+  });
+});
