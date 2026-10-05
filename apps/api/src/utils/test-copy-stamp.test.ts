@@ -133,7 +133,8 @@ describe('a test copy stamps its documents', () => {
  * the MediaBox. A mark placed with the MediaBox can sit outside the visible
  * area — in the signed bytes but invisible to the reader — so these tests place
  * the CropBox off-origin and rotate the page, then read the text matrices back
- * out of the page's content stream and check they fall inside what is shown.
+ * out of the page's content stream and check every corner of the run falls
+ * inside what is shown.
  *
  * (No rasteriser is installed in this repo, so the bytes are the closest
  * available witness to what a viewer would draw.)
@@ -162,8 +163,12 @@ describe('test-copy markings sit inside the visible page', () => {
       .join('\n');
   };
 
-  /** The text matrix of the run whose encoded text is `needle`. */
-  const matrixFor = (content: string, needle: string) => {
+  /**
+   * The text matrix and font size of the run whose encoded text is `needle`. The
+   * size is read from the `Tf` before the `Tm`, so the check stays honest if the
+   * stamping logic shrinks a marking to fit a small page.
+   */
+  const runFor = (content: string, needle: string) => {
     // pdf-lib encodes text as WinAnsi hex; the em-dash in the stamp is 0x97
     // there, not its code point.
     const winAnsi = (ch: string) => (ch === '—' ? 0x97 : ch.charCodeAt(0));
@@ -176,34 +181,59 @@ describe('test-copy markings sit inside the visible page', () => {
     );
     const m = re.exec(content);
     if (!m) throw new Error(`no text run for ${JSON.stringify(needle.slice(0, 12))}`);
-    return { a: Number(m[1]), b: Number(m[2]), e: Number(m[5]), f: Number(m[6]) };
+    const before = content.slice(0, m.index);
+    const tf = [...before.matchAll(/\/[^\s/]+ ([-.\d]+) Tf/g)].pop();
+    return {
+      a: Number(m[1]),
+      b: Number(m[2]),
+      e: Number(m[5]),
+      f: Number(m[6]),
+      size: tf ? Number(tf[1]) : 0,
+    };
   };
 
   /**
-   * The middle of a text run, in the page's coordinates: the anchor plus half
-   * its length along the run's own angle. The middle is what the stamping logic
-   * deliberately centres, and unlike the anchor it cannot fall outside a page
-   * merely because the text is long or diagonal.
+   * The four corners of a text run in the page's coordinates: the anchor plus
+   * the baseline vector (`length`, along the run's angle) and the ascent
+   * (`height`, perpendicular to it, rising from the baseline). Checking every
+   * corner, not the midpoint, is what proves the whole marking is visible.
    */
-  const midpointOf = (run: { a: number; b: number; e: number; f: number }, length: number) => {
+  const cornersOf = (
+    run: { a: number; b: number; e: number; f: number },
+    length: number,
+    height: number
+  ) => {
     const angle = Math.atan2(run.b, run.a);
-    return {
-      x: run.e + (length / 2) * Math.cos(angle),
-      y: run.f + (length / 2) * Math.sin(angle),
-    };
+    const ux = Math.cos(angle);
+    const uy = Math.sin(angle);
+    const px = -Math.sin(angle);
+    const py = Math.cos(angle);
+    return [
+      [0, 0],
+      [length, 0],
+      [length, height],
+      [0, height],
+    ].map(([along, across]) => ({
+      x: run.e + along * ux + across * px,
+      y: run.f + along * uy + across * py,
+    }));
   };
 
   const measure = async (text: string, size: number, bold = false) => {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(bold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica);
-    return font.widthOfTextAtSize(text, size);
+    return {
+      width: font.widthOfTextAtSize(text, size),
+      height: font.heightAtSize(size),
+    };
   };
 
   /**
-   * A page cropped to its lower-left 400×400 of a 595×842 media box, optionally
-   * rotated. The media box centre (≈298, 421) and top edge (≈842) both fall
-   * outside the crop, so a mark placed from the media box lands where the
-   * reader cannot see it.
+   * A page whose CropBox is a 400×400 square inside a 595×842 MediaBox — at the
+   * origin or offset into the sheet, the shape a scanner or "print to PDF"
+   * leaves — optionally rotated. The MediaBox centre (≈298, 421) and top edge
+   * (≈842) both fall outside every crop here, so a mark placed from the MediaBox
+   * lands where the reader cannot see it.
    */
   const cropped = async (rotation: 0 | 90 | 180 | 270, crop: [number, number, number, number]) => {
     const doc = await PDFDocument.create();
@@ -230,25 +260,42 @@ describe('test-copy markings sit inside the visible page', () => {
     expect(point.y).toBeLessThanOrEqual(y1 + h + slack);
   };
 
-  it.each([0, 90, 180, 270] as const)(
-    'keeps the note inside a cropped, %i°-rotated page',
-    async (rotation) => {
+  const crops: Array<[number, number, number, number]> = [
+    [0, 0, 400, 400],
+    [60, 90, 400, 400],
+    [95.28, 41.89, 400, 400],
+    // Narrower than the note at its full size (≈349pt), so the note only fits
+    // because the logic shrinks it — a midpoint check would pass here while the
+    // ends hang off both sides.
+    [0, 0, 320, 400],
+  ];
+  const rotations = [0, 90, 180, 270] as const;
+
+  it.each(crops.map((c) => [c]))(
+    'keeps the whole note inside a %o-cropped page at every rotation',
+    async (crop) => {
       documents.testCopy = true;
-      const { bytes, crop } = await cropped(rotation, [0, 0, 400, 400]);
-      const content = await contentOf(bytes);
-      const noteWidth = await measure(TEST_COPY_NOTE, 7.5);
-      inside(midpointOf(matrixFor(content, TEST_COPY_NOTE), noteWidth), crop);
+      for (const rotation of rotations) {
+        const { bytes } = await cropped(rotation, crop);
+        const content = await contentOf(bytes);
+        const run = runFor(content, TEST_COPY_NOTE);
+        const { width, height } = await measure(TEST_COPY_NOTE, run.size);
+        for (const corner of cornersOf(run, width, height)) inside(corner, crop);
+      }
     }
   );
 
-  it.each([0, 90, 180, 270] as const)(
-    'keeps the diagonal stamp inside a cropped, %i°-rotated page',
-    async (rotation) => {
+  it.each(crops.map((c) => [c]))(
+    'keeps the whole diagonal stamp inside a %o-cropped page at every rotation',
+    async (crop) => {
       documents.testCopy = true;
-      const { bytes, crop } = await cropped(rotation, [0, 0, 400, 400]);
-      const content = await contentOf(bytes);
-      const stampWidth = await measure(TEST_COPY_STAMP, 34, true);
-      inside(midpointOf(matrixFor(content, TEST_COPY_STAMP), stampWidth), crop);
+      for (const rotation of rotations) {
+        const { bytes } = await cropped(rotation, crop);
+        const content = await contentOf(bytes);
+        const run = runFor(content, TEST_COPY_STAMP);
+        const { width, height } = await measure(TEST_COPY_STAMP, run.size, true);
+        for (const corner of cornersOf(run, width, height)) inside(corner, crop);
+      }
     }
   );
 });

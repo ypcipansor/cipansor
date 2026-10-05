@@ -1,10 +1,14 @@
-import { PDFDocument, StandardFonts, degrees, reduceRotation, rgb } from 'pdf-lib';
+import { PDFDocument, PDFFont, StandardFonts, degrees, reduceRotation, rgb } from 'pdf-lib';
 import { TEST_COPY_NOTE, TEST_COPY_STAMP } from '@cipansor/shared';
 import { config } from '@/config';
 
 const ANGLE = 45;
 const STAMP_SIZE = 34;
 const NOTE_SIZE = 7.5;
+/** Space kept between a marking's box and the edge of the visible page. */
+const EDGE_MARGIN = 12;
+/** A marking is never shrunk below this, however small the page. */
+const MIN_MARK_SIZE = 4;
 const RED = rgb(0.75, 0.1, 0.1);
 
 /**
@@ -52,6 +56,60 @@ function displayedSize(
 }
 
 /**
+ * Places a run of text so its whole box — not just its anchor or its midpoint —
+ * sits inside a rectangle of `width` × `height`, centred, turned by `angle`.
+ *
+ * pdf-lib draws from the baseline's left end, so a long or diagonal run anchored
+ * at the page's centre hangs past the edges even when its midpoint is well
+ * inside. This computes the box the run will occupy (length `runWidth`, height
+ * the font's, rising from the baseline) and shifts the anchor so the box is
+ * centred; `size` is shrunk when the turned box cannot fit within the margin.
+ * The result is in the displayed coordinate system — hand it to
+ * `displayedPointToPage`.
+ */
+function placeMark(
+  font: PDFFont,
+  text: string,
+  size: number,
+  angleDeg: number,
+  width: number,
+  height: number
+): { x: number; y: number; size: number } {
+  const a = (angleDeg * Math.PI) / 180;
+  const cos = Math.abs(Math.cos(a));
+  const sin = Math.abs(Math.sin(a));
+  // The box scales linearly with the size, so one step fits it exactly: at any
+  // size `s` it is `(L, H)·s/size`.
+  const runWidth = font.widthOfTextAtSize(text, size);
+  const runHeight = font.heightAtSize(size);
+  const boxAtSize = runWidth * cos + runHeight * sin;
+  const boxAtSizeHeight = runWidth * sin + runHeight * cos;
+  const maxWidth = Math.max(width - 2 * EDGE_MARGIN, 0);
+  const maxHeight = Math.max(height - 2 * EDGE_MARGIN, 0);
+  const fit = Math.min(
+    1,
+    boxAtSize > 0 ? maxWidth / boxAtSize : 1,
+    boxAtSizeHeight > 0 ? maxHeight / boxAtSizeHeight : 1
+  );
+  const finalSize = Math.max(size * fit, MIN_MARK_SIZE);
+
+  const l = font.widthOfTextAtSize(text, finalSize);
+  const h = font.heightAtSize(finalSize);
+  const boxWidth = l * cos + h * sin;
+  const boxHeight = l * sin + h * cos;
+  // The run's box corners are `l·(cosA, sinA) + h·(−sinA, cosA)` for l∈{0,L},
+  // h∈{0,H}; the minimum of each coordinate is the sum of the two minima, which
+  // is where the box's lower-left corner sits relative to the anchor.
+  const boxMinX = Math.min(0, l * Math.cos(a)) + Math.min(0, -h * Math.sin(a));
+  const boxMinY = Math.min(0, l * Math.sin(a)) + Math.min(0, h * Math.cos(a));
+  return {
+    x: width / 2 - boxMinX - boxWidth / 2,
+    y: height / 2 - boxMinY - boxHeight / 2,
+    size: finalSize,
+  };
+}
+
+/**
  * Stamps every page of a document from a test copy of the system
  * (`config.documents.testCopy`, staging): "SALINAN UJI — BUKAN DOKUMEN SAH"
  * across the page and a line at its top saying where it came from.
@@ -65,9 +123,6 @@ export async function stampIfTestCopy(pdfDoc: PDFDocument): Promise<void> {
 
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const regular = await pdfDoc.embedFont(StandardFonts.Helvetica);
-  const stampWidth = bold.widthOfTextAtSize(TEST_COPY_STAMP, STAMP_SIZE);
-  const noteWidth = regular.widthOfTextAtSize(TEST_COPY_NOTE, NOTE_SIZE);
-  const rad = (ANGLE * Math.PI) / 180;
 
   for (const page of pdfDoc.getPages()) {
     // The viewer shows the CropBox, not the MediaBox, and rotates the page by
@@ -81,15 +136,14 @@ export async function stampIfTestCopy(pdfDoc: PDFDocument): Promise<void> {
     // by the page's own rotation.
     const { width, height } = displayedSize(crop, rotation);
 
-    // The text is drawn from its baseline's left end; place that end so the
-    // middle of the rotated text sits on the middle of the visible area.
-    const stampX = width / 2 - (stampWidth / 2) * Math.cos(rad) + (STAMP_SIZE / 3) * Math.sin(rad);
-    const stampY = height / 2 - (stampWidth / 2) * Math.sin(rad) - (STAMP_SIZE / 3) * Math.cos(rad);
-    const stampAt = displayedPointToPage(stampX, stampY, crop, rotation);
+    // The diagonal stamp, centred: its whole turned box is kept inside the
+    // visible area, shrunk if the page is too small for it at full size.
+    const stamp = placeMark(bold, TEST_COPY_STAMP, STAMP_SIZE, ANGLE, width, height);
+    const stampAt = displayedPointToPage(stamp.x, stamp.y, crop, rotation);
     page.drawText(TEST_COPY_STAMP, {
       x: stampAt.x,
       y: stampAt.y,
-      size: STAMP_SIZE,
+      size: stamp.size,
       font: bold,
       color: RED,
       opacity: 0.22,
@@ -98,11 +152,18 @@ export async function stampIfTestCopy(pdfDoc: PDFDocument): Promise<void> {
       rotate: degrees(ANGLE + stampAt.angle),
     });
 
-    const noteAt = displayedPointToPage((width - noteWidth) / 2, height - 16, crop, rotation);
+    // The note along the top edge, its box clear of the corner by the margin.
+    const note = placeMark(regular, TEST_COPY_NOTE, NOTE_SIZE, 0, width, height);
+    const noteAt = displayedPointToPage(
+      note.x,
+      height - EDGE_MARGIN - regular.heightAtSize(note.size),
+      crop,
+      rotation
+    );
     page.drawText(TEST_COPY_NOTE, {
       x: noteAt.x,
       y: noteAt.y,
-      size: NOTE_SIZE,
+      size: note.size,
       font: regular,
       color: RED,
       rotate: degrees(noteAt.angle),
