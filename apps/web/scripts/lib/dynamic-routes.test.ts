@@ -3,8 +3,10 @@ import {
   firstParamValue,
   mergeResolved,
   matchesDynamicPattern,
+  rowHasValue,
   staleCarriedPatterns,
   unaccountedPatterns,
+  walkList,
 } from "./dynamic-routes";
 
 describe("mergeResolved", () => {
@@ -135,6 +137,75 @@ describe("staleCarriedPatterns", () => {
         new Set(),
       ),
     ).toEqual([]);
+  });
+});
+
+describe("rowHasValue", () => {
+  it("matches an id field", () => {
+    expect(rowHasValue({ id: "p-1", status: "PENDING" }, "p-1")).toBe(true);
+  });
+
+  it("matches a non-id field the URL parameter actually holds", () => {
+    // `/hr/employees/[id]` holds a `userId`, not the staff row's `id`; a probe
+    // that only read `r.id` would call the live URL gone.
+    expect(rowHasValue({ id: "staff-1", userId: "user-9" }, "user-9")).toBe(
+      true,
+    );
+    expect(
+      rowHasValue(
+        { id: "cert-1", certificateNumber: "OTH/09/2026" },
+        "OTH/09/2026",
+      ),
+    ).toBe(true);
+  });
+
+  it("matches a bare string row", () => {
+    expect(rowHasValue("Kedisiplinan", "Kedisiplinan")).toBe(true);
+  });
+
+  it("does not match a value the row does not carry", () => {
+    expect(rowHasValue({ id: "p-1", userId: "u-1" }, "p-old")).toBe(false);
+  });
+});
+
+describe("walkList", () => {
+  it("keeps a saved id live when it lies past the first page", async () => {
+    // The regression Devin flagged: the saved PENDING permit is on page 2, so a
+    // probe that read only page 1 would have declared it gone.
+    const pages: Record<number, string[]> = {
+      1: ["p-new-1", "p-new-2"],
+      2: ["p-old"],
+    };
+    const verdict = await walkList("p-old", async (page) => ({
+      ids: pages[page] ?? [],
+      last: page >= 2,
+    }));
+    expect(verdict).toBe("live");
+  });
+
+  it("declares an id gone only after reading the last page", async () => {
+    const verdict = await walkList("p-old", async (page) => ({
+      ids: page === 1 ? ["p-a"] : [],
+      last: true,
+    }));
+    expect(verdict).toBe("gone");
+  });
+
+  it("is unknown when a page fails mid-walk", async () => {
+    const verdict = await walkList("p-old", async (page) => {
+      if (page === 1) return { ids: ["p-a"], last: false };
+      return { ids: [], last: false, failed: true };
+    });
+    expect(verdict).toBe("unknown");
+  });
+
+  it("stops at the page cap as unknown, never gone", async () => {
+    const verdict = await walkList(
+      "p-old",
+      async () => ({ ids: ["p-a"], last: false }),
+      3,
+    );
+    expect(verdict).toBe("unknown");
   });
 });
 

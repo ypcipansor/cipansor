@@ -19,7 +19,11 @@ import { loginAs } from "./lib/auth-state";
 import {
   firstParamValue,
   mergeResolved,
+  rowHasValue,
   unaccountedPatterns,
+  walkList,
+  type PageProbe,
+  type ProbeVerdict,
 } from "./lib/dynamic-routes";
 
 const API_URL = process.env.API_URL || "http://localhost:3001/api";
@@ -55,6 +59,15 @@ interface Hint {
     string,
     { path: string; pick: (row: any) => string | undefined }
   >;
+  /**
+   * Whether the id can be probed for liveness against `list`. Default true. Set
+   * false for a pattern whose value is a **fixed slug the page owns**, not a row
+   * id — a public unit or news slug renders from static content, so the API list
+   * is only consulted to keep `resolveOne` uniform and says nothing about whether
+   * the slug still exists. Probing one would fail a live page whenever the list
+   * is empty (a database with no marketing campaigns, say).
+   */
+  liveness?: boolean;
 }
 
 const HINTS: Record<string, Hint> = {
@@ -170,8 +183,10 @@ const HINTS: Record<string, Hint> = {
   },
   // The five unit pages are a closed static set (`educationUnits` in
   // `@cipansor/shared`), not rows in the `units` table — the DB has no `slug`
-  // column, so a unit id here renders the public 404 page.
-  "/unit/[slug]": { list: "/units", pick: () => "sdit" },
+  // column, so a unit id here renders the public 404 page. The slug is the
+  // page's own fixed value, so it must not be probed for liveness: an empty
+  // `/units` response says nothing about the static page.
+  "/unit/[slug]": { list: "/units", pick: () => "sdit", liveness: false },
   // The verification route is public and resolves a certificate by its
   // `certificateNumber` (the code the signed PDF/QR carries). Point it at a real
   // number so the page renders a genuine "valid" result, not its own guard state.
@@ -252,10 +267,13 @@ const HINTS: Record<string, Hint> = {
   "/tahfidz/simaan/[id]": { list: "/simaan" },
   "/tahfidz/simaan/[id]/edit": { list: "/simaan" },
   // News articles are a closed static set in `content.ts` (`getArticle`), not
-  // marketing CMS rows — a campaign id renders the 404 page.
+  // marketing CMS rows — a campaign id renders the 404 page. The slug is the
+  // page's own fixed value, so it must not be probed: a database with no
+  // campaigns would otherwise fail a page that still renders.
   "/berita/[slug]": {
     list: "/marketing/campaigns",
     pick: () => "osn-kecamatan-kadipaten-2026",
+    liveness: false,
   },
 };
 
@@ -312,8 +330,18 @@ interface FirstParamSource {
   listPath: string;
   /** The query the list needs (unit/year scope), as it was applied. */
   listQuery: Record<string, string> | undefined;
-  /** The unit the list answered for, when it is unit-scoped. */
-  unitId: string | undefined;
+  /**
+   * The units to probe, for a unit-scoped list. Empty for an unscoped list. A
+   * carried id may live in any unit, so the probe walks them all rather than
+   * trusting the one this run happened to read a row from.
+   */
+  units: string[];
+  /**
+   * Whether the id may be probed for liveness against `listPath`. False for a
+   * fixed slug the page owns (a public unit or news slug): the list is not the
+   * slug's source, so its absence says nothing.
+   */
+  liveness: boolean;
 }
 
 /** Pull an id from the widest selection of envelope shapes we can. */
@@ -388,8 +416,6 @@ interface ResolveOutcome {
   url: string | null;
   /** Present when the run got as far as a list for the first parameter. */
   source?: FirstParamSource;
-  /** A fresh list answered with no rows: the page has no seeded row at all. */
-  listEmpty?: boolean;
 }
 
 async function resolveOne(
@@ -433,7 +459,6 @@ async function resolveOne(
   // must ask this one — asking a parent collection would report every id dead.
   const entityPath = listPaths[0] ?? "";
   let entityAnswered = false;
-  let listAnswered = false;
   outer: for (const unitId of unitCandidates) {
     for (const candidate of listPaths) {
       const { payload, status } = await getJsonWithStatus(
@@ -446,7 +471,6 @@ async function resolveOne(
       if (arr.length > 0) {
         rows = arr;
         resolvedUnitId = unitId;
-        listAnswered = true;
         break outer;
       }
     }
@@ -454,15 +478,14 @@ async function resolveOne(
   const source: FirstParamSource = {
     listPath: entityPath,
     listQuery,
-    unitId: resolvedUnitId,
+    units: unitCandidates.filter(Boolean) as string[],
+    liveness: hint.liveness !== false,
   };
   // We may only probe a previous id when the entity's own list answered; a list
-  // that never answered says nothing about the id.
+  // that never answered says nothing about the id. Whether the list held a row
+  // is not the probe's business — a row beyond the first page is still live, so
+  // the probe re-reads the list page by page rather than trusting this answer.
   const canProbe = entityAnswered;
-
-  // The entity's list answered with no rows at all: this entity has no seeded
-  // row, so a previous map's id for it cannot be current either.
-  const listEmpty = entityAnswered && !listAnswered;
 
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
@@ -478,7 +501,7 @@ async function resolveOne(
     if (i === firstDyn) {
       const picked = hint.pick ? hint.pick(rows) : rows[0]?.id;
       if (!picked) {
-        return { url: null, source: canProbe ? source : undefined, listEmpty };
+        return { url: null, source: canProbe ? source : undefined };
       }
       out.push(picked);
       continue;
@@ -529,7 +552,7 @@ async function resolveOne(
   const url = hint.query
     ? base + "?" + buildQuery(hint.query, resolvedUnitId)
     : base;
-  return { url, source: canProbe ? source : undefined, listEmpty };
+  return { url, source: canProbe ? source : undefined };
 }
 
 /** The unit id a unit-scoped list actually answered for; used in the final URL. */
@@ -562,23 +585,68 @@ function previousIdOf(url: string | undefined, pattern: string): string | null {
   return firstParamValue(url, pattern);
 }
 
+/** Page size for the liveness probe; the API's own cap. */
+const PROBE_PAGE_SIZE = 100;
+/** Safety stop so a list that never signals its end cannot loop forever. */
+const PROBE_MAX_PAGES = 50;
+
+/** Add `page`/`limit` to a list path, replacing any page the hint already set. */
+function withPage(listPath: string, page: number): string {
+  const [pathname, existing] = listPath.split("?");
+  const params = new URLSearchParams(existing ?? "");
+  params.set("page", String(page));
+  params.set("limit", String(PROBE_PAGE_SIZE));
+  return `${pathname}?${params.toString()}`;
+}
+
+/** Read one page of a list: whether the value is on it, whether the read
+ * failed, whether it is the last page. The scope the hint needs (unit/year) is
+ * re-applied, because the entity's list is unit-scoped for some modules and an
+ * unscoped read would not hold the row the value names.
+ */
+async function readPage(
+  source: FirstParamSource,
+  unitId: string | undefined,
+  value: string,
+  page: number,
+  bearer: string,
+): Promise<PageProbe> {
+  const scoped = withListQuery(source.listPath, source.listQuery, unitId);
+  const { payload, status } = await getJsonWithStatus(
+    withPage(scoped, page),
+    bearer,
+  );
+  if (status !== "ok") return { ids: [], failed: true, last: false };
+  const rows = toRows(unwrap(payload));
+  const ids = rows.filter((r) => rowHasValue(r, value)).map(() => value);
+  const totalPages = payload?.pagination?.totalPages;
+  const last =
+    typeof totalPages === "number"
+      ? page >= totalPages
+      : rows.length < PROBE_PAGE_SIZE;
+  return { ids, last };
+}
+
 /**
  * The ids the previous map holds that the current data no longer answers for.
  *
- * For each such id we re-fetch its list and ask whether the id is still in it.
- * The list comes from the source `resolveOne` recorded for that pattern, so the
- * unit/year scope is the same one that answered before. An empty list, or a
- * list that does not return the id, means the id is dead — the page would 404.
+ * Each id is probed against the list `resolveOne` recorded, page by page, until
+ * it is found or the list is read to its end. Paging matters: a saved id can sit
+ * beyond the first page (the permits hint asks for PENDING rows, and a permit
+ * that has drifted past the first 50 is still live), so a single-page probe
+ * would call a live id gone.
  *
- * This is what tells a reseed apart from a transient API failure: the caller
- * only treats a carried URL as stale when the probe positively says the id is
- * gone, so a list that never answered leaves the entry carried, not failed.
+ * The verdict is deliberately conservative. An id is only `gone` when the list
+ * was read to its end without returning it; a page that failed, a walk the
+ * safety stop cut short, or a pattern whose value is a fixed slug rather than a
+ * row id (public unit/news pages) leaves the entry `unknown` — carried, never
+ * failed. The sweep flags a genuinely dead URL on its own 404 check, so a false
+ * `gone` here is the only way to break a page that still works.
  */
 async function findStaleIds(
   previous: Record<string, string>,
   patterns: string[],
   sourcesByPreviousId: Map<string, FirstParamSource>,
-  emptyLists: Set<string>,
   bearer: string,
 ): Promise<Set<string>> {
   const stale = new Set<string>();
@@ -586,23 +654,37 @@ async function findStaleIds(
     const id = previousIdOf(previous[pattern], pattern);
     if (!id) continue;
     const source = sourcesByPreviousId.get(id);
-    if (!source) continue;
-    if (emptyLists.has(id)) {
-      stale.add(id);
-      continue;
-    }
-    if (!source.listPath) continue;
-    const { payload, status } = await getJsonWithStatus(
-      withListQuery(source.listPath, source.listQuery, source.unitId),
-      bearer,
-    );
-    if (status !== "ok") continue;
-    const ids = toRows(unwrap(payload))
-      .map((r) => r?.id)
-      .filter(Boolean);
-    if (!ids.includes(id)) stale.add(id);
+    if (!source || !source.listPath || !source.liveness) continue;
+    if ((await probeId(source, id, bearer)) === "gone") stale.add(id);
   }
   return stale;
+}
+
+/**
+ * Walk a source's list for one id and return what that proves. Unit-scoped
+ * lists are walked unit by unit, because a carried id can live in a unit other
+ * than the one this run read from. Any failed page, or a walk cut short by the
+ * page cap, makes the whole result `unknown`: a partial read is not evidence
+ * that the row is gone.
+ */
+async function probeId(
+  source: FirstParamSource,
+  id: string,
+  bearer: string,
+): Promise<ProbeVerdict> {
+  const unitList = source.units.length ? source.units : [undefined];
+  for (const unitId of unitList) {
+    const verdict = await walkList(
+      id,
+      (page) => readPage(source, unitId, id, page, bearer),
+      PROBE_MAX_PAGES,
+    );
+    if (verdict === "live") return "live";
+    // A walk that could not be finished is not evidence against the id, and a
+    // later unit's clean walk must not override it.
+    if (verdict === "unknown") return "unknown";
+  }
+  return "gone";
 }
 
 async function run() {
@@ -638,25 +720,23 @@ async function run() {
   const unresolved: string[] = [];
   // Sources for the liveness probe, keyed by the id the previous map held.
   const sourcesByPreviousId = new Map<string, FirstParamSource>();
-  const emptyLists = new Set<string>();
 
   for (const pattern of patterns) {
-    const outcome = await resolveOne(pattern, bearer).catch(() => ({
-      url: null,
-    }));
+    const outcome: ResolveOutcome = await resolveOne(pattern, bearer).catch(
+      () => ({ url: null }),
+    );
     if (outcome.url) {
       resolved[pattern] = outcome.url;
     } else {
       unresolved.push(pattern);
     }
-    // The previous map's id for this pattern: does it still exist? An empty
-    // list, or a list that does not return it, says no.
     // Only an unresolved pattern can end up carried, so only it needs the
-    // liveness probe; a fresh resolution is already current.
+    // liveness probe; a fresh resolution is already current. The probe re-reads
+    // the list page by page, so it does not matter that this run's own first
+    // page held no row.
     const previousId = previousIdOf(previous[pattern], pattern);
     if (!outcome.url && previousId && outcome.source) {
       sourcesByPreviousId.set(previousId, outcome.source);
-      if (outcome.listEmpty) emptyLists.add(previousId);
     }
   }
 
@@ -664,7 +744,6 @@ async function run() {
     previous,
     patterns,
     sourcesByPreviousId,
-    emptyLists,
     bearer,
   );
 

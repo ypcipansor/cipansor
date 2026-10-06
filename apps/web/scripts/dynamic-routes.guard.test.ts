@@ -112,4 +112,24 @@ describe("dynamic route coverage", () => {
       .map(([k]) => k);
     expect(thin).toEqual([]);
   });
+
+  it("marks the fixed-slug public pages as not probeable", () => {
+    // `/unit/[slug]` and `/berita/[slug]` render from static content
+    // (`educationUnits`, `content.ts`), not from the API list the resolver
+    // fetches. Their slug must therefore not be probed for liveness: an empty
+    // `/units` or `/marketing/campaigns` would otherwise fail a page that still
+    // renders. This pins the `liveness: false` the resolver relies on.
+    const src = fs.readFileSync(
+      path.join(SCRIPTS_DIR, "resolve-dynamic-routes.ts"),
+      "utf8",
+    );
+    for (const pattern of ["/unit/[slug]", "/berita/[slug]"]) {
+      const block = src.slice(src.indexOf(`"${pattern}"`));
+      const hint = block.slice(0, block.indexOf("},") + 1);
+      expect(
+        /liveness:\s*false/.test(hint),
+        `${pattern} must set liveness: false so its static slug is not probed`,
+      ).toBe(true);
+    }
+  });
 });

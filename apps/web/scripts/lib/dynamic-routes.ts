@@ -14,8 +14,13 @@
  * the current data) is how the caller tells us which carried URLs are suspect.
  * A carried URL is reported as stale when it carries one of those ids — a
  * carried URL whose id is not known to be dead (e.g. the list request merely
- * failed) is reported as carried, not stale, so a transient API failure does
- * not read as a reseed.
+ * failed, or the id is not a row id of any list) is reported as carried, not
+ * stale, so a transient API failure does not read as a reseed.
+ *
+ * The caller's probe must be conservative for the same reason: `walkList`
+ * only says `gone` once it has read the list to its end, and `unknown` on any
+ * page it could not fetch, so a URL that is still live is never failed by a
+ * probe that ran out of evidence.
  */
 
 export interface MergeResult {
@@ -110,6 +115,68 @@ export function mergeResolved(
     stale: staleCarriedPatterns(merged, carried, staleIds),
     dropped,
   };
+}
+
+/**
+ * What a liveness probe learned about one saved id.
+ *
+ * - `live` — a page of the list returned the id; the URL is still good.
+ * - `gone` — the list was read to its end and never returned the id; the row
+ *   is gone (a reseed replaced it) and the URL would 404.
+ * - `unknown` — a page could not be fetched, so nothing may be concluded; the
+ *   id stays carried rather than failed. This is the case that keeps a list
+ *   outage, or a probe that does not understand the endpoint, from reading as a
+ *   reseed.
+ */
+export type ProbeVerdict = "live" | "gone" | "unknown";
+
+/**
+ * Whether a row holds `value` as any of its own primitive fields. The URL
+ * parameter is not always the row's `id` — `/hr/employees/[id]` holds a
+ * `userId`, a certificate URL holds a `certificateNumber` — so a probe that
+ * only looked at `r.id` would call those live URLs gone. Comparing against
+ * every scalar the row carries is the general answer, and it cannot invent a
+ * match: only a real field value counts.
+ */
+export function rowHasValue(row: unknown, value: string): boolean {
+  if (typeof row === "string") return row === value;
+  if (!row || typeof row !== "object") return false;
+  for (const v of Object.values(row)) {
+    if (typeof v === "string" && v === value) return true;
+    if (typeof v === "number" && String(v) === value) return true;
+  }
+  return false;
+}
+
+/** One page a `walkList` read: the ids on it, and whether it failed or was last. */
+export interface PageProbe {
+  ids: string[];
+  /** A non-OK response: the page could not be read. */
+  failed?: boolean;
+  /** The list reported no further page. */
+  last: boolean;
+}
+
+/**
+ * Walk a paginated list for one id, one page at a time, and say what that
+ * proves. The walk stops as soon as the id appears (`live`) or the last page is
+ * reached (`gone`); a failed page or the page cap leaves it `unknown`, never
+ * `gone`, so a row that sits beyond the pages the walk could read — the exact
+ * case of a PENDING permit that drifted past the first page — is not declared
+ * dead.
+ */
+export async function walkList(
+  id: string,
+  readPage: (page: number) => Promise<PageProbe>,
+  maxPages = 50,
+): Promise<ProbeVerdict> {
+  for (let page = 1; page <= maxPages; page++) {
+    const probe = await readPage(page);
+    if (probe.failed) return "unknown";
+    if (probe.ids.includes(id)) return "live";
+    if (probe.last) return "gone";
+  }
+  return "unknown";
 }
 
 /** The dropped patterns that `dynamic-routes.unresolved.json` does not name. */
