@@ -87,6 +87,9 @@ staging is a shared VM and one run is noisy, so they flag a real step change,
 not run-to-run jitter.
 
 - **p95** may grow by `1.5x` before it is a regression; **p99** by `1.75x`.
+  Both sides compare against one rounded limit (`latencyLimit()`, rounded up),
+  so a run exactly at the limit is a regression for k6 and the runner alike —
+  never "thresholds crossed" from one and "no regression" from the other.
 - **p99 is only compared once *both* runs have `p99MinSamples` (100) samples.**
   Below that, p99 *is* the single slowest request and swings run to run —
   measured 327 ms → 764 ms across two identical 48-request smoke runs — so it

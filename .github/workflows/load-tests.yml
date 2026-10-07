@@ -135,6 +135,15 @@ jobs:
     runs-on: ubuntu-latest
     # Credentials are optional. Without them this job reports that it was
     # skipped rather than fabricating a result.
+    #
+    # This job needs its own recorded baseline
+    # (baselines/<host>__authenticated-read__smoke.json) and the runner exits 3
+    # ("no baseline recorded") until one is committed. The workflow has
+    # contents: read, so it cannot record one; seed it once by hand against a
+    # target you own, then commit it:
+    #   LOAD_TEST_EMAIL=... LOAD_TEST_PASSWORD=... \
+    #     node tests/load/run-load-tests.mjs --url <target> \
+    #       --scenario authenticated-read --profile smoke --update-baseline
     env:
       LOAD_TEST_EMAIL: ${{ secrets.LOAD_TEST_EMAIL }}
       LOAD_TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
@@ -150,12 +159,54 @@ jobs:
         uses: grafana/setup-k6-action@v1
 
       - name: Run authenticated read load test
+        id: load
         if: ${{ env.LOAD_TEST_EMAIL != '' }}
+        # Same capture-then-judge shape as the smoke job, so a regression here
+        # is a report with numbers, not a bare red step.
         run: |
+          set +e
           node tests/load/run-load-tests.mjs \
             --url "$LOAD_TEST_URL" \
             --scenario authenticated-read \
-            --profile smoke
+            --profile smoke \
+            --report load-report-authenticated.json 2>&1 | tee load-output-authenticated.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "### Load test: \`authenticated-read\` (\`smoke\`) against $LOAD_TEST_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat load-output-authenticated.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Runner exit code: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) echo "No regression against the baseline." >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "Regression(s) against the baseline — see above." >> "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "Could not run (no token — 2FA/Turnstile/bad credentials — or a k6 error). Nothing was compared." >> "$GITHUB_STEP_SUMMARY" ;;
+            3) echo "No authenticated-read baseline recorded. Seed and commit one (see the workflow comment)." >> "$GITHUB_STEP_SUMMARY" ;;
+            4) echo "The recorded baseline does not match this run, or is unreadable." >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "Unexpected exit code $code." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit 0
+
+      - name: Upload load-test report
+        if: always() && env.LOAD_TEST_EMAIL != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-report-authenticated
+          path: load-report-authenticated.json
+          if-no-files-found: warn
+
+      - name: Judge the run
+        if: ${{ env.LOAD_TEST_EMAIL != '' }}
+        run: |
+          code="${{ steps.load.outputs.exit_code }}"
+          case "$code" in
+            0) echo "No regression."; exit 0 ;;
+            1) echo "::error::Authenticated load-test regression against the recorded baseline."; exit 1 ;;
+            2) echo "::error::Authenticated load test could not run (no token, or a k6 error). Nothing was compared."; exit 1 ;;
+            3) echo "::error::No authenticated-read baseline recorded. Nothing was compared."; exit 1 ;;
+            4) echo "::error::The recorded baseline does not match this run, or is unreadable. Nothing was compared."; exit 1 ;;
+            *) echo "::error::Unexpected load-test exit code $code."; exit 1 ;;
+          esac
 
       - name: No credentials configured
         if: ${{ env.LOAD_TEST_EMAIL == '' }}

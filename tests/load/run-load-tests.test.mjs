@@ -15,7 +15,7 @@ import {
   summaryProblem,
   isSharedTarget,
 } from './run-load-tests.mjs';
-import { REGRESSION, thresholdsFor } from './config.js';
+import { REGRESSION, thresholdsFor, latencyLimit } from './config.js';
 
 test('parseArgs: defaults', () => {
   const args = parseArgs([]);
@@ -265,13 +265,33 @@ test('thresholdsFor: an empty baseline keeps only the check threshold', () => {
 test('thresholdsFor: builds latency thresholds from the baseline', () => {
   const thresholds = thresholdsFor({ p95: 100, p99: 200, requests: 200 });
   const latency = thresholds.expected_response_duration;
-  assert.deepEqual(latency, [`p(95)<${Math.round(100 * REGRESSION.p95)}`, `p(99)<${Math.round(200 * REGRESSION.p99)}`]);
+  assert.deepEqual(latency, [`p(95)<${latencyLimit(100, REGRESSION.p95)}`, `p(99)<${latencyLimit(200, REGRESSION.p99)}`]);
+});
+
+test('compare and the k6 threshold agree at the exact limit', () => {
+  // k6 emits `p(95)<limit` and compare flags at the same rounded limit, so a
+  // run exactly at it is a regression on both sides — never "thresholds
+  // crossed" from k6 with "no regression" from the runner.
+  const baseline = { p95: 100, p99: 200, requests: 200, errorRate: 0 };
+  const limit = latencyLimit(100, REGRESSION.p95);
+  const atLimit = compare({ p95: limit, p99: 100, requests: 200, errorRate: 0 }, baseline);
+  assert.deepEqual(
+    atLimit.map((r) => r.metric),
+    ['p95'],
+  );
+  const justUnder = compare({ p95: limit - 1, p99: 100, requests: 200, errorRate: 0 }, baseline);
+  assert.deepEqual(justUnder, []);
+});
+
+test('latencyLimit: rounds up so both sides use the same strict boundary', () => {
+  assert.equal(latencyLimit(292.217088, 1.5), 439);
+  assert.equal(latencyLimit(100, 1.5), 150);
 });
 
 test('thresholdsFor: omits the p99 threshold when the baseline is too small', () => {
   // 48 samples: p99 is the single slowest request, so it is not thresholded.
   const latency = thresholdsFor({ p95: 100, p99: 200, requests: 48 }).expected_response_duration;
-  assert.deepEqual(latency, [`p(95)<${Math.round(100 * REGRESSION.p95)}`]);
+  assert.deepEqual(latency, [`p(95)<${latencyLimit(100, REGRESSION.p95)}`]);
 });
 
 test('compare: ignores p99 until the run has enough samples', () => {

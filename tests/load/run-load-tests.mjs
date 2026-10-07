@@ -34,7 +34,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 
-import { REGRESSION, PROFILES } from './config.js';
+import { REGRESSION, PROFILES, latencyLimit } from './config.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINE_DIR = join(HERE, 'baselines');
@@ -215,10 +215,12 @@ function compare(current, baseline) {
   const round = (n) => Math.round(n * 100) / 100;
   // p99 is only meaningful when BOTH runs have enough samples for it to be a
   // percentile rather than the single slowest request. The k6 threshold uses
-  // the same baseline side, so the two verdicts cannot disagree.
+  // the same baseline-side test, so the two verdicts cannot disagree.
   const p99Comparable =
     (baseline.requests ?? 0) >= REGRESSION.p99MinSamples && (current.requests ?? 0) >= REGRESSION.p99MinSamples;
-  if (baseline.p95 && current.p95 && current.p95 > baseline.p95 * REGRESSION.p95) {
+  // Compare against the SAME rounded limit k6 thresholds (latencyLimit), so a
+  // run can never print "thresholds crossed" and "no regression" at once.
+  if (baseline.p95 && current.p95 && current.p95 >= latencyLimit(baseline.p95, REGRESSION.p95)) {
     regressions.push({
       metric: 'p95',
       baseline: round(baseline.p95),
@@ -226,7 +228,7 @@ function compare(current, baseline) {
       threshold: `${REGRESSION.p95}x`,
     });
   }
-  if (p99Comparable && baseline.p99 && current.p99 && current.p99 > baseline.p99 * REGRESSION.p99) {
+  if (p99Comparable && baseline.p99 && current.p99 && current.p99 >= latencyLimit(baseline.p99, REGRESSION.p99)) {
     regressions.push({
       metric: 'p99',
       baseline: round(baseline.p99),

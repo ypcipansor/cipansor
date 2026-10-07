@@ -35,6 +35,18 @@ export const REGRESSION = {
 };
 
 /**
+ * The single millisecond limit both sides use for a relative tolerance.
+ *
+ * k6 emits `p(95)<limit` (a strict `<`, so it fails at `p95 >= limit`) and the
+ * runner flags `p95 >= limit`. Rounding here, once, is what keeps the two from
+ * disagreeing by a step: without it k6 compared against a rounded value while
+ * the runner compared against the exact one.
+ */
+export function latencyLimit(baselineMs, factor) {
+  return Math.ceil(baselineMs * factor);
+}
+
+/**
  * Turn a recorded baseline into k6 threshold expressions.
  *
  * Both the thresholds here and the runner's comparison read ONE metric,
@@ -51,12 +63,12 @@ export function thresholdsFor(baseline) {
   const thresholds = { checks: [`rate>${REGRESSION.checksRate}`] };
   const key = 'expected_response_duration';
   if (baseline && baseline.p95) {
-    thresholds[key] = [`p(95)<${Math.round(baseline.p95 * REGRESSION.p95)}`];
+    thresholds[key] = [`p(95)<${latencyLimit(baseline.p95, REGRESSION.p95)}`];
   }
   // Only threshold p99 when the baseline it was derived from had enough samples
   // for p99 to be a percentile rather than the single slowest request.
   if (baseline && baseline.p99 && (baseline.requests ?? 0) >= REGRESSION.p99MinSamples) {
-    thresholds[key] = [...(thresholds[key] || []), `p(99)<${Math.round(baseline.p99 * REGRESSION.p99)}`];
+    thresholds[key] = [...(thresholds[key] || []), `p(99)<${latencyLimit(baseline.p99, REGRESSION.p99)}`];
   }
   return thresholds;
 }
