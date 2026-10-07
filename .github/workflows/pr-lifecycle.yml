@@ -1,0 +1,49 @@
+# Move a PR back to draft while CI is red, and approve it once CI is green and
+# its issue labels agree.
+#
+# Triggered by workflow_run so it sees the finished result of every workflow on
+# the PR's head — it cannot be the PR's own check, because a check that reverts
+# the PR would cancel itself.
+#
+#   red CI + ready PR   -> convert to draft, comment which checks failed
+#   green CI + draft PR -> post the all-green comment, leave the draft decision
+#                          to a human (or the review automation)
+#   green CI + ready PR + labels in sync + a clean review -> approve
+#
+# The rules live in .github/scripts/pr-lifecycle.sh so they can be run by hand.
+name: PR lifecycle
+
+on:
+  workflow_run:
+    workflows: [CI, E2E Tests]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: read
+  actions: read
+
+concurrency:
+  group: pr-lifecycle-${{ github.event.workflow_run.pull_requests[0].number || github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  lifecycle:
+    # Only for PR runs. A push to main has no pull request to act on.
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0].number != null
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Apply lifecycle rules
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: sh .github/scripts/pr-lifecycle.sh "$PR" "$HEAD_SHA"

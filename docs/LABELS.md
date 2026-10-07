@@ -1,0 +1,120 @@
+# Label taxonomy
+
+Every issue and pull request carries at most one **type** and at most one
+**priority**. Some also carry a **status** label while they are being worked
+through the lifecycle. Labels are the machine-readable interface between the
+OpenHands automations and the GitHub Actions guards, so the rules below are
+enforced, not just conventions.
+
+## Type — what kind of change is this
+
+| Label | Use for |
+|---|---|
+| `bug` | Something that is broken |
+| `enhancement` | A new feature or a change in behaviour |
+| `documentation` | Documentation only |
+| `refactor` | A change that neither fixes a bug nor adds a feature |
+| `chore` | Tooling, dependencies, housekeeping |
+| `security` | A vulnerability or a hardening change |
+
+## Priority — how urgent
+
+| Label | Use for |
+|---|---|
+| `priority:critical` | An outage, data loss, or an active security problem |
+| `priority:high` | Important; schedule for the current cycle |
+| `priority:medium` | Normal; the default for triaged work |
+| `priority:low` | Nice to have, no urgency |
+
+## Status — where it is in the lifecycle
+
+| Label | Meaning |
+|---|---|
+| `ready` | Specified enough for an automation to implement without questions |
+| `pending-maintainer` | Waiting for a maintainer to decide whether to proceed; `ready` starts implementation |
+| `needs-info` | Waiting on the reporter for a missing detail |
+| `in-progress` | Someone or an automation is actively working on it |
+| `blocked` | Cannot proceed until a dependency is resolved |
+| `stale` | No activity for a long time; will close unless kept |
+| `question` | A question, not a change request |
+| `duplicate` | Already reported elsewhere; the original is linked |
+| `invalid` | Not a valid report |
+| `wontfix` | Deliberately not going to be done |
+| `bug-hunter` | Provenance: found by the Bug hunter automation |
+
+## The rules
+
+1. **Type and priority are shared between an issue and its pull request.** When
+   a PR closes an issue, it must carry the same type label and the same priority
+   label. `SDLC 21 · PR labeller` sets them from the issue; the `Issue label
+   sync` workflow adds anything missing and **fails the check** when the type
+   genuinely disagrees (a different type is a real conflict, not something to
+   guess at).
+
+2. **Status labels are not copied to a pull request.** `question`, `needs-info`,
+   `duplicate`, `invalid`, `wontfix`, `blocked`, `ready` and `in-progress`
+   describe an issue's own lifecycle. A PR's lifecycle is its draft state and
+   its reviews.
+
+3. **`ready` is the gate for implementation.** `SDLC 07 · Ticket to PR` only
+   runs on an issue labelled `ready`. `SDLC 19 · Issue labeller` applies `ready`
+   only when the issue has a clear goal and a concrete acceptance criterion;
+   otherwise it applies `needs-info` and lists what is missing.
+
+4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` and links the
+   original. The `Duplicate sweep` workflow warns once, then closes the issue as
+   *not planned* after seven days unless the issue is edited or a maintainer
+   removes the label.
+
+5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
+   ready PR back to draft when any required check is failing or a reviewer
+   requested changes, and comments which checks failed. A green draft PR gets an
+   informational comment; it is never marked ready automatically.
+
+6. **Approval needs more than green CI.** `SDLC 22 · PR review gate` approves a
+   ready PR only when every check is green, no review thread is open, the labels
+   match the linked issue, and it found no correctness problem in the diff. It
+   never merges.
+
+## Which automation owns which label
+
+| Automation | Trigger | Labels it sets |
+|---|---|---|
+| `SDLC 19 · Issue labeller` | issue opened | type, priority, `ready` / `needs-info` / `question` / `duplicate` |
+| `SDLC 20 · Issue clarifier` | comment on a `needs-info` issue | `needs-info` ↔ `ready`, `duplicate`, `invalid` |
+| `SDLC 21 · PR labeller` | PR opened | the linked issue's type and priority |
+| `SDLC 22 · PR review gate` | PR ready for review | none — it reviews, drafts, or approves |
+| `SDLC 23 · Bug hunter` | daily cron | opens an issue with `bug`, a priority, `bug-hunter` |
+| `SDLC 24 · Standard scout` | weekly cron | opens an issue with a type, a priority, `pending-maintainer` |
+| `SDLC 25 · Issue steward` | daily cron | `stale`, and closes idle issues `not planned` |
+| `SDLC 26 · Discussion` | comment on `pending-maintainer` / `needs-info` | `ready`, `wontfix`, `needs-info` |
+
+The deterministic consequences are GitHub Actions workflows
+(`issue-label-sync.yml`, `pr-lifecycle.yml`, `duplicate-sweep.yml`), not
+automations: they must fire every time and cost no tokens.
+
+## The self-comment loop guard
+
+An automation posts through the same GitHub account as the person who triggered
+it (`user.type: User`, same `login`), so a trigger on `issue_comment.created`
+cannot tell the automation's own comment from a reporter's. Issue #680 showed
+the consequence: `SDLC 20` re-armed itself and posted eleven comments in 27
+minutes, each a full LLM run.
+
+The only marker is the AI-disclosure footer every automated comment carries:
+
+```
+This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers.
+```
+
+Every automation whose trigger is `issue_comment.created` **must** add this
+negative filter, or it will loop:
+
+```
+!icontains(comment.body, 'This comment was created by an AI agent')
+```
+
+`verify-sdlc-triggers.py` fails if a comment trigger matches an automated
+comment. The repo-side counterpart is
+`.github/scripts/automation-loop-guard.py`, pinned by
+`apps/api/src/utils/automation-loop-guard.guard.test.ts`.
