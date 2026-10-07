@@ -1,5 +1,10 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
+  - name: Report a security vulnerability (private)
+    url: https://github.com/ypcipansor/cipansor/security/advisories/new
+    about: >-
+      Do not open a public issue for a vulnerability. Use GitHub's private
+      advisory form; a maintainer sees it before anything is public.
   - name: Labels, priority and the automation lifecycle
     url: https://github.com/ypcipansor/cipansor/blob/main/docs/LABELS.md
     about: >-

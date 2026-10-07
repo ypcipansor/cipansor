@@ -141,6 +141,15 @@ above.
 
 ## Templates feed these labels
 
+Blank issues are **enabled**: the forms cover a defect and a change request, not
+a question, an operational incident, or anything the forms do not fit, and
+forcing those into a `bug` form produces a wrong label. An unstructured issue is
+not turned away — the automations absorb it: `SDLC 01` triages it, `SDLC 02`
+sizes it or lists the questions that would unblock it, and `SDLC 19` applies
+`needs-info` with the exact missing detail rather than `ready`. A security
+vulnerability is routed to a private advisory (`SECURITY.md`), never a public
+issue.
+
 The issue forms (`.github/ISSUE_TEMPLATE/`) and the pull-request template exist
 to produce the labels above, not prose to read and forget:
 
