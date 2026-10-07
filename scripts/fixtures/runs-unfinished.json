@@ -4,31 +4,31 @@
    "name": "CI",
    "event": "push",
    "head_branch": "main",
-   "conclusion": "success",
-   "status": "completed",
+   "conclusion": null,
+   "status": "in_progress",
    "created_at": "2026-09-01T16:40:00.000Z",
    "run_started_at": "2026-09-01T16:40:00.000Z",
-   "updated_at": "2026-09-01T16:41:30.000Z"
+   "updated_at": "2026-09-01T16:40:01.000Z"
   },
   {
    "name": "E2E Tests",
    "event": "push",
    "head_branch": "main",
-   "conclusion": "success",
-   "status": "completed",
+   "conclusion": null,
+   "status": "in_progress",
    "created_at": "2026-09-01T16:27:00.000Z",
    "run_started_at": "2026-09-01T16:27:00.000Z",
-   "updated_at": "2026-09-01T16:37:00.000Z"
+   "updated_at": "2026-09-01T16:27:01.000Z"
   },
   {
    "name": "Deploy staging",
    "event": "workflow_run",
    "head_branch": "main",
-   "conclusion": "success",
-   "status": "completed",
+   "conclusion": null,
+   "status": "in_progress",
    "created_at": "2026-09-01T16:14:00.000Z",
    "run_started_at": "2026-09-01T16:14:00.000Z",
-   "updated_at": "2026-09-01T16:19:00.000Z"
+   "updated_at": "2026-09-01T16:14:01.000Z"
   },
   {
    "name": "Deploy production",
@@ -601,124 +601,14 @@
    "updated_at": "2026-09-01T03:55:00.000Z"
   },
   {
-   "name": "PR #600",
-   "event": "dynamic",
-   "head_branch": "refs/pull/600/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T08:20:00.000Z",
-   "run_started_at": "2026-09-01T08:20:00.000Z",
-   "updated_at": "2026-09-01T08:21:00.000Z"
-  },
-  {
-   "name": "PR #606",
-   "event": "dynamic",
-   "head_branch": "refs/pull/606/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T08:13:00.000Z",
-   "run_started_at": "2026-09-01T08:13:00.000Z",
-   "updated_at": "2026-09-01T08:14:00.000Z"
-  },
-  {
-   "name": "PR #612",
-   "event": "dynamic",
-   "head_branch": "refs/pull/612/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T08:06:00.000Z",
-   "run_started_at": "2026-09-01T08:06:00.000Z",
-   "updated_at": "2026-09-01T08:07:00.000Z"
-  },
-  {
-   "name": "PR #618",
-   "event": "dynamic",
-   "head_branch": "refs/pull/618/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T07:59:00.000Z",
-   "run_started_at": "2026-09-01T07:59:00.000Z",
-   "updated_at": "2026-09-01T08:00:00.000Z"
-  },
-  {
-   "name": "PR #624",
-   "event": "dynamic",
-   "head_branch": "refs/pull/624/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T07:52:00.000Z",
-   "run_started_at": "2026-09-01T07:52:00.000Z",
-   "updated_at": "2026-09-01T07:53:00.000Z"
-  },
-  {
-   "name": "PR #630",
-   "event": "dynamic",
-   "head_branch": "refs/pull/630/head",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T07:45:00.000Z",
-   "run_started_at": "2026-09-01T07:45:00.000Z",
-   "updated_at": "2026-09-01T07:46:00.000Z"
-  },
-  {
-   "name": "CI",
-   "event": "pull_request",
-   "head_branch": "feat/x0",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:40:00.000Z",
-   "run_started_at": "2026-09-01T06:40:00.000Z",
-   "updated_at": "2026-09-01T06:41:30.000Z"
-  },
-  {
-   "name": "E2E Tests",
-   "event": "pull_request",
-   "head_branch": "feat/x1",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:33:00.000Z",
-   "run_started_at": "2026-09-01T06:33:00.000Z",
-   "updated_at": "2026-09-01T06:34:30.000Z"
-  },
-  {
-   "name": "CI",
-   "event": "pull_request",
-   "head_branch": "feat/x2",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:26:00.000Z",
-   "run_started_at": "2026-09-01T06:26:00.000Z",
-   "updated_at": "2026-09-01T06:27:30.000Z"
-  },
-  {
-   "name": "E2E Tests",
-   "event": "pull_request",
-   "head_branch": "feat/x3",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:19:00.000Z",
-   "run_started_at": "2026-09-01T06:19:00.000Z",
-   "updated_at": "2026-09-01T06:20:30.000Z"
-  },
-  {
-   "name": "CI",
-   "event": "pull_request",
-   "head_branch": "feat/x4",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:12:00.000Z",
-   "run_started_at": "2026-09-01T06:12:00.000Z",
-   "updated_at": "2026-09-01T06:13:30.000Z"
-  },
-  {
-   "name": "E2E Tests",
-   "event": "pull_request",
-   "head_branch": "feat/x5",
-   "conclusion": "success",
-   "status": "completed",
-   "created_at": "2026-09-01T06:05:00.000Z",
-   "run_started_at": "2026-09-01T06:05:00.000Z",
-   "updated_at": "2026-09-01T06:06:30.000Z"
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": null,
+   "status": "in_progress",
+   "created_at": "2026-09-01T16:45:00.000Z",
+   "run_started_at": "2026-09-01T16:45:00.000Z",
+   "updated_at": "2026-09-01T16:45:01.000Z"
   }
  ]
 }

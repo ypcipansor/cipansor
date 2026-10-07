@@ -12,6 +12,9 @@
 //     GITHUB_TOKEN. Gives the CI/deploy failure rate and run latency, and —
 //     because every scheduled app job runs only inside the deployed image —
 //     a failed CI run is the only observable "background job" signal today.
+//     The pipeline metrics count only CI / E2E Tests / Deploy staging /
+//     Deploy production runs on main; this watch's own scheduled runs and
+//     PR-triggered runs are excluded (see PIPELINE_WORKFLOWS).
 //   - The app's own tables (error rate, request latency, per-job outcomes):
 //     NOT readable. The app keeps no error-log or job-run table — errors go to
 //     the winston logger and jobs log failures only (apps/api/src/jobs/
@@ -38,6 +41,26 @@ const REPO_ROOT = join(HERE, '..');
 // A rolling window of runs, and how many of the newest are "current".
 export const WINDOW = 60;
 export const CURRENT = 20;
+
+// The deploy platform's own pipelines, selected by workflow name, by the event
+// that starts them, and by branch. This is deliberately an allowlist, twice
+// over:
+//
+//   - By name, so runs that are not the deploy platform (the watch's own
+//     `Metrics Watch` schedule, and any future monitor) are excluded. A run
+//     whose name is "PR #123" is a per-PR runner and was never a pipeline.
+//   - By event and branch, so pull-request-triggered CI and E2E runs are
+//     excluded: their failures would otherwise let PR traffic move the
+//     platform rate. CI and E2E Tests run on both `push` and `pull_request`;
+//     only the push-to-main runs are the platform. Deploy staging runs on
+//     `workflow_run` after E2E, Deploy production on `workflow_dispatch` —
+//     both on main.
+//
+// The previous rule (everything whose name is not `PR #\d+`) let the watch's
+// own runs fill the window and let PR runs skew it; see PR #676 review.
+export const PIPELINE_WORKFLOWS = ['CI', 'E2E Tests', 'Deploy staging', 'Deploy production'];
+export const PIPELINE_EVENTS = ['push', 'workflow_run', 'workflow_dispatch'];
+
 // An anomaly is a rise the baseline does not explain. Rates are proportions.
 export const RATE_ABS = 0.15; // +15 percentage points
 export const RATE_REL = 1.5; // or 1.5x the baseline rate
@@ -85,15 +108,19 @@ export const UNAVAILABLE = [
 export function normalizeRuns(payload) {
   const runs = Array.isArray(payload) ? payload : (payload.workflow_runs ?? []);
   return runs
-    .map((r) => ({
-      name: r.name,
-      event: r.event,
-      branch: r.head_branch,
-      conclusion: r.conclusion ?? null,
-      status: r.status,
-      createdAt: Date.parse(r.created_at),
-      durationMs: durationMs(r),
-    }))
+    .map((r) => {
+      const settled = r.conclusion != null;
+      return {
+        name: r.name,
+        event: r.event,
+        branch: r.head_branch,
+        conclusion: r.conclusion ?? null,
+        status: r.status,
+        settled,
+        createdAt: Date.parse(r.created_at),
+        durationMs: settled ? durationMs(r) : null,
+      };
+    })
     .filter((r) => Number.isFinite(r.createdAt))
     .sort((a, b) => b.createdAt - a.createdAt);
 }
@@ -105,12 +132,14 @@ function durationMs(r) {
   return end - start;
 }
 
-const isSettled = (r) => r.conclusion !== null;
+const isSettled = (r) => r.settled;
 const isFailure = (r) => r.conclusion === 'failure';
-// CI/E2E/Deploy are the deploy platform's own pipelines. A run whose name is
-// "PR #123" is a per-PR runner, not a pipeline, so it is excluded from the
-// platform rates to keep the baseline about the same thing over time.
-const isPipeline = (r) => !/^PR #\d+$/.test(r.name ?? '');
+// The deploy platform is CI/E2E/deploy on main, however it was triggered.
+// Everything else — the watch's own scheduled runs, PR-triggered CI/E2E,
+// per-PR runners — is excluded so the pipeline metrics describe one population
+// over time.
+const isPipeline = (r) =>
+  PIPELINE_WORKFLOWS.includes(r.name) && PIPELINE_EVENTS.includes(r.event) && r.branch === 'main';
 
 export function failureRate(runs) {
   const settled = runs.filter(isSettled);
@@ -137,6 +166,11 @@ function rateAnomaly(current, baseline) {
 function latencyAnomaly(current, baseline) {
   if (current === null || baseline === null || baseline <= 0) return false;
   return current >= baseline * LATENCY_ABS;
+}
+
+/** Durations of the settled runs only; an unfinished run has no real duration. */
+function completedDurations(runs) {
+  return runs.filter(isSettled).map((r) => r.durationMs);
 }
 
 /**
@@ -171,8 +205,10 @@ export function analyze(payload) {
     });
   }
 
-  const curDur = median(currentRuns.map((r) => r.durationMs));
-  const baseDur = median(baselineRuns.map((r) => r.durationMs));
+  // The median is over settled runs only: an unfinished run's `updated_at` is
+  // an update, not a finish, so including it would report a partial duration.
+  const curDur = median(completedDurations(currentRuns));
+  const baseDur = median(completedDurations(baselineRuns));
   if (latencyAnomaly(curDur, baseDur)) {
     anomalies.push({
       metric: 'platform.run_duration_median',
@@ -181,6 +217,16 @@ export function analyze(payload) {
       threshold: `${LATENCY_ABS}x`,
     });
   }
+
+  // Scheduled-job failures are a separate metric, not part of the pipeline
+  // comparison: it observes scheduled workflow runs (the watch's own schedule),
+  // which the pipeline allowlist deliberately excludes. Only settled runs are
+  // judged — a queued or in-progress schedule has no conclusion yet, and
+  // counting it as a sample but not a failure would render an unknown outcome
+  // as a healthy 0.
+  const scheduled = all.filter((r) => r.event === 'schedule');
+  const curSched = scheduled.slice(0, CURRENT).filter(isSettled);
+  const baseSched = scheduled.slice(CURRENT, WINDOW).filter(isSettled);
 
   const metrics = [
     {
@@ -194,21 +240,15 @@ export function analyze(payload) {
       key: 'platform.run_duration_median',
       current: curDur,
       baseline: baseDur,
-      currentN: currentRuns.length,
-      baselineN: baselineRuns.length,
+      currentN: currentRuns.filter(isSettled).length,
+      baselineN: baselineRuns.filter(isSettled).length,
     },
     {
       key: 'platform.scheduled_job_failures',
-      current:
-        currentRuns.filter((r) => r.event === 'schedule').length > 0
-          ? currentRuns.filter((r) => r.event === 'schedule' && isFailure(r)).length
-          : null,
-      baseline:
-        baselineRuns.filter((r) => r.event === 'schedule').length > 0
-          ? baselineRuns.filter((r) => r.event === 'schedule' && isFailure(r)).length
-          : null,
-      currentN: currentRuns.filter((r) => r.event === 'schedule').length,
-      baselineN: baselineRuns.filter((r) => r.event === 'schedule').length,
+      current: curSched.length > 0 ? curSched.filter(isFailure).length : null,
+      baseline: baseSched.length > 0 ? baseSched.filter(isFailure).length : null,
+      currentN: curSched.length,
+      baselineN: baseSched.length,
     },
   ];
 
@@ -287,11 +327,40 @@ function selfTest() {
   const quiet = renderReport(fixture('runs-quiet.json'), 'o/r');
   assert(quiet.anomalies.length === 0, 'quiet window must have no anomalies');
   assert(quiet.report.includes('Unavailable metrics'), 'report must list unavailable metrics');
+  // All four pipeline workflows count, including the two that are not triggered
+  // by a push (Deploy staging on workflow_run, Deploy production on
+  // workflow_dispatch). A `push`-only rule would leave the baseline at 10.
+  assert(
+    quiet.report.includes('| platform.run_duration_median | 210s | 210s | 20/40 |'),
+    'deploy workflows (workflow_run / workflow_dispatch) must count as pipelines'
+  );
 
   const spike = renderReport(fixture('runs-failure-spike.json'), 'o/r');
   assert(
     spike.anomalies.some((a) => a.metric === 'platform.pipeline_failure_rate'),
     'failure spike must raise the failure-rate anomaly'
+  );
+
+  // Pipeline metrics are CI/E2E/deploy on a push to main only: failures in the
+  // watch's own schedules and in PR-triggered runs must not move them.
+  const nonPipeline = renderReport(fixture('runs-non-pipeline-failures.json'), 'o/r');
+  assert(
+    nonPipeline.anomalies.length === 0,
+    'non-pipeline failures (watch schedules, PR runs) must not alert'
+  );
+
+  // An unfinished run has no conclusion and no duration: it must be left out of
+  // the sample counts, and an in-progress schedule must not read as a healthy 0.
+  const unfinished = renderReport(fixture('runs-unfinished.json'), 'o/r');
+  assert(unfinished.anomalies.length === 0, 'unfinished runs must not alert');
+  const unfinishedReport = unfinished.report;
+  assert(
+    unfinishedReport.includes('| platform.pipeline_failure_rate | 0.0% | 0.0% | 17/40 |'),
+    'unfinished pipeline runs must be excluded from the failure-rate samples'
+  );
+  assert(
+    unfinishedReport.includes('| platform.scheduled_job_failures | n/a | n/a | 0/0 |'),
+    'an in-progress schedule must render n/a, not a healthy zero'
   );
 
   // A window too small for a baseline must alert on nothing.

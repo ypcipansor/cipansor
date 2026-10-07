@@ -1,21 +1,29 @@
 # Scheduled key-metrics watch.
 #
-# Reads the metrics reachable from this runner (GitHub Actions — the deploy
-# platform), compares them against a rolling baseline, writes the report to the
-# job summary, and opens/updates one issue when there is an anomaly. Metrics it
-# cannot read (the app's own tables, Azure Log Analytics) are named in the
-# report as unavailable and never alerted on — a monitor that hears nothing is
-# not a pass (issue #674).
+# A new monitor: it reads the metrics reachable from this runner (GitHub
+# Actions — the deploy platform), compares them against a rolling baseline,
+# writes the report to the job summary, and opens/updates one issue when there
+# is an anomaly. It should be reviewed as a monitor, not as a rendering fix.
+#
+# Metrics it cannot read (the app's own tables, Azure Log Analytics) are named
+# in the report as unavailable and never alerted on — a monitor that hears
+# nothing is not a pass (issue #674).
 #
 # The GitHub token here is the runner's own, so the app's database and Azure
 # log source stay out of reach by design; the report says so on every run.
+#
+# "Pipeline" means CI / E2E Tests / Deploy staging / Deploy production runs on
+# main, whatever triggered them. This workflow's own `Metrics Watch` runs, and
+# PR-triggered CI and E2E runs, are excluded from the pipeline rate and
+# duration so the metric describes the deploy platform and nothing else.
 
 name: Metrics Watch
 
 on:
   schedule:
-    # Every 6 hours. The baseline is a rolling window of the last 100 runs, so
-    # a denser schedule only re-reads the same window.
+    # Every 6 hours. The baseline is a rolling window of at most 60 runs (the
+    # newest 20 vs the previous 40), so a denser schedule only re-reads the
+    # same window.
     - cron: '0 */6 * * *'
   workflow_dispatch:
 

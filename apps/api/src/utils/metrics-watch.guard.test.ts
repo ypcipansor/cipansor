@@ -37,6 +37,8 @@ describe('metrics-watch', () => {
     expect(existsSync(SCRIPT)).toBe(true);
     expect(existsSync(join(FIXTURES, 'runs-quiet.json'))).toBe(true);
     expect(existsSync(join(FIXTURES, 'runs-failure-spike.json'))).toBe(true);
+    expect(existsSync(join(FIXTURES, 'runs-non-pipeline-failures.json'))).toBe(true);
+    expect(existsSync(join(FIXTURES, 'runs-unfinished.json'))).toBe(true);
     expect(existsSync(join(REPO_ROOT, '.github', 'workflows', 'metrics-watch.yml'))).toBe(true);
   });
 
@@ -55,6 +57,33 @@ describe('metrics-watch', () => {
     expect(out).not.toContain('ANOMALY_COUNT=0');
     expect(out).toContain('platform.pipeline_failure_rate');
     expect(out).toMatch(/\*\*Anomalies:\*\*/);
+  });
+
+  it('counts the deploy workflows, which are not push-triggered', () => {
+    // Deploy staging runs on `workflow_run` and Deploy production on
+    // `workflow_dispatch`; both are on main and part of the platform. A
+    // push-only rule would drop them and halve the sample count.
+    const out = analyze('runs-quiet.json');
+    expect(out).toContain('| platform.run_duration_median | 210s | 210s | 20/40 |');
+  });
+
+  it('does not alert when only non-pipeline runs (watch schedules, PR runs) fail', () => {
+    // The watch must not monitor itself into the pipeline rate, and a failing
+    // pull request must not move a metric that is about the deploy platform.
+    const out = analyze('runs-non-pipeline-failures.json');
+    expect(out).toContain('ANOMALY_COUNT=0');
+    expect(out).toContain('**Anomalies:** none');
+    // The failure rate stays at zero even though the window is full of failures.
+    expect(out).toContain('| platform.pipeline_failure_rate | 0.0% | 0.0% |');
+  });
+
+  it('excludes unfinished runs from the pipeline samples and duration', () => {
+    // Three in-progress runs must not enter the median, and their absence must
+    // shrink the sample count (17 settled of the newest 20, not 20).
+    const out = analyze('runs-unfinished.json');
+    expect(out).toContain('ANOMALY_COUNT=0');
+    expect(out).toContain('| platform.pipeline_failure_rate | 0.0% | 0.0% | 17/40 |');
+    expect(out).toContain('| platform.run_duration_median | 120s | 210s | 17/40 |');
   });
 
   it('alerts on nothing when the window is too small for a baseline', () => {
@@ -82,9 +111,17 @@ describe('metrics-watch', () => {
   });
 
   it('reports a metric with no samples as n/a, not as a healthy zero', () => {
-    // The fixtures carry no `schedule` runs, so the scheduled-job metric has no
-    // sample to judge. It must render `n/a` — a bare `0` would read as healthy.
+    // The fixtures carry no settled `schedule` runs, so the scheduled-job metric
+    // has no sample to judge. It must render `n/a` — a bare `0` would read as
+    // healthy.
     const out = analyze('runs-quiet.json');
+    expect(out).toContain('| platform.scheduled_job_failures | n/a | n/a | 0/0 |');
+  });
+
+  it('reports an unfinished schedule as n/a, not as a healthy zero', () => {
+    // A queued/in-progress schedule has no conclusion. Counting it as a sample
+    // but not a failure would render an unknown outcome as 0.
+    const out = analyze('runs-unfinished.json');
     expect(out).toContain('| platform.scheduled_job_failures | n/a | n/a | 0/0 |');
   });
 });

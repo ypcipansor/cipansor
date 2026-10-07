@@ -601,124 +601,204 @@
    "updated_at": "2026-09-01T03:55:00.000Z"
   },
   {
-   "name": "PR #600",
-   "event": "dynamic",
-   "head_branch": "refs/pull/600/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T08:20:00.000Z",
-   "run_started_at": "2026-09-01T08:20:00.000Z",
-   "updated_at": "2026-09-01T08:21:00.000Z"
+   "created_at": "2026-09-01T15:00:00.000Z",
+   "run_started_at": "2026-09-01T15:00:00.000Z",
+   "updated_at": "2026-09-01T15:00:40.000Z"
   },
   {
-   "name": "PR #606",
-   "event": "dynamic",
-   "head_branch": "refs/pull/606/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T08:13:00.000Z",
-   "run_started_at": "2026-09-01T08:13:00.000Z",
-   "updated_at": "2026-09-01T08:14:00.000Z"
+   "created_at": "2026-09-01T14:53:00.000Z",
+   "run_started_at": "2026-09-01T14:53:00.000Z",
+   "updated_at": "2026-09-01T14:53:40.000Z"
   },
   {
-   "name": "PR #612",
-   "event": "dynamic",
-   "head_branch": "refs/pull/612/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T08:06:00.000Z",
-   "run_started_at": "2026-09-01T08:06:00.000Z",
-   "updated_at": "2026-09-01T08:07:00.000Z"
+   "created_at": "2026-09-01T14:46:00.000Z",
+   "run_started_at": "2026-09-01T14:46:00.000Z",
+   "updated_at": "2026-09-01T14:46:40.000Z"
   },
   {
-   "name": "PR #618",
-   "event": "dynamic",
-   "head_branch": "refs/pull/618/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T07:59:00.000Z",
-   "run_started_at": "2026-09-01T07:59:00.000Z",
-   "updated_at": "2026-09-01T08:00:00.000Z"
+   "created_at": "2026-09-01T14:39:00.000Z",
+   "run_started_at": "2026-09-01T14:39:00.000Z",
+   "updated_at": "2026-09-01T14:39:40.000Z"
   },
   {
-   "name": "PR #624",
-   "event": "dynamic",
-   "head_branch": "refs/pull/624/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T07:52:00.000Z",
-   "run_started_at": "2026-09-01T07:52:00.000Z",
-   "updated_at": "2026-09-01T07:53:00.000Z"
+   "created_at": "2026-09-01T14:32:00.000Z",
+   "run_started_at": "2026-09-01T14:32:00.000Z",
+   "updated_at": "2026-09-01T14:32:40.000Z"
   },
   {
-   "name": "PR #630",
-   "event": "dynamic",
-   "head_branch": "refs/pull/630/head",
-   "conclusion": "success",
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T07:45:00.000Z",
-   "run_started_at": "2026-09-01T07:45:00.000Z",
-   "updated_at": "2026-09-01T07:46:00.000Z"
+   "created_at": "2026-09-01T14:25:00.000Z",
+   "run_started_at": "2026-09-01T14:25:00.000Z",
+   "updated_at": "2026-09-01T14:25:40.000Z"
+  },
+  {
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T14:18:00.000Z",
+   "run_started_at": "2026-09-01T14:18:00.000Z",
+   "updated_at": "2026-09-01T14:18:40.000Z"
+  },
+  {
+   "name": "Metrics Watch",
+   "event": "schedule",
+   "head_branch": "main",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T14:11:00.000Z",
+   "run_started_at": "2026-09-01T14:11:00.000Z",
+   "updated_at": "2026-09-01T14:11:40.000Z"
   },
   {
    "name": "CI",
    "event": "pull_request",
    "head_branch": "feat/x0",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:40:00.000Z",
-   "run_started_at": "2026-09-01T06:40:00.000Z",
-   "updated_at": "2026-09-01T06:41:30.000Z"
+   "created_at": "2026-09-01T13:20:00.000Z",
+   "run_started_at": "2026-09-01T13:20:00.000Z",
+   "updated_at": "2026-09-01T13:21:30.000Z"
   },
   {
    "name": "E2E Tests",
    "event": "pull_request",
    "head_branch": "feat/x1",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:33:00.000Z",
-   "run_started_at": "2026-09-01T06:33:00.000Z",
-   "updated_at": "2026-09-01T06:34:30.000Z"
+   "created_at": "2026-09-01T13:13:00.000Z",
+   "run_started_at": "2026-09-01T13:13:00.000Z",
+   "updated_at": "2026-09-01T13:14:30.000Z"
   },
   {
    "name": "CI",
    "event": "pull_request",
    "head_branch": "feat/x2",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:26:00.000Z",
-   "run_started_at": "2026-09-01T06:26:00.000Z",
-   "updated_at": "2026-09-01T06:27:30.000Z"
+   "created_at": "2026-09-01T13:06:00.000Z",
+   "run_started_at": "2026-09-01T13:06:00.000Z",
+   "updated_at": "2026-09-01T13:07:30.000Z"
   },
   {
    "name": "E2E Tests",
    "event": "pull_request",
    "head_branch": "feat/x3",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:19:00.000Z",
-   "run_started_at": "2026-09-01T06:19:00.000Z",
-   "updated_at": "2026-09-01T06:20:30.000Z"
+   "created_at": "2026-09-01T12:59:00.000Z",
+   "run_started_at": "2026-09-01T12:59:00.000Z",
+   "updated_at": "2026-09-01T13:00:30.000Z"
   },
   {
    "name": "CI",
    "event": "pull_request",
    "head_branch": "feat/x4",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:12:00.000Z",
-   "run_started_at": "2026-09-01T06:12:00.000Z",
-   "updated_at": "2026-09-01T06:13:30.000Z"
+   "created_at": "2026-09-01T12:52:00.000Z",
+   "run_started_at": "2026-09-01T12:52:00.000Z",
+   "updated_at": "2026-09-01T12:53:30.000Z"
   },
   {
    "name": "E2E Tests",
    "event": "pull_request",
    "head_branch": "feat/x5",
-   "conclusion": "success",
+   "conclusion": "failure",
    "status": "completed",
-   "created_at": "2026-09-01T06:05:00.000Z",
-   "run_started_at": "2026-09-01T06:05:00.000Z",
-   "updated_at": "2026-09-01T06:06:30.000Z"
+   "created_at": "2026-09-01T12:45:00.000Z",
+   "run_started_at": "2026-09-01T12:45:00.000Z",
+   "updated_at": "2026-09-01T12:46:30.000Z"
+  },
+  {
+   "name": "PR #600",
+   "event": "dynamic",
+   "head_branch": "refs/pull/600/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:40:00.000Z",
+   "run_started_at": "2026-09-01T11:40:00.000Z",
+   "updated_at": "2026-09-01T11:41:00.000Z"
+  },
+  {
+   "name": "PR #606",
+   "event": "dynamic",
+   "head_branch": "refs/pull/606/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:33:00.000Z",
+   "run_started_at": "2026-09-01T11:33:00.000Z",
+   "updated_at": "2026-09-01T11:34:00.000Z"
+  },
+  {
+   "name": "PR #612",
+   "event": "dynamic",
+   "head_branch": "refs/pull/612/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:26:00.000Z",
+   "run_started_at": "2026-09-01T11:26:00.000Z",
+   "updated_at": "2026-09-01T11:27:00.000Z"
+  },
+  {
+   "name": "PR #618",
+   "event": "dynamic",
+   "head_branch": "refs/pull/618/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:19:00.000Z",
+   "run_started_at": "2026-09-01T11:19:00.000Z",
+   "updated_at": "2026-09-01T11:20:00.000Z"
+  },
+  {
+   "name": "PR #624",
+   "event": "dynamic",
+   "head_branch": "refs/pull/624/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:12:00.000Z",
+   "run_started_at": "2026-09-01T11:12:00.000Z",
+   "updated_at": "2026-09-01T11:13:00.000Z"
+  },
+  {
+   "name": "PR #630",
+   "event": "dynamic",
+   "head_branch": "refs/pull/630/head",
+   "conclusion": "failure",
+   "status": "completed",
+   "created_at": "2026-09-01T11:05:00.000Z",
+   "run_started_at": "2026-09-01T11:05:00.000Z",
+   "updated_at": "2026-09-01T11:06:00.000Z"
   }
  ]
 }
