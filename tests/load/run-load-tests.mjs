@@ -371,20 +371,27 @@ function main() {
 
   const problem = summaryProblem(summary);
   const throttled = current.rateLimited > 0;
+  // k6's exit 99 is a completed run whose thresholds were crossed; 0 is a clean
+  // run. Anything else is an error (a rejected script, a network fault), and
+  // the summary it wrote — if any — is partial and must not be compared or
+  // recorded as if the run had finished.
+  const completed = run.status === 0 || run.status === 99;
   report.throttled = throttled;
   if (problem) report.error = problem;
+  if (!completed) {
+    report.error = report.error || `k6 exited ${run.status} before the run completed; its summary is not comparable`;
+  }
 
-  // A throttled run measured the API's limiter, not the app: its latency and
-  // error rate are meaningless. Never record it and never let it flag a
-  // regression — say so and stop.
-  const regressions = throttled || problem ? [] : compare(current, baseline);
+  // A run is only comparably measured when it completed, was not throttled and
+  // produced a usable summary. Anything else proves nothing: an empty
+  // `regressions` list must never be read as "no regression".
+  const comparable = completed && !throttled && !problem;
+  const regressions = comparable ? compare(current, baseline) : [];
   report.regressions = regressions;
+  report.compared = comparable && !args.updateBaseline && baseline !== null;
 
-  // Write the baseline only after a run that actually completed. k6's exit 99
-  // is a completed run whose thresholds were crossed; anything else is an error
-  // and its partial summary must not replace the reference. An explicit
+  // Write the baseline only after a run that actually completed. An explicit
   // --update-baseline is the only path that may write a file.
-  const completed = run.status === 0 || run.status === 99;
   if (args.updateBaseline) {
     if (throttled) {
       report.baselineWriteSkipped = 'rate-limited run';
@@ -404,10 +411,13 @@ function main() {
 
   finish(report, args);
 
+  // Order matters: a run that did not complete returns 2 even if comparing its
+  // partial summary happened to look like a regression, so the job never
+  // announces a regression for a run that never finished.
+  if (!completed) return EXIT_CODES.COULD_NOT_RUN;
   if (args.updateBaseline && !report.baselineWritten) return EXIT_CODES.COULD_NOT_RUN;
   if (throttled || problem) return EXIT_CODES.COULD_NOT_RUN;
   if (regressions.length > 0) return EXIT_CODES.REGRESSION;
-  if (!completed) return EXIT_CODES.COULD_NOT_RUN;
   return EXIT_CODES.OK;
 }
 
@@ -457,13 +467,20 @@ function printHuman(report) {
   if (report.baselineWriteSkipped) {
     console.log(`  baseline NOT written: ${report.baselineWriteSkipped}`);
   }
-  if (report.regressions.length === 0) {
-    if (report.baseline) console.log('  no regression against the baseline');
-  } else {
+  if (report.regressions.length > 0) {
     console.log('  REGRESSION(S):');
     for (const r of report.regressions) {
       console.log(`    ${r.metric}: baseline ${r.baseline} -> current ${r.current} (allowed ${r.threshold})`);
     }
+  } else if (report.baselineWritten) {
+    console.log('  recording run — no comparison made');
+  } else if (report.compared) {
+    console.log('  no regression against the baseline');
+  } else {
+    // An empty regressions list only means "no regression" when a comparison
+    // actually happened. A run that did not complete, was throttled, or had no
+    // usable baseline proved nothing — say so instead of a false green.
+    console.log('  not compared — this run is not a pass');
   }
 }
 

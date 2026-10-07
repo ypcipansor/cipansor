@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   parseArgs,
@@ -14,6 +16,7 @@ import {
   baselineMatches,
   summaryProblem,
   isSharedTarget,
+  EXIT_CODES,
 } from './run-load-tests.mjs';
 import { REGRESSION, thresholdsFor, latencyLimit } from './config.js';
 
@@ -311,3 +314,167 @@ test('compare: ignores p99 when the BASELINE is too small, matching the k6 thres
   const baseline = { p95: 100, p99: 200, requests: 48, errorRate: 0 };
   assert.deepEqual(compare({ p95: 100, p99: 9999, requests: 200, errorRate: 0 }, baseline), []);
 });
+
+// End-to-end runs through main() with a fake k6. A run that failed is not a
+// pass, even when it managed to write a summary: the empty regressions list
+// must never be announced as "no regression".
+const RUNNER = join(dirname(fileURLToPath(import.meta.url)), 'run-load-tests.mjs');
+
+function fakeK6(dir, { exit, summary }) {
+  const path = join(dir, 'fake-k6.sh');
+  const payload = summary === undefined ? '' : JSON.stringify(summary);
+  writeFileSync(
+    path,
+    [
+      '#!/bin/sh',
+      'for arg in "$@"; do case "$arg" in --summary-export=*) out="${arg#--summary-export=}" ;; esac; done',
+      payload ? `printf '%s' '${payload}' > "$out"` : ':',
+      `exit ${exit}`,
+      '',
+    ].join('\n')
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+function runRunner({ k6, baselinePath, dir, extraArgs = [], updateBaseline = false }) {
+  const args = [
+    RUNNER,
+    '--url',
+    'http://localhost:3001',
+    '--scenario',
+    'public-smoke',
+    '--profile',
+    'smoke',
+    '--json',
+    '--baseline',
+    baselinePath,
+    ...extraArgs,
+  ];
+  if (updateBaseline) args.push('--update-baseline');
+  return spawnSync(process.execPath, args, {
+    cwd: dir,
+    encoding: 'utf8',
+    env: { ...process.env, K6_BIN: k6 },
+  });
+}
+
+const validSummary = (overrides = {}) => ({
+  metrics: {
+    expected_response_duration: { 'p(50)': 10, 'p(95)': 20, 'p(99)': 30, avg: 15 },
+    expected_responses: { count: 40 },
+    unexpected_responses: { count: 0 },
+    checks: { value: 1 },
+    ...overrides,
+  },
+});
+
+function makeBaseline(dir, overrides = {}) {
+  const path = join(dir, 'baseline.json');
+  writeFileSync(
+    path,
+    `${JSON.stringify({
+      url: 'http://localhost:3001',
+      scenario: 'public-smoke',
+      profile: 'smoke',
+      p50: 10,
+      p95: 20,
+      p99: 30,
+      avg: 15,
+      errorRate: 0,
+      requests: 40,
+      rateLimited: 0,
+      checksRate: 1,
+      ...overrides,
+    })}\n`
+  );
+  return path;
+}
+
+test('main: a k6 run that fails after writing a summary proves nothing (exit 2)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir);
+    const k6 = fakeK6(dir, { exit: 1, summary: validSummary() });
+    const res = runRunner({ k6, baselinePath: baseline, dir });
+    assert.equal(res.status, EXIT_CODES.COULD_NOT_RUN);
+    const report = JSON.parse(res.stdout);
+    assert.equal(report.compared, false);
+    assert.match(report.error, /k6 exited 1/);
+    // Latency in the summary is far under the baseline, so a bad runner would
+    // have printed "no regression"; the whole point is that it must not.
+    assert.ok(!/no regression/.test(res.stdout));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a failed run is never a regression when its partial summary regressed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    // p95 200ms is 10x the 20ms baseline, so compare() would flag a regression —
+    // but the run failed, so it must report "could not run", not "regression".
+    const baseline = makeBaseline(dir);
+    const k6 = fakeK6(dir, {
+      exit: 1,
+      summary: validSummary({ expected_response_duration: { 'p(50)': 100, 'p(95)': 200, 'p(99)': 300, avg: 150 } }),
+    });
+    const res = runRunner({ k6, baselinePath: baseline, dir });
+    assert.equal(res.status, EXIT_CODES.COULD_NOT_RUN);
+    assert.deepEqual(JSON.parse(res.stdout).regressions, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a threshold-crossing run (k6 exit 99) is compared and flags the regression', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir);
+    const k6 = fakeK6(dir, {
+      exit: 99,
+      summary: validSummary({ expected_response_duration: { 'p(50)': 100, 'p(95)': 200, 'p(99)': 300, avg: 150 } }),
+    });
+    const res = runRunner({ k6, baselinePath: baseline, dir });
+    assert.equal(res.status, EXIT_CODES.REGRESSION);
+    const report = JSON.parse(res.stdout);
+    assert.equal(report.compared, true);
+    assert.ok(report.regressions.some((r) => r.metric === 'p95'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: --update-baseline does not replace the reference after a failed run', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir, { p95: 20 });
+    const k6 = fakeK6(dir, {
+      exit: 1,
+      summary: validSummary({ expected_response_duration: { 'p(50)': 100, 'p(95)': 200, 'p(99)': 300, avg: 150 } }),
+    });
+    const res = runRunner({ k6, baselinePath: baseline, dir, updateBaseline: true });
+    assert.equal(res.status, EXIT_CODES.COULD_NOT_RUN);
+    const report = JSON.parse(res.stdout);
+    assert.equal(report.baselineWritten, undefined);
+    assert.match(report.baselineWriteSkipped, /k6 exited 1/);
+    // The reference on disk is untouched.
+    assert.equal(JSON.parse(readFileSync(baseline, 'utf8')).p95, 20);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a failed run with no summary still reports could-not-run, not a crash', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir);
+    const k6 = fakeK6(dir, { exit: 1, summary: undefined });
+    const res = runRunner({ k6, baselinePath: baseline, dir });
+    assert.equal(res.status, EXIT_CODES.COULD_NOT_RUN);
+    assert.match(JSON.parse(res.stdout).error, /no summary/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
