@@ -47,7 +47,11 @@ case "$1" in
           | jq -r '.[] | select(.body | contains("<!-- pr-lifecycle:")) | .id' ;;
       *"/issues/comments/"*)
         case "$*" in
-          *"-X PATCH"*) log "PATCH $*" ;;
+          *"-X PATCH"*)
+            case "$*" in
+              *"/issues/comments/\${GH_STUB_PATCH_FAIL_ID:-none}"*) echo "gh: cannot edit" >&2; exit 1 ;;
+              *) log "PATCH $*" ;;
+            esac ;;
           *) printf '%s' "\${GH_STUB_OLD_COMMENT:-}" ;;
         esac ;;
     esac ;;
@@ -138,6 +142,26 @@ describe('pr-lifecycle.sh', () => {
     });
     expect(calls).toContain('PATCH');
     expect(calls).toContain('/issues/comments/4242');
+  });
+
+  it('updates the newest editable comment instead of stacking a notice', () => {
+    const { calls } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'true',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: allGreen,
+      // The oldest marker (100) cannot be edited; a newer one (200) can. The old
+      // code always retried the first match (100), failed, and posted a fresh
+      // comment every run — stacking notices. The guard must skip the
+      // uneditable one and edit 200, without posting anything.
+      GH_STUB_COMMENTS_LIST:
+        '[{"id":100,"body":"old <!-- pr-lifecycle:green -->"},{"id":200,"body":"newer <!-- pr-lifecycle:green -->"}]',
+      GH_STUB_OLD_COMMENT: 'a stale lifecycle comment',
+      GH_STUB_PATCH_FAIL_ID: '100',
+    });
+    expect(calls).toContain('/issues/comments/200');
+    expect(calls).not.toContain('/issues/comments/100');
+    expect(calls).not.toContain('COMMENT');
   });
 
   it('posts the all-green notice for a green draft without Analyze/CodeQL', () => {

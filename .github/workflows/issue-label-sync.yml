@@ -46,9 +46,9 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: sh .github/scripts/issue-label-sync.sh "$PR"
       # On a fork PR the `pull_request` event hands out a read-only token, so
-      # `gh pr edit` cannot copy a label and the check would go red for a reason
-      # the contributor cannot fix. Verify the labels and report the difference,
-      # but do not edit (the write step is the next one, and it no-ops on a fork).
+      # `gh pr edit` cannot copy a label. Verify the labels and report the
+      # difference; when they differ the check fails (naming the labels) rather
+      # than passing on a mislabeled PR. A maintainer applies them.
       - name: Verify labels only (fork pull request)
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true
         env:

@@ -117,6 +117,11 @@ to bounce it:
 The trigger fires on `issues.opened` or on the `bug` label being applied, but
 only when the issue *still* carries `bug` and only when that label is the one
 that changed — so applying `ready` or `needs-info` in review does not re-arm it.
+Verified 2026-10-07 against the deployed automation (`SDLC 06 · Bug reproducer`):
+`on = [issues.opened, issues.labeled]`, filter
+`(action == 'opened' || label.name == 'bug') && contains(issue.labels[].name, 'bug') && glob(repository.full_name, 'ypcipansor/cipansor')`.
+It is cloud configuration, not checked-in code, so re-check it if the automation
+is redeployed.
 
 ## The rule all of them share
 

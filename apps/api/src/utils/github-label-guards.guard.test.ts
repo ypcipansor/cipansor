@@ -36,8 +36,13 @@ case "$1" in
       *graphql*)
         [ "\${GH_STUB_CLOSING_FAIL:-}" = "1" ] && { echo "gh: graphql unavailable" >&2; exit 1; }
         printf '%s\\n' "\${GH_STUB_CLOSING:-}" ;;
-      *check-runs*) log "CHECKRUN $*" ;;
-      *"/comments"*) log "API $*"; printf '%s\\n' "\${GH_STUB_COMMENTS:-}" ;;
+      *check-runs*)
+        log "CHECKRUN $*"
+        [ "\${GH_STUB_CHECKRUN_FAIL:-}" = "1" ] && { echo "gh: check-runs 403" >&2; exit 1; } ;;
+      *"/comments"*)
+        log "API $*"
+        printf '%s\\n' "\${GH_STUB_COMMENTS:-}"
+        case "$*" in *--paginate*) [ -n "\${GH_STUB_PAGE2:-}" ] && printf '%s\\n' "\${GH_STUB_PAGE2}" ;; esac ;;
     esac ;;
   issue)
     case "$2" in
@@ -161,13 +166,29 @@ describe('duplicate-sweep.sh', () => {
   });
 
   it('paginates the comment list so a later reply is seen', () => {
-    const { calls } = run(SWEEP, {
+    // The warning is on page 1; a person's reply only appears on page 2. A
+    // single-page read would miss it and close the issue.
+    const { out, calls } = run(SWEEP, {
       GH_STUB_ISSUE_LIST: '7',
       GH_STUB_COMMENTS: warningLine,
+      GH_STUB_PAGE2: '2020-01-02T00:00:00Z\treporter\tIt is not a duplicate because Y',
       GH_STUB_BODY: BODY,
     });
-    expect(calls).toContain('API');
     expect(calls).toContain('--paginate');
+    expect(out).toContain('reply after the warning');
+    expect(calls).not.toContain('CLOSE 7');
+  });
+
+  it('leaves an issue open when its warning carries no body hash', () => {
+    // A warning posted before the hash marker existed gives no way to tell
+    // whether the body changed; the sweep must not close on that guess.
+    const { out, calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '7',
+      GH_STUB_COMMENTS: `${WARNED}\tmaintainer\tWarning ${MARK}`,
+      GH_STUB_BODY: BODY,
+    });
+    expect(calls).not.toContain('CLOSE 7');
+    expect(out).toContain('without a description hash');
   });
 
   it('sweeps pull requests labelled duplicate-pr too', () => {
@@ -326,7 +347,7 @@ describe('issue-label-sync.sh', () => {
     expect(edits[0]).toContain('--remove-label priority:low');
   });
 
-  it('does not edit a fork PR whose token is read-only', () => {
+  it('fails a fork PR whose labels differ, naming what a maintainer must apply', () => {
     const { status, out, calls } = run(
       SYNC,
       {
@@ -337,8 +358,43 @@ describe('issue-label-sync.sh', () => {
       },
       ['7']
     );
-    expect(status).toBe(0);
+    // Read-only, so no edit; but the check must not pass with the labels wrong.
+    expect(status).toBe(1);
     expect(calls).not.toContain('EDIT');
-    expect(out).toContain('fork');
+    expect(out).toContain('from a fork');
+    expect(out).toContain('priority:high');
+  });
+
+  it('passes a fork PR whose labels already match', () => {
+    const { status } = run(
+      SYNC,
+      {
+        READ_ONLY: '1',
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_LABELS: 'bug\npriority:high',
+        GH_STUB_ISSUE_LABELS_3: 'bug\npriority:high',
+      },
+      ['7']
+    );
+    expect(status).toBe(0);
+  });
+
+  it('fails the issue-event run when the check run cannot be published', () => {
+    // The POST is the only thing that lands the outcome on the PR head; a silent
+    // failure would leave the previous (possibly green) check in place.
+    const { status, out } = run(
+      SYNC,
+      {
+        GH_STUB_PRS: '7',
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_HEAD: 'sha7',
+        GH_STUB_PR_LABELS: 'bug\npriority:high',
+        GH_STUB_ISSUE_LABELS_3: 'bug\npriority:high',
+        GH_STUB_CHECKRUN_FAIL: '1',
+      },
+      ['--issue', '3']
+    );
+    expect(status).toBe(1);
+    expect(out).toContain('could not publish a check run');
   });
 });

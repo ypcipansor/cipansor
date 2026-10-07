@@ -33,11 +33,16 @@ AI_FOOTER="_This comment was created by an AI agent (OpenHands) on behalf of the
 # The checks that make up the required gate. A green result only counts as
 # "everything passed" when every one of these is present and successful on the
 # tested commit - a subset (E2E has not started, or the API truncated a page)
-# must never be mistaken for the full gate. On a docs-only change the scope job
-# reports `run=false`, so Lint/Build/Tests/Security/E2E are skipped and publish
-# no check run at all: such a PR never reaches the all-green notice below, which
-# is acceptable because a documentation change cannot be "green" in a useful
-# sense.
+# must never be mistaken for the full gate.
+#
+# Note the two definitions of "green" GitHub and this script use. A job skipped
+# by its own `if:` (a docs-only PR reports `scope.run=false`, so
+# Lint/Build/Tests/Security/E2E are skipped) still satisfies a *required status
+# check* on GitHub - a skipped job reports success. This script is stricter: it
+# requires each check to be present and `conclusion=success`, so a docs-only PR
+# never reaches the all-green notice. That is intentional - the notice means "the
+# full gate ran and passed", and a documentation change cannot satisfy it in any
+# useful sense.
 REQUIRED_CHECKS="${REQUIRED_CHECKS:-CI scope|Lint|Build|Tests|Security|E2E scope|E2E Tests (Chromium)}"
 
 # Suites that publish a check run on every PR whose workflow ran. A signature
@@ -173,22 +178,24 @@ $AI_FOOTER"
   # The REST comments list gives each comment's numeric database id; the GraphQL
   # node id from `gh pr view --json comments` is rejected by
   # repos/.../issues/comments/{id}, so the GET and PATCH below must use this id.
-  id=$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
-    --jq ".[] | select(.body | contains(\"$LIFE_MARK\")) | .id" 2>/dev/null | head -n1 || true)
-  if [ -n "$id" ]; then
+  # Newest marker first: a comment the workflow cannot edit (posted by another
+  # actor) must not be retried forever while a fresh notice stacks up each run.
+  # Editing the newest editable one keeps a single current comment.
+  ids=$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+    --jq ".[] | select(.body | contains(\"$LIFE_MARK\")) | .id" 2>/dev/null \
+    | awk '{ a[NR] = $0 } END { for (i = NR; i >= 1; i--) print a[i] }' || true)
+  for id in $ids; do
     old=$(gh api "repos/$REPO/issues/comments/$id" --jq .body 2>/dev/null || true)
     if [ "$old" = "$body" ]; then
       echo "Lifecycle comment already current ('$token'); not repeating."
       return 0
     fi
-    if gh api "repos/$REPO/issues/comments/$id" -X PATCH -f body="$body" >/dev/null; then
+    if gh api "repos/$REPO/issues/comments/$id" -X PATCH -f body="$body" >/dev/null 2>&1; then
       echo "Updated lifecycle comment ('$token')."
-    else
-      echo "Could not update lifecycle comment $id; posting a fresh one."
-      gh pr comment "$PR" --repo "$REPO" --body "$body"
+      return 0
     fi
-    return 0
-  fi
+  done
+  echo "No editable lifecycle comment ('$token'); posting a fresh one."
   gh pr comment "$PR" --repo "$REPO" --body "$body"
 }
 

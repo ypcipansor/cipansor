@@ -56,7 +56,10 @@ enforced, not just conventions.
    guess at). A PR that closes **more than one** issue must satisfy every one of
    them, and the check fails when the issues disagree among themselves. Changing
    a linked issue's labels re-runs the sync on every open PR that closes it,
-   because an `issues` event fires no `pull_request` event.
+   because an `issues` event fires no `pull_request` event. A **fork** PR's
+   token cannot edit labels, so the sync fails (naming the labels) rather than
+   passing with the PR mislabeled — a passing check on a mislabeled PR is what a
+   merge gate would read.
 
 2. **Status labels are not copied to a pull request.** `question`, `needs-info`,
    `duplicate`, `invalid`, `wontfix`, `blocked`, `ready` and `in-progress`
@@ -78,7 +81,9 @@ enforced, not just conventions.
    to be distinct: the description changed since the warning, or a person
    replied — or a maintainer removes the label. An automated comment, and any
    comment from a bot account, does not count as a reply. A duplicate PR is
-   closed without merging.
+   closed without merging. A warning that carries no description hash (an older
+   one, or one edited by hand) cannot be checked for an edit, so the sweep
+   leaves that item open for a maintainer rather than closing on a guess.
 
 5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
    ready PR back to draft when any required check is failing or a reviewer

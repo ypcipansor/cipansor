@@ -100,7 +100,16 @@ $AI_FOOTER"
     # later comment bumps updatedAt and would hide an earlier edit.
     RECORDED=$(printf '%s\n' "$COMMENTS" | grep -oE 'duplicate-sweep:hash:[0-9a-f]+' | head -1 | cut -d: -f3 || true)
     BODY=$(gh "$kind" view "$n" --repo "$REPO" --json body --jq '.body // empty' || true)
-    if [ -n "$RECORDED" ] && [ "$(body_hash "$BODY")" != "$RECORDED" ]; then
+    if [ -z "$RECORDED" ]; then
+      # A warning posted before the sweep recorded a hash carries no way to tell
+      # whether the description changed since. Do not close on a guess: report it
+      # and leave it for a maintainer. (Warnings the current sweep posts always
+      # carry a hash, so this only covers an older warning, e.g. one edited by
+      # hand.)
+      echo "::warning::$noun #$n was warned without a description hash; leaving it open for a maintainer to decide."
+      continue
+    fi
+    if [ "$(body_hash "$BODY")" != "$RECORDED" ]; then
       echo "$noun #$n was edited after the warning; leaving it open for a maintainer."
       continue
     fi

@@ -32,14 +32,16 @@ gh pr view "$PR" --repo "$REPO" --json body --jq .body > "$RAW"
 perl -0777 -pe 's/<!--.*?-->//gs; s/```.*?```//gs' "$RAW" > "$CLEAN"
 BODY="$(cat "$CLEAN")"
 
-# The visible text of the section starting at "## <heading>", blank lines
-# dropped. Operates on the cleaned body.
+# The visible text of the section starting at "## <heading>", blank lines and
+# bare list markers dropped. Operates on the cleaned body. A lone "-" is the
+# template's placeholder for "What changed", not content; dropping only a marker
+# with nothing after it keeps real bullets and the "- [x]" acceptance boxes.
 section() {
   awk -v h="## $1" '
     $0 == h { f = 1; next }
     f && /^## / { f = 0 }
     f { print }
-  ' "$CLEAN" | sed -e '/^[[:space:]]*$/d'
+  ' "$CLEAN" | sed -e '/^[[:space:]]*$/d' -e '/^[[:space:]]*[-*+][[:space:]]*$/d'
 }
 
 visible_len() { printf '%s' "$1" | tr -d '\n' | wc -c | tr -d ' '; }
@@ -69,7 +71,10 @@ fi
 
 # Find any existing marker comment, so it can be updated instead of duplicated.
 find_comment() {
-  gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+  # --paginate: on an active PR the reminder can move past the first 100
+  # comments; without it the guard would post a duplicate (or fail to delete a
+  # resolved one). tail -n1 keeps the newest marker comment.
+  gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
     --jq ".[] | select(.body | contains(\"$MARK\")) | .id" 2>/dev/null | tail -n1
 }
 CID="$(find_comment || true)"
@@ -87,14 +92,22 @@ if [ -n "$missing" ]; then
       "_This comment was created by an AI agent (OpenHands) on behalf of the maintainer._"
   } > "$OUT"
   if [ -n "$CID" ]; then
-    gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$OUT" >/dev/null
+    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$OUT" >/dev/null; then
+      echo "PR #$PR: updated the missing-description reminder."
+    else
+      echo "::warning::could not update the description reminder on PR #$PR"
+    fi
+  elif gh pr comment "$PR" --repo "$REPO" --body-file "$OUT" >/dev/null; then
+    echo "PR #$PR: posted the missing-description reminder."
   else
-    gh pr comment "$PR" --repo "$REPO" --body-file "$OUT" >/dev/null
+    echo "::warning::could not post the description reminder on PR #$PR"
   fi
-  echo "PR #$PR: posted the missing-description reminder."
 elif [ -n "$CID" ]; then
-  gh api -X DELETE "repos/$REPO/issues/comments/$CID" >/dev/null
-  echo "PR #$PR: description is complete; removed the reminder."
+  if gh api -X DELETE "repos/$REPO/issues/comments/$CID" >/dev/null; then
+    echo "PR #$PR: description is complete; removed the reminder."
+  else
+    echo "::warning::could not remove the description reminder on PR #$PR"
+  fi
 else
   echo "PR #$PR: description is complete."
 fi

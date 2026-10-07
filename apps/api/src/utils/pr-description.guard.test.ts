@@ -27,13 +27,16 @@ case "$1" in
     case "$*" in
       *"--json files,body"*) printf '%s\\n' "\${GH_STUB_PRJSON-}" ;;
       *"--json body"*) printf '%s\\n' "\${GH_STUB_BODY-}" ;;
-      *"comment"*) log "COMMENT $*" ;;
+      *"comment"*) log "COMMENT $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
     esac ;;
   api)
     case "$*" in
-      *"comments?per_page"*) [ -n "\${GH_STUB_CID:-}" ] && printf '%s\\n' "\$GH_STUB_CID" ;;
-      *"-X PATCH"*) log "PATCH $*" ;;
-      *"-X DELETE"*) log "DELETE $*" ;;
+      *"comments?per_page"*)
+        # The marker comment is on a later page, so it is only found when the
+        # caller paginates.
+        case "$*" in *--paginate*) [ -n "\${GH_STUB_CID:-}" ] && printf '%s\\n' "\$GH_STUB_CID" ;; esac ;;
+      *"-X PATCH"*) log "PATCH $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
+      *"-X DELETE"*) log "DELETE $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
     esac ;;
 esac
 exit 0
@@ -123,7 +126,17 @@ describe('pr-template-guard.sh', () => {
     expect(calls).toContain('COMMENT');
   });
 
+  it('treats a lone list marker as a missing change summary', () => {
+    // The template's `## What changed` ships a bare "-"; leaving it there is not
+    // a change summary, so the reminder must still list it.
+    const bareDash = COMPLETE.replace('- probe the database before answering', '-');
+    const { calls } = run(TEMPLATE, { GH_STUB_BODY: bareDash });
+    expect(calls).toContain('COMMENT');
+  });
+
   it('removes an earlier reminder once the description is complete', () => {
+    // GH_STUB_CID is only returned when the lookup paginates, so this also
+    // proves the marker is found past the first page of comments.
     const { calls } = run(TEMPLATE, { GH_STUB_BODY: COMPLETE, GH_STUB_CID: '555' });
     expect(calls).toContain('DELETE');
     expect(calls).not.toContain('COMMENT');
@@ -133,6 +146,15 @@ describe('pr-template-guard.sh', () => {
     const none = COMPLETE.replace('Fixes #12', 'No linked issue — a chore.');
     const { calls } = run(TEMPLATE, { GH_STUB_BODY: none });
     expect(calls).not.toContain('COMMENT');
+  });
+
+  it('stays advisory when the reminder cannot be posted', () => {
+    const { status, out } = run(TEMPLATE, {
+      GH_STUB_BODY: '## Why\n\nSomething broke.',
+      GH_STUB_WRITE_FAIL: '1',
+    });
+    expect(status).toBe(0);
+    expect(out).toContain('could not post');
   });
 });
 
@@ -152,6 +174,16 @@ describe('visual-evidence.sh', () => {
     const body =
       'Before: ![old](https://user-images.githubusercontent.com/1/1.png)\n' +
       'After: ![new](https://user-images.githubusercontent.com/1/2.png)';
+    const { calls } = run(VISUAL, {
+      GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], body),
+    });
+    expect(calls).not.toContain('COMMENT');
+  });
+
+  it('is silent when both visuals use GitHub attachment links', () => {
+    const body =
+      'Before: ![old](https://github.com/user-attachments/assets/11111111-1111-1111-1111-111111111111)\n' +
+      'After: ![new](https://github.com/user-attachments/assets/22222222-2222-2222-2222-222222222222)';
     const { calls } = run(VISUAL, {
       GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], body),
     });
@@ -183,5 +215,14 @@ describe('visual-evidence.sh', () => {
       GH_STUB_PRJSON: pr(['apps/api/src/app.ts'], 'Fixes #1'),
     });
     expect(calls).not.toContain('COMMENT');
+  });
+
+  it('stays advisory when the reminder cannot be posted', () => {
+    const { status, out } = run(VISUAL, {
+      GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], 'Fixes #1'),
+      GH_STUB_WRITE_FAIL: '1',
+    });
+    expect(status).toBe(0);
+    expect(out).toContain('could not post');
   });
 });

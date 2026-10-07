@@ -27,7 +27,7 @@ gh pr view "$PR" --repo "$REPO" --json files,body > "$TMP"
 touch_web="$(jq -r '[.files[].path] | map(select(startswith("apps/web/"))) | length > 0' "$TMP")"
 body="$(jq -r .body "$TMP")"
 
-img_re='user-images\.githubusercontent\.com|private-user-images\.githubusercontent\.com|https?://[^ )]+\.(png|jpe?g|gif|webp|mp4|webm)'
+img_re='user-images\.githubusercontent\.com|private-user-images\.githubusercontent\.com|github\.com/user-attachments/assets/|https?://[^ )]+\.(png|jpe?g|gif|webp|mp4|webm)'
 
 # The Evidence requirement is a *before* visual AND an *after* visual. Split the
 # body at the first line that names "After"; each region must contain media. A
@@ -41,7 +41,9 @@ printf '%s\n' "$before_part" | grep -qiE "$img_re" && has_before=1
 printf '%s\n' "$after_part" | grep -qiE "$img_re" && has_after=1
 
 find_comment() {
-  gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+  # --paginate: a reminder past the first 100 comments would otherwise look
+  # absent and be duplicated. tail -n1 keeps the newest marker comment.
+  gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
     --jq ".[] | select(.body | contains(\"$MARK\")) | .id" 2>/dev/null | tail -n1
 }
 CID="$(find_comment || true)"
@@ -65,14 +67,22 @@ reviewer can see the change without checking out the branch.
 _This comment was created by an AI agent (OpenHands) on behalf of the maintainer._
 EOF
   if [ -n "$CID" ]; then
-    gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$TMP" >/dev/null
+    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$TMP" >/dev/null; then
+      echo "PR #$PR: UI change without before/after visuals; reminder updated."
+    else
+      echo "::warning::could not update the visual reminder on PR #$PR"
+    fi
+  elif gh pr comment "$PR" --repo "$REPO" --body-file "$TMP" >/dev/null; then
+    echo "PR #$PR: UI change without before/after visuals; reminder posted."
   else
-    gh pr comment "$PR" --repo "$REPO" --body-file "$TMP" >/dev/null
+    echo "::warning::could not post the visual reminder on PR #$PR"
   fi
-  echo "PR #$PR: UI change without before/after visuals; reminder posted."
 elif [ -n "$CID" ]; then
-  gh api -X DELETE "repos/$REPO/issues/comments/$CID" >/dev/null
-  echo "PR #$PR: visuals present (or no UI change); reminder removed."
+  if gh api -X DELETE "repos/$REPO/issues/comments/$CID" >/dev/null; then
+    echo "PR #$PR: visuals present (or no UI change); reminder removed."
+  else
+    echo "::warning::could not remove the visual reminder on PR #$PR"
+  fi
 else
   echo "PR #$PR: nothing to ask for."
 fi

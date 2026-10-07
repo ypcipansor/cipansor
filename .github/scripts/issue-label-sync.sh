@@ -114,11 +114,15 @@ sync_pr() { # sync_pr <pr-number>
       DEL="$PR_PRIO"
       echo "Correcting PR priority '$PR_PRIO' -> '$REQ_PRIOS'."
     fi
-    # A fork PR's `pull_request` token is read-only: the edit below would fail
-    # and turn the check red for a difference the contributor cannot fix. Report
-    # it as a notice and pass; a maintainer applies the labels.
+    # A fork PR's `pull_request` token is read-only: the edit below cannot run.
+    # The check must not pass with the labels still wrong — a passing "Issue label
+    # sync" on a mislabeled PR is what a merge gate reads. Fail it and name the
+    # labels a maintainer has to apply; the fork contributor cannot do it.
     if [ "${READ_ONLY:-0}" = "1" ]; then
-      [ -n "$ADD$DEL" ] && echo "::notice::PR #$PR is from a fork; a maintainer must apply: ${ADD#,} ${DEL:+remove $DEL}"
+      if [ -n "$ADD$DEL" ]; then
+        echo "::error::PR #$PR is from a fork; a maintainer must apply: ${ADD#,}${DEL:+ (remove $DEL)}"
+        FAIL=1
+      fi
     elif [ -n "$ADD" ] || [ -n "$DEL" ]; then
       SET=""
       [ -n "$ADD" ] && SET="$SET --add-label ${ADD#,}"
@@ -147,14 +151,21 @@ sync_pr() { # sync_pr <pr-number>
 publish_pr_check() { # publish_pr_check <head-sha> <conclusion> <title> <summary>
   _sha="$1"; _concl="$2"; _title="$3"; _summary="$4"
   [ -n "$_sha" ] || return 0
-  gh api "repos/$REPO/check-runs" -X POST \
-    -f name="Issue label sync" \
-    -f head_sha="$_sha" \
-    -f status="completed" \
-    -f conclusion="$_concl" \
-    -f "output[title]=$_title" \
-    -f "output[summary]=$_summary" >/dev/null 2>&1 \
-    || echo "::warning::could not publish a check run for $_sha (needs checks: write)"
+  # This POST is the only thing that lands the issue-event outcome on the PR
+  # head. If it fails (rate limit, missing permission) the PR keeps its previous
+  # check — a stale green reads as "still in sync" to the merge gate. Report the
+  # API error and fail, so the workflow cannot be mistaken for a clean run.
+  if ! _err=$(gh api "repos/$REPO/check-runs" -X POST \
+      -f name="Issue label sync" \
+      -f head_sha="$_sha" \
+      -f status="completed" \
+      -f conclusion="$_concl" \
+      -f "output[title]=$_title" \
+      -f "output[summary]=$_summary" 2>&1 >/dev/null); then
+    echo "::error::could not publish a check run for $_sha; the PR keeps its previous result: $_err"
+    return 1
+  fi
+  return 0
 }
 
 if [ "${1:-}" = "--issue" ]; then
@@ -168,11 +179,11 @@ if [ "${1:-}" = "--issue" ]; then
     SHA=$(gh pr view "$p" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
     if sync_pr "$p"; then
       publish_pr_check "$SHA" success "Labels are in sync" \
-        "The labels on PR #$p still agree with issue #$ISSUE."
+        "The labels on PR #$p still agree with issue #$ISSUE." || RC=1
     else
       RC=1
       publish_pr_check "$SHA" failure "Labels are out of sync" \
-        "Issue #$ISSUE changed and PR #$p no longer agrees with it. See the workflow log and fix the labels before merging."
+        "Issue #$ISSUE changed and PR #$p no longer agrees with it. See the workflow log and fix the labels before merging." || RC=1
     fi
   done
   exit "$RC"
