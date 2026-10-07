@@ -1,13 +1,15 @@
 #!/bin/sh
-# Apply the pull-request lifecycle rules after a CI or E2E run finishes.
+# Apply the pull-request lifecycle rules after a CI, E2E or review run finishes.
 #
-#   red CI on a ready PR            -> convert to draft, comment which checks failed
-#   changes requested on a ready PR -> convert to draft, comment that it needs work
-#   green CI on a draft PR          -> post the all-green comment (informational)
-#   green CI on a ready PR, labels in sync, no changes requested
-#                                   -> approve
+#   red checks on a ready PR      -> convert to draft, comment which checks failed
+#   changes requested on a PR     -> convert to draft, comment that it needs work
+#   green checks on a draft PR    -> post the all-green comment (informational)
+#   green checks on a ready PR    -> leave it alone
 #
-# The draft decision after a revert is left to a human or the review automation:
+# This script never approves and never merges. Approval is the review gate's job
+# (SDLC 22), which reads the diff; an automated approval from here could bless an
+# unreviewed change, so the lifecycle guard only preserves the draft/ready state.
+# The draft decision after a revert is likewise left to a human or that gate:
 # this script never marks a PR ready by itself.
 #
 # Usage: pr-lifecycle.sh <pr-number> <head-sha>
@@ -18,9 +20,22 @@ PR="${1:?usage: pr-lifecycle.sh <pr-number> <head-sha>}"
 SHA="${2:?head sha is required}"
 REPO="${REPO:?REPO is required}"
 
+LIFE_MARK="<!-- pr-lifecycle:"
 GREEN_MARK="<!-- pr-lifecycle:green -->"
-RED_MARK="<!-- pr-lifecycle:red -->"
 CHANGES_MARK="<!-- pr-lifecycle:changes -->"
+
+# The checks that make up the required gate. A green result only counts as
+# "everything passed" when every one of these is present and successful on the
+# tested commit - a subset (E2E has not started, or the API truncated a page)
+# must never be mistaken for the full gate. CI scope / E2E scope / E2E Tests are
+# the scope jobs a docs-only change skips; they still publish a success result.
+REQUIRED_CHECKS="${REQUIRED_CHECKS:-CI scope|Lint|Build|Tests|Security|E2E scope|E2E Tests (Chromium)}"
+
+# Suites that publish a check run on every PR whose workflow ran. A signature
+# with no check run on the tested commit means that workflow has not started (or
+# its run is not yet associated with this commit), so a green subset must not be
+# mistaken for the full gate even when every check seen so far passed.
+KNOWN_SUITE_SIGNS="${KNOWN_SUITE_SIGNS:-Analyze|Build|CI scope|CodeQL|E2E|Lint|Security|Tests}"
 
 pr_field() { gh pr view "$PR" --repo "$REPO" --json "$1" --jq ".$1"; }
 
@@ -28,34 +43,115 @@ STATE=$(pr_field state)
 [ "$STATE" = "OPEN" ] || { echo "PR #$PR is $STATE; nothing to do."; exit 0; }
 DRAFT=$(pr_field isDraft)
 REVIEW=$(pr_field reviewDecision)
-HEAD=$(pr_field headRefOid)
 
-# A stale workflow_run can fire for an older commit; only act on the head.
+# Checks are evaluated against the commit the workflows actually ran on. In this
+# repository the CI and E2E workflows publish their check runs against the PR's
+# source head SHA (which is also `workflow_run.head_sha`); the synthetic
+# `pull_request` merge commit carries no check runs at all. Query the head SHA,
+# and fall back to the reported merge commit only if the head yields nothing, so
+# the script adapts if that ever changes.
+merge_sha() { pr_field potentialMergeCommit; }
+
+# A stale workflow_run can fire for an older commit; only act when this run is
+# for the PR's current head (a merge-commit run names the source head_sha too).
+HEAD=$(pr_field headRefOid)
 if [ "$HEAD" != "$SHA" ]; then
   echo "Run is for $SHA but the PR head is $HEAD; skipping a stale run."
   exit 0
 fi
 
-# Classify the *latest* run of every check on the head commit. A check that ran
-# twice (an earlier run cancelled by concurrency, then a real one) must be judged
-# by its latest result, not by the cancelled duplicate.
-CHECKS=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
-  --jq '.check_runs | sort_by(.id) | group_by(.name) | map(.[-1])[]
-        | "\(.name)\t\(.status)\t\(.conclusion)"' 2>/dev/null || true)
-RED=$(printf '%s\n' "$CHECKS" | grep -E '	completed	(failure|timed_out|action_required|startup_failure|stale)$' || true)
-# Pending = anything not finished, plus a latest run that was cancelled (its
-# replacement has not appeared yet). Neither red nor green.
-PENDING=$(printf '%s\n' "$CHECKS" | grep -vE '	completed	(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$' | grep -v '^$' || true)
-TOTAL=$(printf '%s\n' "$CHECKS" | grep -c . || true)
+# Fetch the check runs for the tested commit once (the head SHA in this
+# repository, falling back to the reported merge commit only if the head has
+# none), then keep the *latest* run of every check name. Grouping by name rather
+# than position is what lets a re-run supersede an earlier cancelled or failed
+# result: a positional `.[-1]` kept the last run of the *list*, so a replaced
+# failure was still reported.
+CHECKS_JSON=""
+for cand in "$SHA" "$(merge_sha)"; do
+  [ -n "$cand" ] && [ "$cand" != "null" ] || continue
+  CHECKS_JSON=$(gh api --paginate "repos/$REPO/commits/$cand/check-runs?per_page=100" 2>/dev/null || true)
+  if [ "$(printf '%s' "$CHECKS_JSON" | jq '.check_runs | length' 2>/dev/null || echo 0)" -gt 0 ]; then
+    CHECK_SHA="$cand"
+    break
+  fi
+  CHECKS_JSON=""
+done
+CHECK_SHA="${CHECK_SHA:-$SHA}"
 
-failed_names() { printf '%s\n' "$RED" | cut -f1 | sed 's/^/- `&`/' || true; }
+# name<TAB>status<TAB>conclusion for the latest run of each check name.
+LATEST=$(printf '%s' "$CHECKS_JSON" | jq -r '
+  (.check_runs // []) | sort_by(.started_at, .id) | group_by(.name) | map(.[-1])[]
+  | "\(.name)\t\(.status)\t\(.conclusion // "")"' 2>/dev/null || true)
+# RED: finished with a conclusion that fails the gate.
+RED=$(printf '%s\n' "$LATEST" \
+  | awk -F'\t' '$2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/' || true)
+# PENDING: a latest run still running, or finished with a conclusion this gate
+# does not call green (a cancelled run whose replacement has not appeared yet).
+PENDING=$(printf '%s\n' "$LATEST" \
+  | awk -F'\t' 'NF && ($2 != "completed" || $3 !~ /^(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$/)' || true)
+PRESENT=$(printf '%s\n' "$LATEST" | awk -F'\t' 'NF {print $1}' || true)
 
-comment_once() { # comment_once <marker> <body>
-  if gh pr view "$PR" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$1"; then
-    echo "Comment '$1' already present; not repeating."
+# True when every required check is present on the tested commit. A skipped
+# check reports success for the required gate (a docs-only PR skips Lint, Build,
+# Tests, E2E) but must still be *present*, so an early subset (E2E not started
+# yet) is not mistaken for the full gate. IFS is newline so names with spaces
+# stay intact.
+required_present() {
+  _ifs=$IFS
+  IFS='
+'
+  set -f
+  for want in $(printf '%s\n' "$REQUIRED_CHECKS" | tr '|' '\n'); do
+    printf '%s\n' "$PRESENT" | grep -qxF "$want" || { IFS=$_ifs; set +f; return 1; }
+  done
+  IFS=$_ifs
+  set +f
+  [ "$(printf '%s\n' "$REQUIRED_CHECKS" | grep -c .)" -gt 0 ]
+}
+
+failed_names() { printf '%s\n' "$RED" | awk -F'\t' 'NF {print "- `" $1 "`"}'; }
+
+# True when a check from every known suite is present. Together with
+# required_present this rejects a green subset: a suite that has not published
+# its check run yet (E2E only starts after CI, so early on it is absent) keeps
+# the decision pending rather than green.
+known_suites_seen() {
+  _ifs=$IFS
+  IFS='
+'
+  set -f
+  for _sign in $(printf '%s\n' "$KNOWN_SUITE_SIGNS" | tr '|' '\n'); do
+    [ -n "$_sign" ] || continue
+    printf '%s\n' "$PRESENT" \
+      | awk -v s="$_sign" 'index($0, s) == 1 { found = 1 } END { exit !found }' \
+      || { IFS=$_ifs; set +f; return 1; }
+  done
+  IFS=$_ifs
+  set +f
+  return 0
+}
+
+# Post exactly one lifecycle comment and keep it current. The PR carries at most
+# one comment whose body contains LIFE_MARK; it is rewritten when the state (the
+# dedupe token) changes, and left alone when it does not, so a new commit that
+# fails different checks replaces the stale list instead of being suppressed by
+# an existing marker. The token is embedded in the body so a repeat of the same
+# state is recognised.
+comment_once() { # comment_once <body> <dedupe-token>
+  body="$1"; token="$2"
+  id=$(gh pr view "$PR" --repo "$REPO" --json comments \
+    --jq ".comments[] | select(.body | contains(\"$LIFE_MARK\")) | .id" 2>/dev/null | head -n1 || true)
+  if [ -n "$id" ]; then
+    old=$(gh api "repos/$REPO/issues/comments/$id" --jq .body 2>/dev/null || true)
+    if [ "$old" = "$body" ]; then
+      echo "Lifecycle comment already current ('$token'); not repeating."
+      return 0
+    fi
+    gh api "repos/$REPO/issues/comments/$id" -X PATCH -f body="$body" >/dev/null
+    echo "Updated lifecycle comment ('$token')."
     return 0
   fi
-  gh pr comment "$PR" --repo "$REPO" --body "$2"
+  gh pr comment "$PR" --repo "$REPO" --body "$body"
 }
 
 if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
@@ -63,9 +159,9 @@ if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
     gh pr ready "$PR" --repo "$REPO" --undo
     echo "PR #$PR has changes requested; converted to draft."
   fi
-  comment_once "$CHANGES_MARK" "A reviewer requested changes on this PR, so it is back in **draft**.
+  comment_once "A reviewer requested changes on this PR, so it is back in **draft**.
 
-Address every open review thread, push the fixes, then mark it ready for review again once CI is green. ${CHANGES_MARK}"
+Address every open review thread, push the fixes, then mark it ready for review again once CI is green. ${CHANGES_MARK}" "changes-requested"
   exit 0
 fi
 
@@ -74,37 +170,30 @@ if [ -n "$RED" ]; then
     gh pr ready "$PR" --repo "$REPO" --undo
     echo "PR #$PR has failing checks; converted to draft."
   fi
-  comment_once "$RED_MARK" "CI is red on this PR, so it is back in **draft**. Failing checks:
+  SIG=$(printf '%s\n' "$RED" | cut -f1 | sort | tr '\n' ',' | sed 's/,$//')
+  comment_once "CI is red on this PR, so it is back in **draft**. Failing checks:
 
 $(failed_names)
 
-Get every check green, then mark it ready for review again. ${RED_MARK}"
+Get every check green, then mark it ready for review again. <!-- pr-lifecycle:red:$SIG -->" "red:$SIG"
   exit 0
 fi
 
-if [ -n "$PENDING" ] || [ "$TOTAL" -eq 0 ]; then
-  echo "Checks for $SHA are still running (or none are reported yet); leaving the PR as it is."
+# Require the full set, not just a nonempty one: a green subset (an early CI
+# finish before E2E has published its checks) is still pending.
+if [ -n "$PENDING" ] || [ "$(printf '%s\n' "$LATEST" | grep -c .)" -eq 0 ] \
+  || ! required_present || ! known_suites_seen; then
+  echo "Checks for $CHECK_SHA are not all green yet; leaving the PR as it is."
   exit 0
 fi
 
-# Every check passed.
+# Every required check passed. The lifecycle guard has nothing left to do: it
+# does not approve (that is the review gate's job) and does not mark a draft
+# ready.
 if [ "$DRAFT" = "true" ]; then
-  comment_once "$GREEN_MARK" "All checks are green. This PR is a **draft**; mark it ready for review when the work is complete. ${GREEN_MARK}"
+  comment_once "All checks are green. This PR is a **draft**; mark it ready for review when the work is complete. ${GREEN_MARK}" "green"
   echo "PR #$PR is green and still a draft."
   exit 0
 fi
 
-if [ "$REVIEW" = "APPROVED" ]; then
-  echo "PR #$PR is green and already approved."
-  exit 0
-fi
-
-# Labels must agree with the issue before approval. issue-label-sync.sh adds
-# missing labels and fails on a real disagreement.
-if ! sh "$(dirname "$0")/issue-label-sync.sh" "$PR"; then
-  echo "Labels are out of sync; not approving PR #$PR."
-  exit 0
-fi
-
-gh pr review "$PR" --repo "$REPO" --approve --body "All required checks are green and the labels match the linked issue. Approving automatically. ${GREEN_MARK}"
-echo "Approved PR #$PR."
+echo "PR #$PR is green and ready. Leaving approval to the review gate."

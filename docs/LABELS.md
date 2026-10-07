@@ -52,7 +52,10 @@ enforced, not just conventions.
    label. `SDLC 21 · PR labeller` sets them from the issue; the `Issue label
    sync` workflow adds anything missing and **fails the check** when the type
    genuinely disagrees (a different type is a real conflict, not something to
-   guess at).
+   guess at). A PR that closes **more than one** issue must satisfy every one of
+   them, and the check fails when the issues disagree among themselves. Changing
+   a linked issue's labels re-runs the sync on every open PR that closes it,
+   because an `issues` event fires no `pull_request` event.
 
 2. **Status labels are not copied to a pull request.** `question`, `needs-info`,
    `duplicate`, `invalid`, `wontfix`, `blocked`, `ready` and `in-progress`
@@ -66,8 +69,9 @@ enforced, not just conventions.
 
 4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` and links the
    original. The `Duplicate sweep` workflow warns once, then closes the issue as
-   *not planned* after seven days unless the issue is edited or a maintainer
-   removes the label.
+   *not planned* after seven days unless it is shown to be distinct — the issue
+   was edited, or a person replied to the warning — or a maintainer removes the
+   label. An automated comment does not count as a reply.
 
 5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
    ready PR back to draft when any required check is failing or a reviewer

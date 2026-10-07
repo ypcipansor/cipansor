@@ -11,6 +11,12 @@ name: Issue label sync
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+  # Relabelling a linked issue fires no pull_request event, so the PR keeps its
+  # old labels and its previous (passing) sync check. Re-sync every open PR that
+  # closes the issue when the issue changes.
+  issues:
+    types: [labeled, unlabeled, edited]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +24,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: issue-label-sync-${{ github.event.pull_request.number }}
+  group: issue-label-sync-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
@@ -31,9 +37,17 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Sync and check labels
+      - name: Sync and check labels (pull request)
+        if: github.event_name == 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
         run: sh .github/scripts/issue-label-sync.sh "$PR"
+      - name: Re-sync PRs that close the issue
+        if: github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: sh .github/scripts/issue-label-sync.sh --issue "$ISSUE"
