@@ -5,6 +5,10 @@ authoritative, area-specific conventions live in the `AGENTS.md` files
 (root + per package) and the known gaps live in
 [`known-issues.md`](../.claude/memory/known-issues.md).
 
+For the concrete index — every mounted API module and its prefix, every web
+route group, the shared contracts and the background jobs — see
+[`MODULE_MAP.md`](./MODULE_MAP.md).
+
 ## Monorepo layout
 
 ```
