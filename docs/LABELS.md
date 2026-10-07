@@ -130,7 +130,7 @@ negative filter, or it will loop:
 !icontains(comment.body, 'This comment was created by an AI agent')
 ```
 
-`verify-sdlc-triggers.py` fails if a comment trigger matches an automated
-comment. The repo-side counterpart is
-`.github/scripts/automation-loop-guard.py`, pinned by
-`apps/api/src/utils/automation-loop-guard.guard.test.ts`.
+The automations live outside this repository, so the guard is enforced where
+they are deployed: each comment trigger is validated against a sample automated
+comment before it is enabled, and every automated comment ends with the footer
+above.
