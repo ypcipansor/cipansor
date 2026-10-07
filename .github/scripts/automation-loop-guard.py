@@ -9,11 +9,13 @@ comment, the automation's included, is posted under the reporter's account
 (`user.type: User`), so `sender.login` and `sender.type` cannot tell them apart.
 
 The automation definition lives in the OpenHands events backend, not in this
-repository, so its `trigger.filter` cannot be tested here. This script is the
-repo-side guard: the back-end filter is a thin wrapper that calls `decide`, and
-the guard test replays real comment bodies (a captured fixture; #680 is the
-issue the guard was written on) against it. It is the only place the loop can
-be pinned so a wording change cannot silently bring it back.
+repository, so its `trigger.filter` is a JMESPath expression that cannot call
+this script. The two are kept in step the other way round: this file is the
+*spec* (the reference implementation, pinned by the guard test against real
+captured comment bodies), and it prints the canonical filter clause the backend
+must carry (`guard-clause`), which `.github/scripts/deploy-automation-loop-guard.py`
+applies to the live automations. The deployment is what stops the loop; this
+file is what makes the matching rule testable and single-sourced.
 
 The three conditions, in order:
 
@@ -40,6 +42,7 @@ Usage:
   automation-loop-guard.py decide -      one event object on stdin -> "act=… reason=…"
   automation-loop-guard.py replay -      {"needsInfo": bool, "comments": [...]} ->
                                          runs_old / runs_guarded on stdout
+  automation-loop-guard.py guard-clause  print the JMESPath clause the backend filter appends
 Exit 0 when it decided, 2 on a usage or input error.
 """
 import json
@@ -116,24 +119,46 @@ def replay(state: dict) -> str:
     return f"runs_old={runs_old} runs_guarded={runs_guarded}"
 
 
+def guard_clause() -> str:
+    """The JMESPath clause the backend `trigger.filter` must append.
+
+    JMESPath has no split/regex verb, so the deployed filter can only test the
+    whole body; the verb-and-quote subtleties above live in `decide` alone. The
+    clause is the cheap, robust approximation of the same rule, using the part
+    every observed footer shares. Deployed by
+    .github/scripts/deploy-automation-loop-guard.py.
+    """
+    return "!icontains(comment.body, 'AI agent (OpenHands)')"
+
+
+def _usage() -> int:
+    print("usage: automation-loop-guard.py decide|replay - | guard-clause", file=sys.stderr)
+    return 2
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[1] != "-":
-        print("usage: automation-loop-guard.py decide|replay -", file=sys.stderr)
-        return 2
+    if not argv:
+        return _usage()
     mode = argv[0]
-    try:
-        raw = sys.stdin.read()
-        if mode == "decide":
-            print(decide(json.loads(raw)))
-        elif mode == "replay":
-            print(replay(json.loads(raw)))
-        else:
-            print(f"unknown mode: {mode}", file=sys.stderr)
+    if mode == "guard-clause":
+        if len(argv) != 1:
+            return _usage()
+        print(guard_clause())
+        return 0
+    if mode in ("decide", "replay"):
+        if len(argv) != 2 or argv[1] != "-":
+            return _usage()
+        try:
+            raw = sys.stdin.read()
+            if mode == "decide":
+                print(decide(json.loads(raw)))
+            else:
+                print(replay(json.loads(raw)))
+        except (json.JSONDecodeError, AttributeError, TypeError) as exc:
+            print(f"bad input: {exc}", file=sys.stderr)
             return 2
-    except (json.JSONDecodeError, AttributeError, TypeError) as exc:
-        print(f"bad input: {exc}", file=sys.stderr)
-        return 2
-    return 0
+        return 0
+    return _usage()
 
 
 if __name__ == "__main__":

@@ -30,8 +30,7 @@ so nothing in-repo could catch it.
 
 `.github/scripts/automation-loop-guard.py` is the repo-side rule: act only when
 the issue carries `needs-info` **and** the comment is not the automation's own.
-The back-end `trigger.filter` is a thin wrapper around its `decide`, whose
-first step rejects any comment carrying a disclosure footer. The marker is
+It first rejects any comment carrying a disclosure footer. The marker is
 pinned in two places, and a change to one without the other is what
 `apps/api/src/utils/automation-loop-guard.guard.test.ts` fails on:
 
@@ -39,17 +38,30 @@ pinned in two places, and a change to one without the other is what
 2. the same string in the guard test, replayed against real #680 comment
    bodies (`apps/api/src/utils/__fixtures__/needs-info-automation-comments.json`)
 
-### The guard must still be wired into the back-end filter
+The backend filter cannot call the script (see the deployment section below);
+it carries the clause the script prints.
 
-Merging this repo change alone does not stop a running loop: nothing in this
-repository invokes `automation-loop-guard.py`. The re-check is triggered by the
-OpenHands events automation, whose definition lives outside git. Whoever owns
-that backend must update its `trigger.filter` to reject a comment carrying a
-disclosure footer (minimal form:
-`!icontains(comment.body, 'AI agent (OpenHands)')`) and deploy it together
-with this guard. Verification: a live self-comment on a `needs-info` issue must
-not schedule another run. This is the one step this repository cannot do for
-itself.
+## The guard and the deployment
+
+Two pieces, and the second is what actually stops the loop:
+
+1. `.github/scripts/automation-loop-guard.py` — the repo-side **spec**. `decide`
+   acts only when the issue carries `needs-info` **and** the comment is not the
+   automation's own. It prints the JMESPath clause the backend
+   `trigger.filter` must carry (`guard-clause`): `!icontains(comment.body, 'AI
+   agent (OpenHands)')`.
+2. `.github/scripts/deploy-automation-loop-guard.py` — applies that clause to
+   every live label-conditioned `issue_comment.created` automation
+   (`DEPLOY=true`, dry run otherwise, idempotent). **A JMESPath filter cannot
+   call a Python script**, so the guard is inert until the clause is deployed;
+   the deployment is the fix, the script is what makes the rule testable and
+   single-sourced. Applied 2026-10-07 to SDLC 20 (Issue clarifier) and SDLC 26
+   (Discussion); SDLC 08 (Mention bot) is left alone — its filter keys on
+   comment *content* (`@openhands`), so it cannot self-arm, and the marker would
+   only suppress a human who quotes an automated comment.
+
+Verification once deployed: a live self-comment on a `needs-info` issue must
+not schedule another run, and a genuine reporter reply must schedule one.
 
 ### The footer's wording is not stable
 
