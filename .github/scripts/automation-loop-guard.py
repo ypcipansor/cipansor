@@ -69,6 +69,11 @@ _FOOTER_LINE = re.compile(
     re.IGNORECASE,
 )
 
+# The part every observed footer shares — the substring the deployed JMESPath
+# clause tests for, because JMESPath has no line or regex verb. Kept here so
+# `guard_clause` and `deployed_decide` cannot disagree about it.
+_DEPLOYED_MARKER = "AI agent (OpenHands)"
+
 
 def footer_line(body: str) -> str:
     """The comment's own trailing footer line, or "".
@@ -156,11 +161,32 @@ def guard_clause() -> str:
     every observed footer shares. Deployed by
     .github/scripts/deploy-automation-loop-guard.py.
     """
-    return "!icontains(comment.body, 'AI agent (OpenHands)')"
+    return f"!icontains(comment.body, '{_DEPLOYED_MARKER}')"
+
+
+def deployed_decide(event: dict) -> str:
+    """`decide`, but matching the marker the way the deployed clause does.
+
+    The deployed filter has no line or regex verb, so it rejects any body that
+    merely *contains* the marker — it cannot tell a reporter quoting the footer
+    from the automation's own comment. This is the honest model of the live
+    behavior: the guard test asserts both what the reference rule (`decide`)
+    does and what the deployed clause actually does, so the gap is visible
+    rather than assumed.
+    """
+    if not has_needs_info(event):
+        return "act=no reason=not-needs-info"
+    body = event.get("comment", {}).get("body") or ""
+    if _DEPLOYED_MARKER in body:
+        return "act=no reason=self-trigger"
+    return "act=yes reason=reporter-reply"
 
 
 def _usage() -> int:
-    print("usage: automation-loop-guard.py decide|replay - | guard-clause", file=sys.stderr)
+    print(
+        "usage: automation-loop-guard.py decide|decide-deployed|replay - | guard-clause",
+        file=sys.stderr,
+    )
     return 2
 
 
@@ -173,13 +199,15 @@ def main(argv: list[str]) -> int:
             return _usage()
         print(guard_clause())
         return 0
-    if mode in ("decide", "replay"):
+    if mode in ("decide", "decide-deployed", "replay"):
         if len(argv) != 2 or argv[1] != "-":
             return _usage()
         try:
             raw = sys.stdin.read()
             if mode == "decide":
                 print(decide(json.loads(raw)))
+            elif mode == "decide-deployed":
+                print(deployed_decide(json.loads(raw)))
             else:
                 print(replay(json.loads(raw)))
         except (json.JSONDecodeError, AttributeError, TypeError) as exc:

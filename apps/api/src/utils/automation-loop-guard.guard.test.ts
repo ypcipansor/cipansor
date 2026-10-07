@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 
@@ -63,6 +63,19 @@ function decide(needsInfo: boolean, comment: Comment): string {
     comment,
   });
   return execFileSync('python3', [SCRIPT, 'decide', '-'], {
+    input: payload,
+    encoding: 'utf8',
+  }).trim();
+}
+
+/** Run the guard's `decide`, or `decide-deployed` (the deployed clause's semantics). */
+function decideDeployed(needsInfo: boolean, comment: Comment): string {
+  const payload = JSON.stringify({
+    action: 'created',
+    issue: { number: 680, labels: needsInfo ? [{ name: 'needs-info' }] : [{ name: 'chore' }] },
+    comment,
+  });
+  return execFileSync('python3', [SCRIPT, 'decide-deployed', '-'], {
     input: payload,
     encoding: 'utf8',
   }).trim();
@@ -146,6 +159,32 @@ describe('automation-loop-guard.py', () => {
       user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(true, reply)).toBe('act=yes reason=reporter-reply');
+  });
+
+  it('documents that the deployed clause cannot tell a quoted footer apart', () => {
+    // Finding 4 of the #683 review: the inline-quote test above asserts the
+    // *reference* rule (`decide`), which is what the deploy script's clause
+    // would enforce if JMESPath had a line/regex verb. It does not — the live
+    // clause is `!icontains(comment.body, 'AI agent (OpenHands)')`, so a reply
+    // that quotes or discusses the marker is suppressed in production. This
+    // asserts the real behavior so the gap is a pinned fact, not an assumption.
+    const reply: Comment = {
+      id: 12,
+      body: [
+        'Here is the log you asked for.',
+        '> This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers.',
+      ].join('\n'),
+      user: { login: 'automation-account', type: 'User' },
+    };
+    expect(decide(true, reply)).toBe('act=yes reason=reporter-reply');
+    expect(decideDeployed(true, reply)).toBe('act=no reason=self-trigger');
+    // An ordinary reply, with no marker anywhere, is identical in both.
+    const plain: Comment = {
+      id: 13,
+      body: 'It is a throwaway fixture, please close it.',
+      user: { login: 'automation-account', type: 'User' },
+    };
+    expect(decide(true, plain)).toBe(decideDeployed(true, plain));
   });
 
   it('suppresses an own comment whose footer is the trailing line', () => {
@@ -254,18 +293,26 @@ function plan(automations: { name: string; trigger: { on: string; filter: string
     .filter(Boolean);
 }
 
-/** Run the deploy script's offline `verify` (one line per label-conditioned automation). */
+/** Run the deploy script's offline `verify` (one line per monitored automation).
+ * Tolerant of the nonzero exit it now returns on drift. */
 function verify(
   automations: { name: string; trigger: { on: string; filter: string } }[]
 ): string[] {
-  const state = { automations };
-  return execFileSync('python3', [DEPLOY_SCRIPT, 'verify', '-'], {
-    input: JSON.stringify(state),
+  return verifyStatus(automations).stdout.trim().split('\n').filter(Boolean);
+}
+
+/** Run offline `verify -` and capture its exit status (must be nonzero on drift). */
+function verifyStatus(
+  automations: {
+    name: string;
+    trigger: { on: string; filter: string };
+  }[]
+): { status: number; stdout: string } {
+  const res = spawnSync('python3', [DEPLOY_SCRIPT, 'verify', '-'], {
+    input: JSON.stringify({ automations }),
     encoding: 'utf8',
-  })
-    .trim()
-    .split('\n')
-    .filter(Boolean);
+  });
+  return { status: res.status ?? -1, stdout: res.stdout ?? '' };
 }
 
 describe('deploy-automation-loop-guard.py', () => {
@@ -320,7 +367,7 @@ describe('deploy-automation-loop-guard.py', () => {
         },
       },
     ]);
-    expect(actions).toEqual(['skip: content filter, not label-conditioned']);
+    expect(actions).toEqual(['skip: not label-conditioned']);
   });
 
   it('flags a live automation that lost the guard clause as drift', () => {
@@ -348,5 +395,76 @@ describe('deploy-automation-loop-guard.py', () => {
       },
     ]);
     expect(drifted).toEqual(['drift: SDLC 20 · Issue clarifier: guard clause missing']);
+  });
+
+  it('flags a reversed guard (`!` dropped) as drift', () => {
+    // Finding 1 of the #683 review: a filter that lost only its leading `!`
+    // still contains "AI agent (OpenHands)", so a marker-word check reports
+    // `ok` while the automation accepts its own comments and the loop restarts.
+    // The check must be for the exact clause, not the marker substring.
+    const reversed = verify([
+      {
+        name: 'SDLC 20 · Issue clarifier',
+        trigger: {
+          on: 'issue_comment.created',
+          filter:
+            "glob(repository.full_name, 'ypcipansor/cipansor') && contains(issue.labels[].name, 'needs-info') && icontains(comment.body, 'AI agent (OpenHands)')",
+        },
+      },
+    ]);
+    expect(reversed).toEqual(['drift: SDLC 20 · Issue clarifier: guard clause missing']);
+  });
+
+  it('leaves an unrelated filter out of the monitored set', () => {
+    // Finding 3 of the #683 review: a sender- or repository-scoped filter is
+    // not the #680 loop and must not raise false drift. Neither the plan nor
+    // `verify` may report it.
+    const unrelated = [
+      {
+        name: 'Sender bot',
+        trigger: { on: 'issue_comment.created', filter: "sender.type == 'Bot'" },
+      },
+      {
+        name: 'Repo watch',
+        trigger: {
+          on: 'issue_comment.created',
+          filter: "glob(repository.full_name, 'ypcipansor/*')",
+        },
+      },
+    ];
+    expect(verify(unrelated)).toEqual([]);
+    expect(plan(unrelated).every((x) => x.startsWith('skip: not label-conditioned'))).toBe(true);
+  });
+
+  it('exits nonzero from the offline verify when a guard is missing', () => {
+    // Finding 2 of the #683 review: `verify -` printed drift but returned 0, so
+    // an automated caller treating the status as the check accepted a broken
+    // definition. It now matches `run_verify` and returns 1.
+    const broken = [
+      {
+        name: 'SDLC 20 · Issue clarifier',
+        trigger: {
+          on: 'issue_comment.created',
+          filter: "contains(issue.labels[].name, 'needs-info')",
+        },
+      },
+    ];
+    const { status, stdout } = verifyStatus(broken);
+    expect(stdout).toContain('drift: SDLC 20 · Issue clarifier: guard clause missing');
+    expect(status).toBe(1);
+
+    // A guarded definition returns 0 and no drift line.
+    const clause = execFileSync('python3', [SCRIPT, 'guard-clause'], { encoding: 'utf8' }).trim();
+    const ok = verifyStatus([
+      {
+        name: 'SDLC 20 · Issue clarifier',
+        trigger: {
+          on: 'issue_comment.created',
+          filter: `contains(issue.labels[].name, 'needs-info') && ${clause}`,
+        },
+      },
+    ]);
+    expect(ok.stdout).not.toContain('drift');
+    expect(ok.status).toBe(0);
   });
 });

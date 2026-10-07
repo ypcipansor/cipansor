@@ -15,8 +15,10 @@ automation that already has the clause is left alone.
 `verify` is the drift detector for finding 3 of the #683 review: the guard test
 pins the composition against a checked-in snapshot, which cannot see a backend
 edit that drops the clause and silently re-arms the loop. `verify` reads the
-live service and exits 1 when a label-conditioned automation's filter no longer
-carries the clause, so a scheduled workflow can turn that drift into a failure.
+live service and exits 1 when a monitored automation's filter no longer carries
+the clause, so a scheduled workflow can turn that drift into a failure. It
+checks for the whole clause, not the marker word: a filter that lost only its
+leading `!` still contains the marker but accepts the automation's own comments.
 
 Usage (dry run by default — nothing is written without DEPLOY=true):
   OPENHANDS_API_KEY=… python3 deploy-automation-loop-guard.py
@@ -24,8 +26,8 @@ Usage (dry run by default — nothing is written without DEPLOY=true):
   OPENHANDS_API_KEY=… python3 deploy-automation-loop-guard.py verify
                       read the live filters, exit 1 if the guard clause is gone
   python3 deploy-automation-loop-guard.py verify -   the same report over a
-                      {"automations": […]}.json on stdin — no network, so the
-                      guard test pins it
+                      {"automations": […]}.json on stdin — no network, exit 1 on
+                      drift, so the guard test pins it
   python3 deploy-automation-loop-guard.py plan -    one decision per line from
                       {"automations": […], "all": bool} on stdin — no network,
                       so the guard test can pin the composed filter offline
@@ -88,7 +90,25 @@ def automations() -> list[dict]:
         offset += 100
 
 
-MARKER = "AI agent (OpenHands)"
+def has_guard(flt: str) -> bool:
+    """True when `flt` carries the exact clause the deploy script appends.
+
+    Checking the marker word alone is not enough: a filter that lost its leading
+    `!` still contains "AI agent (OpenHands)" but accepts the automation's own
+    comments, so it would be reported as guarded while the loop restarted.
+    """
+    return _guard.guard_clause() in flt
+
+
+def is_label_conditioned(flt: str) -> bool:
+    """True when the filter's scope is issue labels — the #680 loop shape.
+
+    A filter keyed on comment content (`@openhands`) can only re-arm if its own
+    reply repeats the phrase; one keyed on sender or repository does not react
+    to issue state at all. Neither is the loop this guard exists for, so the
+    plan and `verify` leave them out of scope rather than reporting false drift.
+    """
+    return "issue.labels" in flt
 
 
 def plan_one(name: str, trigger: dict, only: list[str], all_: bool) -> str:
@@ -107,18 +127,13 @@ def plan_one(name: str, trigger: dict, only: list[str], all_: bool) -> str:
     if only and not any(s in name for s in only):
         return "skip: not selected"
     flt = trigger.get("filter") or ""
-    # Already carrying the clause is the idempotent case, and it must be
-    # recognised before the content-filter skip below: a guarded automation
-    # stays guarded on a re-run whatever shape its filter has.
-    if MARKER in flt:
+    # Monitor only the #680 shape (see `is_label_conditioned`). Checked before
+    # "already guarded" so the plan and `verify` agree on the set: a guarded
+    # content- or sender-filter is still not this loop and stays out of scope.
+    if not all_ and not is_label_conditioned(flt):
+        return "skip: not label-conditioned"
+    if has_guard(flt):
         return "ok: already guarded"
-    # A filter that reacts to comment *content* (e.g. `@openhands`) can only
-    # re-arm itself if its own reply repeats the phrase, so it is not the
-    # loop shape this guards; adding the thin marker clause there would only
-    # suppress a human who quotes an automated comment. A filter that keys on
-    # issue state/labels and accepts any comment is the #680 shape.
-    if "comment.body" in flt and "issue.labels" not in flt and not all_:
-        return "skip: content filter, not label-conditioned"
     new_flt = f"({flt}) && {_guard.guard_clause()}" if flt else _guard.guard_clause()
     return f"patch: {new_flt}"
 
@@ -142,13 +157,19 @@ def _usage() -> int:
 
 
 def verify_actions(state: dict, only: list[str] | None = None) -> list[str]:
-    """One line per label-conditioned automation: is the guard clause present?
+    """One line per monitored automation: does its filter carry the guard clause?
 
+    The monitored set is the #680 shape only — an `issue_comment.created`
+    automation whose scope is issue labels (`is_label_conditioned`), the same
+    set `plan` patches. A content- or sender-filtered automation is not this
+    loop and is left out, so an unrelated filter cannot raise false drift.
     Pure (no network) so the guard test can pin it; `verify` feeds it the live
-    definitions. A label-conditioned `issue_comment.created` filter that lost
-    the clause will re-arm the loop, so it is reported as drift.
+    definitions. A monitored filter that lost the clause — including one that
+    lost only the leading `!` — will re-arm the loop, so it is reported as
+    drift.
     """
     only = only or []
+    all_ = bool(state.get("all"))
     out = []
     for a in state.get("automations", []) or []:
         trigger = a.get("trigger") or {}
@@ -159,10 +180,9 @@ def verify_actions(state: dict, only: list[str] | None = None) -> list[str]:
         if only and not any(s in name for s in only):
             continue
         flt = trigger.get("filter") or ""
-        # A content-matched filter (@openhands) is intentionally not guarded.
-        if "comment.body" in flt and "issue.labels" not in flt and not state.get("all"):
+        if not all_ and not is_label_conditioned(flt):
             continue
-        out.append(f"drift: {name}: guard clause missing" if MARKER not in flt else f"ok: {name}")
+        out.append(f"drift: {name}: guard clause missing" if not has_guard(flt) else f"ok: {name}")
     return out
 
 
@@ -170,15 +190,17 @@ def run_verify() -> int:
     if not TOKEN:
         print("OPENHANDS_API_KEY is required", file=sys.stderr)
         return 2
-    drift = 0
-    for line in verify_actions({"automations": automations()}, ONLY):
+    lines = verify_actions({"automations": automations()}, ONLY)
+    for line in lines:
         print(line)
-        if line.startswith("drift"):
-            drift += 1
+    drift = [line for line in lines if line.startswith("drift")]
     if drift:
-        print(f"{drift} automation(s) lost the guard clause — re-run with DEPLOY=true", file=sys.stderr)
+        print(
+            f"{len(drift)} automation(s) lost the guard clause — re-run with DEPLOY=true",
+            file=sys.stderr,
+        )
         return 1
-    print("all label-conditioned automations carry the guard clause")
+    print("all monitored automations carry the guard clause")
     return 0
 
 
@@ -235,14 +257,17 @@ def main(argv: list[str]) -> int:
         return 0
     if argv == ["verify", "-"]:
         # Offline: verify a definitions file the caller pipes in, no network.
+        # Exits nonzero on drift, matching `run_verify`, so an automated caller
+        # treating the status as the check cannot accept a broken definition.
         try:
             state = json.loads(sys.stdin.read())
         except (json.JSONDecodeError, TypeError) as exc:
             print(f"bad input: {exc}", file=sys.stderr)
             return 2
-        for line in verify_actions(state):
+        lines = verify_actions(state)
+        for line in lines:
             print(line)
-        return 0
+        return 1 if any(line.startswith("drift:") for line in lines) else 0
     if argv == ["verify"]:
         return run_verify()
     if argv:

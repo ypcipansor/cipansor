@@ -19,7 +19,7 @@
       "name": "SDLC 08 · Mention bot",
       "on": "issue_comment.created",
       "filter": "icontains(comment.body, '@openhands') && (comment.author_association == 'OWNER' || comment.author_association == 'MEMBER' || comment.author_association == 'COLLABORATOR')",
-      "skip": "content filter, not label-conditioned"
+      "skip": "not label-conditioned"
     }
   ]
 }

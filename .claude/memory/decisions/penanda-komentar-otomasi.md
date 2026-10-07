@@ -112,13 +112,36 @@ backend changes: a live edit that drops the clause re-arms the loop without
 failing the suite. Two pieces close that gap:
 
 - `deploy-automation-loop-guard.py verify` reads the live service and exits 1
-  when a label-conditioned `issue_comment.created` automation no longer carries
-  the clause (`verify -` runs the same report over a piped definitions file, so
-  the guard test pins the drift report offline).
+  when a monitored automation no longer carries the clause (`verify -` runs the
+  same report over a piped definitions file and exits 1 on drift too, so an
+  automated caller cannot read a broken definition as success).
 - `.github/workflows/automation-loop-guard.yml` runs it weekly. It is inert
   (and green) until `OPENHANDS_API_KEY` is set as a repository secret; once set,
   backend drift turns into a red check. A weekly schedule, not per-PR: the drift
   is in the backend, so it is the same answer for every PR.
+
+Two things make the check honest rather than approximate:
+
+- **The monitored set is the #680 shape only**: an `issue_comment.created`
+  automation whose filter tests `issue.labels` (`is_label_conditioned`). A
+  content- or sender- or repository-scoped filter cannot re-arm the way #680
+  did, so `plan` and `verify` both leave it out — an unrelated filter must not
+  raise false drift. `ALL=1` widens the deploy, not the check.
+- **The check is for the exact clause, not the marker word.** A filter that lost
+  its leading `!` still contains `AI agent (OpenHands)`; a substring check would
+  report `ok` while the automation accepted its own comments and the loop
+  restarted. `has_guard` tests `_guard.guard_clause()` itself.
+
+### What the deployed clause cannot do
+
+The reference rule (`decide`) matches the marker only in the comment's trailing
+footer line. JMESPath has no line or regex verb, so the deployed clause is the
+whole-body `!icontains(comment.body, 'AI agent (OpenHands)')` — it rejects a
+reply that merely *quotes* the marker. The two agree on the automation's own
+comments and on ordinary replies; they diverge only on a reporter who quotes or
+discusses the marker. That gap is deliberate (the loop is the expensive failure)
+and is pinned, not assumed: `automation-loop-guard.py decide-deployed` models
+the deployed behavior and the guard test asserts both sides.
 
 ## The fixture publishes no incident detail
 
