@@ -117,6 +117,30 @@ It goes through Cloudflare like a visitor, because the apps admit nothing else.
 It deliberately does not use `az webapp sitecontainers status`: that call goes
 to the SCM (Kudu) site, which is closed to everything but Cloudflare as well.
 
+## Watching a release
+
+`deploy-watch.yml` runs every 30 minutes and asks the GitHub API for the latest
+run of `deploy-staging.yml` and `deploy-production.yml`. It opens an issue
+labelled `deploy-watch` when the latest run failed or was cancelled, has been
+stuck past 45 minutes, or finished green while the site it released is not
+answering with its commit — the same `/healthz` and `/manifest.json` probes
+[Verifying a release](#verifying-a-release) uses, re-run later in case the site
+degraded after the deploy job passed.
+
+It is read-only with respect to the deployment: **it never rolls back, reruns or
+repoints a container.** The issue carries the run id, the commit and the failing
+job's log lines; a human decides what to do (step 3 or step 4 above). A failure
+it has already reported is not reported twice — the open issue is matched on a
+`deploy-watch:run=<id>` marker in its body.
+
+Run it by hand against the real repository with
+`GITHUB_REPOSITORY=ypcipansor/cipansor GH_TOKEN=… bash .github/scripts/deploy-watch.sh`,
+or add `DEPLOY_WATCH_DRY_RUN=1` to print what it would open without creating
+anything. `DEPLOY_WATCH_STUCK_MINUTES` and `DEPLOY_WATCH_WORKFLOWS` override the
+threshold and the watched workflows. Its behaviour is pinned by
+`apps/api/src/utils/deploy-watch.guard.test.ts`, which drives the real script
+against a fake API.
+
 ## Cloudflare
 
 Set up by hand in the Cloudflare dashboard, once:

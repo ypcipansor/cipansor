@@ -1,0 +1,53 @@
+name: Deploy watchdog
+
+# Watches the two workflows that reach a site ("Deploy staging", "Deploy
+# production"). If the latest run failed, hung past the threshold, or finished
+# green while the site it released is not answering with its commit, it opens an
+# issue carrying the run id and the failing log lines. It never rolls back,
+# reruns or repoints a container — a human decides (the release flow is
+# `docs/deploy-azure.md` → "How a change is released").
+#
+# Why a schedule on top of `workflow_run`: a deploy can finish green and the
+# site degrade afterwards — a container that restarts, a bad app setting, a
+# migration that only fails on the next start. A periodic probe of /healthz is
+# what catches that; it is the automated form of the manual "after any merge,
+# check that staging moved" step.
+on:
+  schedule:
+    # Every 30 minutes. The job is a handful of API calls and two probes, so it
+    # costs well under a minute — the schedule is a cheap insurance policy
+    # against a deploy that failed while nobody was watching, not a billing risk.
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Allow manual trigger
+
+# One watchdog at a time. A newer run supersedes an older one; nothing is lost
+# because each run re-reads the latest state rather than a queue.
+concurrency:
+  group: deploy-watch
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    name: Check the latest deploys
+    # A fork inherits this file but not the schedule; a manual dispatch there
+    # must not open issues against it either.
+    if: github.repository == 'ypcipansor/cipansor'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Report a failed, stuck or degraded deploy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The workflow names must match the `name:` of the files they read;
+          # a mismatch finds no runs and stays silent (lesson:
+          # github-actions-minutes-exhausted, "a monitor that hears nothing").
+          DEPLOY_WATCH_WORKFLOWS: |
+            Deploy staging|deploy-staging.yml|https://staging.cipansor.or.id
+            Deploy production|deploy-production.yml|https://cipansor.or.id
+        run: bash .github/scripts/deploy-watch.sh
