@@ -15,6 +15,6 @@ golden rules were not in context unless a session chose to open it.
   and the reasons are in `.claude/README.md`.
 - Two memories, kept apart on purpose (`AGENTS.md` → "Where things live"): the
   repo's `.claude/memory/` — shared, committed through PRs, **nothing
-  sensitive** — and the machine-local auto memory under
-  `~/.claude/projects/…/memory/`, which holds what is sensitive, personal or
-  specific to this machine.
+  sensitive** — and the machine-local auto memory (for Claude,
+  `~/.claude/projects/…/memory/`; OpenHands uses `~/.openhands/memory/`), which
+  holds what is sensitive, personal or specific to this machine, never shared.

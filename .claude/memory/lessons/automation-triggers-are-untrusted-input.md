@@ -10,9 +10,11 @@ reply satisfied its own filter, so each run posted the next run's trigger. Every
 run is a full conversation, so the cost is unbounded, not a one-off.
 
 **Which automation, its exact event key and filter, and the account it posts as
-are operational detail** — kept in the machine-local memory
-(`~/.openhands/memory/`), not in this public lesson. The generalisable pattern
-and its fix are below and do not require reading the live setup.
+are operational detail** — a weakness still open in production, so it lives in
+the machine-local memory, never this public lesson (`AGENTS.md` → "Where things
+live", the one home for sensitive notes; it also gives that memory's per-tool
+path). The generalisable pattern and its fix are below, so the repair does not
+depend on finding the note.
 
 ## Why the obvious guards did not hold
 
