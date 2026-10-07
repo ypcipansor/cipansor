@@ -55,6 +55,30 @@ Watches every automation and reports to the maintainer.
 - **Honest when blind:** if the automation API is unreachable it says so and
   falls back to repository and GitHub Actions evidence.
 
+## 6. Issue and PR templates (developed)
+
+The repo had **no templates at all**. Added issue forms and a PR template that
+are tied to the label system, not free prose:
+
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.yml` — issue forms,
+  mandatory reproduction + acceptance criteria, auto-apply the `bug`/`enhancement`
+  type label; `config.yml` sends the reader to `docs/LABELS.md` and this file.
+- `.github/pull_request_template.md` — a `HUMAN`/`AGENT` split, a required
+  `Fixes #<n>` to a `ready` issue, and the acceptance criteria copied as
+  checkboxes.
+
+The link that keeps them honest: OpenHands itself gates its PRs on a
+`ready-for-dev` label that a workflow manages, so **an issue only gets `ready`
+when its acceptance criteria are real**, and a PR must point at one. Our
+`SDLC 19` is that gate.
+
+**Not yet built (needs a decision):** the templates are a nudge, not a rule — a
+human can leave a field blank or a PR can name no `ready` issue. The enforcement
+that matches OpenHands is a GitHub Actions workflow that (a) fails a PR whose
+body names no `Fixes #<n>` to a `ready` issue, and (b) removes `ready` when the
+acceptance-criteria field of an issue is emptied — the same actor-policy check
+OpenHands runs in `issue-readiness-check.yml`. Say the word and it lands.
+
 ## The rule all of them share
 
 Any automation that comments on an issue must end the comment with the

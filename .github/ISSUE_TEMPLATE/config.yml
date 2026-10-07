@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Labels, priority and the automation lifecycle
+    url: https://github.com/ypcipansor/cipansor/blob/main/docs/LABELS.md
+    about: >-
+      How type, priority and status labels work, what makes an issue `ready`,
+      and which automation owns each label.
+  - name: Automations and their guardrails
+    url: https://github.com/ypcipansor/cipansor/blob/main/docs/IDEAS.md
+    about: >-
+      What the non-framework automations do (bug hunter, steward, watchdog),
+      and the limits each one keeps.
