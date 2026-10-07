@@ -19,33 +19,40 @@ it appears here.
 
 **93 modules are mounted** (measured 2026-10-07). "Standard layout" means all of
 `<name>.routes.ts`, `<name>.controller.ts`, `<name>.service.ts`,
-`<name>.schema.ts` and `index.ts` are present. "Prisma in route/controller"
+`<name>.schema.ts` and `index.ts` are present, where `<name>` is the file stem
+the module uses — normally the directory name. Two modules are marked standard
+with a shorter stem: `units` uses `unit.*` and `dashboard-enhancement` uses
+`dashboard.*`. "Prisma in route/controller"
 means the layering rule is broken there (routes never call Prisma). "Cross-module
-import" means a module file imports another module directly instead of going
-through the event bus or the other module's `index.ts`.
+import" means a module file imports a **file of another module** — a service,
+controller, schema, route or utility — which bypasses both the event bus and the
+other module's `index.ts`. Importing another module's `index.ts` (the sanctioned
+cross-module path, `@/modules/<other>` with no file segment) does **not** count,
+and neither does importing another module's own module. Dynamic `import()`
+calls and service-file imports do count.
 
 | Mounted path | Directory | Standard layout | Prisma in route/controller | Cross-module import |
 |---|---|---|---|---|
 | `/auth` | `auth` | — | — | — |
 | `/users` | `users` | — | — | yes |
 | `/units` | `units` | yes | — | — |
-| `/students` | `students` | — | — | — |
+| `/students` | `students` | — | — | yes |
 | `/classes` | `classes` | — | — | — |
 | `/assignments` | `assignments` | — | — | — |
 | `/academic-years` | `academic-years` | — | — | — |
-| `/attendance` | `attendance` | — | — | yes |
+| `/attendance` | `attendance` | — | — | — |
 | `/tahfidz` | `tahfidz` | — | — | — |
 | `/dormitories` | `dormitories` | yes | — | — |
 | `/permits` | `permits` | — | — | yes |
 | `/violations` | `violations` | — | — | — |
 | `/rewards` | `rewards` | — | — | — |
-| `/finance` | `finance` | — | — | — |
-| `/foundation` | `foundation` | — | — | yes |
+| `/finance` | `finance` | — | — | yes |
+| `/foundation` | `foundation` | — | — | — |
 | `/marketing` | `marketing` | — | — | — |
 | `/hr` | `hr` | — | yes | — |
 | `/library` | `library` | — | — | — |
-| `/health` | `health` | — | — | — |
-| `/inventory` | `inventory` | yes | — | — |
+| `/health` | `health` | — | — | yes |
+| `/inventory` | `inventory` | yes | — | yes |
 | `/notifications` | `notifications` | yes | yes | — |
 | `/messages` | `messages` | — | — | — |
 | `/curriculum` | `curriculum` | — | — | — |
@@ -59,26 +66,26 @@ through the event bus or the other module's `index.ts`.
 | `/takhosus` | `takhosus` | yes | — | — |
 | `/muhasabah` | `muhasabah` | yes | — | — |
 | `/donation` | `donation` | yes | — | — |
-| `/admissions` | `admissions` | yes | — | — |
+| `/admissions` | `admissions` | yes | — | yes |
 | `/wilayah` | `wilayah` | — | — | — |
 | `/environment` | `environment` | — | — | — |
 | `/kurikulum-merdeka` | `kurikulum-merdeka` | yes | — | — |
 | `/facilities` | `facilities` | yes | — | — |
 | `/student-compliance` | `student-compliance` | — | yes | yes |
 | `/teacher-compliance` | `teacher-compliance` | — | — | — |
-| `/finance-enhancement` | `finance-enhancement` | yes | yes | — |
-| `/wallet` | `wallet` | yes | — | — |
-| `/canteen` | `canteen` | yes | — | — |
-| `/laundry` | `laundry` | yes | — | — |
-| `/payroll` | `payroll` | yes | — | — |
+| `/finance-enhancement` | `finance-enhancement` | yes | yes | yes |
+| `/wallet` | `wallet` | yes | — | yes |
+| `/canteen` | `canteen` | yes | — | yes |
+| `/laundry` | `laundry` | yes | — | yes |
+| `/payroll` | `payroll` | yes | — | yes |
 | `/portfolio` | `portfolio` | — | — | — |
 | `/ibadah` | `ibadah` | — | — | — |
-| `/rapor-pesantren` | `rapor-pesantren` | — | — | — |
-| `/procurement` | `procurement` | — | — | — |
+| `/rapor-pesantren` | `rapor-pesantren` | — | — | yes |
+| `/procurement` | `procurement` | — | — | yes |
 | `/suppliers` | `suppliers` | — | — | — |
 | `/upload` | `upload` | — | — | — |
 | `/extracurricular` | `extracurricular` | — | — | — |
-| `/counseling` | `counseling` | — | — | — |
+| `/counseling` | `counseling` | — | — | yes |
 | `/duty-roster` | `duty-roster` | — | — | — |
 | `/meals` | `meals` | — | — | — |
 | `/calendar` | `calendar` | — | — | — |
@@ -86,8 +93,8 @@ through the event bus or the other module's `index.ts`.
 | `/kitab-progress` | `kitab-progress` | — | — | — |
 | `/muhadhoroh` | `muhadhoroh` | — | — | — |
 | `/muhadatsah` | `muhadatsah` | — | — | — |
-| `/emis` | `emis` | — | — | yes |
-| `/dapodik` | `dapodik` | — | — | yes |
+| `/emis` | `emis` | — | — | — |
+| `/dapodik` | `dapodik` | — | — | — |
 | `/quality` | `quality` | — | — | — |
 | `/correspondence` | `correspondence` | — | — | — |
 | `/esign` | `esign` | — | — | — |
@@ -108,12 +115,12 @@ through the event bus or the other module's `index.ts`.
 | `/sanad` | `sanad-certificate` | yes | — | — |
 | `/dashboard` | `dashboard` | yes | — | yes |
 | `/reception` | `reception` | — | — | — |
-| `/announcements` | `announcements` | yes | — | yes |
+| `/announcements` | `announcements` | yes | — | — |
 | `/chatbot` | `chatbot` | yes | yes | yes |
-| `/projects` | `project` | — | — | — |
+| `/projects` | `project` | — | — | yes |
 | `/perencanaan` | `perencanaan` | — | — | — |
-| `/pengawasan` | `pengawasan` | — | — | — |
-| `/syariah` | `syariah` | — | — | — |
+| `/pengawasan` | `pengawasan` | — | — | yes |
+| `/syariah` | `syariah` | — | — | yes |
 | `/lingkungan` | `lingkungan` | — | — | — |
 | `/talenta` | `talenta` | — | — | — |
 | `/organisasi` | `organisasi` | — | — | — |
@@ -124,7 +131,7 @@ through the event bus or the other module's `index.ts`.
 
 | Directory | State |
 |---|---|
-| `apps/api/src/modules/scholarship` | **Orphan.** `scoring.service.ts` + its test exist, but there is no `.routes.ts` and nothing in `app.ts` references it. Scholarship data is served by `finance-enhancement` (which owns the `Scholarship`/`ScholarshipRecipient` Prisma models). Either mount it or fold it into `finance-enhancement`. |
+| `apps/api/src/modules/scholarship` | **Not mounted as its own module.** `scoring.service.ts` + its test exist, but there is no `.routes.ts` and nothing in `app.ts` references it. It is **live**, though: `finance-enhancement.controller.ts` dynamically imports `scholarshipScoringService` (`../scholarship/scoring.service`) to assess a recipient, and `finance-enhancement` owns the `Scholarship`/`ScholarshipRecipient` Prisma models. So scholarship scoring is reachable through `finance-enhancement`; `scholarship` is a service-only directory with no routes of its own. Fold the service into `finance-enhancement` (or give it routes) so the module boundary matches how it is used. |
 
 ## Web route groups (`apps/web/src/app/**`)
 
@@ -246,7 +253,14 @@ models come from `@prisma/client`, not from here.
 ## Background jobs (`apps/api/src/jobs/`)
 
 `node-cron` jobs that run **inside the API process with no lock** — the design
-assumes one API instance. `SCHEDULER_ENABLED=false` turns them off.
+assumes one API instance. `SCHEDULER_ENABLED=false` turns off the jobs started
+by `initializeScheduler()` (everything below **except** `web-push-dispatch`).
+`web-push-dispatch` is started separately and deliberately not behind the
+switch (see `main.ts` and the comment in `web-push-dispatch.job.ts`): it only
+relays notifications the environment's own users already received, to devices
+they registered there, and stays isolated by the Web Push key pair. It still
+starts when `SCHEDULER_ENABLED=false`, and both are stopped on graceful
+shutdown.
 
 - accreditation-reminder, admission-wave-status, asset-depreciation, attendance-follow-up, attendance-pattern, attendance-register-reminder, chatbot-escalation-retry, chatbot-spend, chatbot-transcript-purge, dashboard-metrics, dashboard-snapshot, finance-billing, identity-purge, permit-note-erasure, spp-reminder, web-push-dispatch
 
@@ -255,6 +269,11 @@ assumes one API instance. `SCHEDULER_ENABLED=false` turns them off.
 - Mount table: parse `apps/api/src/app.ts` for
   `apiRouter.use('<prefix>', <var>)` and resolve `<var>` to its
   `@/modules/<dir>` import.
+- Cross-module column: for each module, scan its `.ts` files (tests excluded)
+  for imports that resolve to a **different** module's file —
+  `@/modules/<other>/…` or `../<other>/…`, including dynamic `import()`. A bare
+  `@/modules/<other>` (its `index.ts`) is the sanctioned path and does **not**
+  count.
 - Route groups: `find apps/web/src/app -maxdepth 1 -type d`.
 - Jobs: `ls apps/api/src/jobs/*.job.ts`.
 - Shared: `ls packages/shared/src/{types,schemas}`.
