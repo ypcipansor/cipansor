@@ -39,7 +39,13 @@ closing_issues() { # closing_issues <pr-number>
 
 sync_pr() { # sync_pr <pr-number>
   PR="$1"
-  ISSUES=$(closing_issues "$PR" 2>/dev/null || true)
+  # A failed GraphQL query must not look like "closes no issue" — an unavailable
+  # API would then pass the check. Only an empty result from a successful query
+  # means there is nothing to compare.
+  if ! ISSUES=$(closing_issues "$PR" 2>/dev/null); then
+    echo "::error::Could not read the issues PR #$PR closes; not treating that as an empty set."
+    return 1
+  fi
   if [ -z "$ISSUES" ]; then
     echo "PR #$PR closes no issue; nothing to sync."
     return 0
@@ -90,16 +96,21 @@ sync_pr() { # sync_pr <pr-number>
   fi
 
   has() { printf '%s\n' "$1" | grep -qxF "$2"; }
-  ADD=""
-  for l in $REQ_TYPES $REQ_PRIOS; do
-    has "$PR_LABELS" "$l" || ADD="$ADD,$l"
-  done
-  [ -n "$ADD" ] && gh pr edit "$PR" --repo "$REPO" --add-label "${ADD#,}"
+  # A disagreement is not something to edit labels through: changing the PR's
+  # labels while the check fails would make the PR adopt the last issue read and
+  # hide the conflict a human has to resolve. On FAIL, leave the labels alone.
+  if [ "$FAIL" -eq 0 ]; then
+    ADD=""
+    for l in $REQ_TYPES $REQ_PRIOS; do
+      has "$PR_LABELS" "$l" || ADD="$ADD,$l"
+    done
+    [ -n "$ADD" ] && gh pr edit "$PR" --repo "$REPO" --add-label "${ADD#,}"
 
-  # A stale priority on the PR (different from the linked issues') is corrected.
-  if [ -n "$REQ_PRIOS" ] && [ -n "$PR_PRIO" ] && [ "$PR_PRIO" != "$REQ_PRIOS" ]; then
-    echo "Correcting PR priority '$PR_PRIO' -> '$REQ_PRIOS'."
-    gh pr edit "$PR" --repo "$REPO" --remove-label "$PR_PRIO" --add-label "$REQ_PRIOS"
+    # A stale priority on the PR (different from the linked issues') is corrected.
+    if [ -n "$REQ_PRIOS" ] && [ -n "$PR_PRIO" ] && [ "$PR_PRIO" != "$REQ_PRIOS" ]; then
+      echo "Correcting PR priority '$PR_PRIO' -> '$REQ_PRIOS'."
+      gh pr edit "$PR" --repo "$REPO" --remove-label "$PR_PRIO" --add-label "$REQ_PRIOS"
+    fi
   fi
 
   if [ "$FAIL" -ne 0 ]; then

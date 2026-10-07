@@ -68,14 +68,18 @@ enforced, not just conventions.
    otherwise it applies `needs-info` and lists what is missing.
 
 4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` and links the
-   original. The `Duplicate sweep` workflow warns once, then closes the issue as
-   *not planned* after seven days unless it is shown to be distinct — the issue
-   was edited, or a person replied to the warning — or a maintainer removes the
-   label. An automated comment does not count as a reply.
+   original. The `Duplicate sweep` workflow warns once — recording a hash of the
+   issue body — then closes the issue as *not planned* after seven days unless
+   it is shown to be distinct: the body changed since the warning, or a person
+   replied — or a maintainer removes the label. An automated comment, and any
+   comment from a bot account, does not count as a reply.
 
 5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
    ready PR back to draft when any required check is failing or a reviewer
-   requested changes, and comments which checks failed. A green draft PR gets an
+   requested changes, and comments which checks failed. It reads the checks
+   exhaustively — every page, every required check present — so an early green
+   subset is not mistaken for the whole gate, and it keeps one comment up to
+   date rather than stacking a stale failure list. A green draft PR gets an
    informational comment; it is never marked ready automatically.
 
 6. **Approval needs more than green CI.** `SDLC 22 · PR review gate` approves a

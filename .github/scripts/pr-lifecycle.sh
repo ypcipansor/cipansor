@@ -27,15 +27,21 @@ CHANGES_MARK="<!-- pr-lifecycle:changes -->"
 # The checks that make up the required gate. A green result only counts as
 # "everything passed" when every one of these is present and successful on the
 # tested commit - a subset (E2E has not started, or the API truncated a page)
-# must never be mistaken for the full gate. CI scope / E2E scope / E2E Tests are
-# the scope jobs a docs-only change skips; they still publish a success result.
+# must never be mistaken for the full gate. On a docs-only change the scope job
+# reports `run=false`, so Lint/Build/Tests/Security/E2E are skipped and publish
+# no check run at all: such a PR never reaches the all-green notice below, which
+# is acceptable because a documentation change cannot be "green" in a useful
+# sense.
 REQUIRED_CHECKS="${REQUIRED_CHECKS:-CI scope|Lint|Build|Tests|Security|E2E scope|E2E Tests (Chromium)}"
 
 # Suites that publish a check run on every PR whose workflow ran. A signature
 # with no check run on the tested commit means that workflow has not started (or
 # its run is not yet associated with this commit), so a green subset must not be
-# mistaken for the full gate even when every check seen so far passed.
-KNOWN_SUITE_SIGNS="${KNOWN_SUITE_SIGNS:-Analyze|Build|CI scope|CodeQL|E2E|Lint|Security|Tests}"
+# mistaken for the full gate even when every check seen so far passed. Only
+# checked-in workflows publish checks: `CI scope` (ci.yml) and `E2E scope`
+# (e2e-tests.yml). Analyze / CodeQL are code scanning, not workflow checks, so
+# requiring them here would block the all-green notice forever.
+KNOWN_SUITE_SIGNS="${KNOWN_SUITE_SIGNS:-CI scope|E2E scope}"
 
 pr_field() { gh pr view "$PR" --repo "$REPO" --json "$1" --jq ".$1"; }
 
@@ -69,8 +75,12 @@ fi
 CHECKS_JSON=""
 for cand in "$SHA" "$(merge_sha)"; do
   [ -n "$cand" ] && [ "$cand" != "null" ] || continue
-  CHECKS_JSON=$(gh api --paginate "repos/$REPO/commits/$cand/check-runs?per_page=100" 2>/dev/null || true)
-  if [ "$(printf '%s' "$CHECKS_JSON" | jq '.check_runs | length' 2>/dev/null || echo 0)" -gt 0 ]; then
+  # --paginate prints one JSON document per page; jq -s slurps them into one
+  # array of responses and .[].check_runs combines every page, so a head with
+  # more than 100 check runs (reruns) is not silently discarded when a single
+  # count cannot be compared.
+  CHECKS_JSON=$(gh api --paginate "repos/$REPO/commits/$cand/check-runs?per_page=100" 2>/dev/null | jq -s '[.[].check_runs[]]' 2>/dev/null || true)
+  if [ "$(printf '%s' "$CHECKS_JSON" | jq 'length' 2>/dev/null || echo 0)" -gt 0 ]; then
     CHECK_SHA="$cand"
     break
   fi
@@ -80,7 +90,7 @@ CHECK_SHA="${CHECK_SHA:-$SHA}"
 
 # name<TAB>status<TAB>conclusion for the latest run of each check name.
 LATEST=$(printf '%s' "$CHECKS_JSON" | jq -r '
-  (.check_runs // []) | sort_by(.started_at, .id) | group_by(.name) | map(.[-1])[]
+  (if type == "array" then . else [] end) | sort_by(.started_at, .id) | group_by(.name) | map(.[-1])[]
   | "\(.name)\t\(.status)\t\(.conclusion // "")"' 2>/dev/null || true)
 # RED: finished with a conclusion that fails the gate.
 RED=$(printf '%s\n' "$LATEST" \
@@ -139,16 +149,23 @@ known_suites_seen() {
 # state is recognised.
 comment_once() { # comment_once <body> <dedupe-token>
   body="$1"; token="$2"
-  id=$(gh pr view "$PR" --repo "$REPO" --json comments \
-    --jq ".comments[] | select(.body | contains(\"$LIFE_MARK\")) | .id" 2>/dev/null | head -n1 || true)
+  # The REST comments list gives each comment's numeric database id; the GraphQL
+  # node id from `gh pr view --json comments` is rejected by
+  # repos/.../issues/comments/{id}, so the GET and PATCH below must use this id.
+  id=$(gh api --paginate "repos/$REPO/issues/$PR/comments?per_page=100" \
+    --jq ".[] | select(.body | contains(\"$LIFE_MARK\")) | .id" 2>/dev/null | head -n1 || true)
   if [ -n "$id" ]; then
     old=$(gh api "repos/$REPO/issues/comments/$id" --jq .body 2>/dev/null || true)
     if [ "$old" = "$body" ]; then
       echo "Lifecycle comment already current ('$token'); not repeating."
       return 0
     fi
-    gh api "repos/$REPO/issues/comments/$id" -X PATCH -f body="$body" >/dev/null
-    echo "Updated lifecycle comment ('$token')."
+    if gh api "repos/$REPO/issues/comments/$id" -X PATCH -f body="$body" >/dev/null; then
+      echo "Updated lifecycle comment ('$token')."
+    else
+      echo "Could not update lifecycle comment $id; posting a fresh one."
+      gh pr comment "$PR" --repo "$REPO" --body "$body"
+    fi
     return 0
   fi
   gh pr comment "$PR" --repo "$REPO" --body "$body"

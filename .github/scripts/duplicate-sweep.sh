@@ -8,10 +8,12 @@
 #   * `duplicate` label removed       -> nothing (the sweep only sees the label)
 #
 # "Show it is not a duplicate" means the reporter did something a maintainer can
-# weigh: edited the issue body, or replied to the warning. The warning timestamp
-# is read back from the marker in the comment, so the script holds no state
-# between runs. The issue's own updatedAt is used for the edit (a comment also
-# bumps it, so the edit is only the update that no comment accounts for).
+# weigh: edited the issue body, or replied to the warning. The sweep holds no
+# state between runs: it reads the warning's timestamp back from the marker in
+# its own comment, and it detects an edit by comparing the body hash it recorded
+# in that comment against the body now. Relying on the issue's updatedAt is not
+# enough - a later automated comment also bumps it, so an edit made before that
+# comment would be invisible.
 #
 # Usage: duplicate-sweep.sh
 # Env:   GH_TOKEN, REPO, GRACE_DAYS (default 7)
@@ -27,20 +29,32 @@ MARK="<!-- duplicate-sweep:warned -->"
 AI_DISCLOSURE="This comment was created by an AI agent"
 AI_FOOTER="$AI_DISCLOSURE (OpenHands) on behalf of the repository maintainers."
 
+body_hash() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+
 NOW=$(date -u +%s)
 ISSUES=$(gh issue list --repo "$REPO" --state open --label duplicate --limit 200 --json number --jq '.[].number')
 
 for n in $ISSUES; do
-  # The issue's own comments, oldest first (the API's order). A comment body's
-  # tabs and newlines are folded so each comment stays on one tab-separated line.
-  COMMENTS=$(gh api "repos/$REPO/issues/$n/comments?per_page=100" \
-    --jq '.[] | "\(.created_at)\t\(.body | gsub("\n"; " ") | gsub("\t"; " "))"' 2>/dev/null || true)
+  # The issue's own comments, oldest first (the API's order). Each comment is
+  # emitted as three tab-separated fields - created_at, author login, and a
+  # one-line body - so the reply scan can tell a person from a bot account
+  # without an underscore index (sh lacks one).
+  RAW_COMMENTS=$(gh api "repos/$REPO/issues/$n/comments?per_page=100" \
+    --jq '.[] | "\(.created_at)\t\(.user.login)\t\(.body | gsub("\n"; " ") | gsub("\t"; " "))"' 2>/dev/null || true)
+  COMMENTS=$(printf '%s\n' "$RAW_COMMENTS" | cut -f1,3)
   WARNED_AT=$(printf '%s\n' "$COMMENTS" | grep -F "$MARK" | head -1 | cut -f1 || true)
 
   if [ -z "$WARNED_AT" ]; then
+    # Record a hash of the body as it stands now, so a later run can tell the
+    # issue body changed. GitHub bumps updatedAt for comments too, so this marker
+    # - not updatedAt - is what makes an edit detectable.
+    BODY=$(gh issue view "$n" --repo "$REPO" --json body --jq '.body // empty' || true)
+    HASH=$(body_hash "$BODY")
     gh issue comment "$n" --repo "$REPO" --body "This looks like a **duplicate** of an issue already open or closed. It will be closed automatically in $GRACE_DAYS days unless it is shown to be distinct — edit the issue, or reply with why it is not a duplicate.
 
 If a maintainer agrees it is distinct, removing the \`duplicate\` label cancels the close. $MARK
+
+<!-- duplicate-sweep:hash:$HASH -->
 
 $AI_FOOTER"
     echo "Warned on #$n."
@@ -53,24 +67,23 @@ $AI_FOOTER"
     continue
   fi
 
-  # A comment after the warning that a person wrote (not the automation footer)
-  # means the reporter responded; give it to a maintainer instead of closing on
-  # top of a reply.
-  LATEST_COMMENT_AT=$(printf '%s\n' "$COMMENTS" | tail -1 | cut -f1 || true)
-  NEW_REPLY=$(printf '%s\n' "$COMMENTS" \
+  # A comment after the warning by a person (not the automation footer, not a
+  # bot account) means the reporter responded; give it to a maintainer instead of
+  # closing on top of a reply. A GitHub bot's login ends in `[bot]`.
+  NEW_REPLY=$(printf '%s\n' "$RAW_COMMENTS" \
     | awk -F '\t' -v warned="$WARNED_AT" -v ai="$AI_DISCLOSURE" \
-        '$1 > warned && index($0, ai) == 0 { line = $0 } END { print line }' || true)
+        '$1 > warned && index($3, ai) == 0 && $2 !~ /\[bot\]$/ { line = $3 } END { print line }' || true)
   if [ -n "$NEW_REPLY" ]; then
     echo "#$n has a reply after the warning; leaving it open for a maintainer."
     continue
   fi
 
-  # An edit to the issue body after the warning (and after the last comment, so
-  # the warning's own comment does not read as an edit) also shows it is
-  # distinct. GitHub bumps updatedAt for comments too, so require it to be
-  # strictly newer than the newest comment.
-  ISSUE_UPDATED_AT=$(gh issue view "$n" --repo "$REPO" --json updatedAt --jq '.updatedAt // empty')
-  if [ -n "$ISSUE_UPDATED_AT" ] && [ "$ISSUE_UPDATED_AT" \> "$LATEST_COMMENT_AT" ]; then
+  # An edit to the issue body after the warning also shows it is distinct.
+  # Compare the body's hash with the one recorded in the warning, not updatedAt:
+  # a later comment bumps updatedAt and would hide an earlier edit.
+  RECORDED=$(printf '%s\n' "$COMMENTS" | grep -oE 'duplicate-sweep:hash:[0-9a-f]+' | head -1 | cut -d: -f3 || true)
+  BODY=$(gh issue view "$n" --repo "$REPO" --json body --jq '.body // empty' || true)
+  if [ -n "$RECORDED" ] && [ "$(body_hash "$BODY")" != "$RECORDED" ]; then
     echo "#$n was edited after the warning; leaving it open for a maintainer."
     continue
   fi
