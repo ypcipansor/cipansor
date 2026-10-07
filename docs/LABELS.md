@@ -138,3 +138,25 @@ The automations live outside this repository, so the guard is enforced where
 they are deployed: each comment trigger is validated against a sample automated
 comment before it is enabled, and every automated comment ends with the footer
 above.
+
+## Templates feed these labels
+
+The issue forms (`.github/ISSUE_TEMPLATE/`) and the pull-request template exist
+to produce the labels above, not prose to read and forget:
+
+- The **bug** form requires a reproduction and an acceptance criterion; the
+  **feature request** form requires a motivation and a criterion. What these
+  fields contain is what `SDLC 19` reads to decide `ready` versus `needs-info`.
+- A `bug` issue may still arrive thin — a reporter often cannot say *why*. That
+  is expected: `SDLC 06` investigates, adds the cause and, for a UI defect,
+  reproduces it and attaches a screenshot to the issue by editing its body. It
+  does not send the issue to `needs-info` for being incomplete.
+- The **PR template** requires `Fixes #<n>` to a `ready` issue, copies the
+  issue's acceptance criteria as checkboxes, and asks for a **before and after**
+  visual on any change under `apps/web`. `SDLC 21` mirrors the linked issue's
+  type and priority onto the PR.
+
+These are kept honest but never blocking: the `pr-description-checks` workflow
+posts an advisory reminder (one comment, updated in place, removed once
+satisfied) and never fails, labels or changes the draft state. See
+`docs/IDEAS.md` § 6 for the reasoning.

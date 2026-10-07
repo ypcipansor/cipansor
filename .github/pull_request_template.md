@@ -51,10 +51,13 @@ Fixes #
 
 ## Evidence
 
-<!-- For a functional change: screenshots or a video of the running behaviour.
-     For a bug: the failure before and the success after, same setup. Logs and
-     tests supplement this; for a non-functional change they may be the evidence.
-     State what you validated and its limits. -->
+<!-- For a bug: the failure before and the success after, same setup. For any
+     change under apps/web: a before and an after visual of the changed view or
+     flow, both, pasted with GitHub's uploader. For other functional changes:
+     screenshots or a video of the running behaviour. The `visual-evidence`
+     workflow posts a reminder (never a block) when apps/web changed without a
+     before/after visual. Logs and tests supplement this; for a non-functional
+     change they may be the evidence. State what you validated and its limits. -->
 
 ## Type
 

@@ -79,6 +79,45 @@ body names no `Fixes #<n>` to a `ready` issue, and (b) removes `ready` when the
 acceptance-criteria field of an issue is emptied — the same actor-policy check
 OpenHands runs in `issue-readiness-check.yml`. Say the word and it lands.
 
+### Advisory enforcement (deployed)
+
+Chosen **warning-only**, so nothing is ever blocked:
+
+- `.github/workflows/pr-description-checks.yml` runs on `pull_request_target`
+  (a fork PR can still be commented on; it checks out no PR code) and posts at
+  most one comment, updated in place, deleted once satisfied:
+  - the **template** job lists the parts of the description that are missing;
+  - the **visual** job asks for a **before and after** visual when the PR
+    changes `apps/web` and its body has no image or video.
+- Neither job fails, labels or changes the draft state. The rules are shell in
+  `.github/scripts/` and are covered by `apps/api/src/utils/pr-description.guard.test.ts`
+  (a stub `gh`, the real `jq`), the same pattern as the other guards.
+
+If the reminders prove ignored, the escalation to a real gate (failing status on
+the template job) is a two-line change — but that is a separate decision.
+
+### Bug issues that arrive incomplete (SDLC 06)
+
+A reporter who cannot say *why* something happens has still found a real
+failure. SDLC 06 therefore treats a thin bug report as work to do, not a reason
+to bounce it:
+
+- It investigates — reads the code and recent history, forms a hypothesis — and
+  adds what the reporter could not: the reproduction, the cause.
+- On a UI defect it reproduces the failure in the running app and **edits the
+  issue body** to attach a screenshot of it, so the issue itself shows the
+  problem rather than only a comment thread.
+- If nothing is wrong (intended behaviour, a misreading) it says so with the
+  evidence and applies `invalid`/`duplicate`/`question`, removing `bug`.
+- SDLC 19 no longer sends a thin *defect* to `needs-info` — that path is for a
+  vague request, not for a bug whose cause is unknown. `ready` stays a human
+  decision: SDLC 06 reports that a reproduction now exists and leaves the gate
+  to the maintainer.
+
+The trigger fires on `issues.opened` or on the `bug` label being applied, but
+only when the issue *still* carries `bug` and only when that label is the one
+that changed — so applying `ready` or `needs-info` in review does not re-arm it.
+
 ## The rule all of them share
 
 Any automation that comments on an issue must end the comment with the
