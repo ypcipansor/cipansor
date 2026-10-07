@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
+import { prisma } from '@/lib/prisma';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
 import { csrfProtection } from '@/middleware/csrf';
 import {
@@ -232,21 +233,36 @@ if (config.env !== 'test') {
   );
 }
 
-// Health check endpoint (not rate limited).
+// Readiness check endpoint (not rate limited).
 //
 // `commit` is the git SHA the image was built from (GIT_COMMIT_SHA, baked in by
 // the Azure release workflows). Those workflows poll this endpoint through the
 // public address until it reports the SHA they released, so "deployed" means
 // the new code is answering, not just that a container was started. Null for
 // images built without it, such as the VM's own builds.
-app.get('/health', (_req, res) => {
-  res.json({
+//
+// It also probes the database: a process whose Postgres is unreachable cannot
+// serve a single query, so it answers 503 (not-ready) instead of a healthy 200.
+// Before this, the body was static and never touched Prisma, so a load balancer
+// or the release workflow kept routing traffic to a DB-less instance (#665).
+// `status` stays "ok" on success so existing consumers keep working.
+app.get('/health', async (_req, res) => {
+  const payload = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     commit: process.env.GIT_COMMIT_SHA || null,
     environment: config.env,
-  });
+  };
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch {
+    res.status(503).json({ ...payload, status: 'unavailable' });
+    return;
+  }
+
+  res.json(payload);
 });
 
 // Swagger API Documentation (disabled in production for security)
