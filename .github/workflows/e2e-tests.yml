@@ -363,3 +363,5 @@ jobs:
           name: playwright-report-${{ matrix.browser }}
           path: apps/web/playwright-report/
           retention-days: 7
+
+# Smoke test marker (2026-10-07): no behavioural change.
