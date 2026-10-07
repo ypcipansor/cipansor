@@ -67,7 +67,7 @@ jobs:
         run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Open or update an anomaly ticket
-        if: steps.metrics.outputs.count != '0'
+        if: always() && steps.metrics.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           COUNT: ${{ steps.metrics.outputs.count }}

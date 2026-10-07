@@ -36,7 +36,6 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(HERE, '..');
 
 // A rolling window of runs, and how many of the newest are "current".
 export const WINDOW = 60;
@@ -137,7 +136,9 @@ const isFailure = (r) => r.conclusion === 'failure';
 // The deploy platform is CI/E2E/deploy on main, however it was triggered.
 // Everything else — the watch's own scheduled runs, PR-triggered CI/E2E,
 // per-PR runners — is excluded so the pipeline metrics describe one population
-// over time.
+// over time. The allowlist also removes the old assumption that a per-PR run
+// is always named `PR #<n>`: a workflow that sets `run-name:` could have
+// slipped past that name-only test.
 const isPipeline = (r) =>
   PIPELINE_WORKFLOWS.includes(r.name) && PIPELINE_EVENTS.includes(r.event) && r.branch === 'main';
 
