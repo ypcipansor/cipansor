@@ -28,6 +28,10 @@ export const REGRESSION = {
   // from the `expected_responses` / `unexpected_responses` counters. This
   // ceiling applies to that computed rate.
   errorRate: 0.01,
+  // The k6 threshold is `checks: ['rate>0.99']`, so exactly 0.99 is a failure
+  // there. The runner compares with `<=` against this value so the two verdicts
+  // cannot disagree at the boundary. Kept here so the number has one home.
+  checksRate: 0.99,
 };
 
 /**
@@ -44,7 +48,7 @@ export const REGRESSION = {
  * throttled run is not comparable at all.
  */
 export function thresholdsFor(baseline) {
-  const thresholds = { checks: ['rate>0.99'] };
+  const thresholds = { checks: [`rate>${REGRESSION.checksRate}`] };
   const key = 'expected_response_duration';
   if (baseline && baseline.p95) {
     thresholds[key] = [`p(95)<${Math.round(baseline.p95 * REGRESSION.p95)}`];

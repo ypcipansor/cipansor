@@ -1,9 +1,18 @@
 /**
  * Authenticated read scenario.
  *
- * Needs credentials and is skipped unless they are supplied:
+ * Reads protected endpoints with a bearer token. It exists to measure *the
+ * authenticated* reads, so it fails rather than silently measuring anonymous
+ * 401s: every endpoint requires 200, and a missing or expired token aborts the
+ * run (see setup()).
+ *
+ * Needs credentials:
  *
  *   LOAD_TEST_EMAIL / LOAD_TEST_PASSWORD   a demo account on the target
+ *
+ * Without them the scenario throws in setup(), which makes k6 write no summary
+ * and the runner exit 2 — "could not run", never a fabricated anonymous green.
+ * Use public-smoke.js for the anonymous path.
  *
  * On the Cipansor API a browser login is also gated by Cloudflare Turnstile
  * (`requireTurnstile('login')`) and 2FA. Two ways through, both deliberate:
@@ -16,15 +25,14 @@
  *      to solve it. Whether the target still demands it is the target's
  *      policy, not this script's.
  *
- * If a login answers `requiresTwoFactor`/`requiresTwoFactorSetup`/`requiresPasswordChange`,
- * this scenario logs once and runs read-only without a token; the 401s it then
- * gets are expected and counted as passes. It never fabricates a token.
+ * If a login answers `requiresTwoFactor`/`requiresTwoFactorSetup`/
+ * `requiresPasswordChange`, there is no token for a script to use; that is a
+ * "could not run", not an anonymous pass. It never fabricates a token.
  *
  * Rate limiting: as in public-smoke.js, a 429 is counted in `rate_limited` and
  * the runner refuses a baseline from a throttled run. `setup()` makes one login
  * attempt, and the API's credential limiter (10/min by default) would answer
- * 429 to a repeated login, not 401 — the scenario treats that as "no token",
- * never as a crash.
+ * 429 to a repeated login, not 401 — the scenario treats that as "no token".
  */
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -37,7 +45,8 @@ const PASSWORD = __ENV.LOAD_TEST_PASSWORD;
 const profile = PROFILES[__ENV.PROFILE] || PROFILES.smoke;
 const baseline = __ENV.BASELINE_JSON ? JSON.parse(__ENV.BASELINE_JSON) : null;
 
-// See public-smoke.js: the expected 401s must not be read as errors.
+// See public-smoke.js: a request is only comparable when it was expected, so
+// only a 200 (this scenario's pass) feeds the latency series.
 const unexpectedResponses = new Counter('unexpected_responses');
 const expectedResponses = new Counter('expected_responses');
 const rateLimited = new Counter('rate_limited');
@@ -49,12 +58,14 @@ export const options = {
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(50)', 'p(95)', 'p(99)'],
 };
 
+// The authenticated reads. Each must answer 200: a 401 means the token was
+// missing or expired and the run measured nothing about authenticated access.
 const ENDPOINTS = [
-  { name: 'auth-me', path: '/api/auth/me', expect: [200, 401] },
-  { name: 'dashboard-quick-stats', path: '/api/dashboard/quick-stats', expect: [200, 401] },
-  { name: 'dashboard-stats', path: '/api/dashboard/stats', expect: [200, 401] },
-  { name: 'students', path: '/api/students?page=1&limit=10', expect: [200, 401] },
-  { name: 'classes', path: '/api/classes?page=1&limit=10', expect: [200, 401] },
+  { name: 'auth-me', path: '/api/auth/me' },
+  { name: 'dashboard-quick-stats', path: '/api/dashboard/quick-stats' },
+  { name: 'dashboard-stats', path: '/api/dashboard/stats' },
+  { name: 'students', path: '/api/students?page=1&limit=10' },
+  { name: 'classes', path: '/api/classes?page=1&limit=10' },
 ];
 
 function login() {
@@ -79,26 +90,32 @@ function login() {
 }
 
 export function setup() {
+  if (!EMAIL || !PASSWORD) {
+    // A throw aborts the whole run before any iteration: k6 writes no summary
+    // and the runner exits 2. That is the honest answer for a scenario whose
+    // subject (authenticated reads) cannot be reached without a session.
+    throw new Error('authenticated-read needs LOAD_TEST_EMAIL / LOAD_TEST_PASSWORD');
+  }
   const token = login();
-  if (EMAIL && !token) {
-    // Loud but not fatal: the read scenario still measures the anonymous path.
-    console.warn('login did not return an accessToken (2FA, Turnstile, or bad credentials) — running read-only without a session');
+  if (!token) {
+    throw new Error(
+      'login did not return an accessToken (2FA, Turnstile, or bad credentials) — cannot measure authenticated reads'
+    );
   }
   return { token };
 }
 
 export default function (data) {
-  const headers = { Accept: 'application/json' };
-  if (data && data.token) headers.Authorization = `Bearer ${data.token}`;
+  const headers = { Accept: 'application/json', Authorization: `Bearer ${data.token}` };
   for (const endpoint of ENDPOINTS) {
     const res = http.get(`${BASE_URL}${endpoint.path}`, { headers, tags: { name: endpoint.name } });
+    const ok = res.status === 200;
     if (res.status === 429) rateLimited.add(1);
-    else expectedDuration.add(res.timings.duration);
-    const ok = endpoint.expect.includes(res.status);
+    else if (ok) expectedDuration.add(res.timings.duration);
     if (ok) expectedResponses.add(1);
     else unexpectedResponses.add(1);
     check(res, {
-      [`${endpoint.name} -> ${endpoint.expect.join('|')}`]: () => ok,
+      [`${endpoint.name} -> 200`]: () => ok,
     });
   }
   // Stay under the API's 100 req/min/IP limiter; see public-smoke.js.

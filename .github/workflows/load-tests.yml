@@ -8,9 +8,10 @@
 #
 # Runner exit codes (tests/load/run-load-tests.mjs):
 #   0 = no regression   1 = regression found   2 = could not run
-# A regression (1) fails the job. So does "could not run" (2): a scheduled load
-# test that stays green while it never actually measured anything is worse than
-# a red one. Both are explained in the job summary.
+#   3 = no baseline recorded   4 = baseline does not match this run
+# A regression (1) fails the job. So does anything else (2, 3, 4): a scheduled
+# load test that stays green while it never actually measured anything is worse
+# than a red one. Each is explained in the job summary.
 
 name: Load Tests
 
@@ -34,6 +35,11 @@ on:
         default: 'smoke'
         type: choice
         options: [smoke, load]
+      allow_shared_target:
+        description: 'Allow the `load` profile against shared staging (it consumes the staging request budget)'
+        required: false
+        default: false
+        type: boolean
 
 # One load test at a time; a scheduled run and a manual run must not overlap
 # and both measure the same shared target.
@@ -49,6 +55,10 @@ env:
   LOAD_TEST_URL: ${{ github.event.inputs.url || 'https://staging.cipansor.or.id' }}
   LOAD_TEST_SCENARIO: ${{ github.event.inputs.scenario || 'public-smoke' }}
   LOAD_TEST_PROFILE: ${{ github.event.inputs.profile || 'smoke' }}
+  # The runner refuses the heavy `load` profile against a known shared host
+  # unless this is set. A manual dispatch has to opt in explicitly; the
+  # scheduled run never does.
+  LOAD_TEST_ALLOW_SHARED: ${{ github.event.inputs.allow_shared_target || 'false' }}
 
 jobs:
   smoke:
@@ -70,11 +80,16 @@ jobs:
         # report and the summary are produced before the job is judged.
         run: |
           set +e
+          extra=""
+          if [ "$LOAD_TEST_ALLOW_SHARED" = "true" ]; then extra="--allow-shared-target"; fi
+          # stderr carries the reason a run could not proceed; merge it into the
+          # captured output so the summary explains a non-zero exit.
           node tests/load/run-load-tests.mjs \
             --url "$LOAD_TEST_URL" \
             --scenario "$LOAD_TEST_SCENARIO" \
             --profile "$LOAD_TEST_PROFILE" \
-            --report load-report.json | tee load-output.txt
+            $extra \
+            --report load-report.json 2>&1 | tee load-output.txt
           code=${PIPESTATUS[0]}
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           echo "### Load test: \`$LOAD_TEST_SCENARIO\` (\`$LOAD_TEST_PROFILE\`) against $LOAD_TEST_URL" >> "$GITHUB_STEP_SUMMARY"
@@ -86,6 +101,9 @@ jobs:
             0) echo "No regression against the baseline." >> "$GITHUB_STEP_SUMMARY" ;;
             1) echo "Regression(s) against the baseline — see above." >> "$GITHUB_STEP_SUMMARY" ;;
             2) echo "Could not run (missing access, k6 error, or a rate-limited run). Nothing was compared." >> "$GITHUB_STEP_SUMMARY" ;;
+            3) echo "No baseline recorded for this target, scenario and profile. Record one before comparing." >> "$GITHUB_STEP_SUMMARY" ;;
+            4) echo "The recorded baseline does not match this run (different target, scenario or profile), or it is unreadable." >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "Unexpected exit code $code." >> "$GITHUB_STEP_SUMMARY" ;;
           esac
           exit 0
 
@@ -98,15 +116,17 @@ jobs:
           if-no-files-found: warn
 
       - name: Judge the run
-        # 0 passes; 1 (regression) and 2 (could not run) both fail, with the
-        # reason from the summary. Exit 2 is not silently green: a scheduled
-        # test that never measured anything must be seen.
+        # 0 passes; 1 (regression) and every "proved nothing" code (2, 3, 4)
+        # fail, with the reason from the summary. Exit 2/3/4 is not silently
+        # green: a scheduled test that never measured anything must be seen.
         run: |
           code="${{ steps.load.outputs.exit_code }}"
           case "$code" in
             0) echo "No regression."; exit 0 ;;
             1) echo "::error::Load-test regression against the recorded baseline."; exit 1 ;;
             2) echo "::error::Load test could not run (missing access, k6 error, or rate limited). Nothing was compared."; exit 1 ;;
+            3) echo "::error::No baseline recorded for this target, scenario and profile. Nothing was compared."; exit 1 ;;
+            4) echo "::error::The recorded baseline does not match this run, or is unreadable. Nothing was compared."; exit 1 ;;
             *) echo "::error::Unexpected load-test exit code $code."; exit 1 ;;
           esac
 

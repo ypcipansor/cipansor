@@ -16,14 +16,17 @@
  *   --profile <smoke|load>   load profile (default smoke)
  *   --update-baseline        write the run as the new baseline
  *   --baseline <path>        compare against this baseline instead of the default
- *   --json                   print the machine-readable report only
  *   --report <path>          also write the machine-readable report to this file
+ *   --allow-shared-target    permit a heavy profile against a known shared host
+ *   --json                   print the machine-readable report only
  *
  * Environment:
  *   K6_BIN                   path to k6 (else PATH, then /tmp/k6)
  *   LOAD_TEST_EMAIL / LOAD_TEST_PASSWORD   credentials for the authenticated scenario
  *
- * Exit code: 0 = no regression, 1 = regression found, 2 = could not run.
+ * Exit codes (see README.md):
+ *   0 no regression   1 regression found   2 could not run
+ *   3 no baseline recorded   4 baseline does not match this run
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
@@ -31,13 +34,38 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 
-import { REGRESSION } from './config.js';
+import { REGRESSION, PROFILES } from './config.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINE_DIR = join(HERE, 'baselines');
 
+/**
+ * The runner's exit codes, named so the workflow can map each one to a message
+ * instead of a bare number. Every code except OK and REGRESSION means the run
+ * proved nothing, so both the runner and the job treat them as failures.
+ */
+export const EXIT_CODES = Object.freeze({
+  OK: 0,
+  REGRESSION: 1,
+  COULD_NOT_RUN: 2,
+  NO_BASELINE: 3,
+  BASELINE_MISMATCH: 4,
+});
+
+// A known shared host. Pointing the heavy `load` profile at it consumes the
+// staging VM's request budget and disrupts everyone else on it, so the runner
+// refuses unless the caller passes --allow-shared-target. The scheduled run and
+// the normal smoke run are unaffected.
+const SHARED_TARGET_HOSTS = ['staging.cipansor.or.id'];
+
 function parseArgs(argv) {
-  const args = { profile: 'smoke', scenario: 'public-smoke', updateBaseline: false, json: false };
+  const args = {
+    profile: 'smoke',
+    scenario: 'public-smoke',
+    updateBaseline: false,
+    json: false,
+    allowSharedTarget: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--url') args.url = argv[++i];
@@ -46,6 +74,7 @@ function parseArgs(argv) {
     else if (a === '--baseline') args.baseline = argv[++i];
     else if (a === '--report') args.report = argv[++i];
     else if (a === '--update-baseline') args.updateBaseline = true;
+    else if (a === '--allow-shared-target') args.allowSharedTarget = true;
     else if (a === '--json') args.json = true;
     else if (a === '--help' || a === '-h') args.help = true;
   }
@@ -62,6 +91,10 @@ function findK6() {
   return null;
 }
 
+function normalizeUrl(url) {
+  return String(url || '').replace(/\/+$/, '');
+}
+
 function slugFor(url) {
   try {
     const host = new URL(url).host;
@@ -71,18 +104,62 @@ function slugFor(url) {
   }
 }
 
-function baselinePath(url, scenario) {
-  return join(BASELINE_DIR, `${slugFor(url)}__${scenario}.json`);
+// A baseline is a fact about ONE target at ONE load profile. The profile is part
+// of the key so a `load` run can never reuse (or overwrite) a `smoke` reference.
+function baselinePath(url, scenario, profile = 'smoke') {
+  return join(BASELINE_DIR, `${slugFor(url)}__${scenario}__${profile}.json`);
 }
 
+/**
+ * Read a baseline and say exactly what was wrong with it. A missing file and a
+ * malformed file are different problems — passing straight to `compare` would
+ * turn either into "no regressions" and a false green.
+ */
 function readBaseline(path) {
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) return { exists: false, baseline: null, error: null };
+  let raw;
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
+    raw = readFileSync(path, 'utf8');
   } catch (err) {
-    console.error(`Could not read baseline ${path}: ${err.message}`);
-    return null;
+    return { exists: true, baseline: null, error: `could not read: ${err.message}` };
   }
+  let baseline;
+  try {
+    baseline = JSON.parse(raw);
+  } catch (err) {
+    return { exists: true, baseline: null, error: `malformed JSON: ${err.message}` };
+  }
+  const problem = validateBaseline(baseline);
+  if (problem) return { exists: true, baseline: null, error: problem };
+  return { exists: true, baseline, error: null };
+}
+
+/** The fields a comparison needs. A baseline missing them is not a baseline. */
+function validateBaseline(baseline) {
+  if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) return 'not a JSON object';
+  for (const field of ['url', 'scenario', 'profile']) {
+    if (typeof baseline[field] !== 'string' || !baseline[field]) return `missing "${field}"`;
+  }
+  if (typeof baseline.p95 !== 'number' || Number.isNaN(baseline.p95)) return 'missing numeric "p95"';
+  return null;
+}
+
+/**
+ * A comparison is only meaningful when the baseline was recorded on the same
+ * target, scenario and profile as this run. Say so instead of comparing unlike
+ * measurements.
+ */
+function baselineMatches(baseline, { url, scenario, profile }) {
+  if (normalizeUrl(baseline.url) !== normalizeUrl(url)) {
+    return `baseline was recorded against ${baseline.url}, not ${url}`;
+  }
+  if (baseline.scenario !== scenario) {
+    return `baseline is for scenario "${baseline.scenario}", not "${scenario}"`;
+  }
+  if (baseline.profile !== profile) {
+    return `baseline is for profile "${baseline.profile}", not "${profile}"`;
+  }
+  return null;
 }
 
 function metric(summary, name, value) {
@@ -115,10 +192,32 @@ function extract(summary) {
   };
 }
 
+/**
+ * A summary that ran no iterations (k6 aborted in setup, rejected the script)
+ * has no metrics. Refuse to treat it as a measurement: `compare` would return
+ * "no regressions" and the job would look green having tested nothing.
+ */
+function summaryProblem(summary) {
+  const metrics = summary && summary.metrics;
+  if (!metrics) return 'summary has no "metrics"';
+  if (!metrics.expected_responses && !metrics.unexpected_responses) {
+    return 'summary has no response counters (the run produced no samples)';
+  }
+  if (!metrics.expected_response_duration) {
+    return 'summary has no "expected_response_duration"';
+  }
+  return null;
+}
+
 function compare(current, baseline) {
   const regressions = [];
   if (!baseline) return regressions;
   const round = (n) => Math.round(n * 100) / 100;
+  // p99 is only meaningful when BOTH runs have enough samples for it to be a
+  // percentile rather than the single slowest request. The k6 threshold uses
+  // the same baseline side, so the two verdicts cannot disagree.
+  const p99Comparable =
+    (baseline.requests ?? 0) >= REGRESSION.p99MinSamples && (current.requests ?? 0) >= REGRESSION.p99MinSamples;
   if (baseline.p95 && current.p95 && current.p95 > baseline.p95 * REGRESSION.p95) {
     regressions.push({
       metric: 'p95',
@@ -127,7 +226,7 @@ function compare(current, baseline) {
       threshold: `${REGRESSION.p95}x`,
     });
   }
-  if (baseline.p99 && current.p99 && current.requests >= REGRESSION.p99MinSamples && current.p99 > baseline.p99 * REGRESSION.p99) {
+  if (p99Comparable && baseline.p99 && current.p99 && current.p99 > baseline.p99 * REGRESSION.p99) {
     regressions.push({
       metric: 'p99',
       baseline: round(baseline.p99),
@@ -143,45 +242,89 @@ function compare(current, baseline) {
       threshold: `${REGRESSION.errorRate}`,
     });
   }
-  if (current.checksRate !== undefined && current.checksRate < 0.99) {
+  // k6's threshold is `rate>0.99`, so exactly 0.99 is a failure there too.
+  if (current.checksRate !== undefined && current.checksRate <= REGRESSION.checksRate) {
     regressions.push({
       metric: 'checksRate',
       baseline: round(baseline.checksRate ?? 1),
       current: round(current.checksRate),
-      threshold: '<0.99',
+      threshold: `<=${REGRESSION.checksRate}`,
     });
   }
   return regressions;
 }
 
+function isSharedTarget(url) {
+  try {
+    return SHARED_TARGET_HOSTS.includes(new URL(url).host);
+  } catch {
+    return false;
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
-    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(0, 26).join('\n'));
-    return 0;
+    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(0, 32).join('\n'));
+    return EXIT_CODES.OK;
   }
 
-  const url = args.url || process.env.BASE_URL || 'http://localhost:3001';
-  const script = join(HERE, 'scenarios', `${args.scenario}.js`);
+  const url = normalizeUrl(args.url || process.env.BASE_URL || 'http://localhost:3001');
+  const { scenario, profile } = args;
+
+  if (!PROFILES[profile]) {
+    console.error(`No such profile: ${profile} (known: ${Object.keys(PROFILES).join(', ')})`);
+    return EXIT_CODES.COULD_NOT_RUN;
+  }
+  // Guard before spending the target's request budget: the heavy profile
+  // measures the limiter (or worse, starves real users) on a shared host.
+  if (profile !== 'smoke' && isSharedTarget(url) && !args.allowSharedTarget) {
+    console.error(
+      `Refusing \`${profile}\` profile against the shared target ${url}. It consumes the target's ` +
+        'request budget and disrupts other users. Pass --allow-shared-target if that is intended.'
+    );
+    return EXIT_CODES.COULD_NOT_RUN;
+  }
+
+  const script = join(HERE, 'scenarios', `${scenario}.js`);
   if (!existsSync(script)) {
     console.error(`No such scenario: ${script}`);
-    return 2;
+    return EXIT_CODES.COULD_NOT_RUN;
   }
   const k6 = findK6();
   if (!k6) {
     console.error('k6 not found. Set K6_BIN, put k6 on PATH, or install it to /tmp/k6.');
-    return 2;
+    return EXIT_CODES.COULD_NOT_RUN;
   }
 
-  const bPath = args.baseline || baselinePath(url, args.scenario);
-  const baseline = readBaseline(bPath);
-  const summaryFile = join(tmpdir(), `k6-summary-${Date.now()}.json`);
+  const bPath = args.baseline || baselinePath(url, scenario, profile);
+  const read = readBaseline(bPath);
+  const baseline = read.baseline;
 
-  const env = {
-    ...process.env,
-    BASE_URL: url,
-    PROFILE: args.profile,
-  };
+  // A comparison run needs a valid baseline BEFORE k6 starts. Without this a
+  // missing (or malformed, or mismatched) baseline turned into "no regressions"
+  // and a green job that measured nothing.
+  if (!args.updateBaseline) {
+    if (!read.exists) {
+      console.error(
+        `No baseline at ${bPath}. Record one first:\n` +
+          `  node tests/load/run-load-tests.mjs --url ${url} --scenario ${scenario} --profile ${profile} --update-baseline`
+      );
+      return EXIT_CODES.NO_BASELINE;
+    }
+    if (read.error) {
+      console.error(`Baseline ${bPath} is unusable: ${read.error}`);
+      return EXIT_CODES.BASELINE_MISMATCH;
+    }
+    const mismatch = baselineMatches(baseline, { url, scenario, profile });
+    if (mismatch) {
+      console.error(`Baseline ${bPath} does not match this run: ${mismatch}`);
+      return EXIT_CODES.BASELINE_MISMATCH;
+    }
+  }
+
+  const summaryFile = join(tmpdir(), `k6-summary-${Date.now()}.json`);
+  const env = { ...process.env, BASE_URL: url, PROFILE: profile };
   if (baseline) env.BASELINE_JSON = JSON.stringify(baseline);
 
   const run = spawnSync(k6, ['run', `--summary-export=${summaryFile}`, script], {
@@ -189,54 +332,94 @@ function main() {
     env,
   });
 
-  let summary;
+  // k6 can fail before writing --summary-export at all. Reading it without a
+  // guard threw ENOENT out of main(), which Node reported as exit 1 — a
+  // "regression" for a run that never happened.
+  let summary = null;
+  let summaryReadError = null;
   try {
     summary = JSON.parse(readFileSync(summaryFile, 'utf8'));
+  } catch (err) {
+    summaryReadError = err.code === 'ENOENT' ? 'k6 wrote no summary (it failed before the run)' : err.message;
   } finally {
     if (existsSync(summaryFile)) rmSync(summaryFile);
   }
 
-  const current = extract(summary);
-  // A throttled run measured the API's limiter, not the app: its latency and
-  // error rate are meaningless. Never record it as a baseline and never let it
-  // flag a regression — say so and stop.
-  const throttled = current.rateLimited > 0;
-  const regressions = throttled ? [] : compare(current, baseline);
   const report = {
-    scenario: args.scenario,
-    profile: args.profile,
+    scenario,
+    profile,
     url,
     baselinePath: baseline ? bPath : null,
     k6ExitCode: run.status,
-    throttled,
-    current,
+    summaryReading: summaryReadError ? 'error' : 'ok',
+    throttled: false,
+    current: null,
     baseline: baseline || null,
-    regressions,
+    regressions: [],
   };
 
-  if (args.updateBaseline && !throttled) {
-    mkdirSync(BASELINE_DIR, { recursive: true });
-    writeFileSync(bPath, `${JSON.stringify({ ...current, url, scenario: args.scenario, profile: args.profile, recordedAt: new Date().toISOString() }, null, 2)}\n`);
-    report.baselineWritten = bPath;
+  if (summaryReadError) {
+    report.error = summaryReadError;
+    finish(report, args);
+    return EXIT_CODES.COULD_NOT_RUN;
   }
 
+  const current = extract(summary);
+  report.current = current;
+
+  const problem = summaryProblem(summary);
+  const throttled = current.rateLimited > 0;
+  report.throttled = throttled;
+  if (problem) report.error = problem;
+
+  // A throttled run measured the API's limiter, not the app: its latency and
+  // error rate are meaningless. Never record it and never let it flag a
+  // regression — say so and stop.
+  const regressions = throttled || problem ? [] : compare(current, baseline);
+  report.regressions = regressions;
+
+  // Write the baseline only after a run that actually completed. k6's exit 99
+  // is a completed run whose thresholds were crossed; anything else is an error
+  // and its partial summary must not replace the reference. An explicit
+  // --update-baseline is the only path that may write a file.
+  const completed = run.status === 0 || run.status === 99;
+  if (args.updateBaseline) {
+    if (throttled) {
+      report.baselineWriteSkipped = 'rate-limited run';
+    } else if (problem) {
+      report.baselineWriteSkipped = problem;
+    } else if (!completed) {
+      report.baselineWriteSkipped = `k6 exited ${run.status} before completing`;
+    } else {
+      mkdirSync(BASELINE_DIR, { recursive: true });
+      writeFileSync(
+        bPath,
+        `${JSON.stringify({ ...current, url, scenario, profile, recordedAt: new Date().toISOString() }, null, 2)}\n`
+      );
+      report.baselineWritten = bPath;
+    }
+  }
+
+  finish(report, args);
+
+  if (args.updateBaseline && !report.baselineWritten) return EXIT_CODES.COULD_NOT_RUN;
+  if (throttled || problem) return EXIT_CODES.COULD_NOT_RUN;
+  if (regressions.length > 0) return EXIT_CODES.REGRESSION;
+  if (!completed) return EXIT_CODES.COULD_NOT_RUN;
+  return EXIT_CODES.OK;
+}
+
+/** Print the report and, if asked, persist it — always before the exit code. */
+function finish(report, args) {
   if (args.json) {
     console.log(JSON.stringify(report, null, 2));
   } else {
     printHuman(report);
   }
-
-  // Written before the exit code is decided, so a CI job keeps the numbers
-  // even when the run is flagged as a regression.
   if (args.report) {
     mkdirSync(dirname(args.report), { recursive: true });
     writeFileSync(args.report, `${JSON.stringify(report, null, 2)}\n`);
   }
-
-  if (throttled) return 2;
-  if (regressions.length > 0) return 1;
-  if (run.status !== 0 && run.status !== 99) return 2; // 99 = k6 thresholds crossed
-  return 0;
 }
 
 function fmt(v) {
@@ -247,11 +430,17 @@ function printHuman(report) {
   const c = report.current;
   console.log('');
   console.log(`Load test: ${report.scenario} (${report.profile}) against ${report.url}`);
+  if (!c) {
+    console.log('  no summary was produced — nothing was measured.');
+    if (report.error) console.log(`  ${report.error}`);
+    return;
+  }
   console.log(`  requests ${c.requests}   error rate ${(c.errorRate * 100).toFixed(2)}%   checks ${fmt(c.checksRate)}`);
   if (c.rateLimited > 0) {
     console.log(`  RATE LIMITED: ${c.rateLimited} responses were 429 — the numbers below measured the limiter, not the app.`);
     console.log('  No baseline was recorded or compared. Wait out the rate-limit window and run again.');
   }
+  if (report.error) console.log(`  UNUSABLE SUMMARY: ${report.error}`);
   console.log(`  p50 ${fmt(c.p50)}ms   p95 ${fmt(c.p95)}ms   p99 ${fmt(c.p99)}ms   avg ${fmt(c.avg)}ms`);
   if (report.baseline) {
     const b = report.baseline;
@@ -263,8 +452,11 @@ function printHuman(report) {
   if (report.baselineWritten) {
     console.log(`  baseline written to ${report.baselineWritten}`);
   }
+  if (report.baselineWriteSkipped) {
+    console.log(`  baseline NOT written: ${report.baselineWriteSkipped}`);
+  }
   if (report.regressions.length === 0) {
-    console.log('  no regression against the baseline');
+    if (report.baseline) console.log('  no regression against the baseline');
   } else {
     console.log('  REGRESSION(S):');
     for (const r of report.regressions) {
@@ -278,4 +470,4 @@ function printHuman(report) {
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (invokedDirectly) process.exit(main());
 
-export { parseArgs, slugFor, extract, compare, findK6, baselinePath };
+export { parseArgs, slugFor, extract, compare, findK6, baselinePath, readBaseline, baselineMatches, summaryProblem, isSharedTarget };

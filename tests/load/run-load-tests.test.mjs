@@ -1,7 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-import { parseArgs, slugFor, extract, compare, baselinePath } from './run-load-tests.mjs';
+import {
+  parseArgs,
+  slugFor,
+  extract,
+  compare,
+  baselinePath,
+  readBaseline,
+  baselineMatches,
+  summaryProblem,
+  isSharedTarget,
+} from './run-load-tests.mjs';
 import { REGRESSION, thresholdsFor } from './config.js';
 
 test('parseArgs: defaults', () => {
@@ -10,6 +23,7 @@ test('parseArgs: defaults', () => {
   assert.equal(args.scenario, 'public-smoke');
   assert.equal(args.updateBaseline, false);
   assert.equal(args.json, false);
+  assert.equal(args.allowSharedTarget, false);
 });
 
 test('parseArgs: reads every flag', () => {
@@ -25,6 +39,7 @@ test('parseArgs: reads every flag', () => {
     '--report',
     '/tmp/report.json',
     '--update-baseline',
+    '--allow-shared-target',
     '--json',
   ]);
   assert.equal(args.url, 'https://staging.cipansor.or.id');
@@ -33,6 +48,7 @@ test('parseArgs: reads every flag', () => {
   assert.equal(args.baseline, '/tmp/baseline.json');
   assert.equal(args.report, '/tmp/report.json');
   assert.equal(args.updateBaseline, true);
+  assert.equal(args.allowSharedTarget, true);
   assert.equal(args.json, true);
 });
 
@@ -45,12 +61,82 @@ test('slugFor: an unparseable URL does not throw', () => {
   assert.equal(slugFor('not a url'), 'unknown-target');
 });
 
-test('baselinePath: one baseline per host and scenario', () => {
-  const p = baselinePath('https://staging.cipansor.or.id', 'public-smoke');
-  assert.match(p, /staging-cipansor-or-id__public-smoke\.json$/);
-  assert.notEqual(p, baselinePath('http://localhost:3001', 'public-smoke'));
-  assert.notEqual(p, baselinePath('https://staging.cipansor.or.id', 'authenticated-read'));
+test('baselinePath: one baseline per host, scenario AND profile', () => {
+  const p = baselinePath('https://staging.cipansor.or.id', 'public-smoke', 'smoke');
+  assert.match(p, /staging-cipansor-or-id__public-smoke__smoke\.json$/);
+  assert.notEqual(p, baselinePath('http://localhost:3001', 'public-smoke', 'smoke'));
+  assert.notEqual(p, baselinePath('https://staging.cipansor.or.id', 'authenticated-read', 'smoke'));
+  // The same host and scenario at a different profile is a different reference.
+  assert.notEqual(p, baselinePath('https://staging.cipansor.or.id', 'public-smoke', 'load'));
 });
+
+test('isSharedTarget: recognises the shared staging host only', () => {
+  assert.equal(isSharedTarget('https://staging.cipansor.or.id'), true);
+  assert.equal(isSharedTarget('http://localhost:3001'), false);
+  assert.equal(isSharedTarget('not a url'), false);
+});
+
+test('readBaseline: a missing file is distinguishable from a malformed one', () => {
+  const missing = readBaseline('/tmp/definitely-not-a-baseline-cipansor.json');
+  assert.equal(missing.exists, false);
+  assert.equal(missing.baseline, null);
+  assert.equal(missing.error, null);
+});
+
+test('validateBaseline: a hand-edited baseline missing fields is unusable', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cipansor-load-test-'));
+  try {
+    const path = join(dir, 'bad.json');
+    writeFileSync(path, JSON.stringify({ p95: 100 })); // no url/scenario/profile
+    const bad = readBaseline(path);
+    assert.equal(bad.exists, true);
+    assert.equal(bad.baseline, null);
+    assert.match(bad.error, /missing "url"/);
+
+    const malformedPath = join(dir, 'malformed.json');
+    writeFileSync(malformedPath, '{ not json');
+    const malformed = readBaseline(malformedPath);
+    assert.equal(malformed.exists, true);
+    assert.match(malformed.error, /malformed JSON/);
+
+    const goodPath = join(dir, 'good.json');
+    writeFileSync(goodPath, JSON.stringify({ url: 'http://localhost:3001', scenario: 'public-smoke', profile: 'smoke', p95: 10 }));
+    const good = readBaseline(goodPath);
+    assert.equal(good.error, null);
+    assert.equal(good.baseline.p95, 10);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('baselineMatches: null when target, scenario and profile agree', () => {
+  const baseline = { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' };
+  assert.equal(baselineMatches(baseline, { url: 'https://staging.cipansor.or.id/', scenario: 'public-smoke', profile: 'smoke' }), null);
+});
+
+test('baselineMatches: reports a different target, scenario or profile', () => {
+  const baseline = { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' };
+  assert.match(
+    baselineMatches(baseline, { url: 'http://localhost:3001', scenario: 'public-smoke', profile: 'smoke' }),
+    /not http:\/\/localhost:3001/
+  );
+  assert.match(
+    baselineMatches(baseline, { url: 'https://staging.cipansor.or.id', scenario: 'authenticated-read', profile: 'smoke' }),
+    /scenario/
+  );
+  assert.match(
+    baselineMatches(baseline, { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'load' }),
+    /profile/
+  );
+});
+
+test('summaryProblem: a summary with no samples is not a measurement', () => {
+  assert.match(summaryProblem({ metrics: {} }), /response counters/);
+  assert.match(summaryProblem({ metrics: { expected_responses: { count: 0 } } }), /expected_response_duration/);
+  assert.equal(summaryProblem({ metrics: { expected_responses: { count: 1 }, expected_response_duration: { 'p(95)': 1 } } }), null);
+  assert.match(summaryProblem(undefined), /metrics/);
+});
+
 
 function summaryWith({ p50, p95, p99, avg, expected, unexpected, checksRate }) {
   // k6 v0.54 summary-export shape: metrics are flat, not nested under `values`.
@@ -163,8 +249,17 @@ test('compare: a checks rate under 0.99 is flagged', () => {
   assert.equal(regressions[0].metric, 'checksRate');
 });
 
+test('compare: a checks rate of exactly 0.99 is a failure, matching k6\'s rate>0.99', () => {
+  const regressions = compare({ p95: 100, p99: 200, errorRate: 0, checksRate: 0.99 }, { p95: 100, p99: 200, errorRate: 0 });
+  assert.deepEqual(
+    regressions.map((r) => r.metric),
+    ['checksRate'],
+  );
+  assert.deepEqual(compare({ p95: 100, p99: 200, errorRate: 0, checksRate: 1 }, { p95: 100, p99: 200, errorRate: 0 }), []);
+});
+
 test('thresholdsFor: an empty baseline keeps only the check threshold', () => {
-  assert.deepEqual(thresholdsFor(null), { checks: ['rate>0.99'] });
+  assert.deepEqual(thresholdsFor(null), { checks: [`rate>${REGRESSION.checksRate}`] });
 });
 
 test('thresholdsFor: builds latency thresholds from the baseline', () => {
@@ -188,4 +283,11 @@ test('compare: ignores p99 until the run has enough samples', () => {
     big.map((r) => r.metric),
     ['p99'],
   );
+});
+
+test('compare: ignores p99 when the BASELINE is too small, matching the k6 threshold', () => {
+  // thresholdsFor omits the p99 threshold for a 48-sample baseline, so compare
+  // must not flag p99 from a large run either — otherwise the two disagree.
+  const baseline = { p95: 100, p99: 200, requests: 48, errorRate: 0 };
+  assert.deepEqual(compare({ p95: 100, p99: 9999, requests: 200, errorRate: 0 }, baseline), []);
 });

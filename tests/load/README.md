@@ -17,8 +17,12 @@ demand). It is not part of CI and does not gate a merge.
 | `run-load-tests.mjs` | The runner: runs k6, extracts the summary, compares it to the baseline, prints a report and sets the exit code. |
 | `run-load-tests.test.mjs` | Unit tests for the runner (`node --test`). No k6 or network needed. |
 | `scenarios/public-smoke.js` | Read-only, safe on any target including staging. Anonymous; an expected `401` counts as a pass. |
-| `scenarios/authenticated-read.js` | Read-only; needs `LOAD_TEST_EMAIL` / `LOAD_TEST_PASSWORD`. Falls back to the anonymous path when login does not yield a token. |
-| `baselines/<host>__<scenario>.json` | The recorded baseline per target and scenario. |
+| `scenarios/authenticated-read.js` | Read-only; needs `LOAD_TEST_EMAIL` / `LOAD_TEST_PASSWORD`. Fails rather than falling back to an anonymous run — see below. |
+| `baselines/<host>__<scenario>__<profile>.json` | The recorded baseline per target, scenario **and profile**. |
+
+The profile is part of the baseline name: a `smoke` reference is a one-VU
+measurement and comparing a ten-VU `load` run against it is meaningless, so the
+runner refuses a profile it has no baseline for (exit `4`).
 
 ## Running it
 
@@ -49,18 +53,32 @@ LOAD_TEST_EMAIL=admin@example.com LOAD_TEST_PASSWORD=... \
 ```
 
 Flags: `--url`, `--scenario`, `--profile smoke|load`, `--baseline <path>`,
-`--update-baseline`, `--json`, `--report <path>`.
+`--update-baseline`, `--allow-shared-target`, `--json`, `--report <path>`.
+
+`--allow-shared-target` is only needed to run the heavy `load` profile against a
+known shared host (`staging.cipansor.or.id`): it consumes the staging VM's
+request budget and disrupts other people on it, so the runner refuses by default.
+The `smoke` profile never needs it.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | `0` | Ran, no regression against the baseline. |
-| `1` | Ran, one or more regressions found (p50/p95/p99, error rate or checks rate). |
-| `2` | Could not run — k6 missing, an unknown scenario, a k6 failure, or a **rate-limited** run. Nothing was compared. |
+| `1` | Ran, one or more regressions found (p95/p99, error rate or checks rate). |
+| `2` | Could not run — k6 missing, an unknown scenario/profile, a k6 failure, a run that produced no summary, or a **rate-limited** run. Nothing was compared. |
+| `3` | No baseline recorded for this target, scenario and profile. Nothing was compared. |
+| `4` | The recorded baseline does not match this run (different target, scenario or profile) or is unreadable. Nothing was compared. |
 
-The scheduled workflow fails the job on `1` **and** on `2`. A green load test
-that never actually measured anything is worse than a red one.
+The scheduled workflow fails the job on `1` **and** on `2`/`3`/`4`. A green load
+test that never actually measured anything is worse than a red one.
+
+A comparison run **requires a valid baseline**: it is checked before k6 starts,
+so a missing, malformed or mismatched baseline cannot silently pass. Only
+`--update-baseline` accepts an absent baseline, and it writes **only after a run
+that completed** (k6 exit `0`, or `99` for crossed thresholds) with the metrics
+the comparison needs. A failed run's partial summary never replaces the
+reference.
 
 ## The regression policy
 
@@ -69,15 +87,18 @@ staging is a shared VM and one run is noisy, so they flag a real step change,
 not run-to-run jitter.
 
 - **p95** may grow by `1.5x` before it is a regression; **p99** by `1.75x`.
-- **p99 is only compared once a run has `p99MinSamples` (100) samples.** Below
-  that, p99 *is* the single slowest request and swings run to run — measured
-  327 ms → 764 ms across two identical 48-request smoke runs — so it would flag
-  regressions that never happened. p50/p95 are checked at every size.
+- **p99 is only compared once *both* runs have `p99MinSamples` (100) samples.**
+  Below that, p99 *is* the single slowest request and swings run to run —
+  measured 327 ms → 764 ms across two identical 48-request smoke runs — so it
+  would flag regressions that never happened. p95 is checked at every size. The
+  runner uses the same baseline-side test as `thresholdsFor()`, so a small
+  baseline is skipped by both.
 - **Error rate** is computed by the runner from the `expected_responses` /
   `unexpected_responses` counters, not from k6's `http_req_failed` (which
   counts the `401`s the anonymous scenario expects as failures). The ceiling is
   `1%`.
-- **Checks rate** must stay above `0.99`.
+- **Checks rate** must stay above `0.99` (`rate>0.99`); exactly `0.99` fails,
+  in both the k6 threshold and the runner's comparison.
 
 Both the k6 thresholds and the runner's comparison read a single metric,
 `expected_response_duration`, which each scenario fills only for responses it
@@ -95,11 +116,13 @@ the `load` profile does not — point it only at a stack you own.
 
 ## Baselines
 
-One JSON file per target and scenario:
-`baselines/<host-slug>__<scenario>.json`. `staging-cipansor-or-id__public-smoke.json`
-is the recorded staging baseline. A baseline is a fact about one target on one
-day, so re-record it (`--update-baseline`) when the target's capacity or the
-profile changes, and say so in the PR.
+One JSON file per target, scenario and profile:
+`baselines/<host-slug>__<scenario>__<profile>.json`.
+`staging-cipansor-or-id__public-smoke__smoke.json` is the recorded staging
+baseline. A baseline is a fact about one target on one day, so re-record it
+(`--update-baseline`) when the target's capacity or the profile changes, and say
+so in the PR. The runner checks the recorded `url`, `scenario` and `profile`
+against the run before comparing (exit `4` if they differ).
 
 ## The authenticated scenario
 
@@ -107,8 +130,23 @@ profile changes, and say so in the PR.
 demo account on the target. On the Cipansor API a browser login is also gated by
 Cloudflare Turnstile and 2FA; the scenario asks for a bearer client
 (`X-Client: bearer`, see `docs/MOBILE_API.md`) so Turnstile — a browser gate —
-is not in the way. If login still returns `requiresTwoFactor` /
-`requiresTwoFactorSetup` / `requiresPasswordChange`, it logs once and runs
-read-only without a token; the `401`s it then gets are expected. **It never
-fabricates a token.** The scheduled workflow skips this job and says so when the
-secrets are unset.
+is not in the way.
+
+It measures **authenticated** reads, so every endpoint requires `200` and the run
+fails — it never falls back to the anonymous path. With no credentials, or when
+login returns `requiresTwoFactor` / `requiresTwoFactorSetup` /
+`requiresPasswordChange` and yields no token, `setup()` throws: k6 writes no
+summary and the runner exits `2`. Measuring anonymous `401`s and calling them
+authenticated reads is exactly the false green this policy exists to prevent;
+use `public-smoke.js` for the anonymous path. **It never fabricates a token.**
+The scheduled workflow skips the authenticated job — and says so — when the
+secrets are unset; that skip is not a pass.
+
+## The load profile and shared targets
+
+The `load` profile (ten VUs, staged) is only for a stack you own. Pointing it at
+shared staging consumes the staging VM's request budget and disrupts other users
+on it, so the runner refuses a non-`smoke` profile against a known shared host
+(`staging.cipansor.or.id`) unless you pass `--allow-shared-target`. A manual
+workflow dispatch exposes the same switch as the `allow_shared_target` input,
+off by default.

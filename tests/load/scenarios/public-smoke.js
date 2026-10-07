@@ -5,7 +5,9 @@
  * handful of iterations, and it never writes. It exercises the routes that
  * are reachable without a session:
  *
- *   /healthz                      nginx -> API GET /health (no auth, not rate limited)
+ *   /health     the API's health route. The deployed hosts reach it at `/healthz`
+ *               through nginx; the API does not serve `/healthz` itself, so the
+ *               local stack (no nginx) needs the direct path. See HEALTH_PATH.
  *   /api/auth/me                  protected — 401 without a session is the correct answer
  *   /api/dashboard/quick-stats    protected — 401 without a session
  *   /api/students                 protected — 401 without a session
@@ -47,7 +49,7 @@ export const options = {
 };
 
 const ENDPOINTS = [
-  { name: 'healthz', path: '/healthz', expect: [200] },
+  { name: 'health', path: '/health', expect: [200] },
   { name: 'auth-me', path: '/api/auth/me', expect: [200, 401] },
   { name: 'dashboard-quick-stats', path: '/api/dashboard/quick-stats', expect: [200, 401] },
   { name: 'students', path: '/api/students?page=1&limit=10', expect: [200, 401] },
@@ -59,9 +61,13 @@ export default function () {
       tags: { name: endpoint.name },
       headers: { Accept: 'application/json' },
     });
-    if (res.status === 429) rateLimited.add(1);
-    else expectedDuration.add(res.timings.duration);
     const ok = endpoint.expect.includes(res.status);
+    if (res.status === 429) rateLimited.add(1);
+    // Only an expected response's latency is comparable to the baseline: an
+    // unexpected status (a 404, a 500) can be faster or slower for reasons that
+    // have nothing to do with the app's real latency, so mixing it in skews the
+    // percentile the thresholds and the comparison read.
+    else if (ok) expectedDuration.add(res.timings.duration);
     if (ok) expectedResponses.add(1);
     else unexpectedResponses.add(1);
     check(res, {
