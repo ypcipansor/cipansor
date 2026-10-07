@@ -41,6 +41,9 @@ enforced, not just conventions.
 | `invalid` | Not a valid report |
 | `wontfix` | Deliberately not going to be done |
 | `bug-hunter` | Provenance: found by the Bug hunter automation |
+| `automation-health` | Fleet-health report from the watchdog; needs a maintainer |
+| `automation` | Report or action from an automation; skip in manual triage |
+| `watchdog-repair` | A repair from the watchdog, for SDLC 28 to verify |
 
 ## The rules
 
@@ -88,6 +91,8 @@ enforced, not just conventions.
 | `SDLC 24 · Standard scout` | weekly cron | opens an issue with a type, a priority, `pending-maintainer` |
 | `SDLC 25 · Issue steward` | daily cron | `stale`, and closes idle issues `not planned` |
 | `SDLC 26 · Discussion` | comment on `pending-maintainer` / `needs-info` | `ready`, `wontfix`, `needs-info` |
+| `SDLC 27 · Fleet watchdog` | daily cron | `automation-health` on its reports; `watchdog-repair` on a fix |
+| `SDLC 28 · Watchdog auto-repair` | `watchdog-repair` PR opened | none — verifies or requests changes |
 
 The deterministic consequences are GitHub Actions workflows
 (`issue-label-sync.yml`, `pr-lifecycle.yml`, `duplicate-sweep.yml`), not
