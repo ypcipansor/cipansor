@@ -1,0 +1,84 @@
+# Scheduled key-metrics watch.
+#
+# Reads the metrics reachable from this runner (GitHub Actions — the deploy
+# platform), compares them against a rolling baseline, writes the report to the
+# job summary, and opens/updates one issue when there is an anomaly. Metrics it
+# cannot read (the app's own tables, Azure Log Analytics) are named in the
+# report as unavailable and never alerted on — a monitor that hears nothing is
+# not a pass (issue #674).
+#
+# The GitHub token here is the runner's own, so the app's database and Azure
+# log source stay out of reach by design; the report says so on every run.
+
+name: Metrics Watch
+
+on:
+  schedule:
+    # Every 6 hours. The baseline is a rolling window of the last 100 runs, so
+    # a denser schedule only re-reads the same window.
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: metrics-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Watch key metrics
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read metrics and detect anomalies
+        id: metrics
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set +e
+          node scripts/metrics-watch.mjs | tee report.md
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error title=Metrics watch could not run::The watch exited $code — a metric it could not read, not a silent pass."
+            exit "$code"
+          fi
+          count=$(sed -n 's/^ANOMALY_COUNT=//p' report.md | tail -1)
+          echo "count=${count:-0}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to the job summary
+        if: always()
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Open or update an anomaly ticket
+        if: steps.metrics.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COUNT: ${{ steps.metrics.outputs.count }}
+        run: |
+          title="Key metrics watch: anomaly detected"
+          body=$(cat <<EOF
+          The scheduled key-metrics watch detected **$COUNT** anomaly(ies) against the rolling baseline.
+
+          $(cat report.md)
+
+          ---
+
+          _This issue was opened by an AI agent (OpenHands) on behalf of the repository automation. It records metrics read from the GitHub Actions API; unavailable metrics are listed in the report and were not alerted on._
+          EOF
+          )
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
+          fi
