@@ -39,11 +39,22 @@ pinned in two places, and a change to one without the other is what
 2. the same string in the guard test, replayed against real #680 comment
    bodies (`apps/api/src/utils/__fixtures__/needs-info-automation-comments.json`)
 
+### The guard must still be wired into the back-end filter
+
+Merging this repo change alone does not stop a running loop: nothing in this
+repository invokes `automation-loop-guard.py`. The re-check is triggered by the
+OpenHands events automation, whose definition lives outside git. Whoever owns
+that backend must update its `trigger.filter` to reject a comment carrying a
+disclosure footer (minimal form:
+`!icontains(comment.body, 'AI agent (OpenHands)')`) and deploy it together
+with this guard. Verification: a live self-comment on a `needs-info` issue must
+not schedule another run. This is the one step this repository cannot do for
+itself.
+
 ### The footer's wording is not stable
 
 The automation does not reproduce the canonical footer exactly. On #680 it
 ended its own comments with **three** wordings:
-
 - `created … on behalf of the repository maintainers.` (canonical)
 - `generated … on behalf of the repository maintainers.`
 - `created … on behalf of the repository owner.`
