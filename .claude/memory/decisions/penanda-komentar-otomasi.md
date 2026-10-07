@@ -55,6 +55,7 @@ itself.
 
 The automation does not reproduce the canonical footer exactly. On #680 it
 ended its own comments with **three** wordings:
+
 - `created … on behalf of the repository maintainers.` (canonical)
 - `generated … on behalf of the repository maintainers.`
 - `created … on behalf of the repository owner.`

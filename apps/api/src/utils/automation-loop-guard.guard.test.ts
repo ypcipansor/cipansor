@@ -48,7 +48,7 @@ interface Fixture {
 function decide(needsInfo: boolean, comment: Comment): string {
   const payload = JSON.stringify({
     action: 'created',
-    issue: { number: 678, labels: needsInfo ? [{ name: 'needs-info' }] : [{ name: 'chore' }] },
+    issue: { number: 680, labels: needsInfo ? [{ name: 'needs-info' }] : [{ name: 'chore' }] },
     comment,
   });
   return execFileSync('python3', [SCRIPT, 'decide', '-'], {
