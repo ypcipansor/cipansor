@@ -181,7 +181,7 @@ flowchart TD
 | 08:15 Mon | SDLC 10 · Coverage expander | test gaps → PR |
 | 03:00 1st | SDLC 12 · Load tester | k6 vs staging → regression |
 
-Scheduled Actions: `duplicate-sweep` (daily, closes a duplicate 7 days after the
+Scheduled Actions: `duplicate-sweep` (daily, closes a duplicate issue or PR 7 days after the
 warning) and `load-tests.yml` (daily 18:00 UTC = 01:00 WIB).
 
 ## Why it is shaped this way

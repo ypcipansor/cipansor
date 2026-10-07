@@ -37,26 +37,29 @@ case "$1" in
         [ "\${GH_STUB_CLOSING_FAIL:-}" = "1" ] && { echo "gh: graphql unavailable" >&2; exit 1; }
         printf '%s\\n' "\${GH_STUB_CLOSING:-}" ;;
       *check-runs*) log "CHECKRUN $*" ;;
-      *"issues/7/comments"*) log "API $*"; printf '%s\\n' "\${GH_STUB_COMMENTS:-}" ;;
+      *"/comments"*) log "API $*"; printf '%s\\n' "\${GH_STUB_COMMENTS:-}" ;;
     esac ;;
   issue)
     case "$2" in
-      list) printf '%s\\n' "\${GH_STUB_ISSUE_LIST:-}" ;;
+      list) log "API $*"; printf '%s\\n' "\${GH_STUB_ISSUE_LIST:-}" ;;
       view) case "$*" in
           *"--json body"*) printf '%s\\n' "\${GH_STUB_BODY:-}" ;;
           *) eval "printf '%s\\n' \\"\\\${GH_STUB_ISSUE_LABELS_$3:-}\\"" ;;
         esac ;;
       comment) log "COMMENT $*" ;;
-      close) log "CLOSE $3" ;;
+      close) log "CLOSE $3"; log "CMD $*" ;;
     esac ;;
   pr)
     case "$2" in
       view) case "$*" in
           *"--json headRefOid"*) printf '%s\\n' "\${GH_STUB_PR_HEAD:-deadbeef}" ;;
+          *"--json body"*) printf '%s\\n' "\${GH_STUB_PR_BODY:-}" ;;
           *) printf '%s\\n' "\${GH_STUB_PR_LABELS:-}" ;;
         esac ;;
       edit) log "EDIT $*" ;;
-      list) printf '%s\\n' "\${GH_STUB_PRS:-}" ;;
+      comment) log "COMMENT $*" ;;
+      close) log "CLOSE $3"; log "CMD $*" ;;
+      list) log "API $*"; printf '%s\\n' "\${GH_STUB_PRS:-}" ;;
     esac ;;
 esac
 exit 0
@@ -165,6 +168,40 @@ describe('duplicate-sweep.sh', () => {
     });
     expect(calls).toContain('API');
     expect(calls).toContain('--paginate');
+  });
+
+  it('sweeps pull requests labelled duplicate-pr too', () => {
+    const { calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '',
+      GH_STUB_PRS: '9',
+      GH_STUB_PR_BODY: BODY,
+    });
+    // maintenance: a PR list was queried under the duplicate-pr label
+    expect(calls).toContain('--label duplicate-pr');
+    expect(calls).toContain('pr comment 9');
+  });
+
+  it('closes a stale duplicate pull request with pr close, not issue close', () => {
+    const { calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '',
+      GH_STUB_PRS: '9',
+      GH_STUB_COMMENTS: warningLine,
+      GH_STUB_PR_BODY: BODY,
+    });
+    expect(calls).toContain('CLOSE 9');
+    expect(calls).toContain('CMD pr close 9');
+    expect(calls).not.toContain('issue close 9');
+  });
+
+  it('keeps a duplicate PR open when its description was edited', () => {
+    const { out, calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '',
+      GH_STUB_PRS: '9',
+      GH_STUB_COMMENTS: warningLine,
+      GH_STUB_PR_BODY: 'a link to the distinct fix was added',
+    });
+    expect(calls).not.toContain('CLOSE 9');
+    expect(out).toContain('edited after the warning');
   });
 });
 

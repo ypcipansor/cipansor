@@ -1,13 +1,14 @@
-# A duplicate issue gets one warning, then closes if the reporter does not show
-# it is not a duplicate within seven days.
+# A duplicate issue or pull request gets one warning, then closes if the author
+# does not show it is not a duplicate within seven days.
 #
-# "Show it is not a duplicate" means: the issue was edited, or the reporter
-# replied and a maintainer removed the `duplicate` label. If neither happens,
-# the issue closes as `not planned`. Removing the label at any point cancels the
-# close, because the script re-reads the label on every run.
+# "Show it is not a duplicate" means: the description was edited, or the author
+# replied and a maintainer removed the label. If neither happens, the item
+# closes. Removing the label at any point cancels the close, because the script
+# re-reads the label on every run.
 #
-# The triage automation applies `duplicate` and links the original. This only
-# enforces the consequence.
+# Issues are labelled `duplicate`; PRs are labelled `duplicate-pr` (a PR must
+# never carry the issue-lifecycle `duplicate` label). The triage automation
+# applies the label and links the original. This only enforces the consequence.
 name: Duplicate sweep
 
 on:
@@ -18,6 +19,7 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: write
 
 concurrency:
   group: duplicate-sweep
@@ -33,7 +35,7 @@ jobs:
         with:
           sparse-checkout: .github/scripts
           persist-credentials: false
-      - name: Warn and close stale duplicates
+      - name: Warn and close stale duplicates (issues and PRs)
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

@@ -37,7 +37,8 @@ enforced, not just conventions.
 | `blocked` | Cannot proceed until a dependency is resolved |
 | `stale` | No activity for a long time; will close unless kept |
 | `question` | A question, not a change request |
-| `duplicate` | Already reported elsewhere; the original is linked |
+| `duplicate` | An issue already reported elsewhere; the original is linked |
+| `duplicate-pr` | A pull request already covered by another PR or issue; closed like a duplicate after the warning |
 | `invalid` | Not a valid report |
 | `wontfix` | Deliberately not going to be done |
 | `bug-hunter` | Provenance: found by the Bug hunter automation |
@@ -60,19 +61,24 @@ enforced, not just conventions.
 2. **Status labels are not copied to a pull request.** `question`, `needs-info`,
    `duplicate`, `invalid`, `wontfix`, `blocked`, `ready` and `in-progress`
    describe an issue's own lifecycle. A PR's lifecycle is its draft state and
-   its reviews.
+   its reviews. The one exception is `duplicate-pr`, which exists *for* a PR:
+   the issue-lifecycle `duplicate` label must never sit on a PR, so a duplicate
+   pull request is marked with `duplicate-pr` and swept the same way as a
+   duplicate issue (rule 4).
 
 3. **`ready` is the gate for implementation.** `SDLC 07 · Ticket to PR` only
    runs on an issue labelled `ready`. `SDLC 19 · Issue labeller` applies `ready`
    only when the issue has a clear goal and a concrete acceptance criterion;
    otherwise it applies `needs-info` and lists what is missing.
 
-4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` and links the
-   original. The `Duplicate sweep` workflow warns once — recording a hash of the
-   issue body — then closes the issue as *not planned* after seven days unless
-   it is shown to be distinct: the body changed since the warning, or a person
+4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` to an issue and
+   links the original; the same detection on a pull request applies
+   `duplicate-pr`. The `Duplicate sweep` workflow warns each once — recording a
+   hash of the description — then closes it after seven days unless it is shown
+   to be distinct: the description changed since the warning, or a person
    replied — or a maintainer removes the label. An automated comment, and any
-   comment from a bot account, does not count as a reply.
+   comment from a bot account, does not count as a reply. A duplicate PR is
+   closed without merging.
 
 5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
    ready PR back to draft when any required check is failing or a reviewer
@@ -100,7 +106,7 @@ enforced, not just conventions.
 |---|---|---|
 | `SDLC 19 · Issue labeller` | issue opened | type, priority, `ready` / `needs-info` / `question` / `duplicate` |
 | `SDLC 20 · Issue clarifier` | comment on a `needs-info` issue | `needs-info` ↔ `ready`, `duplicate`, `invalid` |
-| `SDLC 21 · PR labeller` | PR opened | the linked issue's type and priority |
+| `SDLC 21 · PR labeller` | PR opened | the linked issue's type and priority, or `duplicate-pr` |
 | `SDLC 22 · PR review gate` | PR ready for review | none — it reviews, drafts, or approves |
 | `SDLC 23 · Bug hunter` | daily cron | opens an issue with `bug`, a priority, `bug-hunter` |
 | `SDLC 24 · Standard scout` | weekly cron | opens an issue with a type, a priority, `pending-maintainer` |
