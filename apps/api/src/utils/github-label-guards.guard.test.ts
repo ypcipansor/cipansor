@@ -38,7 +38,7 @@ case "$1" in
           *updatedAt*) printf '%s\\n' "\${GH_STUB_UPDATED:-}" ;;
           *) eval "printf '%s\\n' \\"\\\${GH_STUB_ISSUE_LABELS_$3:-}\\"" ;;
         esac ;;
-      comment) log "COMMENT $3" ;;
+      comment) log "COMMENT $*" ;;
       close) log "CLOSE $3" ;;
     esac ;;
   pr)
@@ -121,6 +121,17 @@ describe('duplicate-sweep.sh', () => {
       GH_STUB_UPDATED: '2020-01-02T00:00:00Z',
     });
     expect(calls).toContain('CLOSE 7');
+  });
+
+  it('puts the AI-disclosure footer on the comments it posts', () => {
+    // The warning is a fresh issue, so only the warning comment is posted.
+    const { calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '7',
+      GH_STUB_COMMENTS: '',
+      GH_STUB_UPDATED: WARNED,
+    });
+    expect(calls).toContain('COMMENT');
+    expect(calls).toContain(AI);
   });
 });
 

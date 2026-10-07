@@ -21,8 +21,11 @@ REPO="${REPO:?REPO is required}"
 GRACE_DAYS="${GRACE_DAYS:-7}"
 MARK="<!-- duplicate-sweep:warned -->"
 # Comments that carry this footer are automated and must not count as a human
-# reply - otherwise one bot comment exempts a duplicate forever.
+# reply - otherwise one bot comment exempts a duplicate forever. The sweep's own
+# comments must carry it too, or a comment-triggered automation cannot tell them
+# from a reporter's (docs/LABELS.md, the #680 loop guard).
 AI_DISCLOSURE="This comment was created by an AI agent"
+AI_FOOTER="$AI_DISCLOSURE (OpenHands) on behalf of the repository maintainers."
 
 NOW=$(date -u +%s)
 ISSUES=$(gh issue list --repo "$REPO" --state open --label duplicate --limit 200 --json number --jq '.[].number')
@@ -37,7 +40,9 @@ for n in $ISSUES; do
   if [ -z "$WARNED_AT" ]; then
     gh issue comment "$n" --repo "$REPO" --body "This looks like a **duplicate** of an issue already open or closed. It will be closed automatically in $GRACE_DAYS days unless it is shown to be distinct — edit the issue, or reply with why it is not a duplicate.
 
-If a maintainer agrees it is distinct, removing the \`duplicate\` label cancels the close. $MARK"
+If a maintainer agrees it is distinct, removing the \`duplicate\` label cancels the close. $MARK
+
+$AI_FOOTER"
     echo "Warned on #$n."
     continue
   fi
@@ -71,6 +76,8 @@ If a maintainer agrees it is distinct, removing the \`duplicate\` label cancels 
   fi
 
   gh issue close "$n" --reason "not planned" \
-    --comment "Closing as a duplicate: no response in $GRACE_DAYS days. Reopen if it is in fact distinct. $MARK"
+    --comment "Closing as a duplicate: no response in $GRACE_DAYS days. Reopen if it is in fact distinct. $MARK
+
+$AI_FOOTER"
   echo "Closed #$n as a stale duplicate."
 done
