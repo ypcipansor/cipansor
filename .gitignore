@@ -139,3 +139,7 @@ apps/api/private/
 # Bytecode dari helper hook — dibuat saat hook mengimpornya, bukan sumber.
 __pycache__/
 *.pyc
+
+# Load-test artifacts — regenerated on every run; only baseline.json is tracked.
+tests/load/summary.json
+tests/load/comparison.json

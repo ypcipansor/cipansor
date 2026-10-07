@@ -1,0 +1,160 @@
+# Scheduled load smoke against STAGING. Never production.
+#
+# A small, courteous read-only load (3 VUs, 30s) signs in as seeded non-2FA
+# demo accounts and reads three endpoints every role may read, then compares
+# p50/p95/p99 and error rate against tests/load/baseline.json.
+#
+# Clean run: the fresh summary replaces the baseline and is proposed as a PR
+# (main is protected), so the next scheduled run compares against today — the
+# "last recorded baseline" the task asks for.
+#
+# Regression: an issue is opened with the numbers and the baseline it compared
+# to. A regression never *fails* the workflow: the shared single-instance App
+# Service moves on noise, and opening the issue is the output the team wants.
+# Only a broken run (staging unreachable, a login that cannot start a session,
+# k6 itself failing) fails the job.
+#
+# Staging holds demo data only, sends no real e-mail/SMS/WhatsApp and its
+# Turnstile is off, so the API login needs no captcha. The demo accounts and
+# the shared DEMO_PASSWORD live in packages/shared/src/types/demo-accounts.ts;
+# lib/resolve-accounts.mjs reads them from the checkout — no credential is
+# stored in this workflow.
+
+name: Load Tests
+
+on:
+  schedule:
+    # Daily, 18:00 UTC (01:00 WIB) — a quiet hour for the demo instance.
+    - cron: "0 18 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+concurrency:
+  group: load-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: write # commit the new baseline on a clean run
+  issues: write # open a regression issue
+  actions: read
+
+env:
+  STAGING_URL: https://staging.cipansor.or.id
+  K6_VERSION: v0.49.0
+
+jobs:
+  load:
+    name: Load smoke vs staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install k6
+        run: |
+          curl -fsSL "https://github.com/grafana/k6/releases/download/${K6_VERSION}/k6-${K6_VERSION}-linux-amd64.tar.gz" \
+            | tar -xz
+          sudo mv "k6-${K6_VERSION}-linux-amd64/k6" /usr/local/bin/k6
+          k6 version
+
+      - name: Resolve demo accounts from the checkout
+        run: node tests/load/lib/resolve-accounts.mjs > "$RUNNER_TEMP/accounts.json"
+
+      - name: Run load smoke against staging
+        run: |
+          k6 run tests/load/k6/api-smoke.js \
+            -e BASE_URL="$STAGING_URL" \
+            -e ACCOUNTS_FILE="$RUNNER_TEMP/accounts.json" \
+            -e VUS=3 -e DURATION=30s -e SLEEP_SECONDS=2
+
+      - name: Compare against the recorded baseline
+        id: compare
+        # `--update` writes baseline.json and exits 0 only when the run is
+        # clean; a regression exits 1 and leaves the baseline untouched.
+        continue-on-error: true
+        run: node tests/load/lib/compare.mjs --update
+
+      - name: Propose the new baseline (clean run only)
+        if: steps.compare.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- tests/load/baseline.json; then
+            echo "baseline unchanged"
+            exit 0
+          fi
+          # main is protected, so the baseline never lands by a direct push.
+          # A clean run proposes it as a PR the same way any other change does.
+          branch="load-baseline/$(date -u +%Y-%m-%d)"
+          git config user.name "openhands"
+          git config user.email "openhands@all-hands.dev"
+          git checkout -b "$branch"
+          git add tests/load/baseline.json
+          git commit -m "chore(load): record clean staging baseline [skip ci]"
+          git push -u origin "$branch"
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "chore(load): record clean staging baseline ($(date -u +%Y-%m-%d))" \
+            --body "$(printf '%s\n' \
+              "A scheduled load smoke against staging was clean; this records the fresh run as the new baseline." \
+              "" \
+              "The numbers are in the Load Tests run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              "" \
+              "_Opened by the scheduled Load Tests workflow._")"
+
+      - name: Upload the run's numbers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-summary
+          path: |
+            tests/load/summary.json
+            tests/load/comparison.json
+          if-no-files-found: warn
+
+      - name: Open a regression issue
+        if: steps.compare.outcome == 'failure' && hashFiles('tests/load/comparison.json') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          base_at=$(jq -r '.baselineRecordedAt // "none"' tests/load/comparison.json)
+          {
+            echo "A scheduled load smoke against \`$STAGING_URL\` regressed against the recorded baseline."
+            echo
+            echo "Run: $run_url"
+            echo "Baseline recorded: \`$base_at\` ($(jq -r '.baselineRecordedAt // "none"' tests/load/comparison.json))"
+            echo
+            echo "### Current vs baseline"
+            echo '```'
+            jq -r '
+              .baseline as $b | .current as $c |
+              def f(v): if v == null then "—" else ((v|round|tostring) + "ms") end;
+              "p50    baseline=\(f($b.p50))  current=\(f($c.p50))",
+              "p95    baseline=\(f($b.p95))  current=\(f($c.p95))",
+              "p99    baseline=\(f($b.p99))  current=\(f($c.p99))",
+              "error  baseline=\(($b.errorRate*100)|floor)%  current=\(($c.errorRate*100)|floor)%"
+            ' tests/load/comparison.json
+            echo '```'
+            echo
+            echo "### Regressions"
+            jq -r '.regressions[] | "- \(.)"' tests/load/comparison.json
+            echo
+            echo "_Opened by the scheduled Load Tests workflow._"
+          } > "$RUNNER_TEMP/issue.md"
+          gh issue create \
+            --title "Load regression on staging ($(date -u +%Y-%m-%d))" \
+            --label "load-test" \
+            --body-file "$RUNNER_TEMP/issue.md"
+
+      - name: Fail the job when the run itself broke
+        if: steps.compare.outcome == 'failure' && hashFiles('tests/load/comparison.json') == ''
+        run: |
+          echo "::error::The load smoke produced no comparison — staging was likely unreachable or a login failed."
+          exit 1
