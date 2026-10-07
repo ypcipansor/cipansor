@@ -79,6 +79,13 @@ enforced, not just conventions.
    match the linked issue, and it found no correctness problem in the diff. It
    never merges.
 
+7. **A review proposes the fix, it does not only complain.** `SDLC 05` and
+   `SDLC 09`, and `SDLC 22` when it sends a PR back, post each local, mechanical
+   problem as a GitHub `suggestion` block so the author can apply it in one
+   click, and describe the proposed change in words for a problem too large for
+   a block. A suggestion is never placed on a line the automation is not certain
+   of. This is the same "suggest a change" affordance Copilot's review uses.
+
 ## Which automation owns which label
 
 | Automation | Trigger | Labels it sets |
