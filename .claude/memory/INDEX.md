@@ -49,7 +49,7 @@ the mechanical cases.
 
 ## Lessons — traps that already cost time
 
-- [automation-self-trigger-loop](lessons/automation-self-trigger-loop.md) — an event automation whose own comment satisfies its trigger re-arms itself (the `needs-info` re-check ran 6 LLM runs on one fixture); exclude a bot account, the AI footer, or fire on `issues.labeled` instead; the trigger lives in the OpenHands backend, not in this repo
+- [automation-self-trigger-loop](lessons/automation-self-trigger-loop.md) — an event automation whose own comment satisfies its trigger re-arms itself (one fixture ran 6 LLM runs); add a *monotonic* exclusion — a bot account or the AI footer, never a label-presence test — and pin it to the real footer, not a paraphrase; the trigger lives in the OpenHands backend, not in this repo
 - [guard-tests-that-measure-the-wrong-thing](lessons/guard-tests-that-measure-the-wrong-thing.md) — "what would have to change for this test to go red?"; chains with no root; fuzz against invariants; a test that skips itself; a scanner blind to the defect's shape; a suite that signs in as someone who cannot be refused; an absence assertion that retries until the thing goes away
 - [teacher-dashboard-fake-stats](lessons/teacher-dashboard-fake-stats.md) — four kinds of figures that lie, and how to find each
 - [breadth-over-depth](lessons/breadth-over-depth.md) — built wider than used; walk a real journey end to end
