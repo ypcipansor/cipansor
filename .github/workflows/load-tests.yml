@@ -1,0 +1,144 @@
+# Load Tests
+# Run the k6 smoke load test on a schedule against staging and compare it to
+# the recorded baseline in tests/load/baselines/. Thresholds are relative to
+# that baseline, never absolute (see tests/load/README.md).
+#
+# This workflow is NOT part of CI: it needs a reachable target and a recorded
+# baseline, and it does not gate a merge. It runs weekly and on demand.
+#
+# Runner exit codes (tests/load/run-load-tests.mjs):
+#   0 = no regression   1 = regression found   2 = could not run
+# A regression (1) fails the job. So does "could not run" (2): a scheduled load
+# test that stays green while it never actually measured anything is worse than
+# a red one. Both are explained in the job summary.
+
+name: Load Tests
+
+on:
+  schedule:
+    # Mondays 02:00 UTC — a quiet hour for the shared staging VM.
+    - cron: '0 2 * * 1'
+  workflow_dispatch: # Allow manual trigger
+    inputs:
+      url:
+        description: 'Target base URL'
+        required: false
+        default: 'https://staging.cipansor.or.id'
+      scenario:
+        description: 'Scenario under tests/load/scenarios/ (without .js)'
+        required: false
+        default: 'public-smoke'
+      profile:
+        description: 'Load profile'
+        required: false
+        default: 'smoke'
+        type: choice
+        options: [smoke, load]
+
+# One load test at a time; a scheduled run and a manual run must not overlap
+# and both measure the same shared target.
+concurrency:
+  group: load-tests
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  LOAD_TEST_URL: ${{ github.event.inputs.url || 'https://staging.cipansor.or.id' }}
+  LOAD_TEST_SCENARIO: ${{ github.event.inputs.scenario || 'public-smoke' }}
+  LOAD_TEST_PROFILE: ${{ github.event.inputs.profile || 'smoke' }}
+
+jobs:
+  smoke:
+    name: k6 ${{ github.event.inputs.scenario || 'public-smoke' }} vs baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run load test
+        id: load
+        # Capture the runner's exit code without failing the step, so the
+        # report and the summary are produced before the job is judged.
+        run: |
+          set +e
+          node tests/load/run-load-tests.mjs \
+            --url "$LOAD_TEST_URL" \
+            --scenario "$LOAD_TEST_SCENARIO" \
+            --profile "$LOAD_TEST_PROFILE" \
+            --report load-report.json | tee load-output.txt
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "### Load test: \`$LOAD_TEST_SCENARIO\` (\`$LOAD_TEST_PROFILE\`) against $LOAD_TEST_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat load-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Runner exit code: \`$code\`" >> "$GITHUB_STEP_SUMMARY"
+          case "$code" in
+            0) echo "No regression against the baseline." >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "Regression(s) against the baseline — see above." >> "$GITHUB_STEP_SUMMARY" ;;
+            2) echo "Could not run (missing access, k6 error, or a rate-limited run). Nothing was compared." >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit 0
+
+      - name: Upload load-test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: load-report
+          path: load-report.json
+          if-no-files-found: warn
+
+      - name: Judge the run
+        # 0 passes; 1 (regression) and 2 (could not run) both fail, with the
+        # reason from the summary. Exit 2 is not silently green: a scheduled
+        # test that never measured anything must be seen.
+        run: |
+          code="${{ steps.load.outputs.exit_code }}"
+          case "$code" in
+            0) echo "No regression."; exit 0 ;;
+            1) echo "::error::Load-test regression against the recorded baseline."; exit 1 ;;
+            2) echo "::error::Load test could not run (missing access, k6 error, or rate limited). Nothing was compared."; exit 1 ;;
+            *) echo "::error::Unexpected load-test exit code $code."; exit 1 ;;
+          esac
+
+  authenticated:
+    name: k6 authenticated-read (optional)
+    runs-on: ubuntu-latest
+    # Credentials are optional. Without them this job reports that it was
+    # skipped rather than fabricating a result.
+    env:
+      LOAD_TEST_EMAIL: ${{ secrets.LOAD_TEST_EMAIL }}
+      LOAD_TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install k6
+        if: ${{ env.LOAD_TEST_EMAIL != '' }}
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run authenticated read load test
+        if: ${{ env.LOAD_TEST_EMAIL != '' }}
+        run: |
+          node tests/load/run-load-tests.mjs \
+            --url "$LOAD_TEST_URL" \
+            --scenario authenticated-read \
+            --profile smoke
+
+      - name: No credentials configured
+        if: ${{ env.LOAD_TEST_EMAIL == '' }}
+        run: |
+          echo "### Authenticated load test skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "Set the \`LOAD_TEST_EMAIL\` and \`LOAD_TEST_PASSWORD\` repository secrets (a demo account on the target) to run it." >> "$GITHUB_STEP_SUMMARY"
