@@ -36,7 +36,8 @@ case "$1" in
       *graphql*)
         [ "\${GH_STUB_CLOSING_FAIL:-}" = "1" ] && { echo "gh: graphql unavailable" >&2; exit 1; }
         printf '%s\\n' "\${GH_STUB_CLOSING:-}" ;;
-      *"issues/7/comments"*) printf '%s\\n' "\${GH_STUB_COMMENTS:-}" ;;
+      *check-runs*) log "CHECKRUN $*" ;;
+      *"issues/7/comments"*) log "API $*"; printf '%s\\n' "\${GH_STUB_COMMENTS:-}" ;;
     esac ;;
   issue)
     case "$2" in
@@ -50,7 +51,10 @@ case "$1" in
     esac ;;
   pr)
     case "$2" in
-      view) printf '%s\\n' "\${GH_STUB_PR_LABELS:-}" ;;
+      view) case "$*" in
+          *"--json headRefOid"*) printf '%s\\n' "\${GH_STUB_PR_HEAD:-deadbeef}" ;;
+          *) printf '%s\\n' "\${GH_STUB_PR_LABELS:-}" ;;
+        esac ;;
       edit) log "EDIT $*" ;;
       list) printf '%s\\n' "\${GH_STUB_PRS:-}" ;;
     esac ;;
@@ -152,6 +156,16 @@ describe('duplicate-sweep.sh', () => {
     expect(calls).toContain(AI);
     expect(calls).toContain(`duplicate-sweep:hash:${sha(BODY)}`);
   });
+
+  it('paginates the comment list so a later reply is seen', () => {
+    const { calls } = run(SWEEP, {
+      GH_STUB_ISSUE_LIST: '7',
+      GH_STUB_COMMENTS: warningLine,
+      GH_STUB_BODY: BODY,
+    });
+    expect(calls).toContain('API');
+    expect(calls).toContain('--paginate');
+  });
 });
 
 describe('issue-label-sync.sh', () => {
@@ -223,5 +237,71 @@ describe('issue-label-sync.sh', () => {
       ['--issue', '3']
     );
     expect(status).toBe(0);
+  });
+
+  it('publishes one check run against the PR head, not the default branch', () => {
+    const { calls } = run(
+      SYNC,
+      {
+        GH_STUB_PRS: '7',
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_HEAD: 'sha7',
+        GH_STUB_PR_LABELS: 'bug\npriority:high',
+        GH_STUB_ISSUE_LABELS_3: 'bug\npriority:high',
+      },
+      ['--issue', '3']
+    );
+    expect(calls).toContain('CHECKRUN');
+    expect(calls).toContain('head_sha=sha7');
+    expect(calls).toContain('conclusion=success');
+  });
+
+  it('publishes a failing check run on the PR head when the relabel breaks sync', () => {
+    const { status, calls } = run(
+      SYNC,
+      {
+        GH_STUB_PRS: '7',
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_HEAD: 'sha7',
+        GH_STUB_PR_LABELS: 'bug\npriority:high',
+        GH_STUB_ISSUE_LABELS_3: 'enhancement\npriority:high',
+      },
+      ['--issue', '3']
+    );
+    expect(status).toBe(1);
+    expect(calls).toContain('head_sha=sha7');
+    expect(calls).toContain('conclusion=failure');
+  });
+
+  it('corrects a stale priority with a single edit', () => {
+    const { calls } = run(
+      SYNC,
+      {
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_LABELS: 'bug\npriority:low',
+        GH_STUB_ISSUE_LABELS_3: 'bug\npriority:high',
+      },
+      ['7']
+    );
+    const edits = calls.split('\n').filter((l) => l.startsWith('EDIT'));
+    expect(edits).toHaveLength(1);
+    expect(edits[0]).toContain('--add-label priority:high');
+    expect(edits[0]).toContain('--remove-label priority:low');
+  });
+
+  it('does not edit a fork PR whose token is read-only', () => {
+    const { status, out, calls } = run(
+      SYNC,
+      {
+        READ_ONLY: '1',
+        GH_STUB_CLOSING: '3',
+        GH_STUB_PR_LABELS: 'bug\npriority:low',
+        GH_STUB_ISSUE_LABELS_3: 'bug\npriority:high',
+      },
+      ['7']
+    );
+    expect(status).toBe(0);
+    expect(calls).not.toContain('EDIT');
+    expect(out).toContain('fork');
   });
 });

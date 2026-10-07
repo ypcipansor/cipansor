@@ -109,6 +109,11 @@ const paginatedRed =
   page(REQUIRED.filter((n) => n !== 'Tests').map((n, i) => cr(n, 'success', i + 1))) +
   '\n' +
   page([cr('Tests', 'failure', 999)]);
+// Every required check green, but an advisory workflow's check failed.
+const advisoryRed = page([
+  ...REQUIRED.map((n, i) => cr(n, 'success', i + 1)),
+  cr('PR template reminder', 'failure', 888),
+]);
 
 describe('pr-lifecycle.sh', () => {
   it('sees a failing check on the second page and drafts a ready PR', () => {
@@ -155,5 +160,50 @@ describe('pr-lifecycle.sh', () => {
       GH_STUB_CHECKS: paginatedRed,
     });
     expect(calls).not.toContain('READY');
+  });
+
+  it('does not draft a ready PR for a failed advisory check', () => {
+    const { calls, out } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: advisoryRed,
+    });
+    expect(calls).not.toContain('READY');
+    expect(out).toContain('Ignoring non-gate check');
+  });
+
+  it('carries the AI-disclosure footer on a red lifecycle comment', () => {
+    const { calls } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: paginatedRed,
+      GH_STUB_COMMENTS_LIST: '[]',
+    });
+    expect(calls).toContain('This comment was created by an AI agent');
+  });
+
+  it('carries the AI-disclosure footer on a changes-requested comment', () => {
+    const { calls } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_REVIEW: 'CHANGES_REQUESTED',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: allGreen,
+      GH_STUB_COMMENTS_LIST: '[]',
+    });
+    expect(calls).toContain('This comment was created by an AI agent');
+  });
+
+  it('carries the AI-disclosure footer on the all-green notice', () => {
+    const { calls } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'true',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: allGreen,
+      GH_STUB_COMMENTS_LIST: '[]',
+    });
+    expect(calls).toContain('This comment was created by an AI agent');
   });
 });

@@ -24,6 +24,12 @@ LIFE_MARK="<!-- pr-lifecycle:"
 GREEN_MARK="<!-- pr-lifecycle:green -->"
 CHANGES_MARK="<!-- pr-lifecycle:changes -->"
 
+# Every lifecycle comment carries the AI-disclosure footer. A comment-triggered
+# automation cannot otherwise tell an automated comment from a reporter's, and
+# would treat "CI is red ..." as a fresh human request and re-arm (#680). The
+# footer is also what the duplicate-sweep reply scan looks for.
+AI_FOOTER="_This comment was created by an AI agent (OpenHands) on behalf of the maintainer._"
+
 # The checks that make up the required gate. A green result only counts as
 # "everything passed" when every one of these is present and successful on the
 # tested commit - a subset (E2E has not started, or the API truncated a page)
@@ -92,9 +98,19 @@ CHECK_SHA="${CHECK_SHA:-$SHA}"
 LATEST=$(printf '%s' "$CHECKS_JSON" | jq -r '
   (if type == "array" then . else [] end) | sort_by(.started_at, .id) | group_by(.name) | map(.[-1])[]
   | "\(.name)\t\(.status)\t\(.conclusion // "")"' 2>/dev/null || true)
-# RED: finished with a conclusion that fails the gate.
+# RED is restricted to the gate checks. The check-run API returns every run on
+# the commit, including advisory workflows (the PR-description reminder) and
+# third-party checks. Drafting a PR because an advisory reminder failed would
+# contradict the gate definition above, so only a failed check whose name is one
+# of REQUIRED_CHECKS counts. Matching is exact on the names in REQUIRED_CHECKS.
 RED=$(printf '%s\n' "$LATEST" \
-  | awk -F'\t' '$2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/' || true)
+  | awk -F'\t' -v req="$REQUIRED_CHECKS" '
+      BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      NF && $2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/ && ($1 in want) { print }' || true)
+printf '%s\n' "$LATEST" \
+  | awk -F'\t' -v req="$REQUIRED_CHECKS" '
+      BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      NF && $2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/ && !($1 in want) { print "Ignoring non-gate check \x27" $1 "\x27 when deciding to draft the PR." }' || true
 # PENDING: a latest run still running, or finished with a conclusion this gate
 # does not call green (a cancelled run whose replacement has not appeared yet).
 PENDING=$(printf '%s\n' "$LATEST" \
@@ -149,6 +165,11 @@ known_suites_seen() {
 # state is recognised.
 comment_once() { # comment_once <body> <dedupe-token>
   body="$1"; token="$2"
+  # The footer is appended here, once, so every message carries it and the
+  # dedupe comparison below sees the same text that is posted.
+  body="$body
+
+$AI_FOOTER"
   # The REST comments list gives each comment's numeric database id; the GraphQL
   # node id from `gh pr view --json comments` is rejected by
   # repos/.../issues/comments/{id}, so the GET and PATCH below must use this id.

@@ -39,7 +39,12 @@ for n in $ISSUES; do
   # emitted as three tab-separated fields - created_at, author login, and a
   # one-line body - so the reply scan can tell a person from a bot account
   # without an underscore index (sh lacks one).
-  RAW_COMMENTS=$(gh api "repos/$REPO/issues/$n/comments?per_page=100" \
+  # --paginate so an issue with more than one page of comments is not truncated:
+  # a lone `?per_page=100` omitted a later reply and the sweep closed on top of
+  # it. `gh --paginate` puts a bare newline between pages; the reply scan's
+  # timestamp comparison below drops it (an empty first field is less than any
+  # timestamp), so the separator cannot be read as a reply.
+  RAW_COMMENTS=$(gh api --paginate "repos/$REPO/issues/$n/comments?per_page=100" \
     --jq '.[] | "\(.created_at)\t\(.user.login)\t\(.body | gsub("\n"; " ") | gsub("\t"; " "))"' 2>/dev/null || true)
   COMMENTS=$(printf '%s\n' "$RAW_COMMENTS" | cut -f1,3)
   WARNED_AT=$(printf '%s\n' "$COMMENTS" | grep -F "$MARK" | head -1 | cut -f1 || true)

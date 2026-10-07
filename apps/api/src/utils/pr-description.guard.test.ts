@@ -148,16 +148,29 @@ describe('visual-evidence.sh', () => {
     expect(calls).toContain('COMMENT');
   });
 
-  it('is silent when the body already has an uploaded image', () => {
-    const body = 'After: ![shot](https://user-images.githubusercontent.com/1/2.png)';
+  it('is silent when the body has both a before and an after image', () => {
+    const body =
+      'Before: ![old](https://user-images.githubusercontent.com/1/1.png)\n' +
+      'After: ![new](https://user-images.githubusercontent.com/1/2.png)';
     const { calls } = run(VISUAL, {
       GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], body),
     });
     expect(calls).not.toContain('COMMENT');
   });
 
-  it('removes the reminder once a visual is added', () => {
-    const body = 'Before/after: ![x](https://user-images.githubusercontent.com/1/2.png)';
+  it('still asks when only an after image is present', () => {
+    const body = 'After: ![shot](https://user-images.githubusercontent.com/1/2.png)';
+    const { status, calls } = run(VISUAL, {
+      GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], body),
+    });
+    expect(status).toBe(0);
+    expect(calls).toContain('COMMENT');
+  });
+
+  it('removes the reminder once both visuals are added', () => {
+    const body =
+      'Before: ![old](https://user-images.githubusercontent.com/1/1.png)\n' +
+      'After: ![new](https://user-images.githubusercontent.com/1/2.png)';
     const { calls } = run(VISUAL, {
       GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], body),
       GH_STUB_CID: '42',

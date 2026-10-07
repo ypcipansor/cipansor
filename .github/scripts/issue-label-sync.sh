@@ -100,16 +100,31 @@ sync_pr() { # sync_pr <pr-number>
   # labels while the check fails would make the PR adopt the last issue read and
   # hide the conflict a human has to resolve. On FAIL, leave the labels alone.
   if [ "$FAIL" -eq 0 ]; then
+    # Compute additions and removals before touching the PR, so the priority
+    # correction is one edit. Adding the new priority first and removing the old
+    # one in a second call left both labels on the PR if the workflow died
+    # between them — two priorities on one PR. A single `gh pr edit` with
+    # --add-label and --remove-label is atomic as far as the PR is concerned.
     ADD=""
     for l in $REQ_TYPES $REQ_PRIOS; do
       has "$PR_LABELS" "$l" || ADD="$ADD,$l"
     done
-    [ -n "$ADD" ] && gh pr edit "$PR" --repo "$REPO" --add-label "${ADD#,}"
-
-    # A stale priority on the PR (different from the linked issues') is corrected.
+    DEL=""
     if [ -n "$REQ_PRIOS" ] && [ -n "$PR_PRIO" ] && [ "$PR_PRIO" != "$REQ_PRIOS" ]; then
+      DEL="$PR_PRIO"
       echo "Correcting PR priority '$PR_PRIO' -> '$REQ_PRIOS'."
-      gh pr edit "$PR" --repo "$REPO" --remove-label "$PR_PRIO" --add-label "$REQ_PRIOS"
+    fi
+    # A fork PR's `pull_request` token is read-only: the edit below would fail
+    # and turn the check red for a difference the contributor cannot fix. Report
+    # it as a notice and pass; a maintainer applies the labels.
+    if [ "${READ_ONLY:-0}" = "1" ]; then
+      [ -n "$ADD$DEL" ] && echo "::notice::PR #$PR is from a fork; a maintainer must apply: ${ADD#,} ${DEL:+remove $DEL}"
+    elif [ -n "$ADD" ] || [ -n "$DEL" ]; then
+      SET=""
+      [ -n "$ADD" ] && SET="$SET --add-label ${ADD#,}"
+      [ -n "$DEL" ] && SET="$SET --remove-label $DEL"
+      # shellcheck disable=SC2086
+      gh pr edit "$PR" --repo "$REPO" $SET
     fi
   fi
 
@@ -121,9 +136,27 @@ sync_pr() { # sync_pr <pr-number>
 }
 
 # Triggered from an `issues` event: relabelling a linked issue does not fire a
-# pull_request event, so find every open PR that closes it and re-sync. That is
-# how the "Issue label sync" check on those PRs is refreshed when the issue
-# changes under it.
+# pull_request event, so find every open PR that closes it and re-sync. Running
+# this job from the `issues` event attaches its own check to the *default branch*
+# commit, not to the PR head, so a passing "Issue label sync" check on a PR would
+# survive an issue relabel that invalidated it. To close that gap, publish an
+# explicit check run against each affected PR's head SHA with `checks: write`:
+# that run lands on the PR's commit and replaces the stale green one. The job
+# still exits non-zero so a human sees the failure in the workflow, but the
+# merge gate reads the per-PR check run.
+publish_pr_check() { # publish_pr_check <head-sha> <conclusion> <title> <summary>
+  _sha="$1"; _concl="$2"; _title="$3"; _summary="$4"
+  [ -n "$_sha" ] || return 0
+  gh api "repos/$REPO/check-runs" -X POST \
+    -f name="Issue label sync" \
+    -f head_sha="$_sha" \
+    -f status="completed" \
+    -f conclusion="$_concl" \
+    -f "output[title]=$_title" \
+    -f "output[summary]=$_summary" >/dev/null 2>&1 \
+    || echo "::warning::could not publish a check run for $_sha (needs checks: write)"
+}
+
 if [ "${1:-}" = "--issue" ]; then
   ISSUE="${2:?usage: issue-label-sync.sh --issue <issue-number>}"
   PRS=$(gh pr list --repo "$REPO" --state open --limit 200 \
@@ -131,7 +164,17 @@ if [ "${1:-}" = "--issue" ]; then
     --jq ".[] | select(any(.closingIssuesReferences[]?; .number == $ISSUE)) | .number" || true)
   [ -n "$PRS" ] || { echo "No open PR closes issue #$ISSUE."; exit 0; }
   RC=0
-  for p in $PRS; do sync_pr "$p" || RC=1; done
+  for p in $PRS; do
+    SHA=$(gh pr view "$p" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
+    if sync_pr "$p"; then
+      publish_pr_check "$SHA" success "Labels are in sync" \
+        "The labels on PR #$p still agree with issue #$ISSUE."
+    else
+      RC=1
+      publish_pr_check "$SHA" failure "Labels are out of sync" \
+        "Issue #$ISSUE changed and PR #$p no longer agrees with it. See the workflow log and fix the labels before merging."
+    fi
+  done
   exit "$RC"
 fi
 

@@ -1,13 +1,15 @@
 #!/bin/sh
 # Visual-evidence check for UI changes (advisory, never a gate).
 #
-#   PR touches apps/web, body has no before/after visual  -> one reminder comment
-#   PR does not touch apps/web, or has the visuals         -> remove the reminder
+#   PR touches apps/web, body lacks a before or an after visual -> one reminder
+#   PR does not touch apps/web, or has both                   -> remove the reminder
 #
 # It never fails, never labels and never changes the draft state. A "visual"
 # counts as an image, a video, or a link to either (GitHub user-attachment URLs,
 # raw/blob links to images, .png/.jpg/.gif/.webp/.mp4/.webm). Everything else is
-# invisible to it, so it only ever asks — a reviewer judges the quality.
+# invisible to it, so it only ever asks — a reviewer judges the quality. Both
+# sides are required: one After image does not satisfy the requirement for a
+# Before.
 #
 # Usage: visual-evidence.sh <pr-number>
 # Env:   GH_TOKEN, REPO (owner/name)
@@ -26,8 +28,17 @@ touch_web="$(jq -r '[.files[].path] | map(select(startswith("apps/web/"))) | len
 body="$(jq -r .body "$TMP")"
 
 img_re='user-images\.githubusercontent\.com|private-user-images\.githubusercontent\.com|https?://[^ )]+\.(png|jpe?g|gif|webp|mp4|webm)'
-has_media=0
-printf '%s' "$body" | grep -qiE "$img_re" && has_media=1
+
+# The Evidence requirement is a *before* visual AND an *after* visual. Split the
+# body at the first line that names "After"; each region must contain media. A
+# body with only an After image leaves the Before region empty and keeps the
+# reminder — the earlier single Boolean cleared it on any image anywhere.
+before_part=$(printf '%s\n' "$body" | awk '{ if (tolower($0) ~ /after/) exit; print }')
+after_part=$(printf '%s\n' "$body" | awk '{ if (tolower($0) ~ /after/) f = 1; if (f) print }')
+has_before=0
+has_after=0
+printf '%s\n' "$before_part" | grep -qiE "$img_re" && has_before=1
+printf '%s\n' "$after_part" | grep -qiE "$img_re" && has_after=1
 
 find_comment() {
   gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
@@ -36,7 +47,7 @@ find_comment() {
 CID="$(find_comment || true)"
 
 need=0
-[ "$touch_web" = "true" ] && [ "$has_media" = "0" ] && need=1
+[ "$touch_web" = "true" ] && { [ "$has_before" = "0" ] || [ "$has_after" = "0" ]; } && need=1
 
 if [ "$need" = "1" ]; then
   cat > "$TMP" <<EOF
