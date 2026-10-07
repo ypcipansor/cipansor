@@ -79,6 +79,13 @@ test('isSharedTarget: recognises the shared staging host only', () => {
   assert.equal(isSharedTarget('not a url'), false);
 });
 
+test('isSharedTarget: catches equivalent spellings of the shared host', () => {
+  assert.equal(isSharedTarget('https://STAGING.CIPANSOR.OR.ID'), true);
+  assert.equal(isSharedTarget('https://staging.cipansor.or.id/'), true);
+  assert.equal(isSharedTarget('https://staging.cipansor.or.id.'), true);
+  assert.equal(isSharedTarget('https://staging.cipansor.or.id.evil.example'), false);
+});
+
 test('readBaseline: a missing file is distinguishable from a malformed one', () => {
   const missing = readBaseline('/tmp/definitely-not-a-baseline-cipansor.json');
   assert.equal(missing.exists, false);
@@ -115,6 +122,35 @@ test('validateBaseline: a hand-edited baseline missing fields is unusable', () =
 test('baselineMatches: null when target, scenario and profile agree', () => {
   const baseline = { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' };
   assert.equal(baselineMatches(baseline, { url: 'https://staging.cipansor.or.id/', scenario: 'public-smoke', profile: 'smoke' }), null);
+});
+
+test('baselineMatches: an equivalent spelling of the target is accepted', () => {
+  const baseline = { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' };
+  // The filename slug already lowercases the host, so matching must too — else
+  // the runner finds the baseline and then rejects it.
+  assert.equal(
+    baselineMatches(baseline, { url: 'https://STAGING.CIPANSOR.OR.ID', scenario: 'public-smoke', profile: 'smoke' }),
+    null
+  );
+  assert.equal(
+    baselineMatches(
+      { url: 'https://staging.cipansor.or.id/', scenario: 'public-smoke', profile: 'smoke' },
+      { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' }
+    ),
+    null
+  );
+});
+
+test('baselineMatches: a different scheme or port is still a different target', () => {
+  const baseline = { url: 'https://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' };
+  assert.match(
+    baselineMatches(baseline, { url: 'http://staging.cipansor.or.id', scenario: 'public-smoke', profile: 'smoke' }),
+    /not http/
+  );
+  assert.match(
+    baselineMatches(baseline, { url: 'https://staging.cipansor.or.id:8443', scenario: 'public-smoke', profile: 'smoke' }),
+    /not https/
+  );
 });
 
 test('baselineMatches: reports a different target, scenario or profile', () => {
@@ -473,6 +509,55 @@ test('main: a failed run with no summary still reports could-not-run, not a cras
     const res = runRunner({ k6, baselinePath: baseline, dir });
     assert.equal(res.status, EXIT_CODES.COULD_NOT_RUN);
     assert.match(JSON.parse(res.stdout).error, /no summary/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a missing baseline exits 3 and still writes --report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const missing = join(dir, 'no-such-baseline.json');
+    const reportPath = join(dir, 'load-report.json');
+    const k6 = fakeK6(dir, { exit: 0, summary: validSummary() });
+    const res = runRunner({ k6, baselinePath: missing, dir, extraArgs: ['--report', reportPath] });
+    assert.equal(res.status, EXIT_CODES.NO_BASELINE);
+    // The workflow uploads this file; a preflight failure must not leave it absent.
+    const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    assert.equal(report.compared, false);
+    assert.equal(report.baselinePath, missing);
+    assert.match(report.error, /No baseline at/);
+    // k6 must not have run at all.
+    assert.equal(report.k6ExitCode, null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a baseline that fails matching exits 4 and still writes --report', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir, { profile: 'load' });
+    const reportPath = join(dir, 'load-report.json');
+    const k6 = fakeK6(dir, { exit: 0, summary: validSummary() });
+    const res = runRunner({ k6, baselinePath: baseline, dir, extraArgs: ['--report', reportPath] });
+    assert.equal(res.status, EXIT_CODES.BASELINE_MISMATCH);
+    const report = JSON.parse(readFileSync(reportPath, 'utf8'));
+    assert.equal(report.compared, false);
+    assert.match(report.error, /does not match/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('main: a baseline recorded under a different host spelling still matches', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'load-runner-'));
+  try {
+    const baseline = makeBaseline(dir, { url: 'http://LOCALHOST:3001' });
+    const k6 = fakeK6(dir, { exit: 0, summary: validSummary() });
+    const res = runRunner({ k6, baselinePath: baseline, dir });
+    assert.equal(res.status, EXIT_CODES.OK);
+    assert.equal(JSON.parse(res.stdout).compared, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

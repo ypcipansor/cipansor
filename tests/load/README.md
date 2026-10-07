@@ -22,7 +22,8 @@ demand). It is not part of CI and does not gate a merge.
 
 The profile is part of the baseline name: a `smoke` reference is a one-VU
 measurement and comparing a ten-VU `load` run against it is meaningless, so the
-runner refuses a profile it has no baseline for (exit `4`).
+runner refuses a profile it has no baseline for (exit `3` — no baseline
+recorded; exit `4` is a baseline that exists but fails validation or matching).
 
 ## Running it
 
@@ -47,7 +48,11 @@ node tests/load/run-load-tests.mjs \
 node tests/load/run-load-tests.mjs \
   --url https://staging.cipansor.or.id --scenario public-smoke
 
-# Against the local stack (docker compose + db:seed), with credentials
+# Against the local stack (docker compose + db:seed), with credentials. Record
+# the authenticated-read baseline once, then compare:
+LOAD_TEST_EMAIL=admin@example.com LOAD_TEST_PASSWORD=... \
+  node tests/load/run-load-tests.mjs --url http://localhost:3001 \
+    --scenario authenticated-read --update-baseline
 LOAD_TEST_EMAIL=admin@example.com LOAD_TEST_PASSWORD=... \
   node tests/load/run-load-tests.mjs --url http://localhost:3001 --scenario authenticated-read
 ```
@@ -79,6 +84,11 @@ so a missing, malformed or mismatched baseline cannot silently pass. Only
 that completed** (k6 exit `0`, or `99` for crossed thresholds) with the metrics
 the comparison needs. A failed run's partial summary never replaces the
 reference.
+
+`--report <path>` is written on **every** path, including a preflight failure
+(exit `3`/`4`) and a k6 failure — the workflow uploads it, so a failure always
+leaves a machine-readable record of what went wrong rather than an empty
+artifact.
 
 ## The regression policy
 

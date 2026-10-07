@@ -95,6 +95,25 @@ function normalizeUrl(url) {
   return String(url || '').replace(/\/+$/, '');
 }
 
+/**
+ * Canonical form of a target URL, so two spellings of the same origin compare
+ * equal. `slugFor` already lowercases the host (the baseline filename), so
+ * matching the raw string rejected an equivalent URL it had just located —
+ * `https://STAGING.CIPANSOR.OR.ID` found the baseline for
+ * `https://staging.cipansor.or.id` and then exited 4. `new URL()` lowercases the
+ * host and normalizes the path; scheme, a non-default port and a base path stay
+ * significant. A string that is not a URL falls back to a trimmed comparison.
+ */
+function canonicalUrl(url) {
+  const raw = normalizeUrl(url);
+  try {
+    const u = new URL(raw);
+    return `${u.protocol}//${u.host}${u.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return raw;
+  }
+}
+
 function slugFor(url) {
   try {
     const host = new URL(url).host;
@@ -150,7 +169,7 @@ function validateBaseline(baseline) {
  * measurements.
  */
 function baselineMatches(baseline, { url, scenario, profile }) {
-  if (normalizeUrl(baseline.url) !== normalizeUrl(url)) {
+  if (canonicalUrl(baseline.url) !== canonicalUrl(url)) {
     return `baseline was recorded against ${baseline.url}, not ${url}`;
   }
   if (baseline.scenario !== scenario) {
@@ -258,10 +277,41 @@ function compare(current, baseline) {
 
 function isSharedTarget(url) {
   try {
-    return SHARED_TARGET_HOSTS.includes(new URL(url).host);
+    // `new URL()` already lowercases the host; a fully-qualified trailing dot
+    // names the same host and must not slip past the guard.
+    const host = new URL(url).host.replace(/\.$/, '');
+    return SHARED_TARGET_HOSTS.includes(host);
   } catch {
     return false;
   }
+}
+
+/**
+ * A preflight failure (a missing or unusable baseline) never reaches k6, but it
+ * still owes the caller a report: both workflow jobs upload `--report` on every
+ * run, and a failure that writes none leaves an empty artifact next to a
+ * summary that only says "no baseline". Build the same report shape main()
+ * would, persist it through finish(), and return the exit code.
+ */
+function preflightFailure({ scenario, profile, url, baselinePath, error }, args, code) {
+  finish(
+    {
+      scenario,
+      profile,
+      url,
+      baselinePath: baselinePath || null,
+      k6ExitCode: null,
+      summaryReading: 'not-run',
+      throttled: false,
+      current: null,
+      baseline: null,
+      regressions: [],
+      compared: false,
+      error,
+    },
+    args
+  );
+  return code;
 }
 
 function main() {
@@ -308,20 +358,22 @@ function main() {
   // and a green job that measured nothing.
   if (!args.updateBaseline) {
     if (!read.exists) {
-      console.error(
+      const reason =
         `No baseline at ${bPath}. Record one first:\n` +
-          `  node tests/load/run-load-tests.mjs --url ${url} --scenario ${scenario} --profile ${profile} --update-baseline`
-      );
-      return EXIT_CODES.NO_BASELINE;
+        `  node tests/load/run-load-tests.mjs --url ${url} --scenario ${scenario} --profile ${profile} --update-baseline`;
+      console.error(reason);
+      return preflightFailure({ scenario, profile, url, baselinePath: bPath, error: reason }, args, EXIT_CODES.NO_BASELINE);
     }
     if (read.error) {
-      console.error(`Baseline ${bPath} is unusable: ${read.error}`);
-      return EXIT_CODES.BASELINE_MISMATCH;
+      const reason = `Baseline ${bPath} is unusable: ${read.error}`;
+      console.error(reason);
+      return preflightFailure({ scenario, profile, url, baselinePath: bPath, error: reason }, args, EXIT_CODES.BASELINE_MISMATCH);
     }
     const mismatch = baselineMatches(baseline, { url, scenario, profile });
     if (mismatch) {
-      console.error(`Baseline ${bPath} does not match this run: ${mismatch}`);
-      return EXIT_CODES.BASELINE_MISMATCH;
+      const reason = `Baseline ${bPath} does not match this run: ${mismatch}`;
+      console.error(reason);
+      return preflightFailure({ scenario, profile, url, baselinePath: bPath, error: reason }, args, EXIT_CODES.BASELINE_MISMATCH);
     }
   }
 
