@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import fs from 'fs';
+import path from 'path';
 import request from 'supertest';
 
 vi.mock('@/lib/prisma', () => ({ prisma: {} }));
 vi.mock('@/lib/redis', () => ({ redis: {} }));
 
 import { app } from './app';
+
+const pkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8')) as {
+  version: string;
+};
 
 /**
  * The Azure release workflows wait until GET /health reports the commit they
@@ -32,5 +38,26 @@ describe('GET /health', () => {
     const res = await request(app).get('/health');
     expect(res.status).toBe(200);
     expect(res.body.commit).toBeNull();
+  });
+
+  it('reports the API package version, not an env-dependent fallback', async () => {
+    delete process.env.npm_package_version;
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
+    expect(res.body.version).toBe(pkg.version);
+  });
+});
+
+/**
+ * `GET /health/version` is a minimal probe for release tooling: it must answer
+ * with the package version and nothing else, so a caller can compare it without
+ * parsing the full health payload.
+ */
+describe('GET /health/version', () => {
+  it('returns the API package version', async () => {
+    delete process.env.npm_package_version;
+    const res = await request(app).get('/health/version');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ version: pkg.version });
   });
 });

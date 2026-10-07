@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
+import { getAppVersion } from '@/lib/app-version';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
 import { csrfProtection } from '@/middleware/csrf';
 import {
@@ -243,10 +244,16 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '1.0.0',
+    version: getAppVersion(),
     commit: process.env.GIT_COMMIT_SHA || null,
     environment: config.env,
   });
+});
+
+// Version probe (not rate limited). Reports only the API's own version, so a
+// release check can compare it without reading the whole health payload.
+app.get('/health/version', (_req, res) => {
+  res.json({ version: getAppVersion() });
 });
 
 // Swagger API Documentation (disabled in production for security)

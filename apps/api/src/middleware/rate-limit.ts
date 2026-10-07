@@ -43,8 +43,9 @@ export const defaultLimiter: RateLimitRequestHandler = rateLimit({
     res.status(options.statusCode).json(options.message);
   },
   skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/health';
+    // Skip rate limiting for health checks (the base probe and the version
+    // probe). Both are read by release/monitoring tooling, not by users.
+    return req.path === '/health' || req.path === '/health/version';
   },
 });
 
