@@ -19,12 +19,14 @@ through the same account as the person who triggered it (`user.type: User`) —
 
 The `needs-info` re-check automation fires on `issue_comment.created` while an
 issue carries `needs-info`. Its own comment satisfies that condition, so it
-re-armed itself. On fixture #678 it posted eleven "Needs-info re-check"
-comments in ~27 minutes (07:49Z → 08:16Z) with no reporter input — and was
-still going when this was written — each one a full agent conversation: the
-trigger filter matched the automation's own output. The automation's own
-`trigger.filter` lives in the OpenHands events backend, not in this repository,
-so nothing in-repo could catch it.
+re-armed itself. On the fixture issue #678 it posted up to eleven "Needs-info
+re-check" comments in ~27 minutes (07:49Z → 08:16Z) with no reporter input —
+and was still going when this was written — each one a full agent conversation:
+the trigger filter matched the automation's own output. #678 was later deleted;
+the re-verifiable record is the nine comments the automation left on #680
+(captured in the guard test's fixture). The automation's own `trigger.filter`
+lives in the OpenHands events backend, not in this repository, so nothing
+in-repo could catch it.
 
 ## The guard
 
@@ -59,6 +61,16 @@ Two pieces, and the second is what actually stops the loop:
    (Discussion); SDLC 08 (Mention bot) is left alone — its filter keys on
    comment *content* (`@openhands`), so it cannot self-arm, and the marker would
    only suppress a human who quotes an automated comment.
+
+The deploy script's composition is itself pinned, not only the clause string it
+writes: `plan -` runs its decision logic offline (no network) and the guard
+test feeds it the real automation definitions
+(`apps/api/src/utils/__fixtures__/needs-info-automation-definitions.json`,
+pre-guard filter + the exact guarded filter the service holds) and asserts the
+output equals them, plus idempotency and the content-filter skip. Pinning only
+the clause would let the deploy script compose a different filter and still
+pass; this catches a silent re-arm. The fixture's `expected` strings are the
+live filters re-read from the automation service 2026-10-07.
 
 Verification once deployed: a live self-comment on a `needs-info` issue must
 not schedule another run, and a genuine reporter reply must schedule one.

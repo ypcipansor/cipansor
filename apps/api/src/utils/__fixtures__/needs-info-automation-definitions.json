@@ -1,0 +1,25 @@
+{
+  "source": "https://app.all-hands.dev/api/automation/v1 (issue_comment.created automations), captured 2026-10-07",
+  "note": "The pre-guard filters the deploy script receives, and the guarded filter each must become. `expected` is the live value re-read from the automation service on 2026-10-07; a change to either side fails apps/api/src/utils/automation-loop-guard.guard.test.ts, so a silent drift in the deployed clause (a re-armed loop) is caught in CI.",
+  "clause": "!icontains(comment.body, 'AI agent (OpenHands)')",
+  "automations": [
+    {
+      "name": "SDLC 20 · Issue clarifier",
+      "on": "issue_comment.created",
+      "filter": "glob(repository.full_name, 'ypcipansor/cipansor') && contains(issue.labels[].name, 'needs-info') && !icontains(comment.body, 'This comment was created by an AI agent')",
+      "expected": "(glob(repository.full_name, 'ypcipansor/cipansor') && contains(issue.labels[].name, 'needs-info') && !icontains(comment.body, 'This comment was created by an AI agent')) && !icontains(comment.body, 'AI agent (OpenHands)')"
+    },
+    {
+      "name": "SDLC 26 · Discussion",
+      "on": "issue_comment.created",
+      "filter": "glob(repository.full_name, 'ypcipansor/cipansor') && (contains(issue.labels[].name, 'pending-maintainer') || contains(issue.labels[].name, 'needs-info')) && !icontains(comment.body, 'This comment was created by an AI agent')",
+      "expected": "(glob(repository.full_name, 'ypcipansor/cipansor') && (contains(issue.labels[].name, 'pending-maintainer') || contains(issue.labels[].name, 'needs-info')) && !icontains(comment.body, 'This comment was created by an AI agent')) && !icontains(comment.body, 'AI agent (OpenHands)')"
+    },
+    {
+      "name": "SDLC 08 · Mention bot",
+      "on": "issue_comment.created",
+      "filter": "icontains(comment.body, '@openhands') && (comment.author_association == 'OWNER' || comment.author_association == 'MEMBER' || comment.author_association == 'COLLABORATOR')",
+      "skip": "content filter, not label-conditioned"
+    }
+  ]
+}

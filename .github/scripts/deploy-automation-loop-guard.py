@@ -15,6 +15,9 @@ automation that already has the clause is left alone.
 Usage (dry run by default — nothing is written without DEPLOY=true):
   OPENHANDS_API_KEY=… python3 deploy-automation-loop-guard.py
   OPENHANDS_API_KEY=… DEPLOY=true python3 deploy-automation-loop-guard.py
+  python3 deploy-automation-loop-guard.py plan -    one decision per line from
+                      {"automations": […], "all": bool} on stdin — no network,
+                      so the guard test can pin the composed filter offline
 
 Env:
   OPENHANDS_API_KEY   bearer token for the automation service (required to run)
@@ -73,35 +76,79 @@ def automations() -> list[dict]:
         offset += 100
 
 
-def main() -> int:
+MARKER = "AI agent (OpenHands)"
+
+
+def plan_one(name: str, trigger: dict, only: list[str], all_: bool) -> str:
+    """Decide what to do with one automation's trigger, without touching the API.
+
+    Returns one of:
+      "skip: <reason>"       left alone
+      "ok: <reason>"         already carries the clause
+      "patch: <new filter>"  must be re-written
+    Kept separate from the network so the guard test can pin the composed
+    filter offline (mode `plan -`).
+    """
+    on = str(trigger.get("on", ""))
+    if not on.startswith("issue_comment"):
+        return "skip: not issue_comment"
+    if only and not any(s in name for s in only):
+        return "skip: not selected"
+    flt = trigger.get("filter") or ""
+    # Already carrying the clause is the idempotent case, and it must be
+    # recognised before the content-filter skip below: a guarded automation
+    # stays guarded on a re-run whatever shape its filter has.
+    if MARKER in flt:
+        return "ok: already guarded"
+    # A filter that reacts to comment *content* (e.g. `@openhands`) can only
+    # re-arm itself if its own reply repeats the phrase, so it is not the
+    # loop shape this guards; adding the thin marker clause there would only
+    # suppress a human who quotes an automated comment. A filter that keys on
+    # issue state/labels and accepts any comment is the #680 shape.
+    if "comment.body" in flt and "issue.labels" not in flt and not all_:
+        return "skip: content filter, not label-conditioned"
+    new_flt = f"({flt}) && {_guard.guard_clause()}" if flt else _guard.guard_clause()
+    return f"patch: {new_flt}"
+
+
+def plan(state: dict, only: list[str] | None = None) -> list[str]:
+    """Apply `plan_one` to a list of automations, in order. Pure; no network."""
+    only = only or []
+    all_ = bool(state.get("all"))
+    out = []
+    for a in state.get("automations", []) or []:
+        out.append(plan_one(a.get("name", ""), a.get("trigger") or {}, only, all_))
+    return out
+
+
+def _usage() -> int:
+    print(
+        "usage: deploy-automation-loop-guard.py [plan -]",
+        file=sys.stderr,
+    )
+    return 2
+
+
+def run_network() -> int:
     if not TOKEN:
         print("OPENHANDS_API_KEY is required", file=sys.stderr)
         return 2
-    marker = "AI agent (OpenHands)"
     clause = _guard.guard_clause()
     deploy = os.environ.get("DEPLOY", "") == "true"
     all_ = os.environ.get("ALL", "") == "1"
     changed = 0
     for a in automations():
         name = a.get("name", "")
-        if ONLY and not any(s in name for s in ONLY):
-            continue
         trigger = a.get("trigger") or {}
-        flt = trigger.get("filter") or ""
-        if not str(trigger.get("on", "")).startswith("issue_comment"):
+        decision = plan_one(name, trigger, ONLY, all_)
+        if decision.startswith("skip"):
+            print(f"skip  {name}: {decision[len('skip: '):]}")
             continue
-        # A filter that reacts to comment *content* (e.g. `@openhands`) can only
-        # re-arm itself if its own reply repeats the phrase, so it is not the
-        # loop shape this guards; adding the thin marker clause there would only
-        # suppress a human who quotes an automated comment. A filter that keys on
-        # issue state/labels and accepts any comment is the #680 shape.
-        if "comment.body" in flt and "issue.labels" not in flt and not all_:
-            print(f"skip  {name}: content filter, not label-conditioned (use ALL=1 to force)")
-            continue
-        if marker in flt:
+        if decision.startswith("ok"):
             print(f"ok    {name}: already guarded")
             continue
-        new_flt = f"({flt}) && {clause}" if flt else clause
+        new_flt = decision[len("patch: "):]
+        flt = trigger.get("filter") or ""
         print(f"{'PATCH' if deploy else 'dry  '} {name}")
         print(f"      was: {flt}")
         print(f"      now: {new_flt}")
@@ -123,5 +170,20 @@ def main() -> int:
     return 0
 
 
+def main(argv: list[str]) -> int:
+    if argv == ["plan", "-"]:
+        try:
+            state = json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, TypeError) as exc:
+            print(f"bad input: {exc}", file=sys.stderr)
+            return 2
+        for line in plan(state):
+            print(line)
+        return 0
+    if argv:
+        return _usage()
+    return run_network()
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

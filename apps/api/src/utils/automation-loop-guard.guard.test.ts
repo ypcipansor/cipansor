@@ -7,8 +7,9 @@ import { join, resolve } from 'path';
  * The `needs-info` re-check automation (issue #680) fires on every
  * `issue_comment.created` while an issue carries `needs-info`. Its own comment
  * satisfies that condition and it posts under the same account as the
- * reporter, so it re-arms itself: #678 got 11 back-to-back re-checks with no
- * reporter input, each a full LLM conversation.
+ * reporter, so it re-arms itself: the fixture issue #678 took up to 11
+ * back-to-back re-checks with no reporter input, each a full LLM conversation
+ * (#678 was deleted, so the captured record is the 9 comments on #680).
  *
  * `.github/scripts/automation-loop-guard.py` is the repo-side guard. The
  * automation definition lives outside git, so this test is the only thing that
@@ -18,6 +19,7 @@ import { join, resolve } from 'path';
  */
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCRIPT = join(REPO_ROOT, '.github', 'scripts', 'automation-loop-guard.py');
+const DEPLOY_SCRIPT = join(REPO_ROOT, '.github', 'scripts', 'deploy-automation-loop-guard.py');
 const FIXTURE = join(
   REPO_ROOT,
   'apps',
@@ -26,6 +28,15 @@ const FIXTURE = join(
   'utils',
   '__fixtures__',
   'needs-info-automation-comments.json'
+);
+const DEFINITIONS = join(
+  REPO_ROOT,
+  'apps',
+  'api',
+  'src',
+  'utils',
+  '__fixtures__',
+  'needs-info-automation-definitions.json'
 );
 
 /** The mandated marker every automated comment carries (automation-loop-guard.py). */
@@ -177,5 +188,93 @@ describe('automation-loop-guard.py', () => {
     // the guard fires on none, because every one is the automation's own.
     expect(out).toContain(`runs_old=${fixture.comments.length}`);
     expect(out).toContain('runs_guarded=0');
+  });
+});
+
+/**
+ * The deploy script is what actually stops the loop: the clause it writes is the
+ * deployed guard. Pinning only the clause string (above) would let the deploy
+ * script compose a different filter and still pass — so the composition itself
+ * is exercised offline (`plan -`, no network) against the real automation
+ * definitions and the exact filters the live service carries.
+ */
+interface Definition {
+  name: string;
+  on: string;
+  filter: string;
+  expected?: string;
+  skip?: string;
+}
+
+interface Definitions {
+  source: string;
+  clause: string;
+  automations: Definition[];
+}
+
+/** Run the deploy script's offline planner over a list of automations. */
+function plan(automations: { name: string; trigger: { on: string; filter: string } }[]): string[] {
+  const state = { automations };
+  return execFileSync('python3', [DEPLOY_SCRIPT, 'plan', '-'], {
+    input: JSON.stringify(state),
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+}
+
+describe('deploy-automation-loop-guard.py', () => {
+  it('exists — a guard with no deployment leaves the loop running', () => {
+    expect(existsSync(DEPLOY_SCRIPT)).toBe(true);
+  });
+
+  it('composes the exact filter the live automations carry', () => {
+    // The fixture records each automation's pre-guard filter and the guarded
+    // filter the service actually holds (re-read 2026-10-07). If the deploy
+    // script ever composes a different string — a changed marker, a changed
+    // join — this fails instead of silently re-arming the loop.
+    const defs: Definitions = JSON.parse(readFileSync(DEFINITIONS, 'utf8'));
+    const actions = plan(
+      defs.automations.map((a) => ({ name: a.name, trigger: { on: a.on, filter: a.filter } }))
+    );
+    expect(actions).toHaveLength(defs.automations.length);
+    defs.automations.forEach((a, i) => {
+      if (a.expected) {
+        expect(actions[i], a.name).toBe(`patch: ${a.expected}`);
+      } else {
+        expect(actions[i], a.name).toContain(`skip: ${a.skip}`);
+      }
+    });
+    // The composed clause is the one the guard prints, and the fixture's own.
+    const clause = execFileSync('python3', [SCRIPT, 'guard-clause'], { encoding: 'utf8' }).trim();
+    expect(defs.clause).toBe(clause);
+    for (const a of defs.automations) {
+      if (a.expected) expect(a.expected.endsWith(clause)).toBe(true);
+    }
+  });
+
+  it('is idempotent — an already guarded filter is left alone', () => {
+    const defs: Definitions = JSON.parse(readFileSync(DEFINITIONS, 'utf8'));
+    const guarded = defs.automations.filter((a) => a.expected);
+    const actions = plan(
+      guarded.map((a) => ({ name: a.name, trigger: { on: a.on, filter: a.expected as string } }))
+    );
+    expect(actions.every((x) => x.startsWith('ok:'))).toBe(true);
+  });
+
+  it('leaves an automation that cannot self-arm alone', () => {
+    // `@openhands` is content-matched: its own reply cannot repeat the phrase,
+    // so guarding it would only suppress a human quoting an automated comment.
+    const actions = plan([
+      {
+        name: 'SDLC 08 · Mention bot',
+        trigger: {
+          on: 'issue_comment.created',
+          filter: "icontains(comment.body, '@openhands')",
+        },
+      },
+    ]);
+    expect(actions).toEqual(['skip: content filter, not label-conditioned']);
   });
 });

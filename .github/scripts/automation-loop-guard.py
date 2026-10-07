@@ -3,10 +3,13 @@
 
 Issue #680: the automation fires on every `issue_comment.created` while an
 issue carries `needs-info`. Its own comment satisfies that condition, so it
-re-arms itself — on #678 it produced eleven back-to-back "Needs-info re-check"
-comments in ~27 minutes with no reporter input, each one a full LLM run. Every
-comment, the automation's included, is posted under the reporter's account
-(`user.type: User`), so `sender.login` and `sender.type` cannot tell them apart.
+re-arms itself — on the fixture issue #678 it ran up to eleven back-to-back
+"Needs-info re-check" comments in ~27 minutes with no reporter input, each a
+full LLM run; #678 was later deleted, so the re-verifiable record is the nine
+comments the automation left on #680 (captured in the guard test's fixture).
+Every comment, the automation's included, is posted under the reporter's
+account (`user.type: User`), so `sender.login` and `sender.type` cannot tell
+them apart.
 
 The automation definition lives in the OpenHands events backend, not in this
 repository, so its `trigger.filter` is a JMESPath expression that cannot call
