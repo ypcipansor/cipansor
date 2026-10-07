@@ -1,0 +1,44 @@
+# Age out stalled issues. One deterministic script, no tokens: the timers must
+# fire on time and must not depend on a model's judgement.
+#
+# Timers: `needs-info` closes 20 days after the label with no reply; `question`
+# goes `stale` after 8 days and closes 7 days later; anything else goes `stale`
+# after 90 days of no activity and closes 14 days later. `pending-maintainer`,
+# `ready`, `blocked` and `in-progress` are never touched, as is any issue a
+# maintainer commented on since its timer started. `duplicate` belongs to the
+# duplicate sweep. Pull requests are never closed.
+#
+# Before a close the script posts exactly one comment naming the timer and how
+# to keep the issue open; the close happens on the next run, so the comment is
+# posted while the issue is still open. The rules live in
+# .github/scripts/issue-steward.sh so they run by hand too.
+name: Issue steward
+
+on:
+  schedule:
+    - cron: '30 18 * * *'   # 01:30 Asia/Jakarta, daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: issue-steward
+  cancel-in-progress: false
+
+jobs:
+  steward:
+    name: Age out stalled issues
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Mark and close stalled issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: sh .github/scripts/issue-steward.sh
