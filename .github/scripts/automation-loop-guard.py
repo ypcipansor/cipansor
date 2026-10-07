@@ -31,14 +31,15 @@ that recognition subtle:
   * **The wording drifts.** The automation has emitted at least three variants
     (created/generated, maintainers/owner), so matching the full sentence lets
     some through and the loop continues. `has_ai_footer` matches the invariant
-    frame — "an AI agent (OpenHands) on behalf of" — plus a disclosure verb.
+    frame — a disclosure verb, then "by an AI agent (OpenHands) on behalf of" —
+    on the trailing footer line.
   * **The position matters.** A real reply can *quote* an automated comment
     (blockquote lines, or the footer pasted mid-sentence while discussing it),
     and that quote carries the frame without being the reply's own footer.
     `is_own_comment` therefore matches the frame only in the comment's
-    **trailing disclosure footer**: the last block of non-blank, non-quoted
-    lines. A frame buried in the body or sitting on a quoted line is someone
-    else's; `AI_FOOTER` pins the mandated canonical wording.
+    **trailing footer line**: the last non-blank line, with blockquote (`> …`)
+    lines dropped first. A frame buried in the body, or on a line with other
+    words, is someone else's; `AI_FOOTER` pins the mandated canonical wording.
 
 Usage:
   automation-loop-guard.py decide -      one event object on stdin -> "act=… reason=…"
