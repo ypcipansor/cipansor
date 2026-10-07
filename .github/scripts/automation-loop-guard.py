@@ -11,8 +11,9 @@ comment, the automation's included, is posted under the reporter's account
 The automation definition lives in the OpenHands events backend, not in this
 repository, so its `trigger.filter` cannot be tested here. This script is the
 repo-side guard: the back-end filter is a thin wrapper that calls `decide`, and
-the guard test replays the real #678 stream against it. It is the only place
-the loop can be pinned so a wording change cannot silently bring it back.
+the guard test replays real comment bodies (a captured fixture; #680 is the
+issue the guard was written on) against it. It is the only place the loop can
+be pinned so a wording change cannot silently bring it back.
 
 The three conditions, in order:
 
@@ -21,9 +22,19 @@ The three conditions, in order:
   * otherwise it is a reporter reply and the re-check runs (reporter-reply)
 
 The automation's own comments are recognised by the AI-disclosure footer every
-automated comment carries (AGENTS.md / the automation prompt). That footer is
-`AI_FOOTER` below — pin it there; a change to the wording must change it here
-too, or the loop returns silently (see .claude/memory/decisions/).
+automated comment carries (AGENTS.md / the automation prompt). The footer's
+wording is NOT stable — the automation has emitted at least three variants
+(created/generated, maintainers/owner) on the very issues this guard was
+written for, so matching the full sentence lets two of the three through and
+the loop continues. `has_ai_footer` matches the invariant frame instead:
+"an AI agent (OpenHands)" plus a marker that the sentence is a disclosure
+("created"/"generated", "on behalf of"). `AI_FOOTER` pins the mandated
+canonical wording for the decision doc and the guard test.
+
+A footer pasted inside a quoted line (the reporter quoting a prior automated
+comment to answer the request) is not the comment's own footer. `strip_quoted`
+drops blockquote lines before matching, so a reply that quotes the footer is
+still a reporter reply and the re-check runs.
 
 Usage:
   automation-loop-guard.py decide -      one event object on stdin -> "act=… reason=…"
@@ -32,13 +43,36 @@ Usage:
 Exit 0 when it decided, 2 on a usage or input error.
 """
 import json
+import re
 import sys
 
-# The disclosure footer every automated comment carries. This is the marker the
-# loop guard depends on; it is duplicated from the automation prompt on purpose
-# and is asserted by automation-loop-guard.guard.test.ts. Kept without the
-# surrounding `*` so a bold/italic variant still matches.
+# The mandated disclosure footer, verbatim. Pinned by the decision doc and the
+# guard test; deliberately not the only string the guard accepts — see
+# `has_ai_footer` for why the full sentence alone is unsafe.
 AI_FOOTER = "This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers."
+
+# The stable core of any disclosure footer the automation emits. The wording
+# around it (created/generated, maintainers/owner) has drifted in practice, so
+# the guard matches the frame, not one sentence.
+_AI_AGENT = re.compile(
+    r"an AI agent \(OpenHands\) on behalf of",
+    re.IGNORECASE,
+)
+_DISCLOSURE_VERB = re.compile(r"\b(created|generated|posted|written|produced)\b", re.IGNORECASE)
+
+
+def strip_quoted(body: str) -> str:
+    """Drop blockquote lines (`> …`) so a quoted footer is not read as our own.
+
+    A reporter can quote a prior automated comment while answering the request;
+    that quote carries the footer, but the comment is theirs.
+    """
+    return "\n".join(line for line in body.splitlines() if not line.lstrip().startswith(">"))
+
+
+def has_ai_footer(body: str) -> bool:
+    text = strip_quoted(body)
+    return bool(_AI_AGENT.search(text) and _DISCLOSURE_VERB.search(text))
 
 
 def has_needs_info(event: dict) -> bool:
@@ -48,7 +82,7 @@ def has_needs_info(event: dict) -> bool:
 
 def is_own_comment(event: dict) -> bool:
     body = event.get("comment", {}).get("body") or ""
-    return AI_FOOTER in body
+    return has_ai_footer(body)
 
 
 def decide(event: dict) -> str:

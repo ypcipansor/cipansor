@@ -31,14 +31,37 @@ so nothing in-repo could catch it.
 `.github/scripts/automation-loop-guard.py` is the repo-side rule: act only when
 the issue carries `needs-info` **and** the comment is not the automation's own.
 The back-end `trigger.filter` is a thin wrapper around its `decide`, whose
-first step rejects any comment containing the footer. The marker is pinned in
-two places, and a change to one without the other is what
+first step rejects any comment carrying a disclosure footer. The marker is
+pinned in two places, and a change to one without the other is what
 `apps/api/src/utils/automation-loop-guard.guard.test.ts` fails on:
 
 1. `AI_FOOTER` in `.github/scripts/automation-loop-guard.py`
-2. the same string in the guard test, replayed against the real #678 comment
-   stream (17 comments, unguarded `runs_old=17`, guarded `runs_guarded=0`)
+2. the same string in the guard test, replayed against real #680 comment
+   bodies (`apps/api/src/utils/__fixtures__/needs-info-automation-comments.json`)
 
-If an automation's footer wording changes, change `AI_FOOTER` in the same
-commit or the loop returns silently. A new automation that comments on issues
-must carry the footer too, or it is invisible to the guard.
+### The footer's wording is not stable
+
+The automation does not reproduce the canonical footer exactly. On #680 it
+ended its own comments with **three** wordings:
+
+- `created … on behalf of the repository maintainers.` (canonical)
+- `generated … on behalf of the repository maintainers.`
+- `created … on behalf of the repository owner.`
+
+A guard that matched only the canonical sentence passed two of the three
+through — the loop would have continued. So `has_ai_footer` matches the
+invariant frame instead: `an AI agent (OpenHands) on behalf of` plus a
+disclosure verb (`created`/`generated`/…), case-insensitive. `AI_FOOTER` still
+records the mandated wording, and the test pins it, but the matching is
+deliberately broader.
+
+### A quoted footer is not the comment's own
+
+A reporter answering the request may quote a prior automated comment, footer
+and all. `strip_quoted` drops blockquote (`> …`) lines before matching, so a
+reply that quotes the footer is still a reporter reply and the re-check runs.
+
+If an automation's footer wording changes, the `AI_FOOTER` constant and this
+doc change in the same commit, or the loop returns silently. A new automation
+that comments on issues must carry a disclosure footer matching the frame, or
+it is invisible to the guard.
