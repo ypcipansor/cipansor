@@ -12,9 +12,20 @@ automation reacts to issue comments but does not already carry the marker, it
 appends the clause and PATCHes the automation back. It is idempotent: an
 automation that already has the clause is left alone.
 
+`verify` is the drift detector for finding 3 of the #683 review: the guard test
+pins the composition against a checked-in snapshot, which cannot see a backend
+edit that drops the clause and silently re-arms the loop. `verify` reads the
+live service and exits 1 when a label-conditioned automation's filter no longer
+carries the clause, so a scheduled workflow can turn that drift into a failure.
+
 Usage (dry run by default — nothing is written without DEPLOY=true):
   OPENHANDS_API_KEY=… python3 deploy-automation-loop-guard.py
   OPENHANDS_API_KEY=… DEPLOY=true python3 deploy-automation-loop-guard.py
+  OPENHANDS_API_KEY=… python3 deploy-automation-loop-guard.py verify
+                      read the live filters, exit 1 if the guard clause is gone
+  python3 deploy-automation-loop-guard.py verify -   the same report over a
+                      {"automations": […]}.json on stdin — no network, so the
+                      guard test pins it
   python3 deploy-automation-loop-guard.py plan -    one decision per line from
                       {"automations": […], "all": bool} on stdin — no network,
                       so the guard test can pin the composed filter offline
@@ -28,7 +39,8 @@ Env:
                       (a comment-content filter, e.g. `@openhands`, can only
                       self-trigger if its own reply repeats the phrase, so it
                       is left alone by default)
-Exit 0 on success, 1 when the API refused, 2 on a usage error.
+Exit 0 on success, 1 when the API refused or `verify` found drift, 2 on a usage
+error.
 """
 import importlib.util
 import json
@@ -123,10 +135,51 @@ def plan(state: dict, only: list[str] | None = None) -> list[str]:
 
 def _usage() -> int:
     print(
-        "usage: deploy-automation-loop-guard.py [plan -]",
+        "usage: deploy-automation-loop-guard.py [plan - | verify]",
         file=sys.stderr,
     )
     return 2
+
+
+def verify_actions(state: dict, only: list[str] | None = None) -> list[str]:
+    """One line per label-conditioned automation: is the guard clause present?
+
+    Pure (no network) so the guard test can pin it; `verify` feeds it the live
+    definitions. A label-conditioned `issue_comment.created` filter that lost
+    the clause will re-arm the loop, so it is reported as drift.
+    """
+    only = only or []
+    out = []
+    for a in state.get("automations", []) or []:
+        trigger = a.get("trigger") or {}
+        name = a.get("name", "")
+        on = str(trigger.get("on", ""))
+        if not on.startswith("issue_comment"):
+            continue
+        if only and not any(s in name for s in only):
+            continue
+        flt = trigger.get("filter") or ""
+        # A content-matched filter (@openhands) is intentionally not guarded.
+        if "comment.body" in flt and "issue.labels" not in flt and not state.get("all"):
+            continue
+        out.append(f"drift: {name}: guard clause missing" if MARKER not in flt else f"ok: {name}")
+    return out
+
+
+def run_verify() -> int:
+    if not TOKEN:
+        print("OPENHANDS_API_KEY is required", file=sys.stderr)
+        return 2
+    drift = 0
+    for line in verify_actions({"automations": automations()}, ONLY):
+        print(line)
+        if line.startswith("drift"):
+            drift += 1
+    if drift:
+        print(f"{drift} automation(s) lost the guard clause — re-run with DEPLOY=true", file=sys.stderr)
+        return 1
+    print("all label-conditioned automations carry the guard clause")
+    return 0
 
 
 def run_network() -> int:
@@ -180,6 +233,18 @@ def main(argv: list[str]) -> int:
         for line in plan(state):
             print(line)
         return 0
+    if argv == ["verify", "-"]:
+        # Offline: verify a definitions file the caller pipes in, no network.
+        try:
+            state = json.loads(sys.stdin.read())
+        except (json.JSONDecodeError, TypeError) as exc:
+            print(f"bad input: {exc}", file=sys.stderr)
+            return 2
+        for line in verify_actions(state):
+            print(line)
+        return 0
+    if argv == ["verify"]:
+        return run_verify()
     if argv:
         return _usage()
     return run_network()

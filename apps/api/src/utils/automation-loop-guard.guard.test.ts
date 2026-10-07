@@ -96,7 +96,7 @@ describe('automation-loop-guard.py', () => {
     const own: Comment = {
       id: 6033790503,
       body: reporterBody('**Needs-info re-check — no reporter reply**'),
-      user: { login: 'adminypc', type: 'User' },
+      user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(true, own)).toBe('act=no reason=self-trigger');
   });
@@ -115,7 +115,7 @@ describe('automation-loop-guard.py', () => {
       const own: Comment = {
         id: 0,
         body: `Automated re-check.\n\n_${footer}_`,
-        user: { login: 'adminypc', type: 'User' },
+        user: { login: 'automation-account', type: 'User' },
       };
       expect(decide(true, own), footer).toBe('act=no reason=self-trigger');
     }
@@ -131,16 +131,43 @@ describe('automation-loop-guard.py', () => {
         'Here is the requested log.',
         '> This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers.',
       ].join('\n'),
-      user: { login: 'adminypc', type: 'User' },
+      user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(true, reply)).toBe('act=yes reason=reporter-reply');
+  });
+
+  it('acts on a reporter reply that discusses the footer inline', () => {
+    // The same finding, without blockquote syntax: a reply that pastes the
+    // marker mid-sentence (here as its last line) is still the reporter's. Only
+    // the automation's own footer line may suppress the re-check.
+    const reply: Comment = {
+      id: 10,
+      body: 'Is the marker `This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers.` still current?',
+      user: { login: 'automation-account', type: 'User' },
+    };
+    expect(decide(true, reply)).toBe('act=yes reason=reporter-reply');
+  });
+
+  it('suppresses an own comment whose footer is the trailing line', () => {
+    // The automation's real shape: prose, a separator, then the footer line.
+    const own: Comment = {
+      id: 11,
+      body: [
+        '**Needs-info re-check — still unclear.**',
+        '',
+        '---',
+        '_This comment was created by an AI agent (OpenHands) on behalf of the repository owner._',
+      ].join('\n'),
+      user: { login: 'automation-account', type: 'User' },
+    };
+    expect(decide(true, own)).toBe('act=no reason=self-trigger');
   });
 
   it('acts on a genuine reporter reply while needs-info is present', () => {
     const reply: Comment = {
       id: 1,
       body: 'It is a throwaway fixture, please close it.',
-      user: { login: 'adminypc', type: 'User' },
+      user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(true, reply)).toBe('act=yes reason=reporter-reply');
   });
@@ -149,7 +176,7 @@ describe('automation-loop-guard.py', () => {
     const reply: Comment = {
       id: 2,
       body: 'some reply',
-      user: { login: 'adminypc', type: 'User' },
+      user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(false, reply)).toBe('act=no reason=not-needs-info');
   });
@@ -158,21 +185,24 @@ describe('automation-loop-guard.py', () => {
     const own: Comment = {
       id: 3,
       body: reporterBody('anything'),
-      user: { login: 'adminypc', type: 'User' },
+      user: { login: 'automation-account', type: 'User' },
     };
     expect(decide(false, own)).toBe('act=no reason=not-needs-info');
   });
 
   it('replays the real #680 stream and shows the guard ends the loop', () => {
-    // Verbatim bodies of the automation's own comments on #680, captured from
-    // the GitHub API (the fixture records its source). Every one is the
+    // The automation's own comments on #680 (bodies condensed 2026-10-07 to
+    // drop the incident's operational detail; each keeps its verbatim trailing
+    // footer, which is the drift the guard must survive). Every one is the
     // automation's; a plain filter fires on all of them, the guard on none.
-    // Using the real bodies — not generated ones — is what lets this test see
+    // Using the real footers — not generated ones — is what lets this test see
     // a footer change the automation actually ships: #680 already carried two
     // wordings the canonical sentence misses.
     const fixture: Fixture = JSON.parse(readFileSync(FIXTURE, 'utf8'));
     expect(fixture.comments.length).toBeGreaterThan(0);
-    expect(new Set(fixture.comments.map((c) => c.user.login))).toEqual(new Set(['adminypc']));
+    // Every comment is posted as a normal user (not a Bot), so sender identity
+    // cannot separate it — only the footer can. That is the #680 premise.
+    expect(new Set(fixture.comments.map((c) => c.user.type))).toEqual(new Set(['User']));
     // The fixture must keep exercising the drift; if it is ever reduced to one
     // canonical footer, this test stops guarding the variant bug.
     expect(fixture.comments.some((c) => c.body.includes('repository owner'))).toBe(true);
@@ -224,6 +254,20 @@ function plan(automations: { name: string; trigger: { on: string; filter: string
     .filter(Boolean);
 }
 
+/** Run the deploy script's offline `verify` (one line per label-conditioned automation). */
+function verify(
+  automations: { name: string; trigger: { on: string; filter: string } }[]
+): string[] {
+  const state = { automations };
+  return execFileSync('python3', [DEPLOY_SCRIPT, 'verify', '-'], {
+    input: JSON.stringify(state),
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter(Boolean);
+}
+
 describe('deploy-automation-loop-guard.py', () => {
   it('exists — a guard with no deployment leaves the loop running', () => {
     expect(existsSync(DEPLOY_SCRIPT)).toBe(true);
@@ -231,9 +275,10 @@ describe('deploy-automation-loop-guard.py', () => {
 
   it('composes the exact filter the live automations carry', () => {
     // The fixture records each automation's pre-guard filter and the guarded
-    // filter the service actually holds (re-read 2026-10-07). If the deploy
+    // filter the service held at capture time (2026-10-07). If the deploy
     // script ever composes a different string — a changed marker, a changed
-    // join — this fails instead of silently re-arming the loop.
+    // join — this fails instead of silently re-arming the loop. It is a
+    // snapshot: backend drift is caught by `verify`, not here (finding 3).
     const defs: Definitions = JSON.parse(readFileSync(DEFINITIONS, 'utf8'));
     const actions = plan(
       defs.automations.map((a) => ({ name: a.name, trigger: { on: a.on, filter: a.filter } }))
@@ -276,5 +321,32 @@ describe('deploy-automation-loop-guard.py', () => {
       },
     ]);
     expect(actions).toEqual(['skip: content filter, not label-conditioned']);
+  });
+
+  it('flags a live automation that lost the guard clause as drift', () => {
+    // Finding 3 of the #683 review: the snapshot above cannot see the backend.
+    // `verify` reads the live filters, so this is the offline pin of the one
+    // report that turns a backend edit into a failing check.
+    const defs: Definitions = JSON.parse(readFileSync(DEFINITIONS, 'utf8'));
+
+    // The guarded live filters verify clean…
+    const guarded = defs.automations.filter((a) => a.expected);
+    const clean = verify(
+      guarded.map((a) => ({ name: a.name, trigger: { on: a.on, filter: a.expected as string } }))
+    );
+    expect(clean).toEqual(guarded.map((a) => `ok: ${a.name}`));
+
+    // …and one with the clause removed reports drift.
+    const drifted = verify([
+      {
+        name: 'SDLC 20 · Issue clarifier',
+        trigger: {
+          on: 'issue_comment.created',
+          filter:
+            "(glob(repository.full_name, 'ypcipansor/cipansor') && contains(issue.labels[].name, 'needs-info'))",
+        },
+      },
+    ]);
+    expect(drifted).toEqual(['drift: SDLC 20 · Issue clarifier: guard clause missing']);
   });
 });

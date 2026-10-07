@@ -32,13 +32,13 @@ in-repo could catch it.
 
 `.github/scripts/automation-loop-guard.py` is the repo-side rule: act only when
 the issue carries `needs-info` **and** the comment is not the automation's own.
-It first rejects any comment carrying a disclosure footer. The marker is
-pinned in two places, and a change to one without the other is what
+It rejects a comment whose **trailing footer line** is a disclosure footer. The
+marker is pinned in two places, and a change to one without the other is what
 `apps/api/src/utils/automation-loop-guard.guard.test.ts` fails on:
 
 1. `AI_FOOTER` in `.github/scripts/automation-loop-guard.py`
-2. the same string in the guard test, replayed against real #680 comment
-   bodies (`apps/api/src/utils/__fixtures__/needs-info-automation-comments.json`)
+2. the same string in the guard test, replayed against the automation's own #680
+   comments (`apps/api/src/utils/__fixtures__/needs-info-automation-comments.json`)
 
 The backend filter cannot call the script (see the deployment section below);
 it carries the clause the script prints.
@@ -85,17 +85,51 @@ ended its own comments with **three** wordings:
 - `created … on behalf of the repository owner.`
 
 A guard that matched only the canonical sentence passed two of the three
-through — the loop would have continued. So `has_ai_footer` matches the
-invariant frame instead: `an AI agent (OpenHands) on behalf of` plus a
-disclosure verb (`created`/`generated`/…), case-insensitive. `AI_FOOTER` still
-records the mandated wording, and the test pins it, but the matching is
-deliberately broader.
+through — the loop would have continued. So `has_ai_footer` matches the footer
+line against the invariant frame `… by an AI agent (OpenHands) on behalf of …`
+with a disclosure verb (`created`/`generated`/…), case-insensitive, allowing the
+markdown emphasis around it. `AI_FOOTER` still records the mandated wording, and
+the test pins it, but the matching is deliberately broader.
 
-### A quoted footer is not the comment's own
+### A quoted or discussed footer is not the comment's own
 
-A reporter answering the request may quote a prior automated comment, footer
-and all. `strip_quoted` drops blockquote (`> …`) lines before matching, so a
-reply that quotes the footer is still a reporter reply and the re-check runs.
+A reporter answering the request may quote a prior automated comment, footer and
+all. The marker is therefore matched only in the comment's **trailing footer
+line** — the last non-blank line, with blockquote (`> …`) lines dropped first —
+not anywhere in the body. A reply that quotes the footer (blockquote, or pasted
+mid-sentence while discussing it) has the frame higher in the body, or with
+other words on the line, and is still a reporter reply: the re-check runs.
+
+The deployed clause (`!icontains(comment.body, 'AI agent (OpenHands)')`) is the
+whole-body approximation, because JMESPath has no line or regex verb. It is the
+cheap robust floor; the position and verb subtleties live in `decide` alone.
+
+## The snapshot cannot see the backend — a live check does
+
+The guard test pins the composition against a checked-in snapshot
+(`needs-info-automation-definitions.json`), which no CI test can update when the
+backend changes: a live edit that drops the clause re-arms the loop without
+failing the suite. Two pieces close that gap:
+
+- `deploy-automation-loop-guard.py verify` reads the live service and exits 1
+  when a label-conditioned `issue_comment.created` automation no longer carries
+  the clause (`verify -` runs the same report over a piped definitions file, so
+  the guard test pins the drift report offline).
+- `.github/workflows/automation-loop-guard.yml` runs it weekly. It is inert
+  (and green) until `OPENHANDS_API_KEY` is set as a repository secret; once set,
+  backend drift turns into a red check. A weekly schedule, not per-PR: the drift
+  is in the backend, so it is the same answer for every PR.
+
+## The fixture publishes no incident detail
+
+The guard test's comment fixture keeps each automated comment's **trailing
+footer verbatim** (the drift the guard must survive) and condenses the narrative
+above it: the incident's timeline, the account, and operational detail (the
+automation service host and endpoint, environment-variable names) are not
+committed. The repo is public until release (AGENTS.md → "Where things live"),
+and incident detail is exactly what it excludes. `check-sensitive.py` scans only
+Markdown, so this fixture had to be judged by hand — it is why the bodies were
+condensed.
 
 If an automation's footer wording changes, the `AI_FOOTER` constant and this
 doc change in the same commit, or the loop returns silently. A new automation

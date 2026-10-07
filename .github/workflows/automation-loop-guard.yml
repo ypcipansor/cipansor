@@ -1,0 +1,53 @@
+# Verify the live automation trigger still carries the loop guard (#680).
+#
+# `.github/scripts/automation-loop-guard.py` holds the rule; the trigger that
+# actually fires is a JMESPath `trigger.filter` in the OpenHands events backend,
+# which a repo test cannot read. The guard test pins the composition against a
+# checked-in snapshot (apps/api/src/utils/__fixtures__/…definitions.json), so a
+# backend edit that drops the clause re-arms the needs-info loop without failing
+# CI. This job closes that gap: it reads the live filters and fails when a
+# label-conditioned `issue_comment.created` automation lost the clause.
+#
+# The token (`OPENHANDS_API_KEY`) is a repository/organization secret. Until it
+# is configured the job is a no-op that reports success, so merging changes
+# nothing; once it is set, a weekly run turns drift into a red check.
+#
+# Runs weekly, not per-PR: the drift is in the backend, not the diff, so it is
+# the same answer for every PR and there is no reason to spend minutes on each.
+
+name: Automation loop guard
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Live guard clause
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Verify the live automations still carry the guard clause
+        env:
+          OPENHANDS_API_KEY: ${{ secrets.OPENHANDS_API_KEY }}
+        run: |
+          if [ -z "$OPENHANDS_API_KEY" ]; then
+            echo "::notice title=Automation loop guard::OPENHANDS_API_KEY is not configured — skipping the live check (see .github/scripts/deploy-automation-loop-guard.py)."
+            exit 0
+          fi
+          set +e
+          out=$(python3 .github/scripts/deploy-automation-loop-guard.py verify 2>&1)
+          code=$?
+          printf '%s\n' "$out"
+          printf '### Automation loop guard\n\n```\n%s\n```\n' "$out" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            echo "::error title=Automation loop guard drift::A label-conditioned automation lost the #680 guard clause — re-run with DEPLOY=true (see .github/scripts/deploy-automation-loop-guard.py)."
+          fi
+          exit "$code"

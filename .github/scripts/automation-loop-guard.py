@@ -3,13 +3,11 @@
 
 Issue #680: the automation fires on every `issue_comment.created` while an
 issue carries `needs-info`. Its own comment satisfies that condition, so it
-re-arms itself — on the fixture issue #678 it ran up to eleven back-to-back
-"Needs-info re-check" comments in ~27 minutes with no reporter input, each a
-full LLM run; #678 was later deleted, so the re-verifiable record is the nine
-comments the automation left on #680 (captured in the guard test's fixture).
-Every comment, the automation's included, is posted under the reporter's
-account (`user.type: User`), so `sender.login` and `sender.type` cannot tell
-them apart.
+re-arms itself — each automated "Needs-info re-check" comment triggers the next,
+with no reporter input, and each is a full LLM run. The automation posts under
+the same account as the reporter (`user.type: User`), so `sender.login` and
+`sender.type` cannot tell its comments from a person's; only the AI-disclosure
+footer it appends can.
 
 The automation definition lives in the OpenHands events backend, not in this
 repository, so its `trigger.filter` is a JMESPath expression that cannot call
@@ -27,19 +25,20 @@ The three conditions, in order:
   * otherwise it is a reporter reply and the re-check runs (reporter-reply)
 
 The automation's own comments are recognised by the AI-disclosure footer every
-automated comment carries (AGENTS.md / the automation prompt). The footer's
-wording is NOT stable — the automation has emitted at least three variants
-(created/generated, maintainers/owner) on the very issues this guard was
-written for, so matching the full sentence lets two of the three through and
-the loop continues. `has_ai_footer` matches the invariant frame instead:
-"an AI agent (OpenHands)" plus a marker that the sentence is a disclosure
-("created"/"generated", "on behalf of"). `AI_FOOTER` pins the mandated
-canonical wording for the decision doc and the guard test.
+automated comment carries (AGENTS.md / the automation prompt). Two things make
+that recognition subtle:
 
-A footer pasted inside a quoted line (the reporter quoting a prior automated
-comment to answer the request) is not the comment's own footer. `strip_quoted`
-drops blockquote lines before matching, so a reply that quotes the footer is
-still a reporter reply and the re-check runs.
+  * **The wording drifts.** The automation has emitted at least three variants
+    (created/generated, maintainers/owner), so matching the full sentence lets
+    some through and the loop continues. `has_ai_footer` matches the invariant
+    frame — "an AI agent (OpenHands) on behalf of" — plus a disclosure verb.
+  * **The position matters.** A real reply can *quote* an automated comment
+    (blockquote lines, or the footer pasted mid-sentence while discussing it),
+    and that quote carries the frame without being the reply's own footer.
+    `is_own_comment` therefore matches the frame only in the comment's
+    **trailing disclosure footer**: the last block of non-blank, non-quoted
+    lines. A frame buried in the body or sitting on a quoted line is someone
+    else's; `AI_FOOTER` pins the mandated canonical wording.
 
 Usage:
   automation-loop-guard.py decide -      one event object on stdin -> "act=… reason=…"
@@ -54,17 +53,35 @@ import sys
 
 # The mandated disclosure footer, verbatim. Pinned by the decision doc and the
 # guard test; deliberately not the only string the guard accepts — see
-# `has_ai_footer` for why the full sentence alone is unsafe.
+# `is_own_comment` for why the full sentence alone is unsafe.
 AI_FOOTER = "This comment was created by an AI agent (OpenHands) on behalf of the repository maintainers."
 
-# The stable core of any disclosure footer the automation emits. The wording
-# around it (created/generated, maintainers/owner) has drifted in practice, so
-# the guard matches the frame, not one sentence.
-_AI_AGENT = re.compile(
-    r"an AI agent \(OpenHands\) on behalf of",
+# The stable core of any disclosure footer the automation emits, matched as a
+# whole line. The wording around it (created/generated, maintainers/owner) has
+# drifted in practice, so the guard matches the frame, not one sentence; and a
+# reply that quotes the footer or discusses it inline has other words around the
+# frame, so it is not read as ours.
+_DISCLOSURE_VERB = r"(created|generated|posted|written|produced)"
+_FOOTER_LINE = re.compile(
+    r"^(?:this comment (?:was|has been|is) )?"
+    r"{} by an AI agent \(OpenHands\) on behalf of .*\.?$".format(_DISCLOSURE_VERB),
     re.IGNORECASE,
 )
-_DISCLOSURE_VERB = re.compile(r"\b(created|generated|posted|written|produced)\b", re.IGNORECASE)
+
+
+def footer_line(body: str) -> str:
+    """The comment's own trailing footer line, or "".
+
+    The frame is matched only where the automation actually puts it: the last
+    non-blank line, with blockquote (`> …`) lines dropped first. A reply that
+    quotes the footer (blockquote, or pasted mid-sentence while discussing it)
+    has the frame higher in the body and loses its own footer, so it is still
+    read as a reporter reply.
+    """
+    for line in reversed(strip_quoted(body).splitlines()):
+        if line.strip():
+            return line
+    return ""
 
 
 def strip_quoted(body: str) -> str:
@@ -77,8 +94,15 @@ def strip_quoted(body: str) -> str:
 
 
 def has_ai_footer(body: str) -> bool:
-    text = strip_quoted(body)
-    return bool(_AI_AGENT.search(text) and _DISCLOSURE_VERB.search(text))
+    """True only for the automation's own trailing disclosure footer.
+
+    Matching the frame anywhere (not only the footer line) misreads a reporter
+    who quotes the footer or discusses it: their reply is not the automation's
+    own, and the re-check must run on it. The footer is its own line, wrapped in
+    markdown emphasis (`*…*`, `_…_`) at most, so the whole line must match.
+    """
+    line = footer_line(body).strip().strip("*_`").strip()
+    return bool(_FOOTER_LINE.match(line))
 
 
 def has_needs_info(event: dict) -> bool:

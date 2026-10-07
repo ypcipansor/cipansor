@@ -1,6 +1,6 @@
 {
-  "source": "https://app.all-hands.dev/api/automation/v1 (issue_comment.created automations), captured 2026-10-07",
-  "note": "The pre-guard filters the deploy script receives, and the guarded filter each must become. `expected` is the live value re-read from the automation service on 2026-10-07; a change to either side fails apps/api/src/utils/automation-loop-guard.guard.test.ts, so a silent drift in the deployed clause (a re-armed loop) is caught in CI.",
+  "source": "OpenHands automation service, issue_comment.created automations, captured 2026-10-07",
+  "note": "The pre-guard filters the deploy script receives, and the guarded filter each must become (`expected` is the live value re-read from the service on 2026-10-07). This is a SNAPSHOT: it pins what the deploy script composes, not what the service holds now — a backend edit that drops the clause re-arms the loop without failing this test. The live check for that is `deploy-automation-loop-guard.py verify`, run weekly by .github/workflows/automation-loop-guard.yml.",
   "clause": "!icontains(comment.body, 'AI agent (OpenHands)')",
   "automations": [
     {
