@@ -66,6 +66,7 @@ the mechanical cases.
 - [pnpm-install-silently-installs-nothing](lessons/pnpm-install-silently-installs-nothing.md) — exit 0, nothing installed; `CI=true`
 - [audit-deps-fails-on-time-not-diff](lessons/audit-deps-fails-on-time-not-diff.md) — the Security job reds on the date, and greens without checking
 - [github-actions-minutes-exhausted](lessons/github-actions-minutes-exhausted.md) — a 2-second job with no steps is a billing wall; read the annotation
+- [automation-triggers-are-untrusted-input](lessons/automation-triggers-are-untrusted-input.md) � an event automation re-triggers on its own comments; the needs-info re-check looped six times on #678; identity cannot tell it from the reporter, the footer marker can
 - [gh-cli-and-shell-traps](lessons/gh-cli-and-shell-traps.md) — `gh pr edit` does nothing; unquoted heredocs run backticks; all green yet BLOCKED = a CodeQL category missing
 - [docker-image-size-traps](lessons/docker-image-size-traps.md) — Prisma's optional peer, `chown -R`, recursive `*.sql` in `.dockerignore`
 - [next-image-optimizer-dead](lessons/next-image-optimizer-dead.md) — `/_next/image` never resizes; ship images at display size
