@@ -4,15 +4,20 @@
 > own comments. On a `needs-info` issue the re-check armed itself six times in
 > fifteen minutes — six full LLM runs, none from the reporter.
 
-First seen 2026-10-07 on #678 (issue #680). The `needs-info` re-check automation
-was built on `on: issue_comment.created` + a filter for the `needs-info` label.
-Its own reply satisfies that filter, so each run posted the next run's trigger.
-Every run is a full conversation, so the cost is unbounded, not a one-off.
+First seen 2026-10-07 (issue #680). An event automation that watched a comment
+stream and filtered on a label it also helped manage re-armed itself: its own
+reply satisfied its own filter, so each run posted the next run's trigger. Every
+run is a full conversation, so the cost is unbounded, not a one-off.
+
+**Which automation, its exact event key and filter, and the account it posts as
+are operational detail** — kept in the machine-local memory
+(`~/.openhands/memory/`), not in this public lesson. The generalisable pattern
+and its fix are below and do not require reading the live setup.
 
 ## Why the obvious guards did not hold
 
-- **`sender.login` cannot separate the automation from the reporter.** Automations
-  post through the account that owns the run (`adminypc`, `user.type: User`), the
+- **`sender.login` cannot separate the automation from the reporter.** An
+  automation posts through the account that owns the run (`user.type: User`), the
   same account a person replies from. `sender.type == 'Bot'` is false for it too.
 - **The automation's comments are indistinguishable from a human's by metadata**,
   so identity alone cannot break the cycle; only the body or a distinct bot
