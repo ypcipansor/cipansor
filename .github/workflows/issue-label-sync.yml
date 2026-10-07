@@ -1,0 +1,39 @@
+# Keep a pull request's labels in sync with the issue it closes, and fail the
+# check when they disagree.
+#
+# The taxonomy and the rules live in .github/scripts/issue-label-sync.sh so the
+# same logic can be run by hand. The check is advisory in name only: add
+# "Issue label sync" to the branch protection required checks to make it
+# blocking. It reports success (not pending) when there is nothing to compare,
+# so it never wedges a PR that closes no issue.
+name: Issue label sync
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: issue-label-sync-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Issue label sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Sync and check labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: sh .github/scripts/issue-label-sync.sh "$PR"

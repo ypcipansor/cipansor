@@ -1,0 +1,42 @@
+# A duplicate issue gets one warning, then closes if the reporter does not show
+# it is not a duplicate within seven days.
+#
+# "Show it is not a duplicate" means: the issue was edited, or the reporter
+# replied and a maintainer removed the `duplicate` label. If neither happens,
+# the issue closes as `not planned`. Removing the label at any point cancels the
+# close, because the script re-reads the label on every run.
+#
+# The triage automation applies `duplicate` and links the original. This only
+# enforces the consequence.
+name: Duplicate sweep
+
+on:
+  schedule:
+    - cron: '30 1 * * *'   # 08:30 Asia/Jakarta, daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: duplicate-sweep
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep duplicates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Warn and close stale duplicates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          GRACE_DAYS: '7'
+        run: sh .github/scripts/duplicate-sweep.sh
