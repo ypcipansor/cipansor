@@ -164,6 +164,26 @@ describe('konsep awal surat', () => {
     expect(remainingPlaceholders(filled)).toEqual([]);
   });
 
+  /**
+   * Sebagian petunjuk placeholder ditulis sebagai kalimat berhuruf kecil
+   * ("[URAIAN KETERANGAN, mis. ...]"). Pencari lama hanya menerima huruf
+   * kapital, sehingga konsep yang masih memuat petunjuk itu dilaporkan
+   * lengkap dan naik ke atasan dengan kurung siku yang belum diisi.
+   */
+  it('melaporkan setiap placeholder bersiku di konsep setiap jenis surat', () => {
+    for (const type of Object.values(LetterType)) {
+      const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
+      const all = draft.match(/\[[^\]\n]+\]/g) ?? [];
+      expect(remainingPlaceholders(draft), type).toHaveLength(new Set(all).size);
+    }
+
+    expect(remainingPlaceholders('Mohon isi [URAIAN KETERANGAN, mis. peran ...].')).toEqual([
+      '[URAIAN KETERANGAN, mis. peran ...]',
+    ]);
+    // Naskah yang benar-benar lengkap tetap tidak melaporkan apa pun.
+    expect(remainingPlaceholders('Surat lengkap, tanpa petunjuk tersisa.')).toEqual([]);
+  });
+
   it('konsep tidak menyisakan baris kosong di awal/akhir', () => {
     for (const type of Object.values(LetterType)) {
       const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
