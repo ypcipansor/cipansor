@@ -106,6 +106,7 @@ describe('metrics-watch', () => {
     // history is on the older pages. The watch must page, not read page 1 only.
     const payload = JSON.parse(readFileSync(join(FIXTURES, 'runs-quiet.json'), 'utf8'));
     const newest = Array.from({ length: 40 }, (_, i) => ({
+      id: 900000 + i,
       name: `PR #${600 + i}`,
       event: 'pull_request',
       head_branch: `feature/${i}`,
@@ -125,7 +126,8 @@ describe('metrics-watch', () => {
       input: paged,
       encoding: 'utf8',
     });
-    expect(out).toContain('| platform.pipeline_failure_rate |');
+    expect(out).toContain('| platform.pipeline_failure_rate | 0.0% | 0.0% | 20/40 |');
+    expect(out).toContain('| platform.run_duration_median | 210s | 210s | 20/40 |');
     expect(out).not.toContain('pipeline run(s) read; need 25');
   });
 

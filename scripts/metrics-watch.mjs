@@ -247,7 +247,6 @@ export function analyze(payload) {
         { key: 'platform.run_duration_median', source: 'GitHub Actions runs', reason },
       ],
       anomalies: [],
-      note: null,
     };
   }
 
@@ -313,7 +312,7 @@ export function analyze(payload) {
     },
   ];
 
-  return { metrics, anomalies, note: null };
+  return { metrics, anomalies };
 }
 
 const pct = (v) => (v === null ? 'n/a' : `${(v * 100).toFixed(1)}%`);
@@ -321,7 +320,7 @@ const secs = (ms) => (ms === null ? 'n/a' : `${(ms / 1000).toFixed(0)}s`);
 const count = (v) => (v === null ? 'n/a' : String(v));
 
 export function renderReport(payload, repo) {
-  const { metrics, anomalies, unavailable = [], note } = analyze(payload);
+  const { metrics, anomalies, unavailable = [] } = analyze(payload);
   const lines = [];
   lines.push(`## Key metrics watch — ${repo}`);
   lines.push('');
@@ -330,20 +329,13 @@ export function renderReport(payload, repo) {
   lines.push('');
   lines.push('### Readable metrics');
   lines.push('');
-  if (note) {
-    lines.push(`_Could not compare: ${note}._`);
-  }
-  if (metrics.length > 0) {
-    lines.push('| Metric | Current | Baseline | n (cur/base) |');
-    lines.push('|---|---|---|---|');
-    for (const m of metrics) {
-      const fmt = m.key.includes('duration') ? secs : m.key.includes('rate') ? pct : count;
-      lines.push(
-        `| ${m.key} | ${fmt(m.current)} | ${fmt(m.baseline)} | ${m.currentN}/${m.baselineN} |`
-      );
-    }
-  } else if (!note) {
-    lines.push('_No metric was readable in this run; every one is named as unavailable below._');
+  lines.push('| Metric | Current | Baseline | n (cur/base) |');
+  lines.push('|---|---|---|---|');
+  for (const m of metrics) {
+    const fmt = m.key.includes('duration') ? secs : m.key.includes('rate') ? pct : count;
+    lines.push(
+      `| ${m.key} | ${fmt(m.current)} | ${fmt(m.baseline)} | ${m.currentN}/${m.baselineN} |`
+    );
   }
   lines.push('');
   lines.push('### Unavailable metrics (reported, never alerted)');
