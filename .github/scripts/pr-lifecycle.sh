@@ -34,14 +34,13 @@ AI_FOOTER="_This comment was created by an AI agent (OpenHands) on behalf of the
 # tested commit - a subset (E2E has not started, or the API truncated a page)
 # must never be mistaken for the full gate.
 #
-# Note the two definitions of "green" GitHub and this script use. A job skipped
-# by its own `if:` (a docs-only PR reports `scope.run=false`, so
-# Lint/Build/Tests/Security/E2E are skipped) still satisfies a *required status
-# check* on GitHub - a skipped job reports success. This script is stricter: it
-# requires each check to be present and `conclusion=success`, so a docs-only PR
-# never reaches the all-green notice. That is intentional - the notice means "the
-# full gate ran and passed", and a documentation change cannot satisfy it in any
-# useful sense.
+# A job skipped by its own `if:` (a docs-only PR reports `scope.run=false`, so
+# Lint/Build/Tests/Security/E2E are skipped) is neither red nor pending here: a
+# `skipped` conclusion is excluded from RED (which lists only real failures) and
+# from PENDING (which lists conclusions this gate does not call green). A docs
+# PR is therefore green once every check is *present* and none failed, which is
+# what lets it reach the gate. Presence is still required, so a green subset (an
+# early CI finish before E2E has published its checks) stays pending.
 REQUIRED_CHECKS="${REQUIRED_CHECKS:-CI scope|Lint|Build|Tests|Security|E2E scope|E2E Tests (Chromium)}"
 
 # Suites that publish a check run on every PR whose workflow ran. A signature
