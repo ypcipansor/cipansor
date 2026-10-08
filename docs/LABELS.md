@@ -8,51 +8,50 @@ enforced, not just conventions.
 
 ## Type — what kind of change is this
 
-| Label | Use for |
-|---|---|
-| `bug` | Something that is broken |
-| `enhancement` | A new feature or a change in behaviour |
-| `documentation` | Documentation only |
-| `refactor` | A change that neither fixes a bug nor adds a feature |
-| `chore` | Tooling, dependencies, housekeeping |
-| `security` | A vulnerability or a hardening change |
+| Label           | Use for                                              |
+| --------------- | ---------------------------------------------------- |
+| `bug`           | Something that is broken                             |
+| `enhancement`   | A new feature or a change in behaviour               |
+| `documentation` | Documentation only                                   |
+| `refactor`      | A change that neither fixes a bug nor adds a feature |
+| `chore`         | Tooling, dependencies, housekeeping                  |
+| `security`      | A vulnerability or a hardening change                |
 
 ## Priority — how urgent
 
-| Label | Use for |
-|---|---|
+| Label               | Use for                                             |
+| ------------------- | --------------------------------------------------- |
 | `priority:critical` | An outage, data loss, or an active security problem |
-| `priority:high` | Important; schedule for the current cycle |
-| `priority:medium` | Normal; the default for triaged work |
-| `priority:low` | Nice to have, no urgency |
+| `priority:high`     | Important; schedule for the current cycle           |
+| `priority:medium`   | Normal; the default for triaged work                |
+| `priority:low`      | Nice to have, no urgency                            |
 
 ## Status — where it is in the lifecycle
 
-| Label | Meaning |
-|---|---|
-| `ready` | Specified enough to implement; open to a contributor or the bot |
-| `bot-implement` | Serahkan issue ini ke `Tiket jadi PR` — bot mengerjakannya. Pakai sebagai ganti (atau bersama) `ready` bila pekerjaannya milik bot |
-| `pending-maintainer` | Waiting for a maintainer to decide whether to proceed; `ready` starts implementation |
-| `needs-info` | Waiting on the reporter for a missing detail |
-| `in-progress` | Someone or an automation is actively working on it |
-| `blocked` | Cannot proceed until a dependency is resolved |
-| `stale` | No activity for a long time; will close unless kept |
-| `question` | A question, not a change request |
-| `duplicate` | An issue already reported elsewhere; the original is linked |
-| `duplicate-pr` | A pull request already covered by another PR or issue; closed like a duplicate after the warning |
-| `invalid` | Not a valid report |
-| `wontfix` | Deliberately not going to be done |
-| `bug-hunter` | Provenance: found by the Bug hunter automation |
-| `automation-health` | Fleet-health report from the watchdog; needs a maintainer |
-| `automation` | Report or action from an automation; skip in manual triage |
-| `watchdog-repair` | (tidak dipakai lagi) Dulu perbaikan dari pengawas; pengawas kini hanya membuka issue |
+| Label                | Meaning                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `ready`              | Specified enough to implement; open to a contributor or the bot                                                                    |
+| `bot-implement`      | Serahkan issue ini ke `Tiket jadi PR` — bot mengerjakannya. Pakai sebagai ganti (atau bersama) `ready` bila pekerjaannya milik bot |
+| `pending-maintainer` | Waiting for a maintainer to decide whether to proceed; `ready` starts implementation                                               |
+| `needs-info`         | Waiting on the reporter for a missing detail                                                                                       |
+| `in-progress`        | Someone or an automation is actively working on it                                                                                 |
+| `blocked`            | Cannot proceed until a dependency is resolved                                                                                      |
+| `stale`              | No activity for a long time; will close unless kept                                                                                |
+| `question`           | A question, not a change request                                                                                                   |
+| `duplicate`          | An issue already reported elsewhere; the original is linked                                                                        |
+| `duplicate-pr`       | A pull request already covered by another PR or issue; closed like a duplicate after the warning                                   |
+| `invalid`            | Not a valid report                                                                                                                 |
+| `wontfix`            | Deliberately not going to be done                                                                                                  |
+| `bug-hunter`         | Provenance: found by the Bug hunter automation                                                                                     |
+| `automation-health`  | Fleet-health report from the watchdog; needs a maintainer                                                                          |
+| `automation`         | Report or action from an automation; skip in manual triage                                                                         |
 
 ## The rules
 
 1. **Type and priority are shared between an issue and its pull request.** When
    a PR closes an issue, it must carry the same type label and the same priority
    label. `Pelabel PR` sets them from the issue; the `Issue label
-   sync` workflow adds anything missing and **fails the check** when the type
+sync` workflow adds anything missing and **fails the check** when the type
    genuinely disagrees (a different type is a real conflict, not something to
    guess at). A PR that closes **more than one** issue must satisfy every one of
    them, and the check fails when the issues disagree among themselves. Changing
@@ -65,7 +64,7 @@ enforced, not just conventions.
 2. **Status labels are not copied to a pull request.** `question`, `needs-info`,
    `duplicate`, `invalid`, `wontfix`, `blocked`, `ready` and `in-progress`
    describe an issue's own lifecycle. A PR's lifecycle is its draft state and
-   its reviews. The one exception is `duplicate-pr`, which exists *for* a PR:
+   its reviews. The one exception is `duplicate-pr`, which exists _for_ a PR:
    the issue-lifecycle `duplicate` label must never sit on a PR, so a duplicate
    pull request is marked with `duplicate-pr` and swept the same way as a
    duplicate issue (rule 4).
@@ -114,18 +113,18 @@ enforced, not just conventions.
 
 ## Which automation owns which label
 
-| Automation | Trigger | Labels it sets |
-|---|---|---|
-| `Pelabel issue` | issue opened | tipe, prioritas, `ready` / `needs-info` / `question` / `duplicate` |
-| `Tiket jadi PR` | issue labelled `bot-implement` | tidak ada — ia membuka PR |
-| `Penjernih issue` | comment on a `needs-info` issue | `needs-info` ↔ `ready`, `duplicate`, `invalid` |
-| `Pelabel PR` | PR opened | tipe dan prioritas issue tertaut, atau `duplicate-pr` |
-| `Gerbang tinjau PR` | PR ready for review, or CI-green dispatch | tidak ada — ia meninjau atau menyetujui |
-| `Pemburu bug` | daily cron | membuka issue `bug`, satu prioritas, `bug-hunter`, `bot-implement` |
-| `Pemindai standar` | weekly cron | membuka issue dengan tipe, prioritas, `pending-maintainer` |
-| `Penjaga issue` | daily cron | `stale`, dan menutup issue menganggur `not planned` |
-| `Diskusi` | comment on `pending-maintainer` / `needs-info` | `ready`, `wontfix`, `needs-info` |
-| `Pengawas armada` | daily cron | `automation-health` pada laporannya |
+| Automation          | Trigger                                        | Labels it sets                                                     |
+| ------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
+| `Pelabel issue`     | issue opened                                   | tipe, prioritas, `ready` / `needs-info` / `question` / `duplicate` |
+| `Tiket jadi PR`     | issue labelled `bot-implement`                 | tidak ada — ia membuka PR                                          |
+| `Penjernih issue`   | comment on a `needs-info` issue                | `needs-info` ↔ `ready`, `duplicate`, `invalid`                     |
+| `Pelabel PR`        | PR opened                                      | tipe dan prioritas issue tertaut, atau `duplicate-pr`              |
+| `Gerbang tinjau PR` | PR ready for review, or CI-green dispatch      | tidak ada — ia meninjau atau menyetujui                            |
+| `Pemburu bug`       | daily cron                                     | membuka issue `bug`, satu prioritas, `bug-hunter`, `bot-implement` |
+| `Pemindai standar`  | weekly cron                                    | membuka issue dengan tipe, prioritas, `pending-maintainer`         |
+| `Penjaga issue`     | daily cron                                     | `stale`, dan menutup issue menganggur `not planned`                |
+| `Diskusi`           | comment on `pending-maintainer` / `needs-info` | `ready`, `wontfix`, `needs-info`                                   |
+| `Pengawas armada`   | daily cron                                     | `automation-health` pada laporannya                                |
 
 The deterministic consequences are GitHub Actions workflows
 (`issue-label-sync.yml`, `pr-lifecycle.yml`, `duplicate-sweep.yml`), not
@@ -174,7 +173,7 @@ to produce the labels above, not prose to read and forget:
 - The **bug** form requires a reproduction and an acceptance criterion; the
   **feature request** form requires a motivation and a criterion. What these
   fields contain is what `Pelabel issue` reads to decide `ready` versus `needs-info`.
-- A `bug` issue may still arrive thin — a reporter often cannot say *why*. That
+- A `bug` issue may still arrive thin — a reporter often cannot say _why_. That
   is expected: `Reproduksi bug` investigates, adds the cause and, for a UI defect,
   reproduces it and attaches a screenshot to the issue by editing its body. It
   does not send the issue to `needs-info` for being incomplete.

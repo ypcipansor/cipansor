@@ -26,11 +26,11 @@ menambahkan `ready` untuk memulai implementasi.
 
 Mengusangkan issue yang macet. Timer, dari yang dipakai proyek sebanding:
 
-| Label | Warn after | Close after | Precedent |
-|---|---|---|---|
-| `needs-info` | — | 20 days | Kubernetes triage guide |
-| `question` | 8 days (`stale`) | 7 more | Traefik contributors guide |
-| anything else | 90 days (`stale`) | 14 more | `actions/stale` default |
+| Label         | Warn after        | Close after | Precedent                  |
+| ------------- | ----------------- | ----------- | -------------------------- |
+| `needs-info`  | —                 | 20 days     | Kubernetes triage guide    |
+| `question`    | 8 days (`stale`)  | 7 more      | Traefik contributors guide |
+| anything else | 90 days (`stale`) | 14 more     | `actions/stale` default    |
 
 Exempt: `pending-maintainer`, `ready`, `blocked`, `in-progress`, dan apa pun yang
 dikomentari maintainer. `duplicate` dimiliki oleh sweep workflow.
@@ -93,7 +93,10 @@ Dipilih **gate keras pada job `template`**:
   - job **visual** memasang pengingat **sebelum/sesudah** bila PR mengubah
     `apps/web` dan body-nya tidak punya gambar atau video — ini tetap advisory.
 - Hanya job `template` yang memblokir; ia tidak memberi label atau mengubah
-  status draft. Aturannya adalah skrip shell di `.github/scripts/` dan dicakup
+  status draft. Check-nya bernama `PR template reminder`. Agar merge benar-benar
+  tertahan, check itu harus ditambahkan ke required status checks ruleset `main`
+  — langkah maintainer dengan akses admin; sampai itu dilakukan, job hanya merah
+  tanpa memblokir. Aturannya adalah skrip shell di `.github/scripts/` dan dicakup
   oleh `apps/api/src/utils/pr-description.guard.test.ts` (stub `gh`, `jq` asli),
   pola yang sama dengan guard lain.
 
@@ -102,7 +105,7 @@ Why/Summary/How to test dan menunjuk issue `ready-for-dev`.
 
 ### Issue bug yang datang tidak lengkap (`Reproduksi bug`)
 
-Pelapor yang tidak bisa menyebut *mengapa* sesuatu terjadi tetap telah menemukan
+Pelapor yang tidak bisa menyebut _mengapa_ sesuatu terjadi tetap telah menemukan
 kegagalan nyata. Karena itu `Reproduksi bug` memperlakukan laporan bug yang
 tipis sebagai pekerjaan, bukan alasan memantulkannya:
 
@@ -114,7 +117,7 @@ tipis sebagai pekerjaan, bukan alasan memantulkannya:
 - Bila tidak ada yang salah (perilaku memang disengaja, salah baca) ia
   mengatakannya dengan bukti dan memasang `invalid`/`duplicate`/`question`,
   mencabut `bug`.
-- `Pelabel issue` tidak lagi mengirim *cacat* yang tipis ke `needs-info` — jalur
+- `Pelabel issue` tidak lagi mengirim _cacat_ yang tipis ke `needs-info` — jalur
   itu untuk permintaan yang kabur, bukan bug yang penyebabnya belum diketahui.
   `ready` tetap keputusan manusia: `Reproduksi bug` melaporkan bahwa reproduksi
   kini ada dan menyerahkan gerbangnya ke maintainer.
@@ -122,7 +125,7 @@ tipis sebagai pekerjaan, bukan alasan memantulkannya:
   `Tiket jadi PR`.
 
 Pemicunya menyala pada `issues.opened` atau saat label `bug` dipasang, tetapi
-hanya bila issue *masih* membawa `bug` dan hanya bila label itulah yang berubah —
+hanya bila issue _masih_ membawa `bug` dan hanya bila label itulah yang berubah —
 jadi memasang `ready` atau `needs-info` saat meninjau tidak memicunya ulang.
 
 ## Aturan yang dibagi semua

@@ -90,9 +90,11 @@ fi
 # intended` is the explicit escape hatch for the rare deliberate exception.
 ID_WORDS='dan|yang|atau|dengan|untuk|tidak|adalah|pada|dari|ini|itu|akan|bisa|sudah|belum|perubahan|pengujian|perbaikan|masalah|berkas|kesalahan'
 EN_WORDS='(^|[^a-z])(the|and|with|this|that|for|not|should|change|changes|changed|test|tests|tested|testing|fix|fixes|fixed|fixing|adds|added|adding)([^a-z]|$)'
-if ! printf '%s' "$BODY" | grep -qiE "($ID_WORDS)" \
+# Both sides need word boundaries: `ini` sits inside "initial" and `dan` inside
+# "abundant", so an unanchored Indonesian match would let an English body pass.
+if ! printf '%s' "$BODY" | grep -qiE "(^|[^a-z])($ID_WORDS)([^a-z]|$)" \
    && printf '%s' "$BODY" | grep -qiE "$EN_WORDS" \
-   && ! printf '%s' "$BODY" | grep -qi 'english is intended'; then
+   && ! printf '%s' "$BODY" | grep -qiE '^[[:space:]]*english is intended'; then
   missing="$missing
 - deskripsi terbaca sebagai Bahasa Inggris; repo ini menulis prosa GitHub-nya dalam Bahasa Indonesia (tambahkan baris \`English is intended\` hanya bila itu memang disengaja)"
 fi

@@ -48,10 +48,15 @@ describe('main-failure-bridge.yml', () => {
     expect(BRIDGE).toMatch(/head_branch == 'main'/);
   });
 
-  it('skips while main is still red, so it files one issue per breakage', () => {
-    expect(BRIDGE).toMatch(/commits\/main\/status/);
-    expect(BRIDGE).toMatch(/STATE" = "failure"/);
+  it('skips when the tip of main has moved past the failed run', () => {
+    // The tip is read from the Checks API. The legacy `commits/main/status`
+    // endpoint returns an empty status list in this repo, so a state-based skip
+    // would never fire; the bridge must compare head SHAs instead.
+    expect(BRIDGE).toMatch(/commits\/main\/check-runs/);
+    expect(BRIDGE).toMatch(/FAILED_SHA:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}/);
+    expect(BRIDGE).toMatch(/TIP" != "\$FAILED_SHA"/);
     expect(BRIDGE).toMatch(/skip=1/);
+    expect(BRIDGE).not.toMatch(/commits\/main\/status/);
   });
 
   it('dispatches the monitor by id and needs no key to stay harmless', () => {

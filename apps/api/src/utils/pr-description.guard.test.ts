@@ -133,6 +133,26 @@ describe('pr-template-guard.sh', () => {
     expect(calls).toContain('COMMENT');
   });
 
+  it('fails an English body even when a word merely contains an Indonesian word', () => {
+    // `ini` sits inside "initial". The Indonesian match must be word-anchored,
+    // or an English body that happens to contain such a substring would pass.
+    const english =
+      COMPLETE.replace(
+        'Saya menjalankan tes API dan mencoba alur yang berubah.',
+        'I ran the API tests and walked the changed flow.'
+      )
+        .replace(
+          'Endpoint health berbohong tentang keadaan basis data.',
+          'The health endpoint lied about the database.'
+        )
+        .replace('memeriksa basis data sebelum menjawab', 'probe the database before answering')
+        .replace('menjawab 503 ketika pemeriksaan gagal', 'answers 503 when the probe fails') +
+      '\nInitial rollout only.\n';
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: english });
+    expect(status).toBe(1);
+    expect(calls).toContain('COMMENT');
+  });
+
   it('passes an English body that says English is intended', () => {
     const english = COMPLETE.replace(
       'Saya menjalankan tes API dan mencoba alur yang berubah.',

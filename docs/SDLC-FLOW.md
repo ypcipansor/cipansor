@@ -255,7 +255,7 @@ _menulis_ artefak tidak pernah menjadi akun yang _menyetujuinya_.
   selama masih ada yang berjalan, dan `pr-lifecycle.yml` (pada `workflow_run`)
   men-dispatch-nya begitu semua check wajib lulus. `Pemantau deployment` memakai
   pola yang sama: `main-failure-bridge.yml` men-dispatch-nya saat workflow di
-  `main` selesai gagal dan `main` hijau lagi; event `workflow_run` di automation
+  `main` selesai gagal dan run yang gagal itu masih menjadi tip `main`; event `workflow_run` di automation
   itu hanya pelengkap best-effort, dan promptnya melakukan dedupe per run ID agar
   tidak ada issue ganda. Keduanya butuh rahasia repo `OPENHANDS_API_KEY`.
 - **Konsekuensi deterministik milik Actions.** Jembatan hasil CI, penutupan
@@ -266,10 +266,14 @@ _menulis_ artefak tidak pernah menjadi akun yang _menyetujuinya_.
   membuka issue; `bot-implement` menyerahkannya ke penulis tunggal itu. Ini
   menghapus PR spekulatif dari automation lain dan menjaga satu bentuk diff.
 - **Gate deskripsi PR kini keras.** `pr-description-checks.yml` job `template`
-  **gagal** selama templat belum lengkap, issue tertaut belum berlabel
-  `ready`/`bot-implement`, atau prosanya terbaca sebagai Bahasa Inggris. Ini
-  menyamakan repo dengan standar OpenHands (Why/Summary/How to test + issue
-  `ready-for-dev`). Job `visual` tetap advisory.
+  (check bernama `PR template reminder`) **gagal** selama templat belum lengkap,
+  issue tertaut belum berlabel `ready`/`bot-implement`, atau prosanya terbaca
+  sebagai Bahasa Inggris. Job ini merah, tetapi check-nya **belum** ada di
+  required status checks ruleset `main` (Build, Lint, Tests, Security, E2E Tests
+  (Chromium)), jadi saat ini ia belum menahan merge — menambahkannya adalah
+  langkah maintainer dengan akses admin. Ini menyamakan repo dengan standar
+  OpenHands (Why/Summary/How to test + issue `ready-for-dev`). Job `visual`
+  tetap advisory.
 - **CI merah atau review minta-perubahan tidak mengembalikan PR ke draft.** PR
   tetap terbuka dan check yang gagal terlihat padanya; gerbang memposting review
   minta-perubahan dan branch protection menahan merge. Mengembalikan ke draft
