@@ -66,8 +66,17 @@ jobs:
         if: always()
         run: cat report.md >> "$GITHUB_STEP_SUMMARY" || true
 
+      # Both halves of the monitor's contract are guarded here: a real anomaly
+      # opens a ticket, and a metric that could not be read never does.
+      # `steps.metrics.outcome == 'success'` is the second half. When the watch
+      # exits 1 (a source it could not read) the "Read metrics" step fails
+      # before writing its output, so `count` is the empty string; `'' != '0'`
+      # is true, and with `always()` this step would draft an "anomaly detected"
+      # issue out of the run that read nothing — an alert on an unreadable
+      # metric, the exact inverse of the rule. A metric that could not be read
+      # is already loud: step 1 posts `::error` and the run is red.
       - name: Open or update an anomaly ticket
-        if: always() && steps.metrics.outputs.count != '0'
+        if: always() && steps.metrics.outcome == 'success' && steps.metrics.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           COUNT: ${{ steps.metrics.outputs.count }}

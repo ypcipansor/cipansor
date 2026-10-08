@@ -124,4 +124,53 @@ describe('metrics-watch', () => {
     const out = analyze('runs-unfinished.json');
     expect(out).toContain('| platform.scheduled_job_failures | n/a | n/a | 0/0 |');
   });
+
+  describe('the workflow alerts on anomalies, never on a metric it could not read', () => {
+    const WORKFLOW = readFileSync(
+      join(REPO_ROOT, '.github', 'workflows', 'metrics-watch.yml'),
+      'utf8'
+    );
+
+    /** The exact `if:` on the ticket step, so the model below cannot drift. */
+    function ticketCondition(): string {
+      const step = /- name: Open or update an anomaly ticket\n\s*if: (.+)/.exec(WORKFLOW);
+      if (!step) throw new Error('the anomaly-ticket step is missing its `if:`');
+      return step[1].trim();
+    }
+
+    /**
+     * Mirror of the ticket step's `if:` for the two values GitHub gives it:
+     * the read step's `outcome` and its `count` output. `always()` is true on
+     * every path this models.
+     */
+    const ticketWouldRun = (outcome: 'success' | 'failure', count: string): boolean =>
+      outcome === 'success' && count !== '0';
+
+    it('gates the ticket on the read step having succeeded', () => {
+      // A metric that could not be read is the one thing that must not alert.
+      // The "Read metrics" step exits 1 before writing `count`, so its output is
+      // the empty string; `'' != '0'` is true, and without this gate the step
+      // would draft an "anomaly detected" issue out of a run that read nothing.
+      expect(ticketCondition()).toContain("steps.metrics.outcome == 'success'");
+      expect(ticketCondition()).toContain("steps.metrics.outputs.count != '0'");
+    });
+
+    it('runs the ticket only for a successful read that found an anomaly', () => {
+      expect(ticketWouldRun('failure', '')).toBe(false); // could not read — never alert
+      expect(ticketWouldRun('success', '0')).toBe(false); // quiet window — no ticket
+      expect(ticketWouldRun('success', '2')).toBe(true); // real anomaly — open/update
+    });
+
+    it('exits non-zero before writing its output when a metric is unreadable', () => {
+      // The gate above rests on this: a failed read leaves `count` unset, not 0.
+      // If the step swallowed the failure and wrote `count=0`, the empty-string
+      // case would never arise and the gate would be tested by nothing.
+      const read = /- name: Read metrics and detect anomalies[\s\S]*?run: \|([\s\S]*?)\n\n/.exec(
+        WORKFLOW
+      );
+      expect(read, 'the read step must exist').not.toBeNull();
+      expect(read![1]).toContain('exit "$code"');
+      expect(read![1]).toContain('::error');
+    });
+  });
 });
