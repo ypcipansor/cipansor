@@ -9,11 +9,14 @@ import { join, resolve } from 'path';
  * stub `gh` and the real `jq`:
  *
  *  - check runs come paginated from the REST API; a failing check on a second
- *    page must still turn a ready PR back to draft (`jq -s` combines pages);
+ *    page must still be seen (`jq -s` combines pages). Red checks leave the PR
+ *    open — no comment, no draft revert;
  *  - an existing lifecycle comment is updated through the REST endpoint's
  *    numeric id — the GraphQL node id is rejected there;
  *  - a green draft PR gets its all-green notice without waiting for Analyze or
- *    CodeQL, which no checked-in workflow publishes.
+ *    CodeQL, which no checked-in workflow publishes;
+ *  - a green **ready** PR dispatches the `SDLC 22` review gate (via `curl`)
+ *    rather than relying on a `ready_for_review` transition that will not come.
  *
  * Each check fails against the pre-review script and passes after it.
  */
@@ -65,6 +68,7 @@ let log: string;
 beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'lifecycle-guards-'));
   writeFileSync(join(dir, 'gh'), STUB, { mode: 0o755 });
+  writeFileSync(join(dir, 'curl'), CURL_STUB, { mode: 0o755 });
   log = join(dir, 'calls.log');
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -88,6 +92,11 @@ function run(env: Record<string, string>, sha = SHA) {
     calls: existsSync(log) ? readFileSync(log, 'utf8') : '',
   };
 }
+
+const CURL_STUB = `#!/bin/sh
+[ -n "\${GH_STUB_LOG:-}" ] && echo "curl $*" >> "$GH_STUB_LOG"
+printf '%s' "\${GH_STUB_HTTP:-200}"
+`;
 
 const REQUIRED = [
   'CI scope',
@@ -120,15 +129,16 @@ const advisoryRed = page([
 ]);
 
 describe('pr-lifecycle.sh', () => {
-  it('sees a failing check on the second page and drafts a ready PR', () => {
-    const { calls } = run({
+  it('leaves a ready PR open when a failing check is on the second page', () => {
+    const { calls, out } = run({
       GH_STUB_STATE: 'OPEN',
       GH_STUB_DRAFT: 'false',
       GH_STUB_HEAD: SHA,
       GH_STUB_CHECKS: paginatedRed,
     });
-    expect(calls).toContain('READY');
-    expect(calls).toContain('--undo');
+    expect(calls).not.toContain('READY');
+    expect(calls).not.toContain('--undo');
+    expect(out).toContain('failing checks');
   });
 
   it('updates an existing lifecycle comment through its numeric id', () => {
@@ -197,7 +207,7 @@ describe('pr-lifecycle.sh', () => {
     expect(out).toContain('Ignoring non-gate check');
   });
 
-  it('carries the AI-disclosure footer on a red lifecycle comment', () => {
+  it('posts no comment on a red lifecycle run', () => {
     const { calls } = run({
       GH_STUB_STATE: 'OPEN',
       GH_STUB_DRAFT: 'false',
@@ -205,10 +215,10 @@ describe('pr-lifecycle.sh', () => {
       GH_STUB_CHECKS: paginatedRed,
       GH_STUB_COMMENTS_LIST: '[]',
     });
-    expect(calls).toContain('This comment was created by an AI agent');
+    expect(calls).not.toContain('COMMENT');
   });
 
-  it('carries the AI-disclosure footer on a changes-requested comment', () => {
+  it('posts no comment on a changes-requested review', () => {
     const { calls } = run({
       GH_STUB_STATE: 'OPEN',
       GH_STUB_DRAFT: 'false',
@@ -217,7 +227,22 @@ describe('pr-lifecycle.sh', () => {
       GH_STUB_CHECKS: allGreen,
       GH_STUB_COMMENTS_LIST: '[]',
     });
-    expect(calls).toContain('This comment was created by an AI agent');
+    expect(calls).not.toContain('COMMENT');
+    expect(calls).not.toContain('READY');
+  });
+
+  it('dispatches the review gate for a green ready PR', () => {
+    const { calls } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: allGreen,
+      GH_STUB_COMMENTS_LIST: '[]',
+      OPENHANDS_API_KEY: 'key',
+      GH_STUB_HTTP: '200',
+    });
+    expect(calls).toContain('curl');
+    expect(calls).toContain('96eebf19-b64b-4035-9653-2d8b15b06ac4/dispatch');
   });
 
   it('carries the AI-disclosure footer on the all-green notice', () => {

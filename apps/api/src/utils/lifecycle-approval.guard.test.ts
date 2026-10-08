@@ -5,8 +5,8 @@ import { join, resolve } from 'path';
 /**
  * The PR lifecycle guard (`.github/scripts/pr-lifecycle.sh`, run by
  * `.github/workflows/pr-lifecycle.yml`) reacts to a finished CI/E2E run or a
- * review: it converts a ready PR back to draft, and posts an informational
- * comment. It must never approve or merge.
+ * review: it leaves a red PR open and dispatches the `SDLC 22` review gate once
+ * every check is green. It must never approve or merge.
  *
  * An earlier revision called `gh pr review --approve` once every check was
  * green, its labels matched the linked issue, and `reviewDecision` was not
@@ -14,6 +14,11 @@ import { join, resolve } from 'path';
  * so that approved a diff nobody had read — the defect SDLC 22's review gate
  * exists to prevent. Approval is the review gate's job; a guard test keeps the
  * lifecycle script from quietly growing an approval back.
+ *
+ * A later revision also reverted a ready PR to draft on red CI or a
+ * changes-requested review. That only hid work in progress; the failing checks
+ * are already on the PR, and a human decides when to draft. A guard test keeps
+ * the revert from coming back too.
  */
 
 const REPO = resolve(__dirname, '..', '..', '..', '..');
@@ -46,10 +51,11 @@ describe('PR lifecycle guard never approves or merges', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('the script still converts a red or changes-requested PR to draft', () => {
+  it('the script does not convert a red or changes-requested PR to draft', () => {
     const source = readFileSync(join(REPO, SCRIPT), 'utf8');
-    expect(source).toContain('gh pr ready');
-    expect(source).toContain('--undo');
+    // A draft revert was the old behaviour; the guard keeps it from returning.
+    expect(source).not.toContain('gh pr ready');
+    expect(source).not.toContain('--undo');
   });
 
   it('LABELS.md names the review gate as the approver', () => {
