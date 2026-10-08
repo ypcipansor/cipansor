@@ -177,16 +177,16 @@ flowchart TD
 
 ## Armada terjadwal (cron cloud, WIB)
 
-| Waktu | Automation | Tugas |
-|---|---|---|
-| 01:30 harian | Penjaga issue | mengusangkan issue yang macet |
-| 05:00 harian | Pengawas armada | kesehatan semua automation |
-| 09:00 harian | Pemburu bug | bug terbukti → satu issue berbukti |
-| 06:00 Senin | Pemindai standar | penyimpangan standar → `pending-maintainer` |
-| 08:15 Senin | Pemindai celah uji | satu celah uji berisiko → issue |
-| 22:00 Jumat | Pembuat catatan rilis | memotong pre-release `-rc` berikutnya → catatan di body Release |
-| 03:00 tanggal 1 | Uji beban | k6 vs staging → regresi |
-| 08:30 tanggal 1 | Audit kematangan | menilai 18 item → satu issue |
+| Waktu           | Automation            | Tugas                                                           |
+| --------------- | --------------------- | --------------------------------------------------------------- |
+| 01:30 harian    | Penjaga issue         | mengusangkan issue yang macet                                   |
+| 05:00 harian    | Pengawas armada       | kesehatan semua automation                                      |
+| 09:00 harian    | Pemburu bug           | bug terbukti → satu issue berbukti                              |
+| 06:00 Senin     | Pemindai standar      | penyimpangan standar → `pending-maintainer`                     |
+| 08:15 Senin     | Pemindai celah uji    | satu celah uji berisiko → issue                                 |
+| 22:00 Jumat     | Pembuat catatan rilis | memotong pre-release `-rc` berikutnya → catatan di body Release |
+| 03:00 tanggal 1 | Uji beban             | k6 vs staging → regresi                                         |
+| 08:30 tanggal 1 | Audit kematangan      | menilai 18 item → satu issue                                    |
 
 Actions terjadwal: `duplicate-sweep` (harian 01:30 UTC = 08:30 WIB, menutup
 issue atau PR duplikat 7 hari setelah peringatan). Tidak ada `load-tests.yml` di
@@ -196,41 +196,41 @@ rilis`, bukan workflow.
 
 ## Peran — siapa berbuat sebagai siapa
 
-| Automation | Peran |
-|---|---|
-| Triase bug | triase issue baru, cari duplikat, label + komentar keparahan/area |
-| Estimasi usaha | ukuran XS–XL + area tersentuh + risiko, dikalibrasi ke PR lama |
-| Peta basis kode | membandingkan peta arsitektur dengan kode → issue bila menyimpang |
-| Peninjau arsitektur | meninjau dokumen desain/RFC/ADR |
-| Reproduksi bug | menyelidiki issue `bug`, menempel reproduksi + bukti ke issue |
-| Tiket jadi PR | **satu-satunya pembuat PR**; label `bot-implement` memicunya |
-| Bot sebutan | menyerahkan permintaan `@openhands` yang berupa pekerjaan ke issue + `bot-implement`, atau menjawab pertanyaan |
-| Peninjau kode | tinjauan baris demi baris + blok `suggestion` |
-| Pemindai celah uji | satu celah pengujian berisiko → issue |
-| Otomasi QA | menjalankan alur yang berubah, melaporkan lulus/gagal |
-| Uji beban | k6 vs staging |
-| Pemantau deployment | kegagalan workflow di `main` → issue diagnosis |
-| Pembuat catatan rilis | pre-release `-rc` + catatan rilis dari conventional commits |
-| Pengelola dokumentasi | merge yang berdampak dokumentasi → issue dokumentasi basi |
-| Pelabel issue | tipe + prioritas + kesiapan (`ready`/`needs-info`/`question`/`duplicate`) |
-| Penjernih issue | menilai ulang saat pelapor menjawab `needs-info` |
-| Pelabel PR | menyalin tipe + prioritas issue tertaut ke PR |
-| Gerbang tinjau PR | **satu-satunya yang boleh APPROVE**; menunggu CI hijau |
-| Pemburu bug | bug proaktif yang bisa direproduksi → issue berbukti |
-| Pemindai standar | standar/regulasi terbaru → issue `pending-maintainer` |
-| Penjaga issue | timer usang untuk `needs-info`/`question`/lainnya |
-| Diskusi | berdiskusi dengan maintainer; setuju → `ready`, tolak → `wontfix` |
-| Pengawas armada | kesehatan armada → satu issue `automation-health` |
-| Audit kematangan | menilai 18 item kerangka → satu issue laporan |
+| Automation            | Peran                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Triase bug            | triase issue baru, cari duplikat, label + komentar keparahan/area                                              |
+| Estimasi usaha        | ukuran XS–XL + area tersentuh + risiko, dikalibrasi ke PR lama                                                 |
+| Peta basis kode       | membandingkan peta arsitektur dengan kode → issue bila menyimpang                                              |
+| Peninjau arsitektur   | meninjau dokumen desain/RFC/ADR                                                                                |
+| Reproduksi bug        | menyelidiki issue `bug`, menempel reproduksi + bukti ke issue                                                  |
+| Tiket jadi PR         | **satu-satunya pembuat PR**; label `bot-implement` memicunya                                                   |
+| Bot sebutan           | menyerahkan permintaan `@openhands` yang berupa pekerjaan ke issue + `bot-implement`, atau menjawab pertanyaan |
+| Peninjau kode         | tinjauan baris demi baris + blok `suggestion`                                                                  |
+| Pemindai celah uji    | satu celah pengujian berisiko → issue                                                                          |
+| Otomasi QA            | menjalankan alur yang berubah, melaporkan lulus/gagal                                                          |
+| Uji beban             | k6 vs staging                                                                                                  |
+| Pemantau deployment   | kegagalan workflow di `main` → issue diagnosis                                                                 |
+| Pembuat catatan rilis | pre-release `-rc` + catatan rilis dari conventional commits                                                    |
+| Pengelola dokumentasi | merge yang berdampak dokumentasi → issue dokumentasi basi                                                      |
+| Pelabel issue         | tipe + prioritas + kesiapan (`ready`/`needs-info`/`question`/`duplicate`)                                      |
+| Penjernih issue       | menilai ulang saat pelapor menjawab `needs-info`                                                               |
+| Pelabel PR            | menyalin tipe + prioritas issue tertaut ke PR                                                                  |
+| Gerbang tinjau PR     | **satu-satunya yang boleh APPROVE**; menunggu CI hijau                                                         |
+| Pemburu bug           | bug proaktif yang bisa direproduksi → issue berbukti                                                           |
+| Pemindai standar      | standar/regulasi terbaru → issue `pending-maintainer`                                                          |
+| Penjaga issue         | timer usang untuk `needs-info`/`question`/lainnya                                                              |
+| Diskusi               | berdiskusi dengan maintainer; setuju → `ready`, tolak → `wontfix`                                              |
+| Pengawas armada       | kesehatan armada → satu issue `automation-health`                                                              |
+| Audit kematangan      | menilai 18 item kerangka → satu issue laporan                                                                  |
 
 ## Identitas — siapa berbuat sebagai siapa
 
 Dua akun GitHub membawa armada ini, dan pemisahannya disengaja: akun yang
-*menulis* artefak tidak pernah menjadi akun yang *menyetujuinya*.
+_menulis_ artefak tidak pernah menjadi akun yang _menyetujuinya_.
 
-| Akun | Peran | Automation |
-|---|---|---|
-| `adminypc` | Penulis — membuat issue dan pull request | Peta basis kode, Reproduksi bug, Tiket jadi PR, Bot sebutan, Pemindai celah uji, Pemantau deployment, Pengelola dokumentasi, Pemburu bug, Pemindai standar, Pengawas armada, Audit kematangan |
+| Akun           | Peran                                          | Automation                                                                                                                                                                                          |
+| -------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `adminypc`     | Penulis — membuat issue dan pull request       | Peta basis kode, Reproduksi bug, Tiket jadi PR, Bot sebutan, Pemindai celah uji, Pemantau deployment, Pengelola dokumentasi, Pemburu bug, Pemindai standar, Pengawas armada, Audit kematangan       |
 | `cipansor-bot` | Komunikator — komentar, label, review, approve | Triase bug, Estimasi usaha, Peninjau arsitektur, Peninjau kode, Otomasi QA, Uji beban, Pembuat catatan rilis, Pelabel issue, Penjernih issue, Pelabel PR, Gerbang tinjau PR, Penjaga issue, Diskusi |
 
 - Pull request harus teratribusi ke penulis, jadi automation yang membukanya
@@ -246,14 +246,18 @@ Dua akun GitHub membawa armada ini, dan pemisahannya disengaja: akun yang
 
 ## Mengapa dibentuk begini
 
-- **Tidak ada event CI di webhook OpenHands.** Integrasi GitHub mengenal
-  `pull_request`, `issues`, `issue_comment`, `push`, `release`, dan
-  `pull_request_review` — bukan `check_run` atau `workflow_run`. Karena itu
-  `Gerbang tinjau PR` tidak bisa *menunggu* sampai CI hijau; ia bertindak saat
-  dipicu dan memeriksa check-run sendiri, tidak melakukan apa pun selama masih
-  ada yang berjalan. Jembatan membuat gerbang hijau tepat: `pr-lifecycle.yml`
-  (pada `workflow_run`) men-dispatch `Gerbang tinjau PR` begitu semua check wajib
-  lulus. Butuh rahasia repo `OPENHANDS_API_KEY`.
+- **Jembatan deterministik lebih dulu, event webhook sebagai pelengkap.**
+  Integrasi GitHub yang terdokumentasi mengenal `pull_request`, `issues`,
+  `issue_comment`, `push`, `release`, dan `pull_request_review`; API automation
+  juga menerima `workflow_run`, tetapi pengantarannya belum terbukti, jadi ia
+  bukan sandaran. Karena itu `Gerbang tinjau PR` tidak _menunggu_ CI: ia
+  bertindak saat dipicu dan memeriksa check-run sendiri, tidak melakukan apa pun
+  selama masih ada yang berjalan, dan `pr-lifecycle.yml` (pada `workflow_run`)
+  men-dispatch-nya begitu semua check wajib lulus. `Pemantau deployment` memakai
+  pola yang sama: `main-failure-bridge.yml` men-dispatch-nya saat workflow di
+  `main` selesai gagal dan `main` hijau lagi; event `workflow_run` di automation
+  itu hanya pelengkap best-effort, dan promptnya melakukan dedupe per run ID agar
+  tidak ada issue ganda. Keduanya butuh rahasia repo `OPENHANDS_API_KEY`.
 - **Konsekuensi deterministik milik Actions.** Jembatan hasil CI, penutupan
   duplikat 7 hari, pemeriksaan ketidaksesuaian label, dan jembatan kegagalan
   `main` adalah skrip, bukan agen: harus menyala tepat waktu dan tidak memakan
@@ -271,12 +275,12 @@ Dua akun GitHub membawa armada ini, dan pemisahannya disengaja: akun yang
   minta-perubahan dan branch protection menahan merge. Mengembalikan ke draft
   pernah dicoba dan dihapus — itu menyembunyikan pekerjaan yang sedang berjalan.
 - **Catatan rilis hidup di GitHub Release, bukan di berkas.** `Pembuat catatan
-  rilis` berjalan mingguan, memotong pre-release `-rc` berikutnya, dan menulis
+rilis` berjalan mingguan, memotong pre-release `-rc` berikutnya, dan menulis
   catatan ke body Release dari conventional commit sejak rilis resmi terakhir;
   ia tidak pernah menulis `CHANGELOG.md` ke repositori dan tidak pernah membuka
   PR changelog. Rilis resmi (non-`rc`) adalah tindakan manual maintainer.
 - **Armada adalah kerangka plus saluran pipanya.** `Triase bug` … `Gerbang tinjau
-  PR` (item 1–18) memetakan satu-ke-satu ke 18 item Agentic SDLC; `Pelabel issue`
+PR` (item 1–18) memetakan satu-ke-satu ke 18 item Agentic SDLC; `Pelabel issue`
   … `Pengawas armada` menambahkan pipeline label/siklus hidup, pemburu proaktif,
   dan pengawas; `Audit kematangan` menilai 18 item yang sama dan menyebut yang
   terlemah, sehingga armada bisa diarahkan dengan sengaja.
@@ -285,7 +289,7 @@ Dua akun GitHub membawa armada ini, dan pemisahannya disengaja: akun yang
 - **Rollback manual.** `Pemantau deployment` melaporkan deploy buruk; ia tidak
   pernah memutar balik.
 - **Tinjauan mengusulkan perbaikannya.** `Peninjau kode`/`Peninjau
-  arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
+arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
   perbaikan berlaku dengan satu klik.
 - **Guard self-comment wajib.** Setiap automation yang dipicu komentar menjaga
   pemeriksaan footer `This comment was created by an AI agent` (#680).
