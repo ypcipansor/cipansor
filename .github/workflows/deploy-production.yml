@@ -75,6 +75,12 @@ jobs:
               --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
               --target-port "${port[$c]}" -o none
           done
+          # Name this copy on GET /health (`environment`) so the ops watch can
+          # tell the live host from staging. Set explicitly rather than left to
+          # the code default, so the label is visible in the app settings and a
+          # future copy cannot silently inherit it.
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+            --settings APP_ENVIRONMENT=production -o none
           # Web Push: this environment's own VAPID pair (decisions/
           # notifikasi-push.md), from the environment's secret and variable.
           # Absent = push stays off, so nothing here forces a pair on anyone.

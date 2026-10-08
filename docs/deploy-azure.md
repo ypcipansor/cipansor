@@ -50,6 +50,7 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 | Setting | Production | Staging | Why |
 |---|---|---|---|
+| `APP_ENVIRONMENT` | unset → `production` | `staging`, set by `deploy-staging.yml` on every release | The environment *name* `GET /healthz` reports. Both hosts run the same image with `NODE_ENV=production`, so `NODE_ENV` cannot tell them apart; without this setting staging's health read `production` |
 | `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
 | `DOCUMENT_TEST_COPY` | unset (off) | `true`, set by `deploy-staging.yml` on every release | Every PDF the api renders and every page printed from the web is stamped "SALINAN UJI — BUKAN DOKUMEN SAH": staging's demo accounts carry the names of real office holders, their passwords are public, and the letterhead is the real one |
@@ -184,6 +185,14 @@ with `permission denied for schema public`. After `CREATE DATABASE … OWNER
   setting that exists, or `az webapp sitecontainers update` refuses to run.
   That is why `NEXT_PUBLIC_API_URL` exists as an app setting with an empty
   value (the web image is built for a same-origin API).
+- `APP_ENVIRONMENT` names the copy on `GET /health` (`environment`), which
+  nginx exposes at `/healthz`: `staging` on the staging app, `production` on
+  the live one. It is **not** `NODE_ENV` — every image bakes
+  `NODE_ENV=production`, so using `NODE_ENV` made staging advertise itself as
+  production. Each deploy workflow sets it on every release (staging with
+  `DOCUMENT_TEST_COPY`, production on its own), and the code defaults to
+  `production` so a copy that forgets the setting never mislabels the live
+  host as staging.
 - web, nginx and redis have `inheritAppSettingsAndConnectionStrings=false`;
   otherwise every app setting — database URL and JWT secret included — is
   handed to every container.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveJwtSecret } from './index';
+import { resolveJwtSecret, resolveEnvironmentName } from './index';
 
 const STRONG = 'a-sufficiently-long-random-secret-value-1234';
 
@@ -30,5 +30,29 @@ describe('resolveJwtSecret', () => {
 
   it('prefers an explicit secret outside production', () => {
     expect(resolveJwtSecret('my-dev-secret', 'development')).toBe('my-dev-secret');
+  });
+});
+
+describe('resolveEnvironmentName', () => {
+  it('reports `staging` for a staging copy', () => {
+    expect(resolveEnvironmentName('staging')).toBe('staging');
+    expect(resolveEnvironmentName('  STAGING  ')).toBe('staging');
+  });
+
+  it('reports the other known names as themselves', () => {
+    expect(resolveEnvironmentName('development')).toBe('development');
+    expect(resolveEnvironmentName('test')).toBe('test');
+  });
+
+  it('reports `production` when unset or empty — the safe default', () => {
+    expect(resolveEnvironmentName(undefined)).toBe('production');
+    expect(resolveEnvironmentName('')).toBe('production');
+    expect(resolveEnvironmentName('   ')).toBe('production');
+  });
+
+  it('never invents a name for an unknown value — a typo degrades to production', () => {
+    expect(resolveEnvironmentName('prod')).toBe('production');
+    expect(resolveEnvironmentName('stagin')).toBe('production');
+    expect(resolveEnvironmentName('anything')).toBe('production');
   });
 });

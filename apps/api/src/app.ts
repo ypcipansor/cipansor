@@ -245,7 +245,10 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     commit: process.env.GIT_COMMIT_SHA || null,
-    environment: config.env,
+    // The environment *name* (APP_ENVIRONMENT), not NODE_ENV: every deployed
+    // image is built in production mode, so `env` cannot tell staging from
+    // production here. See config.resolveEnvironmentName.
+    environment: config.environment,
   });
 });
 

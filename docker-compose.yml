@@ -94,6 +94,12 @@ services:
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       OUTBOUND_MESSAGES_ENABLED: ${OUTBOUND_MESSAGES_ENABLED:-true}
       DOCUMENT_TEST_COPY: ${DOCUMENT_TEST_COPY:-false}
+      # The environment *name* reported by GET /health (`environment`) and read
+      # by the ops watch. Not NODE_ENV — every image bakes NODE_ENV=production,
+      # so /healthz on a staging copy would otherwise claim to be production.
+      # Defaults to `production`, the safe label; this VM stack is production,
+      # a staging copy sets `staging`.
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-production}
       # Apply pending migrations at container start (docker-entrypoint.sh). Off
       # here: releases on this VM run `prisma migrate deploy` by hand after the
       # pre-checks in the deploy runbook. Azure App Service sets it to true.

@@ -184,8 +184,13 @@ jobs:
           # Every document staging renders is a test copy, stamped "SALINAN UJI —
           # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
           # so a rebuilt app cannot come up without it; production never sets it.
+          #
+          # APP_ENVIRONMENT names this copy on GET /health (`environment`).
+          # Without it, /healthz would keep reporting NODE_ENV, which every
+          # image bakes as "production", so staging would look live to the ops
+          # watch — a signal that reads healthy while mislabelled.
           az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
-            --settings DOCUMENT_TEST_COPY=true -o none
+            --settings DOCUMENT_TEST_COPY=true APP_ENVIRONMENT=staging -o none
           # Web Push: this environment's own VAPID pair (decisions/
           # notifikasi-push.md), from the environment's secret and variable.
           # Absent = push stays off, so nothing here forces a pair on anyone.

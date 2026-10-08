@@ -109,8 +109,40 @@ export function switchOn(raw: string | undefined): boolean {
   return ['true', '1', 'on', 'yes'].includes((raw ?? '').trim().toLowerCase());
 }
 
+/**
+ * The name of the copy of the system this process *is* — reported by `/health`
+ * as `environment`, and the label an ops watch reads to tell a staging reading
+ * from a live one.
+ *
+ * Distinct from `env` (`NODE_ENV`) on purpose. `NODE_ENV` is a build/runtime
+ * *mode*, and every deployed image bakes `NODE_ENV=production` (Dockerfile),
+ * so nginx's `/healthz` answered `environment: "production"` even on staging —
+ * a monitoring lie: the signal looked healthy while mislabelled, and no
+ * reachable surface could tell the two hosts apart. The *name* is a per-
+ * environment setting (`APP_ENVIRONMENT`), never `NODE_ENV`.
+ *
+ * `production` is the strict default. A copy that forgets the setting, or
+ * inherits it by mistake, still publishes the truthful name of the public
+ * system; the dangerous direction — a live host labelled `staging`, so code or
+ * a person treats real data as disposable — cannot happen by accident. Only
+ * known names are accepted, so a typo degrades to the safe label rather than
+ * inventing one.
+ */
+export function resolveEnvironmentName(raw: string | undefined): string {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === 'staging' || value === 'development' || value === 'test') return value;
+  return 'production';
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
+
+  /**
+   * The environment *name* (`APP_ENVIRONMENT`), for `/health` — `staging` or
+   * `production`. See `resolveEnvironmentName` for why it is not `env`.
+   */
+  environment: resolveEnvironmentName(process.env.APP_ENVIRONMENT),
+
   port: parseInt(process.env.PORT || '3001', 10),
 
   /**
