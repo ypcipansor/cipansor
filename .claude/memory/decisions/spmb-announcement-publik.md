@@ -125,6 +125,17 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   `bannerOpen` awal harus sama di server dan klien, dismissal banner juga
   ditulis ke cookie yang bisa dibaca server; tanpa cermin itu pengunjung yang
   pernah menutup banner melihatnya berkelip lalu halaman naik saat hidrasi.
+  Karena pengumuman ini opsional sedangkan halaman tidak, pengambilan di server
+  diberi **batas waktu** (`AbortController`, 2 detik): API yang menggantung tak
+  boleh menahan render halaman — pada lewat batas, pengumuman hilang seperti
+  halnya galat jaringan. `NEXT_PUBLIC_API_URL=''` (berarti "same-origin" di
+  bundle, lihat `lib/api.ts`) tidak bisa dipakai server apa adanya — `fetch`
+  Node menolak URL relatif — jadi origin kosong diselesaikan ke origin
+  permintaan (`x-forwarded-host`/`host` + `x-forwarded-proto`). Cookie dismissal
+  diberi umur **10 tahun**, bukan 1 tahun: `localStorage` tak pernah kedaluwarsa,
+  jadi cookie yang lebih pendek akan habis lebih dulu dan server mengirim banner
+  yang peramban buang saat hidrasi — persis kilatan yang cermin ini cegah.
+  Diperbaiki 2026-10-08 (ronde tinjauan lanjutan).
 - **Trilingual** (`config/announcement.i18n.ts`, dijaga
   `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
   adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
@@ -169,4 +180,8 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   ada pergeseran tata letak. Menulis satu periode lalu menghapusnya; dilewati di
   API produksi.
 - `apps/web/src/lib/public-intakes.server.test.ts` — pembacaan intake di server
-  (banner dismissal dari cookie, periode yang diumumkan).
+  (banner dismissal dari cookie, periode yang diumumkan, batas waktu terhadap
+  permintaan yang tak pernah menjawab, origin kosong → origin permintaan).
+- `apps/web/src/lib/announcement-cookies.test.ts` — cermin cookie dismissal
+  menulis periode yang benar, dan umurnya melampaui entri `localStorage` yang
+  dicerminkannya.

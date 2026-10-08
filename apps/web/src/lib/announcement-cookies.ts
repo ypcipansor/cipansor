@@ -15,9 +15,23 @@
  */
 export const BANNER_DISMISS_COOKIE = "spmb-banner-dismissed";
 
+/**
+ * Kept far enough out that the cookie and the `localStorage` entry agree for as
+ * long as the visitor's browser keeps the latter.
+ *
+ * A dismissal is per period and may be answered long before the intake closes:
+ * a two-year intake dismissed in January 2027 is still open in February 2028.
+ * `localStorage` has no expiry, so a one-year cookie would lapse first and the
+ * server would render a banner the browser then removes on hydration — the
+ * flash this cookie exists to prevent, on the very visit it should be silent.
+ * Ten years outlives any intake the school runs, and the value is the period id,
+ * so a stale cookie can never hide a different intake's banner.
+ */
+export const BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS = 10 * 365 * 24 * 60 * 60;
+
 /** Remember the dismissed intake where the next server render can see it. */
 export function writeBannerDismissCookie(periodId: string): void {
   document.cookie = `${BANNER_DISMISS_COOKIE}=${encodeURIComponent(
     periodId,
-  )}; path=/; max-age=31536000; samesite=lax`;
+  )}; path=/; max-age=${BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS}; samesite=lax`;
 }

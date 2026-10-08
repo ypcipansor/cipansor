@@ -10,17 +10,32 @@ import type { PublicIntakeDTO } from "@cipansor/shared";
  */
 
 const cookieValue = { current: undefined as string | undefined };
+const requestHeaders = { current: new Map<string, string>() };
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: () =>
       cookieValue.current ? { value: cookieValue.current } : undefined,
   }),
+  headers: async () => ({
+    get: (name: string) => requestHeaders.current.get(name) ?? null,
+  }),
 }));
 
 import {
+  ANNOUNCEMENT_FETCH_TIMEOUT_MS,
   fetchPublicIntakes,
   loadPublicAnnouncement,
 } from "./public-intakes.server";
+
+const ENV_KEYS = ["API_INTERNAL_URL", "NEXT_PUBLIC_API_URL"] as const;
+let savedEnv: Record<string, string | undefined> = {};
+
+function setEnv(values: Partial<Record<(typeof ENV_KEYS)[number], string>>) {
+  for (const key of ENV_KEYS) {
+    if (key in values) process.env[key] = values[key];
+    else delete process.env[key];
+  }
+}
 
 function intake(
   over: Partial<PublicIntakeDTO["period"]> = {},
@@ -60,19 +75,36 @@ function ok(body: unknown) {
 
 beforeEach(() => {
   cookieValue.current = undefined;
+  requestHeaders.current = new Map();
+  savedEnv = {};
+  for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
+  // A concrete origin by default, so a test that is not about the origin does
+  // not accidentally exercise the empty-value resolution.
+  setEnv({ API_INTERNAL_URL: "http://api.test:3001" });
 });
 
 afterEach(() => {
+  for (const key of ENV_KEYS) {
+    if (savedEnv[key] === undefined) delete process.env[key];
+    else process.env[key] = savedEnv[key];
+  }
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
+
+/** The URL the helper asked `fetch` for, from its first call. */
+function requestedUrl(fetchMock: ReturnType<typeof vi.fn>): string {
+  return String(fetchMock.mock.calls[0]?.[0]);
+}
 
 describe("fetchPublicIntakes", () => {
   it("returns the intakes from the API", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ok({ data: [intake()] })),
-    );
+    const fetchMock = vi.fn(async () => ok({ data: [intake()] }));
+    vi.stubGlobal("fetch", fetchMock);
     await expect(fetchPublicIntakes()).resolves.toHaveLength(1);
+    expect(requestedUrl(fetchMock)).toBe(
+      "http://api.test:3001/api/admissions/public/intakes",
+    );
   });
 
   it("degrades to no intakes when the API fails", async () => {
@@ -91,6 +123,46 @@ describe("fetchPublicIntakes", () => {
       vi.fn(async () => ({ ok: false, json: async () => ({}) })),
     );
     await expect(fetchPublicIntakes()).resolves.toEqual([]);
+  });
+
+  it("aborts a request that never answers, instead of holding the page", async () => {
+    // A connection that stays open without a response: `fetch` never settles,
+    // and the page that awaits this would hang with it. The deadline aborts it
+    // and the announcement degrades to absent.
+    vi.useFakeTimers();
+    let aborted = false;
+    const fetchMock = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            aborted = true;
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fetchPublicIntakes();
+    await vi.advanceTimersByTimeAsync(ANNOUNCEMENT_FETCH_TIMEOUT_MS);
+    await expect(pending).resolves.toEqual([]);
+    expect(aborted).toBe(true);
+  });
+
+  it("resolves an empty browser origin to the request origin for the server", async () => {
+    // `NEXT_PUBLIC_API_URL=''` means "same-origin" in the bundle (`lib/api.ts`),
+    // but Node's `fetch` rejects a relative URL — so the server must name an
+    // absolute origin or the banner only appears after hydration.
+    setEnv({ NEXT_PUBLIC_API_URL: "" });
+    requestHeaders.current = new Map([
+      ["host", "cipansor.or.id"],
+      ["x-forwarded-proto", "https"],
+    ]);
+    const fetchMock = vi.fn(async () => ok({ data: [intake()] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchPublicIntakes();
+    expect(requestedUrl(fetchMock)).toBe(
+      "https://cipansor.or.id/api/admissions/public/intakes",
+    );
   });
 });
 
