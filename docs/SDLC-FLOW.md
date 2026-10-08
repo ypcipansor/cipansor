@@ -188,9 +188,30 @@ flowchart TD
 | 08:30 1st | SDLC 29 · Audit kematangan | rate the 18 items → one issue |
 
 Scheduled Actions: `duplicate-sweep` (daily 01:30 UTC = 08:30 WIB, closes a duplicate issue or
-PR 7 days after the warning) and `mutation` (Mondays 05:00 WIB). There is **no**
-`load-tests.yml` in `.github/workflows/` — SDLC 12 (Cloud cron) is the only load
-runner today; the only changelog comes from SDLC 14's Release body, not a workflow.
+PR 7 days after the warning). There is **no** `load-tests.yml` in
+`.github/workflows/` — SDLC 12 (Cloud cron) is the only load runner today; the
+only changelog comes from SDLC 14's Release body, not a workflow.
+
+## Identity — who acts as whom
+
+Two GitHub accounts carry the fleet, and the split is deliberate: the account
+that *writes* an artifact is never the account that *approves* it.
+
+| Account | Role | Automations |
+|---|---|---|
+| `adminypc` | Author — creates issues and pull requests | 03, 04, 06, 07, 08, 10, 13, 15, 16, 17, 18, 23, 24, 27 |
+| `cipansor-bot` | Communicator — comments, labels, reviews, approves | 01, 02, 05, 09, 11, 12, 14, 19, 20, 21, 22, 25, 26, 28, Audit |
+
+- A pull request must be attributed to a writer, so an automation that opens one
+  keeps `GITHUB_TOKEN` (`adminypc`). Everything else posts through
+  `GITHUB_BOT_TOKEN` (`cipansor-bot`).
+- `SDLC 22 · Gerbang tinjau PR` is the only automation that may `APPROVE`. It
+  runs as `cipansor-bot`, a different identity from the `adminypc` author, so
+  GitHub accepts the approval; a bot that approved a PR it wrote itself would be
+  a self-review and is rejected.
+- Each automation is a custom runner with a secret allowlist: `GITHUB_TOKEN` is
+  always present, `GITHUB_BOT_TOKEN` only for the communicators. The preset
+  runner forwards every secret and is not used.
 
 ## Why it is shaped this way
 

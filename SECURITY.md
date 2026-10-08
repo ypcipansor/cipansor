@@ -29,5 +29,5 @@ release; there are no backports to older builds.
 
 Automations that handle untrusted content (issues, pull requests, comments) run
 with a least-privilege secret allowlist and treat that content as data, not as
-instructions. See `.openhands/README.md` and `docs/IDEAS.md` for the guardrails
+instructions. See `docs/IDEAS.md` and `docs/SDLC-FLOW.md` for the guardrails
 each automation keeps.

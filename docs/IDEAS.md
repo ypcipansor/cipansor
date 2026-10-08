@@ -1,8 +1,10 @@
 # Automation ideas and their guardrails
 
 The automations that are not part of the fixed 18-item framework. Each is a
-proposal, approved and deployed, with the limits it must keep. The
-machine-readable definitions live in `deploy-sdlc-agents.py`.
+proposal, approved and deployed, with the limits it must keep. They live outside
+this repository (deployed through the OpenHands automations API); the guardrail
+each must keep is written into its prompt, and `docs/SDLC-FLOW.md` records the
+shape of the fleet.
 
 ## 1. Bug hunter (SDLC 23)
 
