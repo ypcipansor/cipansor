@@ -11,7 +11,8 @@
     "clean": "turbo run clean",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx}\"",
-    "audit:deps": "node scripts/audit-deps.mjs"
+    "audit:deps": "node scripts/audit-deps.mjs",
+    "changelog": "node scripts/changelog.mjs apply"
   },
   "devDependencies": {
     "semver": "^7.7.3",
