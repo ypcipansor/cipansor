@@ -46,9 +46,12 @@ describe('main-failure-bridge.yml', () => {
   it('acts only on a failure on main', () => {
     expect(BRIDGE).toMatch(/conclusion == 'failure'/);
     expect(BRIDGE).toMatch(/head_branch == 'main'/);
+    // A fork's pull request from a branch named `main` runs CI here too, with
+    // head_branch 'main'; only this repository's own main may dispatch.
+    expect(BRIDGE).toMatch(/head_repository\.full_name == github\.repository/);
   });
 
-  it('reads the tip of main as a SHA and holds the scope that allows it', () => {
+  it('reads the tip of main as a SHA, with no scope it does not use', () => {
     // The tip must come from `commits/main` directly: check names carry the SHA
     // (`CI and E2E passed on <sha>`) and the check-run list is paginated, so a
     // name match silently yields an empty tip and the skip never fires. The
@@ -57,9 +60,9 @@ describe('main-failure-bridge.yml', () => {
     expect(BRIDGE).toMatch(/commits\/main" --jq \.sha/);
     expect(BRIDGE).not.toMatch(/commits\/main\/status/);
     expect(BRIDGE).not.toMatch(/select\(\.name == "CI and E2E passed"\)/);
-    // `commits/{ref}/check-runs` needs Checks: read; without it `gh api` 403s
-    // and the tip is empty. `contents: read` alone does not cover it.
-    expect(BRIDGE).toMatch(/^\s*checks: read$/m);
+    // `commits/main` is a contents read; the bridge reads no check runs, so it
+    // holds no Checks scope (least privilege).
+    expect(BRIDGE).not.toMatch(/^\s*checks: (read|write)$/m);
   });
 
   it('skips when the tip of main has moved past the failed run', () => {
@@ -72,5 +75,14 @@ describe('main-failure-bridge.yml', () => {
     expect(BRIDGE).toMatch(/\/api\/automation\/v1\/\$MONITOR_ID\/dispatch/);
     expect(BRIDGE).toMatch(/secrets\.OPENHANDS_API_KEY/);
     expect(BRIDGE).toMatch(/OPENHANDS_API_KEY is not set/);
+  });
+
+  it('builds the dispatch body with jq and fails visibly when it is refused', () => {
+    // String interpolation let a workflow name break out of the JSON string.
+    expect(BRIDGE).toMatch(/jq -n --arg run "\$RUN_ID" --arg wf "\$WORKFLOW"/);
+    expect(BRIDGE).not.toMatch(/\\"workflow\\":\\"\$WORKFLOW/);
+    // Nothing retries a dispatch, so an HTTP error must not pass silently.
+    expect(BRIDGE).toMatch(/2\?\?\) echo "Dispatched/);
+    expect(BRIDGE).toMatch(/exit 1/);
   });
 });

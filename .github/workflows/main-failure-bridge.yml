@@ -19,16 +19,19 @@ on:
     workflows: [CI, E2E Tests, Deploy staging]
     types: [completed]
 
+# `commits/main` is read with contents: read; nothing here reads check runs.
 permissions:
   contents: read
   actions: read
-  checks: read
 
 jobs:
   dispatch:
+    # head_branch alone also matches a fork's branch named `main` (its pull
+    # request runs CI here); only a run of this repository's own main counts.
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -63,10 +66,19 @@ jobs:
             echo "OPENHANDS_API_KEY is not set; the monitor cannot be dispatched."
             exit 0
           fi
+          # The body is built by jq, not by string interpolation, so a workflow
+          # name can never break out of its JSON string.
+          body=$(jq -n --arg run "$RUN_ID" --arg wf "$WORKFLOW" \
+            '{source: "main-failure-bridge", run_id: $run, workflow: $wf}')
           code=$(curl -s -o /tmp/dispatch.out -w '%{http_code}' -X POST \
             "https://app.all-hands.dev/api/automation/v1/$MONITOR_ID/dispatch" \
             -H "Authorization: Bearer $OPENHANDS_API_KEY" \
             -H "Content-Type: application/json" \
-            -d "{\"source\":\"main-failure-bridge\",\"run_id\":\"$RUN_ID\",\"workflow\":\"$WORKFLOW\"}")
-          echo "Dispatched the deployment monitor for run $RUN_ID ($WORKFLOW), HTTP $code."
-          cat /tmp/dispatch.out
+            -d "$body")
+          cat /tmp/dispatch.out; echo
+          # Nothing retries a failed dispatch: a red main would then reach no
+          # one. Fail the job so the broken bridge itself is visible.
+          case "$code" in
+            2??) echo "Dispatched the deployment monitor for run $RUN_ID ($WORKFLOW), HTTP $code." ;;
+            *) echo "::error::Dispatching the deployment monitor failed (HTTP $code)."; exit 1 ;;
+          esac
