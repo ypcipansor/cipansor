@@ -48,15 +48,24 @@ describe('main-failure-bridge.yml', () => {
     expect(BRIDGE).toMatch(/head_branch == 'main'/);
   });
 
+  it('reads the tip of main as a SHA and holds the scope that allows it', () => {
+    // The tip must come from `commits/main` directly: check names carry the SHA
+    // (`CI and E2E passed on <sha>`) and the check-run list is paginated, so a
+    // name match silently yields an empty tip and the skip never fires. The
+    // legacy `commits/main/status` endpoint is empty in this repo, so it is
+    // wrong for the same reason.
+    expect(BRIDGE).toMatch(/commits\/main" --jq \.sha/);
+    expect(BRIDGE).not.toMatch(/commits\/main\/status/);
+    expect(BRIDGE).not.toMatch(/select\(\.name == "CI and E2E passed"\)/);
+    // `commits/{ref}/check-runs` needs Checks: read; without it `gh api` 403s
+    // and the tip is empty. `contents: read` alone does not cover it.
+    expect(BRIDGE).toMatch(/^\s*checks: read$/m);
+  });
+
   it('skips when the tip of main has moved past the failed run', () => {
-    // The tip is read from the Checks API. The legacy `commits/main/status`
-    // endpoint returns an empty status list in this repo, so a state-based skip
-    // would never fire; the bridge must compare head SHAs instead.
-    expect(BRIDGE).toMatch(/commits\/main\/check-runs/);
     expect(BRIDGE).toMatch(/FAILED_SHA:\s*\$\{\{\s*github\.event\.workflow_run\.head_sha\s*\}\}/);
     expect(BRIDGE).toMatch(/TIP" != "\$FAILED_SHA"/);
     expect(BRIDGE).toMatch(/skip=1/);
-    expect(BRIDGE).not.toMatch(/commits\/main\/status/);
   });
 
   it('dispatches the monitor by id and needs no key to stay harmless', () => {

@@ -22,7 +22,7 @@ on:
 permissions:
   contents: read
   actions: read
-  statuses: read
+  checks: read
 
 jobs:
   dispatch:
@@ -39,14 +39,13 @@ jobs:
           REPO: ${{ github.repository }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          # The tip is read from the Checks API, not the legacy commit-status
-          # API: this repo reports check-runs, so the status API is always empty
-          # and would never skip. If the tip has moved past the run that
+          # The tip is read from the commit itself, not from check-runs: check
+          # names carry the SHA (`CI and E2E passed on <sha>`) and the list has
+          # dozens of entries, so matching a name is brittle. `commits/main`
+          # returns the tip SHA directly. If it has moved past the run that
           # failed, a newer merge already superseded it — that tip's own failure
           # dispatches the monitor, not this stale one.
-          TIP=$(gh api "repos/$REPO/commits/main/check-runs" \
-            --jq '[.check_runs[] | select(.name == "CI and E2E passed")][0].head_sha' \
-            2>/dev/null || echo "")
+          TIP=$(gh api "repos/$REPO/commits/main" --jq .sha 2>/dev/null || echo "")
           echo "tip=$TIP failed=$FAILED_SHA"
           if [ -n "$TIP" ] && [ "$TIP" != "$FAILED_SHA" ]; then
             echo "main has moved past the failed run; skipping dispatch"
