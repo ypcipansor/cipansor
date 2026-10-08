@@ -4,9 +4,9 @@ import type { Locale } from "@/locales";
  * The words for the SPMB announcement on the public site
  * (`components/landing/spmb-announcement.tsx`).
  *
- * The announcement is the same one the hero badge and the SPMB page already
- * make, just louder: "Pendaftaran SPMB <year> telah dibuka" while a unit is
- * taking registrations, else the day the next one opens. Only labels live
+ * The announcement makes the same status the SPMB page shows, just louder:
+ * "Pendaftaran SPMB <year> telah dibuka" while a unit is taking
+ * registrations, else the day the next one opens. Only labels live
  * here — the academic year and the unit's name are printed as the record has
  * them, in every language, like the SPMB page does with the unit's own words.
  * Dates follow the reader's locale (see `dateFormatterFor`).

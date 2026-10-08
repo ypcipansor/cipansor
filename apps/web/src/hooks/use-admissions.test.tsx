@@ -125,9 +125,9 @@ describe("usePublicIntakes — freshness", () => {
   });
 
   it("keeps the shared cache key whatever freshness options are passed", async () => {
-    // The SPMB announcement and the hero badge must read the same cache entry,
-    // or an announcement could disagree with the badge beside it. Only the
-    // query *options* differ per surface, never the key.
+    // The SPMB announcement and the SPMB page/form must read the same cache
+    // entry, or an announcement could disagree with the page beside it. Only
+    // the query *options* differ per surface, never the key.
     const client = makeClient();
     const { result } = renderHook(
       () =>

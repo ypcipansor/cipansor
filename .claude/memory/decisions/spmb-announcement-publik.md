@@ -2,12 +2,12 @@
 
 > KEPUTUSAN 2026-10-05: situs publik mengumumkan SPMB lewat **banner** (selalu,
 > selama ada unit yang buka) **+ dialog tertunda 5 detik, sekali per periode**.
-> Sumbernya `GET /admissions/public/intakes` ŌĆö tanpa perubahan skema. Di bawah:
+> Sumbernya `GET /admissions/public/intakes` — tanpa perubahan skema. Di bawah:
 > pembandingnya, sumber standarnya, dan syaratnya. Jangan ulang risetnya.
 
 **Keputusan pengguna 2026-10-05**, sesudah satu putaran perbandingan enam
 alternatif (A banner, B modal tertunda, C corner card, D pengumuman admin,
-E tanpa pop-up, F hibrida). Pengguna memilih **F ŌĆö hibrida (banner + modal
+E tanpa pop-up, F hibrida). Pengguna memilih **F — hibrida (banner + modal
 tertunda)**, sesuai rekomendasi.
 
 ## Masalah yang diukur
@@ -45,7 +45,7 @@ Baymard (pengguna refleks menutup overlay saat halaman dimuat); GOV.UK
 4. **D (pengumuman admin-authored) ditolak** karena menyentuh `schema.prisma`
    (berisiko), butuh tata kelola "siapa boleh menyiarkan ke publik", dan isi
    satu bahasa sulit dijaga di situs tiga bahasa. Kalau kelak perlu
-   mengumumkan hal **selain** SPMB, D yang dibuka ŌĆö bukan ditambal ke sini.
+   mengumumkan hal **selain** SPMB, D yang dibuka — bukan ditambal ke sini.
 
 ## Aturan turunannya (satu tempat)
 
@@ -77,7 +77,7 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
 
 - **Hanya host publik.** Dijaga `isPortalHost` di `app/page.tsx`,
   `components/landing/public-page.tsx` dan `app/wakaf-infaq/page.tsx`. Polaritas:
-  "mati di portal", bukan "hidup di portal" ŌĆö `isPortalHost` salah untuk
+  "mati di portal", bukan "hidup di portal" — `isPortalHost` salah untuk
   localhost, jadi bentuk terbalik akan mematikan fitur ini di `pnpm dev` dan
   staging.
 - **Dipasang sebagai anak pertama `<main>`** (di `PublicPage` dan beranda),
@@ -97,19 +97,35 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   menampilkan status kemarin (`QueryProvider` mematikan refetch-on-focus dan
   `usePublicIntakes` tidak polling).
 - **Mundur di bawah otomasi** (`navigator.webdriver`), seperti
-  `ServiceWorkerRegister`, kecuali `spmb-announcement-force = "1"` ŌĆö supaya
+  `ServiceWorkerRegister`, kecuali `spmb-announcement-force = "1"` — supaya
   dialog 5 detik tidak menabrak suite e2e yang bukan tentang pengumuman ini.
 - **Trilingual** (`config/announcement.i18n.ts`, dijaga
   `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
   adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
   saat `upcoming`, banner/dialog tidak boleh berbunyi "telah dibuka" atau
-  "Daftar sekarang" (belum ada yang bisa mendaftar) ŌĆö ajakannya "Lihat info
+  "Daftar sekarang" (belum ada yang bisa mendaftar) — ajakannya "Lihat info
   SPMB".
+- **CTA dialog adalah tautan, bukan tombol di dalam tautan.** `DialogFooter`
+  memakai `<Button asChild><Link href="/public/spmb">…</Link></Button>`
+  (`Button` mendukung `asChild` lewat Radix `Slot`). Sebelumnya
+  `<Link><Button>` menaruh `<button>` di dalam `<a>` — HTML tidak valid, dan
+  `getByRole("link", …)` yang benar. Ditemukan di tinjauan PR #655, diperbaiki
+  2026-10-08.
+- **Dialog yang terbuka ikut tertutup saat refetch pindah ke periode yang sudah
+  ditutup.** Effect dialog memanggil `setDialogOpen(false)` ketika
+  `isDismissed(DIALOG_KEY, periodId)` benar, bukan sekadar `return`. Tanpa itu,
+  refetch yang memindahkan pengumuman ke periode yang pernah ditutup pengunjung
+  meninggalkan dialog basi yang masih berbicara tentang intake lama.
+  Diperbaiki 2026-10-08.
 
 ## Uji
 
-- `apps/web/src/components/landing/spmb-announcement.test.tsx` ŌĆö aturan turunan
-  + komponen (banner, dialog tertunda, dismissal per periode, gate portal).
-- `apps/web/e2e/spmb-announcement.spec.ts` ŌĆö banner di beranda & halaman dalam,
+- `apps/web/src/components/landing/spmb-announcement.test.tsx` — aturan turunan
+  + komponen (banner, dialog tertunda, dismissal per periode, dialog basi
+  ikut tertutup saat refetch pindah ke periode yang sudah ditutup, gate portal).
+- `apps/web/src/lib/locale-format.test.ts` — `dateFormatterFor` mengunci
+  `timeZone: "Asia/Jakarta"`, sehingga `2026-12-31T17:00:00.000Z` (tengah malam
+  WIB) tetap tampil "1 Januari 2027", bukan "31 Desember".
+- `apps/web/e2e/spmb-announcement.spec.ts` — banner di beranda & halaman dalam,
   dialog muncul, dismissal bertahan, guard otomasi. Menulis satu periode lalu
   menghapusnya; dilewati di API produksi.

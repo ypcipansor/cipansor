@@ -654,8 +654,9 @@ export interface SpmbAnnouncementIntake {
  * What the public site's announcement speaks about, or null when there is
  * nothing to announce.
  *
- * One rule, derived so the banner, the dialog, the hero badge and the chatbot
- * cannot state different things:
+ * One rule, derived so the banner and the dialog cannot state different
+ * things. The chatbot reads the same intakes, but it explains each unit
+ * separately, so it does not follow this rule:
  *
  * - a unit whose registration is **open** today wins — it is the more useful
  *   message, and an announcement that says "opens on 1 January" while a

@@ -152,7 +152,13 @@ export function SpmbAnnouncement({
       setDialogOpen(false);
       return;
     }
-    if (isDismissed(DIALOG_KEY, periodId)) return;
+    // A refetch can move the announcement to a period the visitor already
+    // closed; the open dialog belongs to that period, so close it too rather
+    // than leave it speaking about an intake it no longer announces.
+    if (isDismissed(DIALOG_KEY, periodId)) {
+      setDialogOpen(false);
+      return;
+    }
     const timer = window.setTimeout(() => setDialogOpen(true), DIALOG_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [hidden, enabled, withDialog, announcement, periodId]);
@@ -246,9 +252,11 @@ export function SpmbAnnouncement({
               <Button variant="ghost" onClick={closeDialog}>
                 {copy.dialogLater}
               </Button>
-              <Link href="/public/spmb" onClick={closeDialog}>
-                <Button>{dialogCta}</Button>
-              </Link>
+              <Button asChild>
+                <Link href="/public/spmb" onClick={closeDialog}>
+                  {dialogCta}
+                </Link>
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

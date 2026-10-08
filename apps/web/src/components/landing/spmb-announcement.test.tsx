@@ -188,9 +188,10 @@ describe("SpmbAnnouncement", () => {
     const dialog = screen.getByTestId("spmb-announcement-dialog");
     expect(dialog).toHaveTextContent("belum dibuka");
     expect(dialog).not.toHaveTextContent("sudah dibuka");
-    expect(
-      within(dialog).getByRole("button", { name: "Lihat info SPMB" }),
-    ).toBeInTheDocument();
+    // The dialog's call to action is a link, not a button nested inside one —
+    // a <button> inside an <a> is invalid HTML.
+    const cta = within(dialog).getByRole("link", { name: "Lihat info SPMB" });
+    expect(cta).toHaveAttribute("href", "/public/spmb");
   });
 
   it("scopes the opening date to the named unit, not to every school", () => {
@@ -265,6 +266,25 @@ describe("SpmbAnnouncement", () => {
     act(() => {
       vi.advanceTimersByTime(5000);
     });
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+  });
+
+  it("closes an open dialog when a refetch moves to an already-dismissed intake", () => {
+    // The dialog opened for period-1; a refetch then announces period-2, which
+    // the visitor already closed. The stale dialog must close with it rather
+    // than keep speaking about an intake it no longer announces.
+    const { rerender } = render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("spmb-announcement-dialog")).toBeInTheDocument();
+
+    localStorage.setItem("spmb-announcement-dialog", "period-2");
+    intakes.mockReturnValue({
+      data: [intake({ window: "open", id: "period-2" })],
+    });
+    rerender(<SpmbAnnouncement locale="id" />);
+
     expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
   });
 
