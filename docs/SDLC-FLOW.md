@@ -27,28 +27,28 @@ flowchart TB
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
   subgraph ISSUE["1 · Issue"]
-    I([Issue opened]) --> C1["SDLC 01 · Bug triage"]:::cloud
-    I --> C2["SDLC 02 · Effort estimator"]:::cloud
-    I --> C3["SDLC 19 · Issue labeller"]:::cloud
+    I([Issue opened]) --> C1["SDLC 01 · Triase bug"]:::cloud
+    I --> C2["SDLC 02 · Estimasi usaha"]:::cloud
+    I --> C3["SDLC 19 · Pelabel issue"]:::cloud
     C3 --> D{"Clear enough?"}
     D -- yes --> R(["ready"])
     D -- no --> NI(["needs-info"])
-    NI --> C20["SDLC 20 · Issue clarifier"]:::cloud --> D
-    PM(["pending-maintainer"]) --> C26["SDLC 26 · Discussion"]:::cloud --> D
-    I -. "label bug" .-> C6["SDLC 06 · Bug reproducer"]:::cloud
+    NI --> C20["SDLC 20 · Penjernih issue"]:::cloud --> D
+    PM(["pending-maintainer"]) --> C26["SDLC 26 · Diskusi"]:::cloud --> D
+    I -. "label bug" .-> C6["SDLC 06 · Reproduksi bug"]:::cloud
     C6 --> BUG(["failing test + draft PR"])
   end
 
   subgraph PRL["2 · Pull request"]
-    R --> C7["SDLC 07 · Ticket to PR"]:::cloud --> DPR([Draft PR])
-    MENT(["comment @openhands"]):::human -. "trusted author" .-> C8["SDLC 08 · Mention bot"]:::cloud
+    R --> C7["SDLC 07 · Tiket jadi PR"]:::cloud --> DPR([Draft PR])
+    MENT(["comment @openhands"]):::human -. "trusted author" .-> C8["SDLC 08 · Bot sebutan"]:::cloud
     C8 --> DPR
-    DPR --> C21["SDLC 21 · PR labeller"]:::cloud
-    DPR --> C9["SDLC 09 · Code reviewer"]:::cloud
-    DPR --> C5["SDLC 05 · Architecture reviewer"]:::cloud
+    DPR --> C21["SDLC 21 · Pelabel PR"]:::cloud
+    DPR --> C9["SDLC 09 · Peninjau kode"]:::cloud
+    DPR --> C5["SDLC 05 · Peninjau arsitektur"]:::cloud
     DPR --> RDY(["Ready for review"]):::human
-    RDY --> C11["SDLC 11 · QA automator"]:::cloud
-    RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · PR review gate"]:::cloud
+    RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
+    RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
     RDY --> GAE["Actions · E2E Tests"]:::gh
     GAC["Actions · CI"]:::gh --> LC{"pr-lifecycle.sh (workflow_run)"}:::gh
     GAE --> LC
@@ -61,11 +61,11 @@ flowchart TB
 
   subgraph REL["3 · Release & operations"]
     DPR -. merge .-> MG([Merge to main])
-    MG --> C4["SDLC 04 · Codebase mapper"]:::cloud
-    MG --> C15["SDLC 15 · Documentation manager"]:::cloud
+    MG --> C4["SDLC 04 · Peta basis kode"]:::cloud
+    MG --> C15["SDLC 15 · Pengelola dokumentasi"]:::cloud
     MG --> STG["deploy-staging.yml (build + push image)"]:::gh
     STG --> PROD["deploy-production.yml (manual · sha)"]:::human
-    C14["SDLC 14 · Release note generator (cron Fri 22:00 WIB)"]:::cloud
+    C14["SDLC 14 · Pembuat catatan rilis (cron Fri 22:00 WIB)"]:::cloud
     C14 -. "cuts a -rc prerelease (notes in the Release body, no in-repo changelog)" .-> REL2(["GitHub Release (prerelease)"])
   end
 ```
@@ -77,26 +77,26 @@ flowchart TD
   classDef cloud fill:#e8f0fe,stroke:#4285f4,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  I([Issue opened]) --> C19["SDLC 19 · Issue labeller"]:::cloud
+  I([Issue opened]) --> C19["SDLC 19 · Pelabel issue"]:::cloud
   C19 --> D{"Enough detail to implement?"}
   D -- yes --> R(["ready"])
   D -- no --> Q(["question"])
   D -- no --> NI(["needs-info"])
 
-  NI --> C20["SDLC 20 · Issue clarifier"]:::cloud
+  NI --> C20["SDLC 20 · Penjernih issue"]:::cloud
   C20 -- "reporter answers" --> D
 
-  I -. "label bug" .-> C6["SDLC 06 · Bug reproducer"]:::cloud
+  I -. "label bug" .-> C6["SDLC 06 · Reproduksi bug"]:::cloud
   C6 --> BUG["draft PR (failing test) + evidence on the issue"]:::cloud
   C6 -. "behaviour is intended" .-> INV(["invalid / duplicate"])
 
-  PM(["pending-maintainer"]) --> C26["SDLC 26 · Discussion"]:::cloud
+  PM(["pending-maintainer"]) --> C26["SDLC 26 · Diskusi"]:::cloud
   C26 -- "go-ahead" --> R
   C26 -- "reject" --> WF(["wontfix → closed"])
 
-  R --> C7["SDLC 07 · Ticket to PR"]:::cloud --> DPR([Draft PR])
+  R --> C7["SDLC 07 · Tiket jadi PR"]:::cloud --> DPR([Draft PR])
 
-  C25["SDLC 25 · Issue steward (cron 01:30 WIB)"]:::cloud
+  C25["SDLC 25 · Penjaga issue (cron 01:30 WIB)"]:::cloud
   C25 -. "timer" .-> NI
   C25 -. "timer" .-> Q
   C25 -- "20d / 8+7d / 90+14d" --> CL(["closed as not planned"])
@@ -110,13 +110,13 @@ flowchart TD
   classDef gh fill:#fff4e5,stroke:#f59e0b,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  DPR([Draft PR]) --> C21["SDLC 21 · PR labeller"]:::cloud
-  DPR --> C9["SDLC 09 · Code reviewer (inline + suggestion)"]:::cloud
-  DPR --> C5["SDLC 05 · Architecture reviewer (if design/ADR)"]:::cloud
+  DPR([Draft PR]) --> C21["SDLC 21 · Pelabel PR"]:::cloud
+  DPR --> C9["SDLC 09 · Peninjau kode (inline + suggestion)"]:::cloud
+  DPR --> C5["SDLC 05 · Peninjau arsitektur (if design/ADR)"]:::cloud
   DPR --> RDY(["Marked Ready for review"]):::human
 
-  RDY --> C11["SDLC 11 · QA automator"]:::cloud
-  RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · PR review gate"]:::cloud
+  RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
+  RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
   RDY --> E2E["Actions · E2E Tests"]:::gh
   CI["Actions · CI"]:::gh --> LC
 
@@ -142,17 +142,17 @@ flowchart LR
   classDef gh fill:#fff4e5,stroke:#f59e0b,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  MG([Merge to main]) --> C4["SDLC 04 · Codebase mapper"]:::cloud
-  MG --> C15["SDLC 15 · Documentation manager"]:::cloud
+  MG([Merge to main]) --> C4["SDLC 04 · Peta basis kode"]:::cloud
+  MG --> C15["SDLC 15 · Pengelola dokumentasi"]:::cloud
   MG --> STG["deploy-staging.yml"]:::gh
   STG --> PROD["deploy-production.yml (manual)"]:::human
 
-  C12["SDLC 12 · Load tester → staging (03:00 on the 1st)"]:::cloud -.-> STG
-  C13["SDLC 13 · Deployment monitor (07:00)"]:::cloud -.-> PROD
-  C14["SDLC 14 · Release note generator (Fri 22:00) → -rc prerelease"]:::cloud -.-> PROD
-  C16["SDLC 16 · Log monitor"]:::cloud -.-> PROD
-  C17["SDLC 17 · Anomaly detector"]:::cloud -.-> PROD
-  C18["SDLC 18 · Error resolver → fix PR"]:::cloud -.-> PROD
+  C12["SDLC 12 · Uji beban → staging (03:00 on the 1st)"]:::cloud -.-> STG
+  C13["SDLC 13 · Pemantau deployment (07:00)"]:::cloud -.-> PROD
+  C14["SDLC 14 · Pembuat catatan rilis (Fri 22:00) → -rc prerelease"]:::cloud -.-> PROD
+  C16["SDLC 16 · Pemantau log"]:::cloud -.-> PROD
+  C17["SDLC 17 · Detektor anomali"]:::cloud -.-> PROD
+  C18["SDLC 18 · Penuntas galat → fix PR"]:::cloud -.-> PROD
 ```
 
 ## Fleet supervision
@@ -160,10 +160,10 @@ flowchart LR
 ```mermaid
 flowchart TD
   classDef cloud fill:#e8f0fe,stroke:#4285f4,color:#111;
-  WD["SDLC 27 · Fleet watchdog (daily 05:00 WIB)"]:::cloud
+  WD["SDLC 27 · Pengawas armada (daily 05:00 WIB)"]:::cloud
   WD -- "reads GET /{id}/runs of every automation" --> SCAN{"finding?"}
   SCAN -- "known & safe problem" --> FIX["open a PR labelled watchdog-repair"]
-  FIX --> C28["SDLC 28 · Watchdog auto-repair"]:::cloud
+  FIX --> C28["SDLC 28 · Perbaikan otomatis pengawas"]:::cloud
   C28 -- "safe?" --> VOK(["verification comment"]):::cloud
   C28 -- "no / check fails" --> ESC(["request changes / escalate to a human"])
   SCAN -- "anything else" --> ISS(["one automation-health issue per cause per week"])
@@ -173,19 +173,19 @@ flowchart TD
 
 | Time | Automation | Job |
 |---|---|---|
-| 01:30 daily | SDLC 25 · Issue steward | age out stalled issues |
-| 05:00 daily | SDLC 27 · Fleet watchdog | health of all 29 automations |
-| 07:00 daily | SDLC 13 · Deployment monitor | failed/stuck deploy → issue |
-| 07:15 daily | SDLC 16 · Log monitor | log patterns → issue |
-| 07:30 daily | SDLC 17 · Anomaly detector | metric anomalies → ticket |
-| 07:45 daily | SDLC 18 · Error resolver | production error → fix PR |
-| 09:00 daily | SDLC 23 · Bug hunter | proven bug → issue + draft PR |
-| 06:00 Mon | SDLC 24 · Standard scout | standards divergence → `pending-maintainer` |
-| 08:00 Mon | SDLC 03 · Feedback ingestion | feedback clusters → issue |
-| 08:15 Mon | SDLC 10 · Test gap scout | one high-risk test gap → issue |
-| 22:00 Fri | SDLC 14 · Release note generator | cut the next `-rc` prerelease → notes in the Release body |
-| 03:00 1st | SDLC 12 · Load tester | k6 vs staging → regression |
-| 08:30 1st | SDLC 29 · Maturity audit | rate the 18 items → one issue |
+| 01:30 daily | SDLC 25 · Penjaga issue | age out stalled issues |
+| 05:00 daily | SDLC 27 · Pengawas armada | health of all 29 automations |
+| 07:00 daily | SDLC 13 · Pemantau deployment | failed/stuck deploy → issue |
+| 07:15 daily | SDLC 16 · Pemantau log | log patterns → issue |
+| 07:30 daily | SDLC 17 · Detektor anomali | metric anomalies → ticket |
+| 07:45 daily | SDLC 18 · Penuntas galat | production error → fix PR |
+| 09:00 daily | SDLC 23 · Pemburu bug | proven bug → issue + draft PR |
+| 06:00 Mon | SDLC 24 · Pemindai standar | standards divergence → `pending-maintainer` |
+| 08:00 Mon | SDLC 03 · Serapan umpan balik | feedback clusters → issue |
+| 08:15 Mon | SDLC 10 · Pemindai celah uji | one high-risk test gap → issue |
+| 22:00 Fri | SDLC 14 · Pembuat catatan rilis | cut the next `-rc` prerelease → notes in the Release body |
+| 03:00 1st | SDLC 12 · Uji beban | k6 vs staging → regression |
+| 08:30 1st | SDLC 29 · Audit kematangan | rate the 18 items → one issue |
 
 Scheduled Actions: `duplicate-sweep` (daily 01:30 UTC = 08:30 WIB, closes a duplicate issue or
 PR 7 days after the warning) and `mutation` (Mondays 05:00 WIB). There is **no**
