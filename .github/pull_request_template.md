@@ -1,5 +1,7 @@
 <!-- Keep this PR as a draft until it is ready for review. SDLC 22 only reviews a
-     ready PR; a red check or a requested change sends it back to draft. -->
+     ready PR. A red check or a requested change leaves it open — the failing
+     checks and the request-changes review are already visible on it, and a human
+     decides when it is ready again (docs/LABELS.md, rule 5). -->
 
 ## HUMAN
 

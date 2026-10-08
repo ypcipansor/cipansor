@@ -78,8 +78,9 @@ when its acceptance criteria are real**, and a PR must point at one. Our
 human can leave a field blank or a PR can name no `ready` issue. The enforcement
 that matches OpenHands is a GitHub Actions workflow that (a) fails a PR whose
 body names no `Fixes #<n>` to a `ready` issue, and (b) removes `ready` when the
-acceptance-criteria field of an issue is emptied — the same actor-policy check
-OpenHands runs in `issue-readiness-check.yml`. Say the word and it lands.
+acceptance-criteria field of an issue is emptied. OpenHands gates its own PRs on
+exactly that kind of actor-policy check, keeping a PR in draft until its linked
+issue is `ready-for-dev`. Say the word and it lands.
 
 ### Advisory enforcement (deployed)
 
