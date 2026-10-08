@@ -164,6 +164,20 @@ describe('konsep awal surat', () => {
     expect(remainingPlaceholders(filled)).toEqual([]);
   });
 
+  // The hint placeholders carry full prose ("[URAIAN KETERANGAN, mis. …]"), so
+  // a character allow-list that stops at letters and a few marks reports none
+  // of them — the drafter is told the letter is complete while it still holds
+  // an unfilled bracket. Every bracket in a fresh draft must be reported.
+  it('melaporkan setiap placeholder bersiku di konsep setiap jenis surat', () => {
+    for (const type of Object.values(LetterType)) {
+      const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
+      const allBrackets = draft.match(/\[[^\]\n]+\]/g) ?? [];
+      const reported = new Set(remainingPlaceholders(draft));
+      const missed = [...new Set(allBrackets)].filter((p) => !reported.has(p));
+      expect(missed, `placeholder tak terlaporkan pada ${type}`).toEqual([]);
+    }
+  });
+
   it('konsep tidak menyisakan baris kosong di awal/akhir', () => {
     for (const type of Object.values(LetterType)) {
       const draft = renderTemplateDraft(type, LetterNature.PUBLIC);

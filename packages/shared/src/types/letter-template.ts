@@ -293,5 +293,5 @@ export function renderTemplateDraft(
 
 /** Placeholder yang masih tersisa, supaya bisa diingatkan sebelum diajukan. */
 export function remainingPlaceholders(content: string): string[] {
-  return Array.from(new Set(content.match(/\[[A-Z0-9 ÀÁ-ÿ/.,;'’-]+\]/g) ?? []));
+  return Array.from(new Set(content.match(/\[[^\]\n]+\]/g) ?? []));
 }
