@@ -2,11 +2,11 @@
 # Post the CI result and dispatch the review gate once a PR is fully green.
 #
 #   green checks on a draft PR    -> post the all-green comment (informational)
-#   green checks on a ready PR    -> dispatch the review gate (SDLC 22)
+#   green checks on a ready PR    -> dispatch the review gate (`Gerbang tinjau PR`)
 #   red checks / changes requested -> do nothing
 #
 # This script never approves, never merges and never changes the draft/ready
-# state. A maintainer decides when a PR is ready; the review gate (SDLC 22)
+# state. A maintainer decides when a PR is ready; the review gate (`Gerbang tinjau PR`)
 # decides the verdict. A red or changes-requested PR is deliberately left open:
 # the gate posts the request-changes review itself, and branch protection blocks
 # the merge until it is resolved. Reverting a PR to draft was tried and dropped —

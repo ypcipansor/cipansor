@@ -1,0 +1,67 @@
+# Dispatch the deployment monitor the moment a workflow on `main` fails.
+#
+# GitHub Actions is the deterministic bridge: it sees the finished result of
+# every workflow on `main`, and only dispatches when the tip of `main` is green
+# again — so a failure mid-PR (which is normal) never raises an issue, while a
+# real failure that survived the next merge does. This mirrors `pr-lifecycle.yml`,
+# which dispatches the review gate.
+#
+# The monitor itself (`Pemantau deployment`) lives in the automation service and
+# is dispatched by id, the same way the review gate is.
+name: Main failure bridge
+
+on:
+  # Only workflows that actually run on `main`: CI and E2E on a push, and the
+  # staging deploy that follows a green E2E run. `Deploy production` is manual
+  # (workflow_dispatch) and `Mutation tests` is a weekly signal that files its
+  # own issue, so neither belongs here.
+  workflow_run:
+    workflows: [CI, E2E Tests, Deploy staging]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  statuses: read
+
+jobs:
+  dispatch:
+    if: |
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm main is green again
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # If main is still red, the failure is ongoing: do not raise a second
+          # issue. The monitor comments on the existing failure instead.
+          STATE=$(gh api "repos/$REPO/commits/main/status" --jq .state 2>/dev/null || echo unknown)
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+          if [ "$STATE" = "failure" ] || [ "$STATE" = "error" ]; then
+            echo "main is still red; skipping dispatch"
+            echo "skip=1" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Dispatch the deployment monitor
+        if: steps.gate.outputs.skip != '1'
+        env:
+          OPENHANDS_API_KEY: ${{ secrets.OPENHANDS_API_KEY }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+        run: |
+          MONITOR_ID="${SDLC_DEPLOY_MONITOR_ID:-e827ff1a-2bcd-479a-b932-29e71abfe99d}"
+          if [ -z "$OPENHANDS_API_KEY" ]; then
+            echo "OPENHANDS_API_KEY is not set; the monitor cannot be dispatched."
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/dispatch.out -w '%{http_code}' -X POST \
+            "https://app.all-hands.dev/api/automation/v1/$MONITOR_ID/dispatch" \
+            -H "Authorization: Bearer $OPENHANDS_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"source\":\"main-failure-bridge\",\"run_id\":\"$RUN_ID\",\"workflow\":\"$WORKFLOW\"}")
+          echo "Dispatched the deployment monitor for run $RUN_ID ($WORKFLOW), HTTP $code."
+          cat /tmp/dispatch.out

@@ -1,25 +1,34 @@
-# SDLC automation flow
+# Alur automation SDLC
 
-The pipeline that carries a change from a filed issue to production, split
-across two lanes that each do the part they are good at:
+Pipeline yang membawa perubahan dari issue yang dilaporkan sampai produksi,
+terbagi ke dua jalur yang masing-masing mengerjakan bagian yang paling cocok
+untuknya:
 
-- **Cloud automation** (`app.all-hands.dev`) — an LLM agent that reads context
-  and makes a judgement: triage, labelling, review, writing a fix. It never
-  merges, and leaves the draft/ready decision to a human or the review gate.
-- **GitHub Actions** — fixed consequences that must fire reliably and must not
-  cost tokens: the CI-result bridge that dispatches the gate, the duplicate
-  sweep, the label-mismatch check, the deploys. The rules live in
-  `.github/scripts/` so they run by hand.
+- **Automation cloud** (`app.all-hands.dev`) — agen LLM yang membaca konteks dan
+  menilai: triase, pelabelan, tinjauan, menulis perbaikan. Ia tidak pernah
+  merge, dan menyerahkan keputusan draft/ready kepada manusia atau gerbang
+  tinjau.
+- **GitHub Actions** — konsekuensi tetap yang harus menyala andal dan tidak
+  boleh memakan token: jembatan hasil CI yang men-dispatch gerbang, penyapu
+  duplikat, pemeriksaan ketidaksesuaian label, dan deploy. Aturannya ada di
+  `.github/scripts/` supaya bisa dijalankan manual.
 
-Cloud cron schedules are in **Asia/Jakarta (WIB)**; GHA schedules are **UTC**.
-Every comment trigger carries the footer guard
-`!icontains(comment.body, 'This comment was created by an AI agent')`, because an
-automation posts through the same account as the reporter and would otherwise
-re-trigger itself (incident #680). SDLC 08 (mentioned below) instead sets
-`destination: continue_conversation`, so every mention about one PR/issue shares a
-single conversation and a burst cannot exhaust the sandbox pool.
+Jadwal cron cloud dalam **Asia/Jakarta (WIB)**; jadwal GHA dalam **UTC**.
+Setiap pemicu komentar membawa guard footer
+`!icontains(comment.body, 'This comment was created by an AI agent')`, karena
+automation memposting lewat akun yang sama dengan pelapor dan tanpa itu akan
+memicu dirinya sendiri (insiden #680). `Bot sebutan` tidak memakai guard itu;
+ia memakai `destination: continue_conversation`, sehingga setiap sebutan tentang
+satu PR/issue berbagi satu conversation dan ledakan sebutan tidak menghabiskan
+kolam sandbox.
 
-## End to end
+**Satu penulis, satu gerbang.** Hanya `Tiket jadi PR` yang membuka pull request.
+Automation lain yang menemukan masalah membuka **issue**, lalu maintainer
+menerapkan `bot-implement` dan `Tiket jadi PR` yang mengerjakannya. Ini menjaga
+satu jalur PR (satu tempat gate, satu bentuk diff) dan membuat penulis PR selalu
+`adminypc`.
+
+## Menyeluruh
 
 ```mermaid
 flowchart TB
@@ -28,82 +37,83 @@ flowchart TB
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
   subgraph ISSUE["1 · Issue"]
-    I([Issue opened]) --> C1["SDLC 01 · Triase bug"]:::cloud
-    I --> C2["SDLC 02 · Estimasi usaha"]:::cloud
-    I --> C3["SDLC 19 · Pelabel issue"]:::cloud
-    C3 --> D{"Clear enough?"}
-    D -- yes --> R(["ready"])
-    D -- no --> NI(["needs-info"])
-    NI --> C20["SDLC 20 · Penjernih issue"]:::cloud --> D
-    PM(["pending-maintainer"]) --> C26["SDLC 26 · Diskusi"]:::cloud --> D
-    I -. "label bug" .-> C6["SDLC 06 · Reproduksi bug"]:::cloud
-    C6 --> BUG(["failing test + draft PR"])
+    I([Issue dibuka]) --> C1["Triase bug"]:::cloud
+    I --> C2["Estimasi usaha"]:::cloud
+    I --> C3["Pelabel issue"]:::cloud
+    C3 --> D{"Cukup jelas?"}
+    D -- ya --> R(["ready"])
+    D -- tidak --> NI(["needs-info"])
+    NI --> C16["Penjernih issue"]:::cloud --> D
+    PM(["pending-maintainer"]) --> C22["Diskusi"]:::cloud --> D
+    I -. "label bug" .-> C5["Reproduksi bug"]:::cloud
+    C5 --> BUG(["reproduksi + bukti di issue (tanpa PR)"])
   end
 
   subgraph PRL["2 · Pull request"]
-    R --> C7["SDLC 07 · Tiket jadi PR"]:::cloud --> DPR([Draft PR])
-    MENT(["comment @openhands"]):::human -. "trusted author" .-> C8["SDLC 08 · Bot sebutan"]:::cloud
-    C8 --> DPR
-    DPR --> C21["SDLC 21 · Pelabel PR"]:::cloud
-    DPR --> C9["SDLC 09 · Peninjau kode"]:::cloud
-    DPR --> C5["SDLC 05 · Peninjau arsitektur"]:::cloud
-    DPR --> RDY(["Ready for review"]):::human
-    RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
-    RDY -. "wait for green" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
+    R --> C6["Tiket jadi PR"]:::cloud --> DPR([Draft PR])
+    MENT(["komentar @openhands"]):::human -. "penulis terpercaya" .-> C7["Bot sebutan"]:::cloud
+    C7 -. "tugas kode" .-> BOT(["issue + bot-implement"]):::cloud -.-> C6
+    DPR --> C17["Pelabel PR"]:::cloud
+    DPR --> C8["Peninjau kode"]:::cloud
+    DPR --> C4["Peninjau arsitektur"]:::cloud
+    DPR --> RDY(["Ditandai siap ditinjau"]):::human
+    RDY --> C10["Otomasi QA"]:::cloud
+    RDY -. "tunggu hijau" .-> C18["Gerbang tinjau PR"]:::cloud
     RDY --> GAE["Actions · E2E Tests"]:::gh
     GAC["Actions · CI"]:::gh --> LC{"pr-lifecycle.sh (workflow_run)"}:::gh
     GAE --> LC
-    LC -- "red" --> RQ(["quiet"]):::gh
-    LC -- "green + ready" --> DISP["dispatch gate (bridge)"]:::gh --> C22
-    C22 --> DEC{"every check completed?"}
-    DEC -- "running / red" --> NO["do nothing"]:::cloud
-    DEC -- green --> AP(["approve or request changes + suggestion"]):::cloud
+    LC -- "merah" --> RQ(["diam (check terlihat di PR)"]):::gh
+    LC -- "hijau + ready" --> DISP["dispatch gerbang (bridge)"]:::gh --> C18
+    C18 --> DEC{"semua check selesai?"}
+    DEC -- "berjalan / merah" --> NO["tidak melakukan apa pun"]:::cloud
+    DEC -- hijau --> AP(["approve atau minta perubahan + blok suggestion"]):::cloud
   end
 
-  subgraph REL["3 · Release & operations"]
-    DPR -. merge .-> MG([Merge to main])
-    MG --> C4["SDLC 04 · Peta basis kode"]:::cloud
-    MG --> C15["SDLC 15 · Pengelola dokumentasi"]:::cloud
+  subgraph REL["3 · Rilis & operasi"]
+    DPR -. merge .-> MG([Merge ke main])
+    MG --> C3B["Peta basis kode"]:::cloud
+    MG --> C14["Pengelola dokumentasi"]:::cloud
     MG --> STG["deploy-staging.yml (build + push image)"]:::gh
     STG --> PROD["deploy-production.yml (manual · sha)"]:::human
-    C14["SDLC 14 · Pembuat catatan rilis (cron Fri 22:00 WIB)"]:::cloud
-    C14 -. "cuts a -rc prerelease (notes in the Release body, no in-repo changelog)" .-> REL2(["GitHub Release (prerelease)"])
+    PROD -. "workflow gagal" .-> BR["main-failure-bridge.yml"]:::gh --> C12["Pemantau deployment"]:::cloud
+    C13["Pembuat catatan rilis (cron Jum 22:00 WIB)"]:::cloud
+    C13 -. "memotong pre-release -rc (catatan di body Release, tanpa changelog di repo)" .-> REL2(["GitHub Release (prerelease)"])
   end
 ```
 
-## Issue lifecycle
+## Siklus hidup issue
 
 ```mermaid
 flowchart TD
   classDef cloud fill:#e8f0fe,stroke:#4285f4,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  I([Issue opened]) --> C19["SDLC 19 · Pelabel issue"]:::cloud
-  C19 --> D{"Enough detail to implement?"}
-  D -- yes --> R(["ready"])
-  D -- no --> Q(["question"])
-  D -- no --> NI(["needs-info"])
+  I([Issue dibuka]) --> C15["Pelabel issue"]:::cloud
+  C15 --> D{"Cukup detail untuk diimplementasikan?"}
+  D -- ya --> R(["ready"])
+  D -- tidak --> Q(["question"])
+  D -- tidak --> NI(["needs-info"])
 
-  NI --> C20["SDLC 20 · Penjernih issue"]:::cloud
-  C20 -- "reporter answers" --> D
+  NI --> C16["Penjernih issue"]:::cloud
+  C16 -- "pelapor menjawab" --> D
 
-  I -. "label bug" .-> C6["SDLC 06 · Reproduksi bug"]:::cloud
-  C6 --> BUG["draft PR (failing test) + evidence on the issue"]:::cloud
-  C6 -. "behaviour is intended" .-> INV(["invalid / duplicate"])
+  I -. "label bug" .-> C5["Reproduksi bug"]:::cloud
+  C5 --> BUG["reproduksi + bukti di issue"]:::cloud
+  C5 -. "perilaku memang disengaja" .-> INV(["invalid / duplicate"])
 
-  PM(["pending-maintainer"]) --> C26["SDLC 26 · Diskusi"]:::cloud
-  C26 -- "go-ahead" --> R
-  C26 -- "reject" --> WF(["wontfix → closed"])
+  PM(["pending-maintainer"]) --> C22["Diskusi"]:::cloud
+  C22 -- "lampu hijau" --> R
+  C22 -- "tolak" --> WF(["wontfix → ditutup"])
 
-  R --> C7["SDLC 07 · Tiket jadi PR"]:::cloud --> DPR([Draft PR])
+  R --> C6["Tiket jadi PR"]:::cloud --> DPR([Draft PR])
 
-  C25["SDLC 25 · Penjaga issue (cron 01:30 WIB)"]:::cloud
-  C25 -. "timer" .-> NI
-  C25 -. "timer" .-> Q
-  C25 -- "20d / 8+7d / 90+14d" --> CL(["closed as not planned"])
+  C21["Penjaga issue (cron 01:30 WIB)"]:::cloud
+  C21 -. "timer" .-> NI
+  C21 -. "timer" .-> Q
+  C21 -- "20h / 8+7h / 90+14h" --> CL(["ditutup sebagai not planned"])
 ```
 
-## Pull request lifecycle — the CI gate
+## Siklus hidup pull request — gerbang CI
 
 ```mermaid
 flowchart TD
@@ -111,30 +121,30 @@ flowchart TD
   classDef gh fill:#fff4e5,stroke:#f59e0b,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  DPR([Draft PR]) --> C21["SDLC 21 · Pelabel PR"]:::cloud
-  DPR --> C9["SDLC 09 · Peninjau kode (inline + suggestion)"]:::cloud
-  DPR --> C5["SDLC 05 · Peninjau arsitektur (if design/ADR)"]:::cloud
-  DPR --> RDY(["Marked Ready for review"]):::human
+  DPR([Draft PR]) --> C17["Pelabel PR"]:::cloud
+  DPR --> C8["Peninjau kode (inline + suggestion)"]:::cloud
+  DPR --> C4["Peninjau arsitektur (bila design/ADR)"]:::cloud
+  DPR --> RDY(["Ditandai siap ditinjau"]):::human
 
-  RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
-  RDY -. "wait for green" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
+  RDY --> C10["Otomasi QA"]:::cloud
+  RDY -. "tunggu hijau" .-> C18["Gerbang tinjau PR"]:::cloud
   RDY --> E2E["Actions · E2E Tests"]:::gh
   CI["Actions · CI"]:::gh --> LC
 
   E2E --> LC{"pr-lifecycle.sh · workflow_run"}:::gh
-  LC -- red --> RQ["quiet (checks visible on the PR)"]:::gh
-  LC -- "green + draft" --> GC["comment: all green"]:::gh
-  LC -- "green + ready" --> DISP["dispatch gate (bridge)"]:::gh --> C22
+  LC -- merah --> RQ["diam (check terlihat di PR)"]:::gh
+  LC -- "hijau + draft" --> GC["komentar: semua hijau"]:::gh
+  LC -- "hijau + ready" --> DISP["dispatch gerbang (bridge)"]:::gh --> C18
 
-  C22 --> DEC{"every check completed?"}
-  DEC -- "running / red" --> STOP["do nothing"]:::cloud
-  DEC -- green --> REV{"a defect CI cannot see?"}
-  REV -- yes --> RC["request changes + suggestion block"]:::cloud
-  REV -- no --> APP["approve"]:::cloud
+  C18 --> DEC{"semua check selesai?"}
+  DEC -- "berjalan / merah" --> STOP["tidak melakukan apa pun"]:::cloud
+  DEC -- hijau --> REV{"ada cacat yang tak terlihat CI?"}
+  REV -- ya --> RC["minta perubahan + blok suggestion"]:::cloud
+  REV -- tidak --> APP["approve"]:::cloud
   RC --> LC
 ```
 
-## Release & operations
+## Rilis & operasi
 
 ```mermaid
 flowchart LR
@@ -142,108 +152,140 @@ flowchart LR
   classDef gh fill:#fff4e5,stroke:#f59e0b,color:#111;
   classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
 
-  MG([Merge to main]) --> C4["SDLC 04 · Peta basis kode"]:::cloud
-  MG --> C15["SDLC 15 · Pengelola dokumentasi"]:::cloud
+  MG([Merge ke main]) --> C3["Peta basis kode"]:::cloud
+  MG --> C14["Pengelola dokumentasi"]:::cloud
   MG --> STG["deploy-staging.yml"]:::gh
   STG --> PROD["deploy-production.yml (manual)"]:::human
 
-  C12["SDLC 12 · Uji beban → staging (03:00 on the 1st)"]:::cloud -.-> STG
-  C13["SDLC 13 · Pemantau deployment (07:00)"]:::cloud -.-> PROD
-  C14["SDLC 14 · Pembuat catatan rilis (Fri 22:00) → -rc prerelease"]:::cloud -.-> PROD
-  C16["SDLC 16 · Pemantau log"]:::cloud -.-> PROD
-  C17["SDLC 17 · Detektor anomali"]:::cloud -.-> PROD
-  C18["SDLC 18 · Penuntas galat → fix PR"]:::cloud -.-> PROD
+  C11["Uji beban → staging (03:00 tanggal 1)"]:::cloud -.-> STG
+  C12["Pemantau deployment (reaktif via bridge)"]:::cloud -.-> PROD
+  C13["Pembuat catatan rilis (Jum 22:00) → pre-release -rc"]:::cloud -.-> PROD
+  C20["Pemindai standar (Sen 06:00) → issue pending-maintainer"]:::cloud -.-> PROD
+  C19["Pemburu bug (harian 09:00) → issue bug berbukti"]:::cloud -.-> PROD
 ```
 
-## Fleet supervision
+## Pengawasan armada
 
 ```mermaid
 flowchart TD
   classDef cloud fill:#e8f0fe,stroke:#4285f4,color:#111;
-  WD["SDLC 27 · Pengawas armada (daily 05:00 WIB)"]:::cloud
-  WD -- "reads GET /{id}/runs of every automation" --> SCAN{"finding?"}
-  SCAN -- "known & safe problem" --> FIX["open a PR labelled watchdog-repair"]
-  FIX --> C28["SDLC 28 · Perbaikan otomatis pengawas"]:::cloud
-  C28 -- "safe?" --> VOK(["verification comment"]):::cloud
-  C28 -- "no / check fails" --> ESC(["request changes / escalate to a human"])
-  SCAN -- "anything else" --> ISS(["one automation-health issue per cause per week"])
+  WD["Pengawas armada (harian 05:00 WIB)"]:::cloud
+  WD -- "membaca GET /{id}/runs setiap automation" --> SCAN{"temuan?"}
+  SCAN -- "cacat apa pun (termasuk config)" --> ISS(["satu issue automation-health per penyebab per minggu"])
+  SCAN -- "tidak ada" --> OK(["laporan ringkas, tanpa tindakan"])
 ```
 
-## Scheduled fleet (Cloud cron, WIB)
+## Armada terjadwal (cron cloud, WIB)
 
-| Time | Automation | Job |
+| Waktu | Automation | Tugas |
 |---|---|---|
-| 01:30 daily | SDLC 25 · Penjaga issue | age out stalled issues |
-| 05:00 daily | SDLC 27 · Pengawas armada | health of all 29 automations |
-| 07:00 daily | SDLC 13 · Pemantau deployment | failed/stuck deploy → issue |
-| 07:15 daily | SDLC 16 · Pemantau log | log patterns → issue |
-| 07:30 daily | SDLC 17 · Detektor anomali | metric anomalies → ticket |
-| 07:45 daily | SDLC 18 · Penuntas galat | production error → fix PR |
-| 09:00 daily | SDLC 23 · Pemburu bug | proven bug → issue + draft PR |
-| 06:00 Mon | SDLC 24 · Pemindai standar | standards divergence → `pending-maintainer` |
-| 08:00 Mon | SDLC 03 · Serapan umpan balik | feedback clusters → issue |
-| 08:15 Mon | SDLC 10 · Pemindai celah uji | one high-risk test gap → issue |
-| 22:00 Fri | SDLC 14 · Pembuat catatan rilis | cut the next `-rc` prerelease → notes in the Release body |
-| 03:00 1st | SDLC 12 · Uji beban | k6 vs staging → regression |
-| 08:30 1st | SDLC 29 · Audit kematangan | rate the 18 items → one issue |
+| 01:30 harian | Penjaga issue | mengusangkan issue yang macet |
+| 05:00 harian | Pengawas armada | kesehatan semua automation |
+| 09:00 harian | Pemburu bug | bug terbukti → satu issue berbukti |
+| 06:00 Senin | Pemindai standar | penyimpangan standar → `pending-maintainer` |
+| 08:15 Senin | Pemindai celah uji | satu celah uji berisiko → issue |
+| 22:00 Jumat | Pembuat catatan rilis | memotong pre-release `-rc` berikutnya → catatan di body Release |
+| 03:00 tanggal 1 | Uji beban | k6 vs staging → regresi |
+| 08:30 tanggal 1 | Audit kematangan | menilai 18 item → satu issue |
 
-Scheduled Actions: `duplicate-sweep` (daily 01:30 UTC = 08:30 WIB, closes a duplicate issue or
-PR 7 days after the warning). There is **no** `load-tests.yml` in
-`.github/workflows/` — SDLC 12 (Cloud cron) is the only load runner today; the
-only changelog comes from SDLC 14's Release body, not a workflow.
+Actions terjadwal: `duplicate-sweep` (harian 01:30 UTC = 08:30 WIB, menutup
+issue atau PR duplikat 7 hari setelah peringatan). Tidak ada `load-tests.yml` di
+`.github/workflows/` — `Uji beban` (cron cloud) adalah satu-satunya pelari beban
+saat ini; satu-satunya changelog berasal dari body Release `Pembuat catatan
+rilis`, bukan workflow.
 
-## Identity — who acts as whom
+## Peran — siapa berbuat sebagai siapa
 
-Two GitHub accounts carry the fleet, and the split is deliberate: the account
-that *writes* an artifact is never the account that *approves* it.
+| Automation | Peran |
+|---|---|
+| Triase bug | triase issue baru, cari duplikat, label + komentar keparahan/area |
+| Estimasi usaha | ukuran XS–XL + area tersentuh + risiko, dikalibrasi ke PR lama |
+| Peta basis kode | membandingkan peta arsitektur dengan kode → issue bila menyimpang |
+| Peninjau arsitektur | meninjau dokumen desain/RFC/ADR |
+| Reproduksi bug | menyelidiki issue `bug`, menempel reproduksi + bukti ke issue |
+| Tiket jadi PR | **satu-satunya pembuat PR**; label `bot-implement` memicunya |
+| Bot sebutan | menyerahkan permintaan `@openhands` yang berupa pekerjaan ke issue + `bot-implement`, atau menjawab pertanyaan |
+| Peninjau kode | tinjauan baris demi baris + blok `suggestion` |
+| Pemindai celah uji | satu celah pengujian berisiko → issue |
+| Otomasi QA | menjalankan alur yang berubah, melaporkan lulus/gagal |
+| Uji beban | k6 vs staging |
+| Pemantau deployment | kegagalan workflow di `main` → issue diagnosis |
+| Pembuat catatan rilis | pre-release `-rc` + catatan rilis dari conventional commits |
+| Pengelola dokumentasi | merge yang berdampak dokumentasi → issue dokumentasi basi |
+| Pelabel issue | tipe + prioritas + kesiapan (`ready`/`needs-info`/`question`/`duplicate`) |
+| Penjernih issue | menilai ulang saat pelapor menjawab `needs-info` |
+| Pelabel PR | menyalin tipe + prioritas issue tertaut ke PR |
+| Gerbang tinjau PR | **satu-satunya yang boleh APPROVE**; menunggu CI hijau |
+| Pemburu bug | bug proaktif yang bisa direproduksi → issue berbukti |
+| Pemindai standar | standar/regulasi terbaru → issue `pending-maintainer` |
+| Penjaga issue | timer usang untuk `needs-info`/`question`/lainnya |
+| Diskusi | berdiskusi dengan maintainer; setuju → `ready`, tolak → `wontfix` |
+| Pengawas armada | kesehatan armada → satu issue `automation-health` |
+| Audit kematangan | menilai 18 item kerangka → satu issue laporan |
 
-| Account | Role | Automations |
+## Identitas — siapa berbuat sebagai siapa
+
+Dua akun GitHub membawa armada ini, dan pemisahannya disengaja: akun yang
+*menulis* artefak tidak pernah menjadi akun yang *menyetujuinya*.
+
+| Akun | Peran | Automation |
 |---|---|---|
-| `adminypc` | Author — creates issues and pull requests | 03, 04, 06, 07, 08, 10, 13, 15, 16, 17, 18, 23, 24, 27 |
-| `cipansor-bot` | Communicator — comments, labels, reviews, approves | 01, 02, 05, 09, 11, 12, 14, 19, 20, 21, 22, 25, 26, 28, Audit |
+| `adminypc` | Penulis — membuat issue dan pull request | Peta basis kode, Reproduksi bug, Tiket jadi PR, Bot sebutan, Pemindai celah uji, Pemantau deployment, Pengelola dokumentasi, Pemburu bug, Pemindai standar, Pengawas armada, Audit kematangan |
+| `cipansor-bot` | Komunikator — komentar, label, review, approve | Triase bug, Estimasi usaha, Peninjau arsitektur, Peninjau kode, Otomasi QA, Uji beban, Pembuat catatan rilis, Pelabel issue, Penjernih issue, Pelabel PR, Gerbang tinjau PR, Penjaga issue, Diskusi |
 
-- A pull request must be attributed to a writer, so an automation that opens one
-  keeps `GITHUB_TOKEN` (`adminypc`). Everything else posts through
+- Pull request harus teratribusi ke penulis, jadi automation yang membukanya
+  memakai `GITHUB_TOKEN` (`adminypc`). Selebihnya memposting lewat
   `GITHUB_BOT_TOKEN` (`cipansor-bot`).
-- `SDLC 22 · Gerbang tinjau PR` is the only automation that may `APPROVE`. It
-  runs as `cipansor-bot`, a different identity from the `adminypc` author, so
-  GitHub accepts the approval; a bot that approved a PR it wrote itself would be
-  a self-review and is rejected.
-- Each automation is a custom runner with a secret allowlist: `GITHUB_TOKEN` is
-  always present, `GITHUB_BOT_TOKEN` only for the communicators. The preset
-  runner forwards every secret and is not used.
+- `Gerbang tinjau PR` adalah satu-satunya automation yang boleh `APPROVE`. Ia
+  berjalan sebagai `cipansor-bot`, identitas yang berbeda dari penulis
+  `adminypc`, sehingga GitHub menerima approval-nya; bot yang menyetujui PR yang
+  ia tulis sendiri adalah tinjauan diri dan ditolak.
+- Setiap automation adalah runner kustom dengan allowlist rahasia: `GITHUB_TOKEN`
+  selalu ada, `GITHUB_BOT_TOKEN` hanya untuk komunikator. Runner preset
+  meneruskan semua rahasia dan tidak dipakai.
 
-## Why it is shaped this way
+## Mengapa dibentuk begini
 
-- **There is no CI event in the OpenHands webhook.** The GitHub integration
-  knows `pull_request`, `issues`, `issue_comment`, `push`, `release` and
-  `pull_request_review` — not `check_run` or `workflow_run`. So SDLC 22 cannot
-  be *waited* on until CI is green; it acts when triggered and checks the check
-  runs itself, doing nothing while any is still running. The bridge makes the
-  green gate precise: `pr-lifecycle.yml` (on `workflow_run`) dispatches SDLC 22
-  the moment every required check passes, so the gate never races a fresh CI
-  run. It needs an `OPENHANDS_API_KEY` repo secret.
-- **Deterministic consequences belong to Actions.** The CI-result bridge, the
-  7-day duplicate close and the label-mismatch check are scripts, not agents:
-  they must fire on time and cost no tokens.
-- **A red CI or a changes-requested review never reverts the PR to draft.** The
-  PR stays open and the failing checks are visible on it; the gate posts the
-  request-changes review and branch protection holds the merge. Reverting to
-  draft was tried and removed — it hides work in progress and a human can mark
-  it ready again without the lifecycle guard's help.
-- **Release notes live in the GitHub Release, not in a file.** SDLC 14 runs weekly,
-  cuts the next `-rc` prerelease and writes the notes into the Release body from
-  the conventional commits since the last official release; it never writes
-  `CHANGELOG.md` into the repository and never opens a changelog PR. The official
-  (non-`rc`) release is a maintainer's manual act.
-- **The fleet is the framework plus its plumbing.** SDLC 01–18 map one-to-one to
-  the 18 Agentic SDLC items; SDLC 19–28 add the label/lifecycle pipelines, the
-  proactive hunter and the watchdog. SDLC 29 is a monthly audit that rates the
-  same 18 items and names the weakest, so the fleet can be steered deliberately.
-- **Warnings never block.** `pr-description-checks.yml` only comments; it cannot
-  fail a build or a release.
-- **Rollback is manual.** SDLC 13 reports a bad deploy; it never rolls back.
-- **Review proposes the fix.** SDLC 05/09/22 post GitHub `suggestion` blocks so a
-  fix applies in one click.
-- **Self-comment guard is mandatory.** Every comment-triggered automation keeps
-  the `This comment was created by an AI agent` footer check (#680).
+- **Tidak ada event CI di webhook OpenHands.** Integrasi GitHub mengenal
+  `pull_request`, `issues`, `issue_comment`, `push`, `release`, dan
+  `pull_request_review` — bukan `check_run` atau `workflow_run`. Karena itu
+  `Gerbang tinjau PR` tidak bisa *menunggu* sampai CI hijau; ia bertindak saat
+  dipicu dan memeriksa check-run sendiri, tidak melakukan apa pun selama masih
+  ada yang berjalan. Jembatan membuat gerbang hijau tepat: `pr-lifecycle.yml`
+  (pada `workflow_run`) men-dispatch `Gerbang tinjau PR` begitu semua check wajib
+  lulus. Butuh rahasia repo `OPENHANDS_API_KEY`.
+- **Konsekuensi deterministik milik Actions.** Jembatan hasil CI, penutupan
+  duplikat 7 hari, pemeriksaan ketidaksesuaian label, dan jembatan kegagalan
+  `main` adalah skrip, bukan agen: harus menyala tepat waktu dan tidak memakan
+  token.
+- **Satu penulis PR.** Hanya `Tiket jadi PR` yang membuka PR. Semua temuan lain
+  membuka issue; `bot-implement` menyerahkannya ke penulis tunggal itu. Ini
+  menghapus PR spekulatif dari automation lain dan menjaga satu bentuk diff.
+- **Gate deskripsi PR kini keras.** `pr-description-checks.yml` job `template`
+  **gagal** selama templat belum lengkap, issue tertaut belum berlabel
+  `ready`/`bot-implement`, atau prosanya terbaca sebagai Bahasa Inggris. Ini
+  menyamakan repo dengan standar OpenHands (Why/Summary/How to test + issue
+  `ready-for-dev`). Job `visual` tetap advisory.
+- **CI merah atau review minta-perubahan tidak mengembalikan PR ke draft.** PR
+  tetap terbuka dan check yang gagal terlihat padanya; gerbang memposting review
+  minta-perubahan dan branch protection menahan merge. Mengembalikan ke draft
+  pernah dicoba dan dihapus — itu menyembunyikan pekerjaan yang sedang berjalan.
+- **Catatan rilis hidup di GitHub Release, bukan di berkas.** `Pembuat catatan
+  rilis` berjalan mingguan, memotong pre-release `-rc` berikutnya, dan menulis
+  catatan ke body Release dari conventional commit sejak rilis resmi terakhir;
+  ia tidak pernah menulis `CHANGELOG.md` ke repositori dan tidak pernah membuka
+  PR changelog. Rilis resmi (non-`rc`) adalah tindakan manual maintainer.
+- **Armada adalah kerangka plus saluran pipanya.** `Triase bug` … `Gerbang tinjau
+  PR` (item 1–18) memetakan satu-ke-satu ke 18 item Agentic SDLC; `Pelabel issue`
+  … `Pengawas armada` menambahkan pipeline label/siklus hidup, pemburu proaktif,
+  dan pengawas; `Audit kematangan` menilai 18 item yang sama dan menyebut yang
+  terlemah, sehingga armada bisa diarahkan dengan sengaja.
+- **Peringatan tidak pernah memblokir, kecuali gate templat.** Hanya job
+  `template` yang memblokir; `visual-evidence` hanya berkomentar.
+- **Rollback manual.** `Pemantau deployment` melaporkan deploy buruk; ia tidak
+  pernah memutar balik.
+- **Tinjauan mengusulkan perbaikannya.** `Peninjau kode`/`Peninjau
+  arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
+  perbaikan berlaku dengan satu klik.
+- **Guard self-comment wajib.** Setiap automation yang dipicu komentar menjaga
+  pemeriksaan footer `This comment was created by an AI agent` (#680).

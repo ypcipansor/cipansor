@@ -1,0 +1,6 @@
+{
+  "_comment": "Highest mutation score recorded for the curated critical-path set in apps/api/stryker.config.mjs. The scheduled mutation job compares a new run against this and opens an issue on a regression. Ratchet upward; never lower it to make a red run pass.",
+  "measured_at": "pending-first-run",
+  "score": null,
+  "break_threshold": 50
+}

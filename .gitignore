@@ -139,3 +139,6 @@ apps/api/private/
 # Bytecode dari helper hook — dibuat saat hook mengimpornya, bukan sumber.
 __pycache__/
 *.pyc
+
+# Keluaran Stryker (mutation testing) — dibuat saat run, bukan sumber.
+apps/api/reports/

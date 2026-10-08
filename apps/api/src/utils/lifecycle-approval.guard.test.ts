@@ -5,13 +5,13 @@ import { join, resolve } from 'path';
 /**
  * The PR lifecycle guard (`.github/scripts/pr-lifecycle.sh`, run by
  * `.github/workflows/pr-lifecycle.yml`) reacts to a finished CI/E2E run or a
- * review: it leaves a red PR open and dispatches the `SDLC 22` review gate once
+ * review: it leaves a red PR open and dispatches the `Gerbang tinjau PR` review gate once
  * every check is green. It must never approve or merge.
  *
  * An earlier revision called `gh pr review --approve` once every check was
  * green, its labels matched the linked issue, and `reviewDecision` was not
  * `CHANGES_REQUESTED`. A green PR can still carry unresolved review threads,
- * so that approved a diff nobody had read — the defect SDLC 22's review gate
+ * so that approved a diff nobody had read — the defect `Gerbang tinjau PR`'s review gate
  * exists to prevent. Approval is the review gate's job; a guard test keeps the
  * lifecycle script from quietly growing an approval back.
  *
