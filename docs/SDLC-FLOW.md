@@ -7,8 +7,9 @@ across two lanes that each do the part they are good at:
   and makes a judgement: triage, labelling, review, writing a fix. It never
   merges, and leaves the draft/ready decision to a human or the review gate.
 - **GitHub Actions** — fixed consequences that must fire reliably and must not
-  cost tokens: the red-CI draft revert, the duplicate sweep, the label-mismatch
-  check, the deploys. The rules live in `.github/scripts/` so they run by hand.
+  cost tokens: the CI-result bridge that dispatches the gate, the duplicate
+  sweep, the label-mismatch check, the deploys. The rules live in
+  `.github/scripts/` so they run by hand.
 
 Cloud cron schedules are in **Asia/Jakarta (WIB)**; GHA schedules are **UTC**.
 Every comment trigger carries the footer guard
@@ -48,12 +49,12 @@ flowchart TB
     DPR --> C5["SDLC 05 · Peninjau arsitektur"]:::cloud
     DPR --> RDY(["Ready for review"]):::human
     RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
-    RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
+    RDY -. "wait for green" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
     RDY --> GAE["Actions · E2E Tests"]:::gh
     GAC["Actions · CI"]:::gh --> LC{"pr-lifecycle.sh (workflow_run)"}:::gh
     GAE --> LC
-    LC -- "red / changes requested" --> DR(["draft + comment"]):::gh
-    LC -- "green + ready" --> OK(["quiet · approval left to SDLC 22"]):::gh
+    LC -- "red" --> RQ(["quiet"]):::gh
+    LC -- "green + ready" --> DISP["dispatch gate (bridge)"]:::gh --> C22
     C22 --> DEC{"every check completed?"}
     DEC -- "running / red" --> NO["do nothing"]:::cloud
     DEC -- green --> AP(["approve or request changes + suggestion"]):::cloud
@@ -116,15 +117,14 @@ flowchart TD
   DPR --> RDY(["Marked Ready for review"]):::human
 
   RDY --> C11["SDLC 11 · Otomasi QA"]:::cloud
-  RDY -. "green CI required — bridge not built" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
+  RDY -. "wait for green" .-> C22["SDLC 22 · Gerbang tinjau PR"]:::cloud
   RDY --> E2E["Actions · E2E Tests"]:::gh
   CI["Actions · CI"]:::gh --> LC
 
   E2E --> LC{"pr-lifecycle.sh · workflow_run"}:::gh
-  LC -- red --> DR["→ draft + failing-check comment"]:::gh
-  LC -- "changes requested" --> DR2["→ draft + comment"]:::gh
+  LC -- red --> RQ["quiet (checks visible on the PR)"]:::gh
   LC -- "green + draft" --> GC["comment: all green"]:::gh
-  LC -- "green + ready" --> QUIET["quiet (approval = SDLC 22)"]:::gh
+  LC -- "green + ready" --> DISP["dispatch gate (bridge)"]:::gh --> C22
 
   C22 --> DEC{"every check completed?"}
   DEC -- "running / red" --> STOP["do nothing"]:::cloud
@@ -198,13 +198,18 @@ runner today; the only changelog comes from SDLC 14's Release body, not a workfl
   knows `pull_request`, `issues`, `issue_comment`, `push`, `release` and
   `pull_request_review` — not `check_run` or `workflow_run`. So SDLC 22 cannot
   be *waited* on until CI is green; it acts when triggered and checks the check
-  runs itself, doing nothing while any is still running. A precise green gate
-  needs the bridge: `pr-lifecycle.yml` (already on `workflow_run`) calling
-  `POST /api/automation/v1/{id}/dispatch` — that needs an `OPENHANDS_API_KEY`
-  repo secret.
-- **Deterministic consequences belong to Actions.** The red-CI draft revert, the
-  changes-requested revert, the 7-day duplicate close and the label-mismatch
-  check are scripts, not agents: they must fire on time and cost no tokens.
+  runs itself, doing nothing while any is still running. The bridge makes the
+  green gate precise: `pr-lifecycle.yml` (on `workflow_run`) dispatches SDLC 22
+  the moment every required check passes, so the gate never races a fresh CI
+  run. It needs an `OPENHANDS_API_KEY` repo secret.
+- **Deterministic consequences belong to Actions.** The CI-result bridge, the
+  7-day duplicate close and the label-mismatch check are scripts, not agents:
+  they must fire on time and cost no tokens.
+- **A red CI or a changes-requested review never reverts the PR to draft.** The
+  PR stays open and the failing checks are visible on it; the gate posts the
+  request-changes review and branch protection holds the merge. Reverting to
+  draft was tried and removed — it hides work in progress and a human can mark
+  it ready again without the lifecycle guard's help.
 - **Release notes live in the GitHub Release, not in a file.** SDLC 14 runs weekly,
   cuts the next `-rc` prerelease and writes the notes into the Release body from
   the conventional commits since the last official release; it never writes

@@ -1,19 +1,19 @@
 #!/bin/sh
-# Apply the pull-request lifecycle rules after a CI, E2E or review run finishes.
+# Post the CI result and dispatch the review gate once a PR is fully green.
 #
-#   red checks on a ready PR      -> convert to draft, comment which checks failed
-#   changes requested on a PR     -> convert to draft, comment that it needs work
 #   green checks on a draft PR    -> post the all-green comment (informational)
-#   green checks on a ready PR    -> leave it alone
+#   green checks on a ready PR    -> dispatch the review gate (SDLC 22)
+#   red checks / changes requested -> do nothing
 #
-# This script never approves and never merges. Approval is the review gate's job
-# (SDLC 22), which reads the diff; an automated approval from here could bless an
-# unreviewed change, so the lifecycle guard only preserves the draft/ready state.
-# The draft decision after a revert is likewise left to a human or that gate:
-# this script never marks a PR ready by itself.
+# This script never approves, never merges and never changes the draft/ready
+# state. A maintainer decides when a PR is ready; the review gate (SDLC 22)
+# decides the verdict. A red or changes-requested PR is deliberately left open:
+# the gate posts the request-changes review itself, and branch protection blocks
+# the merge until it is resolved. Reverting a PR to draft was tried and dropped —
+# it does not help a human and hides work that is still being iterated on.
 #
 # Usage: pr-lifecycle.sh <pr-number> <head-sha>
-# Env:   GH_TOKEN, REPO (owner/name)
+# Env:   GH_TOKEN, REPO (owner/name), OPENHANDS_API_KEY (dispatch bridge)
 set -eu
 
 PR="${1:?usage: pr-lifecycle.sh <pr-number> <head-sha>}"
@@ -22,7 +22,6 @@ REPO="${REPO:?REPO is required}"
 
 LIFE_MARK="<!-- pr-lifecycle:"
 GREEN_MARK="<!-- pr-lifecycle:green -->"
-CHANGES_MARK="<!-- pr-lifecycle:changes -->"
 
 # Every lifecycle comment carries the AI-disclosure footer. A comment-triggered
 # automation cannot otherwise tell an automated comment from a reporter's, and
@@ -200,27 +199,18 @@ $AI_FOOTER"
 }
 
 if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
-  if [ "$DRAFT" != "true" ]; then
-    gh pr ready "$PR" --repo "$REPO" --undo
-    echo "PR #$PR has changes requested; converted to draft."
-  fi
-  comment_once "A reviewer requested changes on this PR, so it is back in **draft**.
-
-Address every open review thread, push the fixes, then mark it ready for review again once CI is green. ${CHANGES_MARK}" "changes-requested"
+  # The gate already posted the request-changes review. Leave the PR open so the
+  # author can push fixes and the gate can re-review; branch protection holds the
+  # merge until the review is resolved.
+  echo "PR #$PR has changes requested; leaving it open for fixes."
   exit 0
 fi
 
 if [ -n "$RED" ]; then
-  if [ "$DRAFT" != "true" ]; then
-    gh pr ready "$PR" --repo "$REPO" --undo
-    echo "PR #$PR has failing checks; converted to draft."
-  fi
-  SIG=$(printf '%s\n' "$RED" | cut -f1 | sort | tr '\n' ',' | sed 's/,$//')
-  comment_once "CI is red on this PR, so it is back in **draft**. Failing checks:
-
-$(failed_names)
-
-Get every check green, then mark it ready for review again. <!-- pr-lifecycle:red:$SIG -->" "red:$SIG"
+  # Red checks: stay quiet. The PR is not a draft (a maintainer marked it ready),
+  # and the failing checks are already visible on the PR. Drafting it would only
+  # hide work in progress.
+  echo "PR #$PR has failing checks; leaving it as it is."
   exit 0
 fi
 
@@ -232,13 +222,32 @@ if [ -n "$PENDING" ] || [ "$(printf '%s\n' "$LATEST" | grep -c .)" -eq 0 ] \
   exit 0
 fi
 
-# Every required check passed. The lifecycle guard has nothing left to do: it
-# does not approve (that is the review gate's job) and does not mark a draft
-# ready.
+# Every required check passed. A green draft is still a draft: notify and leave
+# the ready decision to a human.
 if [ "$DRAFT" = "true" ]; then
   comment_once "All checks are green. This PR is a **draft**; mark it ready for review when the work is complete. ${GREEN_MARK}" "green"
   echo "PR #$PR is green and still a draft."
   exit 0
 fi
 
-echo "PR #$PR is green and ready. Leaving approval to the review gate."
+# Green and ready: dispatch the review gate so it runs the moment CI passes,
+# instead of waiting for a `ready_for_review` re-transition (which never comes
+# if the PR was already ready) or relying on the agent to poll. The call is
+# best-effort: a missing key or an HTTP error must not fail the workflow, and
+# GitHub's rerun/retry path can post it again. The gate itself is idempotent —
+# one review per head commit — and is configured for no wake agent, so a dispatch
+# starts a fresh, bounded conversation and cannot pile up.
+GATE_ID="${SDLC_REVIEW_GATE_ID:-96eebf19-b64b-4035-9653-2d8b15b06ac4}"
+if [ -n "${OPENHANDS_API_KEY:-}" ]; then
+  if curl -sS -o /dev/null -w '%{http_code}' -X POST \
+      "https://app.all-hands.dev/api/automation/v1/$GATE_ID/dispatch" \
+      -H "Authorization: Bearer $OPENHANDS_API_KEY" \
+      -H "Content-Type: application/json" \
+      -d "{\"source\":\"gate-bridge\",\"pr\":\"$PR\",\"head_sha\":\"$CHECK_SHA\"}" >/tmp/dispatch.code 2>/dev/null; then
+    echo "Dispatched review gate for PR #$PR at $CHECK_SHA (HTTP $(cat /tmp/dispatch.code))."
+  else
+    echo "Review-gate dispatch failed; CI is still green and a re-request will retrigger it."
+  fi
+else
+  echo "PR #$PR is green and ready, but OPENHANDS_API_KEY is not set; the gate will run on the next re-request."
+fi

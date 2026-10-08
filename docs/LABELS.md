@@ -30,7 +30,8 @@ enforced, not just conventions.
 
 | Label | Meaning |
 |---|---|
-| `ready` | Specified enough for an automation to implement without questions |
+| `ready` | Specified enough to implement; open to a contributor or the bot |
+| `bot-implement` | Hand this issue to `SDLC 07 · Ticket to PR` — the bot implements it. Use instead of (or alongside) `ready` when the work is the bot's |
 | `pending-maintainer` | Waiting for a maintainer to decide whether to proceed; `ready` starts implementation |
 | `needs-info` | Waiting on the reporter for a missing detail |
 | `in-progress` | Someone or an automation is actively working on it |
@@ -69,10 +70,16 @@ enforced, not just conventions.
    pull request is marked with `duplicate-pr` and swept the same way as a
    duplicate issue (rule 4).
 
-3. **`ready` is the gate for implementation.** `SDLC 07 · Ticket to PR` only
-   runs on an issue labelled `ready`. `SDLC 19 · Issue labeller` applies `ready`
-   only when the issue has a clear goal and a concrete acceptance criterion;
-   otherwise it applies `needs-info` and lists what is missing.
+3. **Two labels gate implementation, and only one of them hands the work to
+   the bot.** `ready` means an issue is well-specified and open to anyone —
+   `SDLC 19 · Issue labeller` applies it only when the issue has a clear goal
+   and a concrete acceptance criterion, otherwise it applies `needs-info` and
+   lists what is missing. `bot-implement` is the narrower signal that the
+   maintainer wants `SDLC 07 · Ticket to PR` to implement it. SDLC 07 triggers
+   on `bot-implement`, never on `ready`: if it triggered on `ready` the bot
+   would take over the whole backlog and leave nothing for human contributors.
+   Apply `bot-implement` to hand one issue to the bot; leave it off to leave the
+   issue for a person.
 
 4. **A duplicate closes itself.** `SDLC 19` applies `duplicate` to an issue and
    links the original; the same detection on a pull request applies
@@ -85,18 +92,18 @@ enforced, not just conventions.
    one, or one edited by hand) cannot be checked for an edit, so the sweep
    leaves that item open for a maintainer rather than closing on a guess.
 
-5. **A red pull request is a draft.** The `PR lifecycle` workflow converts a
-   ready PR back to draft when any required check is failing or a reviewer
-   requested changes, and comments which checks failed. It reads the checks
-   exhaustively — every page, every required check present — so an early green
-   subset is not mistaken for the whole gate, and it keeps one comment up to
-   date rather than stacking a stale failure list. A green draft PR gets an
+5. **A red pull request stays open.** The `PR lifecycle` workflow leaves a ready
+   PR as it is when any required check is failing — the failing checks are
+   already visible on the PR, so a draft revert would only hide work in
+   progress. It reads the checks exhaustively — every page, every required
+   check present — and, once every required check passes, dispatches `SDLC 22`
+   so the review gate runs the moment CI is green. A green draft PR gets an
    informational comment; it is never marked ready automatically.
 
 6. **Approval needs more than green CI.** `SDLC 22 · PR review gate` approves a
    ready PR only when every check is green, no review thread is open, the labels
    match the linked issue, and it found no correctness problem in the diff. It
-   never merges.
+   never merges and never changes the draft state.
 
 7. **A review proposes the fix, it does not only complain.** `SDLC 05` and
    `SDLC 09`, and `SDLC 22` when it sends a PR back, post each local, mechanical
@@ -110,9 +117,10 @@ enforced, not just conventions.
 | Automation | Trigger | Labels it sets |
 |---|---|---|
 | `SDLC 19 · Issue labeller` | issue opened | type, priority, `ready` / `needs-info` / `question` / `duplicate` |
+| `SDLC 07 · Ticket to PR` | issue labelled `bot-implement` | none — it opens the PR |
 | `SDLC 20 · Issue clarifier` | comment on a `needs-info` issue | `needs-info` ↔ `ready`, `duplicate`, `invalid` |
 | `SDLC 21 · PR labeller` | PR opened | the linked issue's type and priority, or `duplicate-pr` |
-| `SDLC 22 · PR review gate` | PR ready for review | none — it reviews, drafts, or approves |
+| `SDLC 22 · PR review gate` | PR ready for review, or CI-green dispatch | none — it reviews or approves |
 | `SDLC 23 · Bug hunter` | daily cron | opens an issue with `bug`, a priority, `bug-hunter` |
 | `SDLC 24 · Standard scout` | weekly cron | opens an issue with a type, a priority, `pending-maintainer` |
 | `SDLC 25 · Issue steward` | daily cron | `stale`, and closes idle issues `not planned` |

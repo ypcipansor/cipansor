@@ -1,19 +1,18 @@
-# Move a PR back to draft while CI is red or a reviewer requested changes.
+# Post the CI result and dispatch the review gate.
 #
 # Triggered by workflow_run so it sees the finished result of every workflow on
-# the PR's head — it cannot be the PR's own check, because a check that reverts
-# the PR would cancel itself.
+# the PR's head. It never changes the draft/ready state and never approves or
+# merges.
 #
-#   red CI + ready PR                -> convert to draft, comment which checks failed
-#   changes requested on a ready PR  -> convert to draft, comment that it needs work
 #   green CI + draft PR              -> post the all-green comment, leave the
 #                                       draft decision to a human
-#   green CI + ready PR              -> leave it alone
+#   green CI + ready PR              -> dispatch the review gate (SDLC 22)
+#   red CI                           -> quiet (checks are visible on the PR)
+#   changes requested on a ready PR  -> quiet (the gate posted the review)
 #
-# It never approves and never merges: approval is the review gate's job
-# (SDLC 22), which reads the diff. `pull_request_review` is also subscribed so a
-# changes-requested review submitted after CI finished is not missed — a
-# review triggers no `workflow_run`, which previously left the PR ready.
+# `pull_request_review` is also subscribed so a changes-requested review
+# submitted after CI finished is seen, but the rules above are now a no-op for
+# that case; it is kept so the script's own state view stays consistent.
 #
 # The rules live in .github/scripts/pr-lifecycle.sh so they can be run by hand.
 name: PR lifecycle
@@ -55,4 +54,5 @@ jobs:
           REPO: ${{ github.repository }}
           PR: ${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+          OPENHANDS_API_KEY: ${{ secrets.OPENHANDS_API_KEY }}
         run: sh .github/scripts/pr-lifecycle.sh "$PR" "$HEAD_SHA"
