@@ -666,8 +666,8 @@ export interface SpmbAnnouncementIntake {
  * - otherwise nothing is announced (every intake is closed).
  *
  * `academicYear` rides along so the caller can name the year it is announcing
- * rather than writing one into the markup — the bug the hero badge used to
- * have. Kept pure (no clock, no I/O) so both apps and the tests can call it.
+ * rather than writing one into the markup — the bug the old hardcoded badge
+ * had. Kept pure (no clock, no I/O) so both apps and the tests can call it.
  */
 export function spmbAnnouncementOf(
   intakes: readonly PublicIntakeDTO[],
