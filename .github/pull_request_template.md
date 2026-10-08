@@ -1,6 +1,6 @@
 <!-- Biarkan PR ini draft sampai siap ditinjau. `Gerbang tinjau PR` hanya
-     meninjau PR yang siap; check merah atau permintaan perubahan
-     mengembalikannya ke draft. -->
+     meninjau PR yang siap; check merah atau permintaan perubahan tampil di PR
+     dan branch protection menahan merge sampai diselesaikan. -->
 
 ## HUMAN
 
@@ -26,6 +26,7 @@
 ## What changed
 
 <!-- 1-3 butir. Untuk bug: sebutkan kegagalannya, lalu perbaikannya. -->
+
 -
 
 ## Linked issue
@@ -34,6 +35,7 @@
      berarti tujuannya jelas dan kriteria penerimaannya konkret, dan hanya
      dipasang oleh `Pelabel issue` saat itu terpenuhi. Tanpa issue `ready`, PR
      ini seharusnya belum ada — buka issue-nya dulu. Lihat docs/LABELS.md. -->
+
 Fixes #
 
 ## Acceptance criteria
@@ -65,6 +67,7 @@ Fixes #
 ## Type
 
 <!-- Centang satu. Harus cocok dengan label tipe pada issue tertaut. -->
+
 - [ ] `bug` — memperbaiki cacat
 - [ ] `enhancement` — kemampuan baru
 - [ ] `documentation` — hanya dokumen
