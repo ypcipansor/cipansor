@@ -239,15 +239,19 @@ fi
 # starts a fresh, bounded conversation and cannot pile up.
 GATE_ID="${SDLC_REVIEW_GATE_ID:-96eebf19-b64b-4035-9653-2d8b15b06ac4}"
 if [ -n "${OPENHANDS_API_KEY:-}" ]; then
-  if curl -sS -o /dev/null -w '%{http_code}' -X POST \
+  body=$(jq -n --arg pr "$PR" --arg sha "$CHECK_SHA" \
+    '{source: "gate-bridge", pr: $pr, head_sha: $sha}')
+  # curl exits 0 on any HTTP answer, a 401 included, so the status code is what
+  # says whether the gate was dispatched — not curl's exit code.
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
       "https://app.all-hands.dev/api/automation/v1/$GATE_ID/dispatch" \
       -H "Authorization: Bearer $OPENHANDS_API_KEY" \
       -H "Content-Type: application/json" \
-      -d "{\"source\":\"gate-bridge\",\"pr\":\"$PR\",\"head_sha\":\"$CHECK_SHA\"}" >/tmp/dispatch.code 2>/dev/null; then
-    echo "Dispatched review gate for PR #$PR at $CHECK_SHA (HTTP $(cat /tmp/dispatch.code))."
-  else
-    echo "Review-gate dispatch failed; CI is still green and a re-request will retrigger it."
-  fi
+      -d "$body" 2>/dev/null || echo 000)
+  case "$code" in
+    2??) echo "Dispatched review gate for PR #$PR at $CHECK_SHA (HTTP $code)." ;;
+    *) echo "::warning::Review-gate dispatch for PR #$PR answered HTTP $code; CI is still green and a re-request will retrigger it." ;;
+  esac
 else
   echo "PR #$PR is green and ready, but OPENHANDS_API_KEY is not set; the gate will run on the next re-request."
 fi
