@@ -291,7 +291,15 @@ export function renderTemplateDraft(
   return parts.join("\n").trim();
 }
 
-/** Placeholder yang masih tersisa, supaya bisa diingatkan sebelum diajukan. */
+/**
+ * Placeholder yang masih tersisa, supaya bisa diingatkan sebelum diajukan.
+ *
+ * Setiap kurung siku yang muat dalam satu baris dilaporkan, bukan hanya yang
+ * isinya cocok dengan daftar huruf/tanda tertentu. Petunjuk yang ditulis
+ * `renderTemplateDraft()` berupa prosa — huruf kecil, koma, tanda kurung dan
+ * elipsis `…` — sehingga daftar izin yang sempit melewatkannya dan drafter
+ * diberi tahu suratnya lengkap padahal masih ada isian tersisa.
+ */
 export function remainingPlaceholders(content: string): string[] {
-  return Array.from(new Set(content.match(/\[[A-Z0-9 ÀÁ-ÿ/.,;'’-]+\]/g) ?? []));
+  return Array.from(new Set(content.match(/\[[^\]\n]+\]/g) ?? []));
 }

@@ -164,6 +164,23 @@ describe('konsep awal surat', () => {
     expect(remainingPlaceholders(filled)).toEqual([]);
   });
 
+  /**
+   * Petunjuk isian berupa prosa — huruf kecil, koma, tanda kurung, elipsis —
+   * sehingga daftar izin yang sempit (huruf besar, angka, beberapa tanda)
+   * melewatkannya. Akibatnya drafter diberi tahu suratnya lengkap padahal
+   * masih ada `[…]` yang tersisa. Setiap kurung siku di konsep harus
+   * terlaporkan, apa pun isinya.
+   */
+  it('melaporkan setiap placeholder bersiku di konsep setiap jenis surat', () => {
+    for (const type of Object.values(LetterType)) {
+      const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
+      const allBrackets = draft.match(/\[[^\]\n]+\]/g) ?? [];
+      const reported = new Set(remainingPlaceholders(draft));
+      const missed = [...new Set(allBrackets)].filter((p) => !reported.has(p));
+      expect(missed, `placeholder tak terlaporkan pada ${type}`).toEqual([]);
+    }
+  });
+
   it('konsep tidak menyisakan baris kosong di awal/akhir', () => {
     for (const type of Object.values(LetterType)) {
       const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
