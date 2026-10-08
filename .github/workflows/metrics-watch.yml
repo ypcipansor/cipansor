@@ -21,9 +21,11 @@ name: Metrics Watch
 
 on:
   schedule:
-    # Every 6 hours. The baseline is a rolling window of at most 60 runs (the
-    # newest 20 vs the previous 40), so a denser schedule only re-reads the
-    # same window.
+    # Every 6 hours. The baseline is a rolling window of at most 60 pipeline
+    # runs (the newest 20 vs the previous 40), so a denser schedule only
+    # re-reads the same window. The window is filled by paging the runs API —
+    # the newest page is mostly PR/review runs and can hold no pipeline run at
+    # all (issue #689).
     - cron: '0 */6 * * *'
   workflow_dispatch:
 

@@ -94,7 +94,39 @@ describe('metrics-watch', () => {
       encoding: 'utf8',
     });
     expect(out).toContain('ANOMALY_COUNT=0');
-    expect(out).toContain('Could not compare');
+    // A window too small to compare is not a pass: the pipeline metrics are
+    // named unavailable, with the count, so an empty read cannot look healthy
+    // (issue #689).
+    expect(out).toContain('only 5 pipeline run(s) read; need 25 for a baseline');
+    expect(out).toContain('| platform.pipeline_failure_rate | GitHub Actions runs |');
+  });
+
+  it('reads past a newest page that holds no pipeline run (issue #689)', () => {
+    // The newest runs on this repository are PR/review runs; the pipeline
+    // history is on the older pages. The watch must page, not read page 1 only.
+    const payload = JSON.parse(readFileSync(join(FIXTURES, 'runs-quiet.json'), 'utf8'));
+    const newest = Array.from({ length: 40 }, (_, i) => ({
+      name: `PR #${600 + i}`,
+      event: 'pull_request',
+      head_branch: `feature/${i}`,
+      conclusion: 'success',
+      created_at: '2026-10-07T00:00:00Z',
+      status: 'completed',
+    }));
+    const older = payload.workflow_runs.filter(
+      (r) =>
+        ['CI', 'E2E Tests', 'Deploy staging', 'Deploy production'].includes(r.name) &&
+        r.head_branch === 'main'
+    );
+    const paged = JSON.stringify({
+      pages: [{ workflow_runs: newest }, { workflow_runs: older }],
+    });
+    const out = execFileSync('node', [SCRIPT, '--analyze', '-'], {
+      input: paged,
+      encoding: 'utf8',
+    });
+    expect(out).toContain('| platform.pipeline_failure_rate |');
+    expect(out).not.toContain('pipeline run(s) read; need 25');
   });
 
   it('names every unreadable metric so it is never mistaken for healthy', () => {

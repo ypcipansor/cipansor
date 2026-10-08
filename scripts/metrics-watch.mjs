@@ -41,6 +41,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const WINDOW = 60;
 export const CURRENT = 20;
 
+// The runs endpoint returns at most 100 runs per page, and that page is the
+// newest 100 across ALL workflows. On a busy repository (this one carries
+// ~6,800 runs) a page is almost all pull-request and review runs, so a single
+// page can hold zero CI/E2E/deploy runs and the pipeline metrics read nothing
+// (issue #689). The window is therefore filled by paging until WINDOW pipeline
+// runs are collected or the history is exhausted. The page cap bounds the API
+// calls: WINDOW=60 typically needs ~5 pages, and 20 pages is 2,000 runs, far
+// more than the window needs.
+export const PER_PAGE = 100;
+export const MAX_PAGES = 20;
+
 // The deploy platform's own pipelines, selected by workflow name, by the event
 // that starts them, and by branch. This is deliberately an allowlist, twice
 // over:
@@ -66,8 +77,9 @@ export const RATE_REL = 1.5; // or 1.5x the baseline rate
 export const LATENCY_ABS = 1.5; // +50% the baseline median duration
 
 export const QUERY =
-  'GET /repos/{owner}/{repo}/actions/runs?per_page=100' +
-  ' (fields used: name,event,head_branch,conclusion,created_at,updated_at,run_started_at,status)';
+  `GET /repos/{owner}/{repo}/actions/runs?per_page=${PER_PAGE} (paged until ` +
+  `${WINDOW} pipeline runs or ${MAX_PAGES} pages) ` +
+  '(fields used: name,event,head_branch,conclusion,created_at,updated_at,run_started_at,status)';
 
 /**
  * Metrics this watch is asked to cover but cannot read from its environment.
@@ -103,9 +115,33 @@ export const UNAVAILABLE = [
   },
 ];
 
+/**
+ * Combine several `actions/runs` pages into one payload, newest first, without
+ * duplicates. The newest 100 runs on a busy repository can hold no pipeline run
+ * at all (issue #689), so the watch reads more than one page; this is the
+ * shape those pages collapse into before `normalizeRuns` sorts them.
+ */
+export function mergeRunPages(pages) {
+  const seen = new Set();
+  const workflow_runs = [];
+  for (const page of pages) {
+    for (const run of page?.workflow_runs ?? []) {
+      const key = run.id ?? `${run.name}|${run.created_at}|${run.head_branch}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      workflow_runs.push(run);
+    }
+  }
+  return { workflow_runs };
+}
+
 /** Parse the GitHub runs payload into the shape the analysis needs. */
 export function normalizeRuns(payload) {
-  const runs = Array.isArray(payload) ? payload : (payload.workflow_runs ?? []);
+  const runs = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.pages)
+      ? mergeRunPages(payload.pages).workflow_runs
+      : (payload.workflow_runs ?? []);
   return runs
     .map((r) => {
       const settled = r.conclusion != null;
@@ -183,11 +219,35 @@ export function analyze(payload) {
   const all = normalizeRuns(payload);
   const pipelines = all.filter(isPipeline);
 
+  // A window too small for a baseline is not "no anomaly": the pipeline metrics
+  // could not be read, so they are reported as unavailable with the reason.
+  // Returning an empty `metrics` array here would render the metric as a bare
+  // note and a quiet `ANOMALY_COUNT=0` — the "monitor that hears nothing is not
+  // a pass" failure (issue #689). The scheduled-job metric below still reads
+  // from `all`, so it is unaffected by a thin pipeline window.
   if (pipelines.length < CURRENT + 5) {
+    const reason = `only ${pipelines.length} pipeline run(s) read; need ${CURRENT + 5} for a baseline`;
+    const curSched = all.filter((r) => r.event === 'schedule').slice(0, CURRENT).filter(isSettled);
+    const baseSched = all
+      .filter((r) => r.event === 'schedule')
+      .slice(CURRENT, WINDOW)
+      .filter(isSettled);
     return {
-      metrics: [],
+      metrics: [
+        {
+          key: 'platform.scheduled_job_failures',
+          current: curSched.length > 0 ? curSched.filter(isFailure).length : null,
+          baseline: baseSched.length > 0 ? baseSched.filter(isFailure).length : null,
+          currentN: curSched.length,
+          baselineN: baseSched.length,
+        },
+      ],
+      unavailable: [
+        { key: 'platform.pipeline_failure_rate', source: 'GitHub Actions runs', reason },
+        { key: 'platform.run_duration_median', source: 'GitHub Actions runs', reason },
+      ],
       anomalies: [],
-      note: `only ${pipelines.length} pipeline run(s) fetched; need ${CURRENT + 5} for a baseline`,
+      note: null,
     };
   }
 
@@ -261,7 +321,7 @@ const secs = (ms) => (ms === null ? 'n/a' : `${(ms / 1000).toFixed(0)}s`);
 const count = (v) => (v === null ? 'n/a' : String(v));
 
 export function renderReport(payload, repo) {
-  const { metrics, anomalies, note } = analyze(payload);
+  const { metrics, anomalies, unavailable = [], note } = analyze(payload);
   const lines = [];
   lines.push(`## Key metrics watch — ${repo}`);
   lines.push('');
@@ -272,7 +332,8 @@ export function renderReport(payload, repo) {
   lines.push('');
   if (note) {
     lines.push(`_Could not compare: ${note}._`);
-  } else {
+  }
+  if (metrics.length > 0) {
     lines.push('| Metric | Current | Baseline | n (cur/base) |');
     lines.push('|---|---|---|---|');
     for (const m of metrics) {
@@ -281,13 +342,17 @@ export function renderReport(payload, repo) {
         `| ${m.key} | ${fmt(m.current)} | ${fmt(m.baseline)} | ${m.currentN}/${m.baselineN} |`
       );
     }
+  } else if (!note) {
+    lines.push('_No metric was readable in this run; every one is named as unavailable below._');
   }
   lines.push('');
   lines.push('### Unavailable metrics (reported, never alerted)');
   lines.push('');
   lines.push('| Metric | Source | Why it could not be read |');
   lines.push('|---|---|---|');
-  for (const u of UNAVAILABLE) lines.push(`| ${u.key} | ${u.source} | ${u.reason} |`);
+  for (const u of [...unavailable, ...UNAVAILABLE]) {
+    lines.push(`| ${u.key} | ${u.source} | ${u.reason} |`);
+  }
   lines.push('');
   if (anomalies.length === 0) {
     lines.push('**Anomalies:** none against the rolling baseline.');
@@ -305,18 +370,41 @@ export function renderReport(payload, repo) {
   return { report: lines.join('\n'), anomalies };
 }
 
-async function fetchLive(repo) {
+/**
+ * Read enough pages of `actions/runs` to fill the window with pipeline runs.
+ * A single page is the newest 100 runs across all workflows and on a busy
+ * repository holds no CI/E2E/deploy run at all (issue #689), so the newest
+ * page is only a starting point. Stops when WINDOW pipeline runs have been
+ * collected, when the history ends, or at MAX_PAGES. Returns the pages as
+ * `{ pages }` for `normalizeRuns`.
+ */
+async function fetchRunPages(repo) {
   const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN is not set');
-  const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs?per_page=100`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'cipansor-metrics-watch',
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub API ${res.status} for ${repo}`);
-  return res.json();
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'cipansor-metrics-watch',
+  };
+  const pages = [];
+  let pipelineCount = 0;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const res = await fetch(
+      `https://api.github.com/repos/${repo}/actions/runs?per_page=${PER_PAGE}&page=${page}`,
+      { headers }
+    );
+    if (!res.ok) throw new Error(`GitHub API ${res.status} for ${repo} (page ${page})`);
+    const body = await res.json();
+    pages.push(body);
+    pipelineCount += (body.workflow_runs ?? []).filter((r) =>
+      PIPELINE_WORKFLOWS.includes(r.name) &&
+      PIPELINE_EVENTS.includes(r.event) &&
+      r.head_branch === 'main'
+    ).length;
+    if ((body.workflow_runs ?? []).length < PER_PAGE) break;
+    if (pipelineCount >= WINDOW) break;
+  }
+  return { pages };
 }
 
 function selfTest() {
@@ -364,9 +452,60 @@ function selfTest() {
     'an in-progress schedule must render n/a, not a healthy zero'
   );
 
-  // A window too small for a baseline must alert on nothing.
-  const thin = renderReport({ workflow_runs: fixture('runs-quiet.json').workflow_runs.slice(0, 5) }, 'o/r');
+  // A window too small for a baseline must alert on nothing, but must NOT
+  // render as a pass: the pipeline metrics are unavailable, with the reason.
+  const thin = renderReport(
+    { workflow_runs: fixture('runs-quiet.json').workflow_runs.slice(0, 5) },
+    'o/r'
+  );
   assert(thin.anomalies.length === 0, 'no baseline means no alert');
+  assert(
+    thin.report.includes('pipeline run(s) read; need 25 for a baseline'),
+    'a thin pipeline window must name the pipeline metrics unavailable with the count'
+  );
+  assert(
+    thin.report.includes('| platform.pipeline_failure_rate | GitHub Actions runs |'),
+    'the pipeline metrics must appear in the unavailable table, not as a bare note'
+  );
+
+  // The real #689 shape: the newest page is entirely PR/review runs (no
+  // pipeline run), and only the older page carries the CI/E2E/deploy history.
+  // Merging the pages must recover the window and populate the metrics instead
+  // of reading nothing.
+  const quietRuns = fixture('runs-quiet.json').workflow_runs;
+  const newestPage = Array.from({ length: 40 }, (_, i) => ({
+    id: 900000 + i,
+    name: `PR #${600 + i}`,
+    event: 'pull_request',
+    head_branch: `feature/${i}`,
+    conclusion: 'success',
+    created_at: '2026-10-07T00:00:00Z',
+    status: 'completed',
+  }));
+  const olderPage = quietRuns
+    .filter(
+      (r) =>
+        PIPELINE_WORKFLOWS.includes(r.name) &&
+        PIPELINE_EVENTS.includes(r.event) &&
+        r.head_branch === 'main'
+    )
+    .map((r, i) => ({ ...r, id: 800000 + i }));
+  const paged = renderReport(
+    { pages: [{ workflow_runs: newestPage }, { workflow_runs: olderPage }] },
+    'o/r'
+  );
+  assert(
+    paged.anomalies.length === 0,
+    'paging past a pipeline-free newest page must not invent an anomaly'
+  );
+  assert(
+    paged.report.includes('| platform.pipeline_failure_rate |'),
+    'paging must populate the pipeline metrics when the newest page holds none'
+  );
+  assert(
+    !paged.report.includes('pipeline run(s) read; need 25'),
+    'paging past a pipeline-free newest page must not report the metrics unavailable'
+  );
 
   console.log('metrics-watch self-test: ok');
 }
@@ -394,7 +533,7 @@ async function main() {
   }
 
   const repo = process.env.GITHUB_REPOSITORY || 'ypcipansor/cipansor';
-  const payload = await fetchLive(repo);
+  const payload = await fetchRunPages(repo);
   const { report, anomalies } = renderReport(payload, repo);
   process.stdout.write(report + '\n');
   console.log(`\nANOMALY_COUNT=${anomalies.length}`);
