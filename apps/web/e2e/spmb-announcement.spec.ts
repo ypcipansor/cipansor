@@ -261,15 +261,60 @@ test.describe("Pengumuman SPMB di situs publik", () => {
     await expect(page.getByTestId("spmb-announcement-banner")).toHaveCount(0);
   });
 
-  test("dismissing the dialog keeps it from reopening", async ({ page }) => {
+  test("the dialog appears once a visit, not on every page", async ({
+    page,
+  }) => {
+    await arm(page);
+    await page.goto("/");
+    await expect(page.getByTestId("spmb-announcement-dialog")).toBeVisible({
+      timeout: 10_000,
+    });
+    // Unanswered, it used to return five seconds into every page.
+    await page.goto("/profil");
+    await page.waitForTimeout(7_000);
+    await expect(page.getByTestId("spmb-announcement-dialog")).toHaveCount(0);
+  });
+
+  test("a Tab press on the page does not dismiss the dialog", async ({
+    page,
+  }) => {
+    await arm(page);
+    await page.goto("/");
+    const dialog = page.getByTestId("spmb-announcement-dialog");
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    // Focus moving to the page used to close it and record a dismissal.
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(dialog).toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("spmb-announcement-dialog"),
+      ),
+    ).toBeNull();
+  });
+
+  test("'Nanti saja' closes it for the visit; the X closes it for the intake", async ({
+    page,
+  }) => {
     await arm(page);
     await page.goto("/");
     const dialog = page.getByTestId("spmb-announcement-dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     await dialog.getByRole("button", { name: "Nanti saja" }).click();
     await expect(dialog).toHaveCount(0);
+
+    // The next visit (a new session) brings it back…
+    await page.evaluate(() => sessionStorage.clear());
     await page.reload();
-    await expect(page.getByTestId("spmb-announcement-dialog")).toHaveCount(0);
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await dialog.getByRole("button", { name: "Tutup pengumuman" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // …and once closed with the X it stays closed, visit after visit.
+    await page.evaluate(() => sessionStorage.clear());
+    await page.reload();
+    await page.waitForTimeout(7_000);
+    await expect(dialog).toHaveCount(0);
   });
 
   test("the banner's link reaches the SPMB page", async ({ page }) => {

@@ -2,17 +2,15 @@ import { describe, it, expect, afterEach } from "vitest";
 import {
   BANNER_DISMISS_COOKIE,
   BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS,
+  readBannerDismissCookie,
   writeBannerDismissCookie,
 } from "./announcement-cookies";
 
 /**
- * The cookie mirror of the banner dismissal. What matters is that the server can
- * read back the intake it was dismissed for, and that the cookie outlives the
- * `localStorage` entry it mirrors rather than lapsing first and letting a
- * dismissed banner flash in.
+ * The banner dismissal cookie — the one store the server and the browser both
+ * read. What matters is that the intake it was dismissed for reads back the
+ * same on both sides, and that its lifetime is one a browser actually keeps.
  */
-
-const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
 
 afterEach(() => {
   document.cookie = `${BANNER_DISMISS_COOKIE}=; path=/; max-age=0`;
@@ -49,22 +47,36 @@ describe("writeBannerDismissCookie", () => {
     }
   });
 
-  it("does not lapse before the localStorage entry it mirrors", () => {
-    // localStorage has no expiry, so a one-year cookie would expire first and
-    // the server would render a banner the browser then removes on hydration —
-    // a flash on exactly the visit that should be silent. A two-year intake
-    // dismissed in January 2027 is still open in February 2028.
-    expect(BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS).toBeGreaterThan(
-      ONE_YEAR_SECONDS,
-    );
+  it("asks for no more than the 400 days a browser keeps", () => {
+    // Chrome and Edge clamp any longer Max-Age to 400 days (RFC 6265bis); a
+    // longer value only pretends to a lifetime nobody gets.
+    expect(BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS).toBe(400 * 24 * 60 * 60);
     const write = captureCookieWrite();
     try {
       writeBannerDismissCookie("period-123");
       expect(write.read()).toContain(
         `max-age=${BANNER_DISMISS_COOKIE_MAX_AGE_SECONDS}`,
       );
+      expect(write.read()).toContain("samesite=lax");
     } finally {
       write.restore();
+    }
+  });
+});
+
+describe("readBannerDismissCookie", () => {
+  it("reads back the intake the banner was dismissed for", () => {
+    expect(readBannerDismissCookie()).toBeNull();
+    writeBannerDismissCookie("period-9");
+    expect(readBannerDismissCookie()).toBe("period-9");
+  });
+
+  it("ignores a cookie whose name only starts the same way", () => {
+    document.cookie = `${BANNER_DISMISS_COOKIE}-old=period-1; path=/`;
+    try {
+      expect(readBannerDismissCookie()).toBeNull();
+    } finally {
+      document.cookie = `${BANNER_DISMISS_COOKIE}-old=; path=/; max-age=0`;
     }
   });
 });

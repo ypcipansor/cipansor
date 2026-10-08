@@ -7,7 +7,10 @@ import { spmbAnnouncementOf, type PublicIntakeDTO } from "@cipansor/shared";
 import { usePublicIntakes } from "@/hooks/use-admissions";
 import { announcementContentFor } from "@/config/announcement.i18n";
 import { dateFormatterFor } from "@/lib/locale-format";
-import { writeBannerDismissCookie } from "@/lib/announcement-cookies";
+import {
+  readBannerDismissCookie,
+  writeBannerDismissCookie,
+} from "@/lib/announcement-cookies";
 import type { Locale } from "@/locales";
 import {
   Dialog,
@@ -20,9 +23,14 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
-/** Where "this visitor has seen it" is remembered, per surface and per period. */
-const BANNER_KEY = "spmb-announcement-banner";
+/**
+ * Where the dialog's answers are remembered, per period: closed for good
+ * (`localStorage`), and already shown during this visit (`sessionStorage`).
+ * The banner's dismissal lives in a cookie (`lib/announcement-cookies.ts`),
+ * because the server has to read it too.
+ */
 const DIALOG_KEY = "spmb-announcement-dialog";
+const DIALOG_SHOWN_KEY = "spmb-announcement-dialog-shown";
 
 /**
  * How long the page is readable before the dialog appears. Not zero: a dialog
@@ -89,8 +97,44 @@ function rememberDismissed(key: string, periodId: string) {
 }
 
 /**
- * The SPMB announcement on the public site: a banner, and — once per intake —
- * a dialog that appears a few seconds in.
+ * Whether the dialog already appeared during this visit. The request was a
+ * window "every time the public site is opened" — once a visit, not on every
+ * page: unanswered, it used to come back five seconds into each page the
+ * visitor opened.
+ */
+function shownThisVisit(periodId: string): boolean {
+  try {
+    return sessionStorage.getItem(DIALOG_SHOWN_KEY) === periodId;
+  } catch {
+    return true;
+  }
+}
+
+function rememberShownThisVisit(periodId: string) {
+  try {
+    sessionStorage.setItem(DIALOG_SHOWN_KEY, periodId);
+  } catch {
+    // Without session storage the dialog may appear on the next page too.
+  }
+}
+
+/** "TK Qur'an, SD IT, dan SMP IT" — the units joined in the reader's language. */
+function joinUnits(locale: Locale, names: string[]): string {
+  try {
+    return new Intl.ListFormat(locale, {
+      style: "long",
+      type: "conjunction",
+    }).format(names);
+  } catch {
+    return names.join(", ");
+  }
+}
+
+/**
+ * The SPMB announcement on the public site: a banner, and a dialog that appears
+ * a few seconds into a visit — once a visit, until the visitor closes it for
+ * the intake (the X, Escape, or the call to action). "Later" closes it for the
+ * visit only.
  *
  * What it says is derived from the units' intakes (`findPublicIntakes`), the
  * same source the SPMB page and the chatbot read, so they cannot disagree. It
@@ -190,7 +234,7 @@ export function SpmbAnnouncement({
       setBannerOpen(false);
       return;
     }
-    setBannerOpen(!isDismissed(BANNER_KEY, periodId));
+    setBannerOpen(readBannerDismissCookie() !== periodId);
   }, [hidden, canShow, announcement, periodId]);
 
   useEffect(() => {
@@ -205,7 +249,12 @@ export function SpmbAnnouncement({
       setDialogOpen(false);
       return;
     }
-    const timer = window.setTimeout(() => setDialogOpen(true), DIALOG_DELAY_MS);
+    // Once a visit: a page opened after it appeared does not bring it back.
+    if (shownThisVisit(periodId)) return;
+    const timer = window.setTimeout(() => {
+      rememberShownThisVisit(periodId);
+      setDialogOpen(true);
+    }, DIALOG_DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [hidden, enabled, withDialog, announcement, periodId]);
 
@@ -223,23 +272,29 @@ export function SpmbAnnouncement({
   const dialogTitle = open
     ? copy.dialogTitleOpen(year)
     : copy.dialogTitleOpens(year, date);
+  const unitNames = joinUnits(
+    locale,
+    announcement.units.map((unit) => unit.name),
+  );
   const dialogBody = open
-    ? copy.dialogBodyOpen(announcement.unit.name)
-    : copy.dialogBodyOpens(announcement.unit.name, date);
+    ? copy.dialogBodyOpen(unitNames)
+    : copy.dialogBodyOpens(unitNames, date);
   const dialogCta = open ? copy.dialogCtaOpen : copy.dialogCtaOpens;
   const headingId = "spmb-announcement-text";
 
   const closeBanner = () => {
-    rememberDismissed(BANNER_KEY, periodId);
-    // Mirror it where the next server render can read it, so the banner is
-    // omitted from that first paint instead of flashing in and shifting up.
+    // The cookie is read by the next server render too, so the banner is left
+    // out of that first paint instead of flashing in and shifting up.
     writeBannerDismissCookie(periodId);
     setBannerOpen(false);
   };
+  // Closed for good: the X, Escape, or following the call to action.
   const closeDialog = () => {
     rememberDismissed(DIALOG_KEY, periodId);
     setDialogOpen(false);
   };
+  // "Later" means later: closed for this visit only, back on the next one.
+  const closeDialogForThisVisit = () => setDialogOpen(false);
 
   return (
     <>
@@ -304,11 +359,13 @@ export function SpmbAnnouncement({
             // A non-modal dialog must not steal focus when it appears mid-read;
             // it is a notice, not a step the visitor has to answer.
             onOpenAutoFocus={(event) => event.preventDefault()}
-            // A non-modal dialog dismisses on an outside pointer by default.
-            // Here that would write the dismissal the moment the visitor clicks
-            // anything on the page — a notice they never answered, remembered
-            // forever. The two ways out (the buttons, the X, Escape) are enough.
-            onPointerDownOutside={(event) => event.preventDefault()}
+            // A non-modal dialog dismisses on any interaction outside it — a
+            // pointer, and also *focus* moving to the page. Either would write
+            // the dismissal for a notice the visitor never answered: a single
+            // Tab press anywhere closed it for good, so a keyboard user could
+            // never reach its buttons. The ways out are the buttons, the X and
+            // Escape. (`onInteractOutside` covers both pointer and focus.)
+            onInteractOutside={(event) => event.preventDefault()}
             // The built-in X is language-blind (sr-only "Close"); this surface
             // is trilingual, so it carries its own labelled close instead.
             showCloseButton={false}
@@ -318,7 +375,7 @@ export function SpmbAnnouncement({
               <DialogDescription>{dialogBody}</DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={closeDialog}>
+              <Button variant="ghost" onClick={closeDialogForThisVisit}>
                 {copy.dialogLater}
               </Button>
               <Button asChild>

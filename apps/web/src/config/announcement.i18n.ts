@@ -28,8 +28,12 @@ export interface AnnouncementContent {
   /** The dialog's title, the banner's sentence made a heading. */
   dialogTitleOpen: (year: string) => string;
   dialogTitleOpens: (year: string, date: string) => string;
-  /** One sentence of context while open; names the unit the announcement leads with, never claiming the others share its status. */
-  dialogBodyOpen: (unit: string) => string;
+  /**
+   * Context while open. `units` is every unit taking registrations, already
+   * joined in the reader's language ("TK Qur'an, SD IT, dan SMP IT"), so a
+   * family looking for one school finds it named.
+   */
+  dialogBodyOpen: (units: string) => string;
   /** One sentence before it opens: the named unit's own date, and a pointer to the other units' schedules. */
   dialogBodyOpens: (unit: string, date: string) => string;
   /** Dialog action while open. */
@@ -48,8 +52,8 @@ const ID: AnnouncementContent = {
   dismiss: "Tutup pengumuman",
   dialogTitleOpen: (year) => `SPMB ${year} telah dibuka`,
   dialogTitleOpens: (year, date) => `SPMB ${year} dibuka ${date}`,
-  dialogBodyOpen: (unit) =>
-    `Penerimaan murid baru untuk ${unit} tahun ajaran ini sudah dibuka. Daftar secara online dan pantau status pendaftaran Anda. Jadwal unit lainnya ada di halaman SPMB.`,
+  dialogBodyOpen: (units) =>
+    `Penerimaan murid baru untuk ${units} tahun ajaran ini sudah dibuka. Daftar secara online dan pantau status pendaftaran Anda. Jadwal dan syarat tiap unit ada di halaman SPMB.`,
   dialogBodyOpens: (unit, date) =>
     `Pendaftaran untuk ${unit} tahun ajaran ini belum dibuka. Pendaftaran dibuka ${date}. Jadwal unit lainnya bisa berbeda, lihat di halaman SPMB. Sementara itu, lihat dulu biaya dan persyaratannya.`,
   dialogCtaOpen: "Daftar SPMB",
@@ -65,8 +69,8 @@ const EN: AnnouncementContent = {
   dismiss: "Dismiss announcement",
   dialogTitleOpen: (year) => `SPMB ${year} admissions are open`,
   dialogTitleOpens: (year, date) => `SPMB ${year} admissions open ${date}`,
-  dialogBodyOpen: (unit) =>
-    `Admissions for ${unit} are open for this academic year. Apply online and track your application. Other units' schedules are on the SPMB page.`,
+  dialogBodyOpen: (units) =>
+    `Admissions for ${units} are open for this academic year. Apply online and track your application. Each unit's schedule and requirements are on the SPMB page.`,
   dialogBodyOpens: (unit, date) =>
     `Admissions for ${unit} are not open yet. Registration opens ${date}. Other units may open on different dates — see the SPMB page. In the meantime, look over the fees and requirements.`,
   dialogCtaOpen: "Apply for SPMB",
@@ -82,8 +86,8 @@ const AR: AnnouncementContent = {
   dismiss: "إغلاق الإعلان",
   dialogTitleOpen: (year) => `التسجيل مفتوح للعام ${year}`,
   dialogTitleOpens: (year, date) => `يُفتح التسجيل للعام ${year} في ${date}`,
-  dialogBodyOpen: (unit) =>
-    `التسجيل في ${unit} مفتوح لهذا العام الدراسي. سجّل عبر الإنترنت وتابع حالة تسجيلك. جدول بقية الوحدات على صفحة القبول.`,
+  dialogBodyOpen: (units) =>
+    `التسجيل في ${units} مفتوح لهذا العام الدراسي. سجّل عبر الإنترنت وتابع حالة تسجيلك. مواعيد كل وحدة وشروطها على صفحة القبول.`,
   dialogBodyOpens: (unit, date) =>
     `التسجيل في ${unit} لم يُفتح بعد. يبدأ التسجيل في ${date}. قد تختلف مواعيد بقية الوحدات، فاطّلع عليها في صفحة القبول. في هذه الأثناء، راجع الرسوم والشروط.`,
   dialogCtaOpen: "التسجيل",

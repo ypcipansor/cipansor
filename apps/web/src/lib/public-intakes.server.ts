@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { spmbAnnouncementOf, type PublicIntakeDTO } from "@cipansor/shared";
 import { BANNER_DISMISS_COOKIE } from "@/lib/announcement-cookies";
 
@@ -14,34 +14,40 @@ import { BANNER_DISMISS_COOKIE } from "@/lib/announcement-cookies";
 export const ANNOUNCEMENT_FETCH_TIMEOUT_MS = 2000;
 
 /**
- * The absolute origin the *server* uses to reach the API.
+ * How long the server reuses the intakes it fetched, in seconds.
  *
- * `API_INTERNAL_URL` is where the server reaches the API — an absolute origin
- * under compose (`http://api:3001`), because a relative URL resolves against
- * nothing inside the web container. `NEXT_PUBLIC_API_URL` is the browser's base
- * and the fallback for `pnpm dev`, where web (:3000) and API (:3001) differ.
- *
- * Its **empty** value is meaningful (see `lib/api.ts`): the bundle then calls
- * the API same-origin. The server cannot reuse that — Node's `fetch` rejects a
- * relative URL — so an empty value is resolved to the request's own origin,
- * which is where the API is served in that deployment. Only the empty case
- * differs from the old `??` chain; a set value is used as before, and an unset
- * one still falls back to the API's dev origin.
+ * Every public page awaits them, and they are the same for every visitor, so
+ * one fetch serves every page view in the window instead of one API call (and
+ * one database query) per view. Freshness is the client's job anyway:
+ * `usePublicIntakes` fetches on mount and refetches every 15 minutes, so a
+ * window opening is on screen within a second of the page loading.
  */
-async function apiOriginForServer(): Promise<string> {
+export const ANNOUNCEMENT_REVALIDATE_SECONDS = 60;
+
+/**
+ * The absolute origin the *server* uses to reach the API — from configuration
+ * only, never from the request.
+ *
+ * - `API_INTERNAL_URL` when set: compose names the API `http://api:3001`.
+ * - `NEXT_PUBLIC_API_URL` when it is an absolute origin: `pnpm dev`, where
+ *   web (:3000) and API (:3001) differ.
+ * - Otherwise `http://127.0.0.1:3001`. An **empty** `NEXT_PUBLIC_API_URL` means
+ *   "same origin" to the bundle (`lib/api.ts`); Node's `fetch` cannot use a
+ *   relative URL, and the API is on the loopback wherever web and API run side
+ *   by side — the Azure App Service sidecars share it (`deploy/azure/nginx`
+ *   proxies `/api` to `127.0.0.1:3001`).
+ *
+ * An earlier revision built the origin from the request's `Host` /
+ * `X-Forwarded-Host` headers. That made the server fetch whatever host a
+ * request named, and in the Azure deployment it sent every page view back out
+ * through the public address and Cloudflare to reach an API on the same
+ * machine.
+ */
+function apiOriginForServer(): string {
   if (process.env.API_INTERNAL_URL) return process.env.API_INTERNAL_URL;
   const browserOrigin = process.env.NEXT_PUBLIC_API_URL;
   if (browserOrigin) return browserOrigin;
-  if (browserOrigin === "") {
-    const requestHeaders = await headers();
-    const host =
-      requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-    if (host) {
-      const proto = requestHeaders.get("x-forwarded-proto") ?? "http";
-      return `${proto}://${host}`;
-    }
-  }
-  return "http://localhost:3001";
+  return "http://127.0.0.1:3001";
 }
 
 /**
@@ -69,9 +75,9 @@ export async function fetchPublicIntakes(): Promise<PublicIntakeDTO[]> {
   // Node timers carry `unref`; a pending deadline must not hold the process.
   (timer as unknown as { unref?: () => void }).unref?.();
   try {
-    const origin = await apiOriginForServer();
+    const origin = apiOriginForServer();
     const response = await fetch(`${origin}/api/admissions/public/intakes`, {
-      cache: "no-store",
+      next: { revalidate: ANNOUNCEMENT_REVALIDATE_SECONDS },
       signal: controller.signal,
     });
     if (!response.ok) return [];

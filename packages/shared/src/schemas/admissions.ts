@@ -645,7 +645,12 @@ export interface PublicIntakeDTO {
 export interface SpmbAnnouncementIntake {
   /** "open" — registration is on today; "upcoming" — it opens on `opensAt`. */
   window: Exclude<IntakeWindow, "closed">;
-  unit: { name: string };
+  /**
+   * The units it speaks for: **every** unit taking registrations when the
+   * window is open, in the API's unit order; the one that opens soonest when it
+   * is upcoming (its date is that unit's own).
+   */
+  units: { name: string }[];
   /** `id` is what a dismissal is remembered against, so next year's intake returns. */
   period: { id: string; academicYear: string | null; opensAt: string | null };
 }
@@ -658,9 +663,11 @@ export interface SpmbAnnouncementIntake {
  * things. The chatbot reads the same intakes, but it explains each unit
  * separately, so it does not follow this rule:
  *
- * - a unit whose registration is **open** today wins — it is the more useful
- *   message, and an announcement that says "opens on 1 January" while a
- *   sibling school is taking registrations today reads as "not open yet";
+ * - units whose registration is **open** today win, and all of them are
+ *   named — it is the more useful message, and naming only the first (TK
+ *   Qur'an, in the API's order) told an SMA Qur'an family nothing while all
+ *   four schools were open; an announcement that says "opens on 1 January"
+ *   while a sibling school is taking registrations reads as "not open yet";
  * - otherwise a unit that **opens soonest** is announced, with the day it
  *   opens;
  * - otherwise nothing is announced (every intake is closed).
@@ -672,11 +679,12 @@ export interface SpmbAnnouncementIntake {
 export function spmbAnnouncementOf(
   intakes: readonly PublicIntakeDTO[],
 ): SpmbAnnouncementIntake | null {
-  const open = intakes.find((i) => i.period.window === "open");
+  const openNow = intakes.filter((i) => i.period.window === "open");
+  const open = openNow[0];
   if (open) {
     return {
       window: "open",
-      unit: { name: open.unit.name },
+      units: openNow.map((i) => ({ name: i.unit.name })),
       period: {
         id: open.period.id,
         academicYear: open.period.academicYear,
@@ -690,7 +698,7 @@ export function spmbAnnouncementOf(
   if (!soonest) return null;
   return {
     window: "upcoming",
-    unit: { name: soonest.unit.name },
+    units: [{ name: soonest.unit.name }],
     period: {
       id: soonest.period.id,
       academicYear: soonest.period.academicYear,

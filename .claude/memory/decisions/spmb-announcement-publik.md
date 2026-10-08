@@ -1,7 +1,8 @@
 # spmb-announcement-publik
 
 > KEPUTUSAN 2026-10-05: situs publik mengumumkan SPMB lewat **banner** (selalu,
-> selama ada unit yang buka) **+ dialog tertunda 5 detik, sekali per periode**.
+> selama ada unit yang buka) **+ dialog tertunda 5 detik, sekali per kunjungan
+> sampai ditutup untuk periode itu** (dikoreksi 2026-10-08).
 > Sumbernya `GET /admissions/public/intakes` — tanpa perubahan skema. Di bawah:
 > pembandingnya, sumber standarnya, dan syaratnya. Jangan ulang risetnya.
 
@@ -46,7 +47,10 @@ Baymard (pengguna refleks menutup overlay saat halaman dimuat); GOV.UK
    (bukan saat masuk), kecil, dua jalan keluar, tidak pernah di `/public/spmb`
    dan halaman verifikasi.
 3. **C (corner card) ditolak** karena bertabrakan dengan InstallPrompt dan
-   UpdatePrompt yang sudah di pojok kanan bawah.
+   UpdatePrompt yang sudah di pojok kanan bawah. *Koreksi 2026-10-08:* premis
+   ini hanya berlaku di localhost dan pratinjau — di situs publik
+   (`cipansor.or.id`) PWA dimatikan (`pwaEnabledForHost`, `lib/host-split.ts`),
+   jadi kedua prompt itu tidak pernah tampil di sana.
 4. **D (pengumuman admin-authored) ditolak** karena menyentuh `schema.prisma`
    (berisiko), butuh tata kelola "siapa boleh menyiarkan ke publik", dan isi
    satu bahasa sulit dijaga di situs tiga bahasa. Kalau kelak perlu
@@ -92,10 +96,12 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
 - **`/wakaf-infaq` memasang banner sendiri** (`withDialog={false}`): halaman itu
   punya chrome sendiri, bukan `PublicPage`, dan dialog lima detik tidak boleh
   menyela alur donasi. Hanya bannernya yang tampil.
-- **Dismissal disimpan per periode** (`spmb-announcement-banner` /
-  `spmb-announcement-dialog` = `period.id`), jadi pengumuman tahun berikutnya
-  muncul lagi. `isDismissed()` hanya membandingkan dengan `period.id`; tidak ada
-  nilai ajaib "off".
+- **Dismissal disimpan per periode** (nilainya `period.id`), jadi pengumuman
+  tahun berikutnya muncul lagi; tidak ada nilai ajaib "off". Banner: cookie
+  `spmb-banner-dismissed` saja (dibaca server dan peramban). Dialog:
+  `localStorage` `spmb-announcement-dialog` bila ditutup dengan X, Escape, atau
+  tombol ajakan; `sessionStorage` `spmb-announcement-dialog-shown` mencatat
+  bahwa ia sudah tampil di kunjungan ini.
 - **Kesegaran status dijaga di komponen ini**, bukan default global:
   `usePublicIntakes({ staleTime: 15 menit, refetchInterval: 15 menit,
   refetchOnWindowFocus: true })`. Tanpa itu, tab yang terbuka sejak pagi masih
@@ -117,9 +123,9 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
 - **Banner ada di lukisan pertama (SSR).** Halaman publik mengambil intake di
   server (`lib/public-intakes.server.ts`) dan menyerahkannya sebagai
   `initialIntakes`; komponen menginisialisasi `bannerOpen` dari keputusan server
-  itu (`initialBannerDismissed`, dibaca dari cookie cermin
+  itu (`initialBannerDismissed`, dibaca dari cookie
   `lib/announcement-cookies.ts`), dan hanya menerapkan penjaga otomasi +
-  dismissal `localStorage` di `useLayoutEffect` — sebelum peramban melukis.
+  cookie yang sama di `useLayoutEffect` — sebelum peramban melukis.
   Sebelumnya banner hanya muncul setelah query klien selesai, menggeser halaman
   ke bawah (CLS terukur ~0.035 di `/`, `/profil`, `/wakaf-infaq`). Karena
   `bannerOpen` awal harus sama di server dan klien, dismissal banner juga
@@ -130,12 +136,18 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   boleh menahan render halaman — pada lewat batas, pengumuman hilang seperti
   halnya galat jaringan. `NEXT_PUBLIC_API_URL=''` (berarti "same-origin" di
   bundle, lihat `lib/api.ts`) tidak bisa dipakai server apa adanya — `fetch`
-  Node menolak URL relatif — jadi origin kosong diselesaikan ke origin
-  permintaan (`x-forwarded-host`/`host` + `x-forwarded-proto`). Cookie dismissal
-  diberi umur **10 tahun**, bukan 1 tahun: `localStorage` tak pernah kedaluwarsa,
-  jadi cookie yang lebih pendek akan habis lebih dulu dan server mengirim banner
-  yang peramban buang saat hidrasi — persis kilatan yang cermin ini cegah.
-  Diperbaiki 2026-10-08 (ronde tinjauan lanjutan).
+  Node menolak URL relatif — jadi server memakai `API_INTERNAL_URL`, lalu
+  `NEXT_PUBLIC_API_URL` yang absolut, lalu `http://127.0.0.1:3001` (sidecar App
+  Service berbagi loopback). **Origin tidak pernah diambil dari header
+  permintaan** (koreksi 2026-10-08: revisi sebelumnya memakai
+  `x-forwarded-host`/`host`, sehingga server mengambil host mana pun yang
+  disebut permintaan dan, di Azure, keluar lewat alamat publik dan Cloudflare
+  untuk mencapai API di mesin yang sama). Hasilnya di-cache 60 detik
+  (`next.revalidate`) — sama bagi semua pengunjung, dan klien tetap mengambil
+  ulang saat halaman dimuat. Cookie banner berumur **400 hari** — batas yang
+  dipegang Chrome/Edge (RFC 6265bis); Safari menyimpan cookie tulisan skrip
+  7 hari, jadi di sana banner kembali sesudah seminggu, serempak di server dan
+  peramban, tanpa kilatan.
 - **Trilingual** (`config/announcement.i18n.ts`, dijaga
   `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
   adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
@@ -156,10 +168,22 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   Diperbaiki 2026-10-08.
 - **Dialog non-modal** (`modal={false}`): tidak ada `DialogOverlay`, tidak ada
   perangkap fokus, dan `onOpenAutoFocus` dibatalkan — ia pemberitahuan, bukan
-  langkah yang harus dijawab. Konsekuensinya `onPointerDownOutside` juga
-  dibatalkan: tanpa itu, klik apa pun di halaman menutup dialog sekaligus
-  menulis dismissal yang tidak pernah pengunjung buat. Diperbaiki 2026-10-08
-  (poin tinjauan: risiko interstitial).
+  langkah yang harus dijawab. Konsekuensinya **`onInteractOutside`** dibatalkan
+  (klik *dan* fokus di luar dialog). Versi yang hanya membatalkan
+  `onPointerDownOutside` membiarkan satu tekan Tab di halaman menutup dialog
+  dan mencatat dismissal permanen — pengguna papan ketik tak pernah bisa
+  mencapai tombolnya (terukur 2026-10-08).
+- **Sekali per kunjungan.** Permintaan pengguna: jendela "setiap kali situs
+  publik dibuka" — per kunjungan, bukan per halaman. Sebelum koreksi
+  2026-10-08, dialog yang belum dijawab muncul lagi di **setiap** halaman yang
+  dibuka (terukur: `/`, `/profil`, `/unit`, `/campus`).
+- **"Nanti saja" berarti nanti:** menutup untuk kunjungan ini saja, kembali di
+  kunjungan berikutnya. X, Escape, dan tombol ajakan menutupnya untuk periode
+  itu. Sebelumnya "Nanti saja" menutup permanen.
+- **Menyebut semua unit yang buka** ("TK Qur'an, SD IT, dan SMP IT", digabung
+  `Intl.ListFormat` per bahasa). Sebelumnya hanya unit pertama urutan API yang
+  disebut — dengan keempat unit buka di staging, dialog berkata "untuk TK
+  Qur'an" kepada keluarga yang mencari SMA Qur'an.
 - **Tombol tutup dialog berlabel sendiri.** `DialogContent` bawaan merender X
   dengan `sr-only` "Close" (Inggris) di semua bahasa; pengumuman ini tiga
   bahasa, jadi dipasang `showCloseButton={false}` + `DialogClose` sendiri
@@ -170,7 +194,9 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
 
 - `apps/web/src/components/landing/spmb-announcement.test.tsx` — aturan turunan
   + komponen (banner, dialog tertunda, dismissal per periode, dialog basi
-  ikut tertutup saat refetch pindah ke periode yang sudah ditutup, gate portal).
+  ikut tertutup saat refetch pindah ke periode yang sudah ditutup, gate portal,
+  Tab tidak menutup dialog, sekali per kunjungan, "Nanti saja" vs X, semua
+  unit yang buka disebut).
 - `apps/web/src/lib/locale-format.test.ts` — `dateFormatterFor` mengunci
   `timeZone: "Asia/Jakarta"`, sehingga `2026-12-31T17:00:00.000Z` (tengah malam
   WIB) tetap tampil "1 Januari 2027", bukan "31 Desember".
@@ -181,7 +207,7 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   API produksi.
 - `apps/web/src/lib/public-intakes.server.test.ts` — pembacaan intake di server
   (banner dismissal dari cookie, periode yang diumumkan, batas waktu terhadap
-  permintaan yang tak pernah menjawab, origin kosong → origin permintaan).
-- `apps/web/src/lib/announcement-cookies.test.ts` — cermin cookie dismissal
-  menulis periode yang benar, dan umurnya melampaui entri `localStorage` yang
-  dicerminkannya.
+  permintaan yang tak pernah menjawab, origin kosong → loopback dan tidak pernah
+  dari header permintaan, satu fetch ber-cache untuk semua tampilan halaman).
+- `apps/web/src/lib/announcement-cookies.test.ts` — cookie dismissal menulis
+  dan membaca periode yang benar, dengan umur 400 hari.

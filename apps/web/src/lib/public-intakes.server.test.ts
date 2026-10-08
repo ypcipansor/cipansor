@@ -10,19 +10,21 @@ import type { PublicIntakeDTO } from "@cipansor/shared";
  */
 
 const cookieValue = { current: undefined as string | undefined };
-const requestHeaders = { current: new Map<string, string>() };
+const headersRead = { current: false };
 vi.mock("next/headers", () => ({
   cookies: async () => ({
     get: () =>
       cookieValue.current ? { value: cookieValue.current } : undefined,
   }),
-  headers: async () => ({
-    get: (name: string) => requestHeaders.current.get(name) ?? null,
-  }),
+  headers: async () => {
+    headersRead.current = true;
+    return { get: () => "attacker.example" };
+  },
 }));
 
 import {
   ANNOUNCEMENT_FETCH_TIMEOUT_MS,
+  ANNOUNCEMENT_REVALIDATE_SECONDS,
   fetchPublicIntakes,
   loadPublicAnnouncement,
 } from "./public-intakes.server";
@@ -75,7 +77,7 @@ function ok(body: unknown) {
 
 beforeEach(() => {
   cookieValue.current = undefined;
-  requestHeaders.current = new Map();
+  headersRead.current = false;
   savedEnv = {};
   for (const key of ENV_KEYS) savedEnv[key] = process.env[key];
   // A concrete origin by default, so a test that is not about the origin does
@@ -148,21 +150,45 @@ describe("fetchPublicIntakes", () => {
     expect(aborted).toBe(true);
   });
 
-  it("resolves an empty browser origin to the request origin for the server", async () => {
+  it("resolves an empty browser origin to the loopback API, never to the request's host", async () => {
     // `NEXT_PUBLIC_API_URL=''` means "same-origin" in the bundle (`lib/api.ts`),
-    // but Node's `fetch` rejects a relative URL — so the server must name an
-    // absolute origin or the banner only appears after hydration.
+    // but Node's `fetch` rejects a relative URL. The server must not borrow the
+    // request's Host to fill the gap: that fetches whatever host a request
+    // names. The mock answers every header with a foreign host to prove it.
     setEnv({ NEXT_PUBLIC_API_URL: "" });
-    requestHeaders.current = new Map([
-      ["host", "cipansor.or.id"],
-      ["x-forwarded-proto", "https"],
-    ]);
     const fetchMock = vi.fn(async () => ok({ data: [intake()] }));
     vi.stubGlobal("fetch", fetchMock);
     await fetchPublicIntakes();
     expect(requestedUrl(fetchMock)).toBe(
-      "https://cipansor.or.id/api/admissions/public/intakes",
+      "http://127.0.0.1:3001/api/admissions/public/intakes",
     );
+    expect(headersRead.current).toBe(false);
+  });
+
+  it("uses an absolute browser origin when that is all it has (pnpm dev)", async () => {
+    setEnv({ NEXT_PUBLIC_API_URL: "http://localhost:3001" });
+    const fetchMock = vi.fn(async () => ok({ data: [intake()] }));
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchPublicIntakes();
+    expect(requestedUrl(fetchMock)).toBe(
+      "http://localhost:3001/api/admissions/public/intakes",
+    );
+  });
+
+  it("shares one fetch across page views instead of one per view", async () => {
+    // The intakes are the same for every visitor; the client refetches on
+    // mount, so a minute of server cache costs no freshness.
+    const fetchMock = vi.fn(async (_url: string, _init?: object) =>
+      ok({ data: [intake()] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchPublicIntakes();
+    const init = fetchMock.mock.calls[0]?.[1] as {
+      cache?: string;
+      next?: { revalidate?: number };
+    };
+    expect(init.cache).toBeUndefined();
+    expect(init.next?.revalidate).toBe(ANNOUNCEMENT_REVALIDATE_SECONDS);
   });
 });
 

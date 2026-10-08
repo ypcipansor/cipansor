@@ -54,9 +54,25 @@ describe("spmbAnnouncementOf", () => {
       intake({ id: "open", window: "open", unitName: "SD IT Cipansor" }),
     ]);
     expect(a?.window).toBe("open");
-    expect(a?.unit.name).toBe("SD IT Cipansor");
+    expect(a?.units).toEqual([{ name: "SD IT Cipansor" }]);
     expect(a?.period.id).toBe("open");
     expect(a?.period.academicYear).toBe("2027/2028");
+  });
+
+  it("names every unit that is open, not only the first", () => {
+    // All four schools open (staging, 2027/2028): naming only the first in the
+    // API's order told an SMA Qur'an family that TK Qur'an was open.
+    const a = spmbAnnouncementOf([
+      intake({ id: "tk", window: "open", unitName: "TK Qur'an Cipansor" }),
+      intake({ id: "sd", window: "open", unitName: "SD IT Cipansor" }),
+      intake({ id: "x", window: "closed", unitName: "Tutup" }),
+      intake({ id: "sma", window: "open", unitName: "SMA Qur'an Cipansor" }),
+    ]);
+    expect(a?.units.map((u) => u.name)).toEqual([
+      "TK Qur'an Cipansor",
+      "SD IT Cipansor",
+      "SMA Qur'an Cipansor",
+    ]);
   });
 
   it("prefers an open intake over one that opens later", () => {
@@ -131,6 +147,7 @@ import { SpmbAnnouncement } from "./spmb-announcement";
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   document.cookie = "spmb-banner-dismissed=; path=/; max-age=0";
   vi.useFakeTimers();
   intakes.mockReturnValue(defaultIntakes());
@@ -234,7 +251,7 @@ describe("SpmbAnnouncement", () => {
   });
 
   it("does not show a banner the visitor already dismissed for this intake", () => {
-    localStorage.setItem("spmb-announcement-banner", "period-1");
+    document.cookie = "spmb-banner-dismissed=period-1; path=/";
     render(<SpmbAnnouncement locale="id" />);
     expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
   });
@@ -244,7 +261,7 @@ describe("SpmbAnnouncement", () => {
     // returns. A permanent "1" would hide it forever. The mock returns one
     // stable value, as React Query's cache does, so the second render sees the
     // same intake and the banner is not re-hidden.
-    localStorage.setItem("spmb-announcement-banner", "period-1");
+    document.cookie = "spmb-banner-dismissed=period-1; path=/";
     intakes.mockReturnValue({
       data: [intake({ window: "open", id: "period-2" })],
     });
@@ -291,6 +308,90 @@ describe("SpmbAnnouncement", () => {
     expect(localStorage.getItem("spmb-announcement-dialog")).toBeNull();
   });
 
+  it("is not dismissed for good by a Tab press on the page", () => {
+    // A non-modal dialog also closes when focus moves outside it. One Tab
+    // press anywhere on the page did that — and recorded a dismissal the
+    // visitor never made, so a keyboard user could never reach the dialog.
+    const outside = document.createElement("a");
+    outside.href = "#main-content";
+    outside.textContent = "Loncat ke konten utama";
+    document.body.appendChild(outside);
+    try {
+      render(<SpmbAnnouncement locale="id" />);
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+      act(() => {
+        outside.focus();
+      });
+      fireEvent.focusIn(outside);
+      expect(
+        screen.getByTestId("spmb-announcement-dialog"),
+      ).toBeInTheDocument();
+      expect(localStorage.getItem("spmb-announcement-dialog")).toBeNull();
+    } finally {
+      outside.remove();
+    }
+  });
+
+  it("names every open unit in the reader's language", () => {
+    intakes.mockReturnValue({
+      data: [
+        intake({ id: "tk", window: "open", unitName: "TK Qur'an Cipansor" }),
+        intake({ id: "sd", window: "open", unitName: "SD IT Cipansor" }),
+        intake({ id: "smp", window: "open", unitName: "SMP IT Cipansor" }),
+      ],
+    });
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("spmb-announcement-dialog")).toHaveTextContent(
+      "TK Qur'an Cipansor, SD IT Cipansor, dan SMP IT Cipansor",
+    );
+  });
+
+  it("appears once a visit, not on every page opened after it", () => {
+    // Each public page mounts the announcement anew. Unanswered, the dialog
+    // used to come back five seconds into every page.
+    const first = render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("spmb-announcement-dialog")).toBeInTheDocument();
+    first.unmount();
+
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+  });
+
+  it("'Nanti saja' closes it for this visit only; the X closes it for the intake", () => {
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Nanti saja" }));
+    expect(screen.queryByTestId("spmb-announcement-dialog")).toBeNull();
+    // Later means later: nothing is remembered beyond this visit.
+    expect(localStorage.getItem("spmb-announcement-dialog")).toBeNull();
+
+    // A new visit (a fresh session) shows it again; its X closes it for good.
+    sessionStorage.clear();
+    const again = render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    const dialog = screen.getByTestId("spmb-announcement-dialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Tutup pengumuman" }),
+    );
+    expect(localStorage.getItem("spmb-announcement-dialog")).toBe("period-1");
+    again.unmount();
+  });
+
   it("renders the banner in the first paint from the server's intakes", () => {
     // Point 3 of the review: the banner is the first child of `<main>`, so
     // inserting it after the client query resolved pushed the page down — a
@@ -317,12 +418,11 @@ describe("SpmbAnnouncement", () => {
   });
 
   it("omits the server-rendered banner a return visitor already dismissed", () => {
-    // A returning visitor who closed the banner carries both the localStorage
-    // record (the client's source of truth) and the cookie mirror the server
-    // reads. Both must agree, or the visitor sees the banner painted from the
-    // server HTML and then the page shift up at hydration — the CLS this
-    // server rendering removes.
-    localStorage.setItem("spmb-announcement-banner", "period-1");
+    // A returning visitor who closed the banner carries the cookie, which the
+    // server and the browser both read — one store, so they cannot disagree
+    // and paint a banner the browser then removes (the CLS this server
+    // rendering exists to prevent).
+    document.cookie = "spmb-banner-dismissed=period-1; path=/";
     intakes.mockReturnValue({});
     render(
       <SpmbAnnouncement
@@ -334,12 +434,13 @@ describe("SpmbAnnouncement", () => {
     expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
   });
 
-  it("mirrors a banner dismissal into a cookie the server can read", () => {
+  it("records a banner dismissal in the cookie the server reads", () => {
     // Otherwise the next server render would send the banner back in the first
     // paint, and hydration would have to remove it.
     render(<SpmbAnnouncement locale="id" />);
     fireEvent.click(screen.getByRole("button", { name: "Tutup pengumuman" }));
     expect(document.cookie).toContain("spmb-banner-dismissed=period-1");
+    expect(localStorage.getItem("spmb-announcement-banner")).toBeNull();
   });
 
   it("paints no banner from the server's intakes on the portal", () => {
