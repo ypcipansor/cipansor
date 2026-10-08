@@ -19,16 +19,23 @@ Nothing here is a contract change: this file is documentation only. Every
 ## How the figures were measured
 
 ```bash
-# API modules present, and which carry the four-file layout
-ls -d apps/api/src/modules/*/                                  # directories
-ls apps/api/src/modules/<name>/{routes,controller,service}.ts  # layout
-
-# Mount path per module (path -> imported router symbol -> module directory)
+# API module directories and their mount paths
+ls -d apps/api/src/modules/*/
 grep -n "apiRouter.use(" apps/api/src/app.ts
+
+# Layout completeness: a module is `full` when all four files exist
+for d in apps/api/src/modules/*/; do
+  n=$(basename "$d")
+  ls "$d" | grep -qE "^${n}\.routes\.ts$"     && \
+  ls "$d" | grep -qE "\.controller\.ts$"      && \
+  ls "$d" | grep -qE "\.service\.ts$"         && \
+  ls "$d" | grep -qE "\.schema\.ts$" && echo "$n full" || echo "$n partial"
+done
 
 # Web routes and public-host prefixes
 find apps/web/src/app -name page.tsx | wc -l
-sed -n "/const publicPrefixes = \[/,/^\];/p" apps/web/middleware.ts
+find apps/web/src/app -maxdepth 1 -mindepth 1 -type d | wc -l
+grep -n "publicPrefixes" -A 20 apps/web/middleware.ts
 grep -n "PUBLIC_PATH_PREFIXES" -A 40 apps/web/src/lib/host-split.ts
 
 # Jobs, hooks and shared contracts
@@ -248,7 +255,9 @@ exempts; it is listed so the two canonical lists agree.)
 
 - Axios client `src/lib/api.ts` (`baseURL` already ends in `/api`), errors via
   `src/lib/api-error.ts`. `src/lib/api-client.ts` is a back-compat re-export.
-- **123 hooks** under `src/hooks/*.ts` — the only place pages call the API.
+- **120 hook modules** (123 `.ts` files including their `*.test.*`) under
+  `src/hooks/*.ts` and its three subdirectories — the only place pages call the
+  API.
 - Legacy `src/services/*` (`attendance`, `auth`, `dashboard`, `finance`,
   `notifications`, `students`, `tahfidz`, `types`, `index`) is being removed
   (`apps/web/AGENTS.md`); do not add to it.
@@ -266,7 +275,7 @@ Single source of truth for API/DTO contracts (the root `AGENTS.md` rule 8).
 | Kind | Files | Contents |
 |---|---|---|
 | `types/*.ts` | **45** | domain DTO interfaces |
-| `schemas/*.ts` | **23** | Zod schemas (+ `z.infer` types) |
+| `schemas/*.ts` | **23** | 22 domain Zod schemas (+ `z.infer` types) plus the `index.ts` barrel |
 
 The 45 type modules: `admissions`, `analytics`, `assessment`, `assignment`,
 `attendance`, `auth`, `calendar`, `chatbot`, `class`, `correspondence`,
@@ -278,10 +287,11 @@ The 45 type modules: `admissions`, `analytics`, `assessment`, `assignment`,
 `schedule`, `session`, `student-id-card`, `student-org`, `student-status`,
 `supplier`, `tahfidz`, `takhosus`, `unit`.
 
-The 23 Zod schema modules: `accreditation`, `admissions`, `announcements`,
+The 22 domain Zod schema modules (the 23rd `.ts` file is the `index.ts`
+barrel): `accreditation`, `admissions`, `announcements`,
 `assessment`, `attendance`, `board-member`, `correspondence`, `curriculum`,
 `daily-report`, `donation`, `dormitories`, `extracurricular`, `homeroom`,
-`index`, `musyrif-assignments`, `notifications`, `performance`, `permits`,
+`musyrif-assignments`, `notifications`, `performance`, `permits`,
 `planning`, `raport-merdeka`, `student-compliance`, `student`, `unit`.
 
 Every public type/schema is re-exported through `src/index.ts`.
