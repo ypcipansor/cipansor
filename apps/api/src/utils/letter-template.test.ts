@@ -174,7 +174,7 @@ describe('konsep awal surat', () => {
   it('melaporkan setiap placeholder bersiku di konsep setiap jenis surat', () => {
     for (const type of Object.values(LetterType)) {
       const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
-      const allBrackets = draft.match(/\[[^\]\n]+\]/g) ?? [];
+      const allBrackets = draft.match(/\[[^\[\]\n]+\]/g) ?? [];
       const reported = new Set(remainingPlaceholders(draft));
       const missed = [...new Set(allBrackets)].filter((p) => !reported.has(p));
       expect(missed, `placeholder tak terlaporkan pada ${type}`).toEqual([]);

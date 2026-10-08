@@ -299,7 +299,12 @@ export function renderTemplateDraft(
  * `renderTemplateDraft()` berupa prosa — huruf kecil, koma, tanda kurung dan
  * elipsis `…` — sehingga daftar izin yang sempit melewatkannya dan drafter
  * diberi tahu suratnya lengkap padahal masih ada isian tersisa.
+ *
+ * `[` dikecualikan dari isi placeholder, bukan sekadar `]` dan baris baru:
+ * `[` sendiri memulai kandidat berikutnya, dan membiarkannya di dalam kelas
+ * membuat pencocokan mundur kuadratik pada deretan `[` (CodeQL
+ * js/polynomial-redos). Tanpa `[` pemindaian tetap linier.
  */
 export function remainingPlaceholders(content: string): string[] {
-  return Array.from(new Set(content.match(/\[[^\]\n]+\]/g) ?? []));
+  return Array.from(new Set(content.match(/\[[^\[\]\n]+\]/g) ?? []));
 }
