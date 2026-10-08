@@ -255,9 +255,10 @@ exempts; it is listed so the two canonical lists agree.)
 
 - Axios client `src/lib/api.ts` (`baseURL` already ends in `/api`), errors via
   `src/lib/api-error.ts`. `src/lib/api-client.ts` is a back-compat re-export.
-- **120 hook modules** (123 `.ts` files including their `*.test.*`) under
-  `src/hooks/*.ts` and its three subdirectories — the only place pages call the
-  API.
+- **123 hook modules** — 120 under `src/hooks/*.ts` plus 3 under its three
+  subdirectories (`research/`, `practicum/`, `student-org/`); 9 further
+  `*.test.*` files sit beside them (126 `.ts` in total). This is the only place
+  pages call the API.
 - Legacy `src/services/*` (`attendance`, `auth`, `dashboard`, `finance`,
   `notifications`, `students`, `tahfidz`, `types`, `index`) is being removed
   (`apps/web/AGENTS.md`); do not add to it.
