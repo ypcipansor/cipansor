@@ -120,7 +120,7 @@ const allGreen = page(REQUIRED.map((n, i) => cr(n, 'success', i + 1)));
 // A docs-only PR: the scope jobs run and pass, every other required check is
 // skipped by its own `if:`. All seven are present, none failed.
 const docsSkipped = page(
-  REQUIRED.map((n, i) => cr(n, /scope/.test(n) ? 'success' : 'skipped', i + 1)),
+  REQUIRED.map((n, i) => cr(n, /scope/.test(n) ? 'success' : 'skipped', i + 1))
 );
 // Two pages: the failing Tests run is only on the second.
 const paginatedRed =

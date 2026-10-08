@@ -67,7 +67,7 @@ describe('PR lifecycle guard never approves or merges', () => {
     // that gap, and the job `if` must admit the pull_request event too.
     expect(wf).toMatch(/pull_request:\s*\n\s*types:\s*\[ready_for_review\]/);
     expect(wf).toContain(
-      "github.event_name == 'pull_request' && github.event.pull_request.number != null",
+      "github.event_name == 'pull_request' && github.event.pull_request.number != null"
     );
   });
 
