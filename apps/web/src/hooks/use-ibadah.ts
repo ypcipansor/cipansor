@@ -1,5 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type {
+  IbadahLeaderboardEntry,
+  IbadahLeaderboardResult,
+} from "@cipansor/shared";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
+
+export type { IbadahLeaderboardEntry };
 
 // ======================
 // TYPES & ENUMS
@@ -65,28 +71,6 @@ export interface IbadahRecord {
   verifiedBy?: {
     id: string;
     name: string;
-  };
-}
-
-export interface IbadahLeaderboard {
-  id: string;
-  unitId: string;
-  studentId: string;
-  periodType: LeaderboardPeriod;
-  periodStart: string;
-  periodEnd: string;
-  totalPoints: number;
-  bonusPoints: number;
-  streakDays: number;
-  completionRate: number;
-  rank: number;
-  student?: {
-    id: string;
-    name: string;
-    nis: string;
-    class?: { name: string };
-    dormRoom?: { name: string };
-    avatar?: string;
   };
 }
 
@@ -615,14 +599,12 @@ export function useIbadahLeaderboard(params: LeaderboardParams) {
   return useQuery({
     queryKey: ["ibadah-leaderboard", params],
     queryFn: async () => {
-      const response = await api.get<ApiResponse<any>>("/ibadah/leaderboard", {
-        params,
-      });
-      // The endpoint returns { data: { periodType, startDate, endDate, data: [] } }
-      // — the entries are nested under data.data. Return the array so the page's
-      // `leaderboard.map` doesn't crash.
-      const lb = response.data.data;
-      return (Array.isArray(lb) ? lb : (lb?.data ?? [])) as IbadahLeaderboard[];
+      const response = await api.get<ApiResponse<IbadahLeaderboardResult>>(
+        "/ibadah/leaderboard",
+        { params },
+      );
+      // The entries are nested under data.data; return the array.
+      return response.data.data?.data ?? [];
     },
     enabled: !!params.unitId,
   });

@@ -18,7 +18,12 @@ import type {
   CreateIslamicEventInput,
   UpdateIslamicEventInput,
 } from './ibadah.schema';
-import { CLASS_ENROLLMENT_STATUS, STUDENT_STATUS } from '@cipansor/shared';
+import {
+  CLASS_ENROLLMENT_STATUS,
+  STUDENT_STATUS,
+  type IbadahLeaderboardEntry,
+  type IbadahLeaderboardResult,
+} from '@cipansor/shared';
 
 // ======================
 // TARGET SERVICES
@@ -455,7 +460,7 @@ export async function dailyCheckIn(data: DailyCheckInInput) {
 // LEADERBOARD
 // ======================
 
-export async function getLeaderboard(query: LeaderboardQuery) {
+export async function getLeaderboard(query: LeaderboardQuery): Promise<IbadahLeaderboardResult> {
   const { unitId, periodType, startDate, endDate, classId, limit } = query;
 
   // Calculate date range based on period type
@@ -568,8 +573,8 @@ export async function getLeaderboard(query: LeaderboardQuery) {
     Math.ceil((dateEnd.getTime() - dateStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
   const maxPossibleRecords = targetCounts * daysInPeriod;
 
-  // Format results
-  const results = leaderboard.map((entry, index) => {
+  // Format results — the shape both ibadah pages read (`@cipansor/shared`).
+  const results = leaderboard.map((entry, index): IbadahLeaderboardEntry => {
     const student = studentMap.get(entry.studentId);
     const completedRecords = recordCountMap.get(entry.studentId) || 0;
     const completionRate =
@@ -578,6 +583,7 @@ export async function getLeaderboard(query: LeaderboardQuery) {
     return {
       rank: index + 1,
       studentId: entry.studentId,
+      userId: student?.userId ?? null,
       studentName: student?.user.name || 'Unknown',
       nis: student?.nis || '',
       className: student?.enrollments[0]?.class.name || '',
