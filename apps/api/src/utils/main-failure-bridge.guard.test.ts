@@ -39,9 +39,8 @@ describe('main-failure-bridge.yml', () => {
     expect(list).toContain('CI');
     expect(list).toContain('E2E Tests');
     expect(list).toContain('Deploy staging');
-    // Manual and weekly-signal workflows never produce a `workflow_run` on main.
+    // A manual workflow never produces a `workflow_run` on main.
     expect(list).not.toContain('Deploy production');
-    expect(list).not.toContain('Mutation tests');
   });
 
   it('acts only on a failure on main', () => {

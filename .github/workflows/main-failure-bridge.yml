@@ -13,8 +13,7 @@ name: Main failure bridge
 on:
   # Only workflows that actually run on `main`: CI and E2E on a push, and the
   # staging deploy that follows a green E2E run. `Deploy production` is manual
-  # (workflow_dispatch) and `Mutation tests` is a weekly signal that files its
-  # own issue, so neither belongs here.
+  # (workflow_dispatch), so it never produces a `workflow_run` here.
   workflow_run:
     workflows: [CI, E2E Tests, Deploy staging]
     types: [completed]

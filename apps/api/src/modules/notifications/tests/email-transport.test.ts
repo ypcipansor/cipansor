@@ -635,7 +635,10 @@ describe('htmlToText', () => {
       const input = '<a title="<!--">'.repeat(100_000);
       const start = Date.now();
       const out = htmlToText(input);
-      expect(Date.now() - start).toBeLessThan(1000);
+      // 3s, not 1s: the merge gate runs this suite under v8 coverage, whose
+      // per-line instrumentation roughly doubles the constant here. A
+      // quadratic scan is 8-12s on these inputs, so the guard still fails one.
+      expect(Date.now() - start).toBeLessThan(3000);
       expect(typeof out).toBe('string');
     });
 
@@ -658,7 +661,10 @@ describe('htmlToText', () => {
       ]) {
         const start = Date.now();
         htmlToText(input);
-        expect(Date.now() - start).toBeLessThan(1000);
+        // 3s, not 1s: the merge gate runs under v8 coverage (roughly 2x the
+        // constant). The quadratic scan this guards was 8s (<a) / 12s
+        // (<style) on the same input, so it still trips.
+        expect(Date.now() - start).toBeLessThan(3000);
       }
     });
 
