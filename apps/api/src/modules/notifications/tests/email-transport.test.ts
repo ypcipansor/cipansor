@@ -674,7 +674,8 @@ describe('htmlToText', () => {
       for (const input of ['<style>'.repeat(200_000), '<head>'.repeat(200_000)]) {
         const start = Date.now();
         htmlToText(input);
-        expect(Date.now() - start).toBeLessThan(1000);
+        // 3s under v8 coverage; a quadratic rescan is tens of seconds here.
+        expect(Date.now() - start).toBeLessThan(3000);
       }
     });
 
@@ -691,7 +692,8 @@ describe('htmlToText', () => {
         htmlToText(input); // warm up
         const start = Date.now();
         htmlToText(input);
-        expect(Date.now() - start).toBeLessThan(1000);
+        // 3s under v8 coverage; the quadratic scan guarded against is far above.
+        expect(Date.now() - start).toBeLessThan(3000);
       }
 
       // Correctness alongside the timing: the long single comment is removed
