@@ -6,6 +6,7 @@ import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import { siteConfig, donationConfig } from "@/config/site";
 import { getServerLocale } from "@/lib/server-locale";
 import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
 import { galleryPhoto } from "@/config/page-photo";
 import type { Locale } from "@/locales";
 import { DonationPortal } from "./donation-portal";
@@ -106,6 +107,13 @@ export default async function WakafInfaqPage() {
   // five-second dialog never interrupts the donation flow. Same public-host
   // gate as every other public page.
   const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched on the server so the banner is in the first paint, not inserted
+  // after hydration (which shifted the donation page's content — CLS 0.035).
+  // The dismissal cookie travels with it so a returning visitor does not get
+  // the banner back in the first paint.
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
   return (
     <div className="flex min-h-screen flex-col">
       <script
@@ -120,6 +128,8 @@ export default async function WakafInfaqPage() {
           locale={locale}
           enabled={showAnnouncement}
           withDialog={false}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
         />
         <DonationPortal photo={galleryPhoto("fasilitas", 2, locale)} />
       </main>

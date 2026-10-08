@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Megaphone, X } from "lucide-react";
-import { spmbAnnouncementOf } from "@cipansor/shared";
+import { spmbAnnouncementOf, type PublicIntakeDTO } from "@cipansor/shared";
 import { usePublicIntakes } from "@/hooks/use-admissions";
 import { announcementContentFor } from "@/config/announcement.i18n";
 import { dateFormatterFor } from "@/lib/locale-format";
+import { writeBannerDismissCookie } from "@/lib/announcement-cookies";
 import type { Locale } from "@/locales";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -29,6 +31,15 @@ const DIALOG_KEY = "spmb-announcement-dialog";
  * visitor has the content and the announcement reads as a notice, not a gate.
  */
 const DIALOG_DELAY_MS = 5000;
+
+/**
+ * `useLayoutEffect` warns during the server render of a client component; this
+ * is a quiet `useEffect` there and the real thing in the browser, where it must
+ * run *before paint* so a hidden banner is never painted (and never shifts the
+ * page in reverse).
+ */
+const useIsoLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /**
  * Set by the announcement's own e2e spec so it can see the notice under
@@ -94,10 +105,14 @@ function rememberDismissed(key: string, periodId: string) {
  *   primary surface; the dialog is small, appears after a delay, gives two ways
  *   out, and never blocks the pages it would interrupt most (`/public/spmb`,
  *   the verification pages — those do not mount this at all).
- * - The dialog is a Radix `Dialog`: `role="dialog"`, `aria-modal`, a labelled
- *   title and description, focus moved in and trapped, Escape and a visible
- *   close to leave, focus restored on close — WAI-ARIA APG and WCAG 2.1.2.
- * - Both are trilingual (`config/announcement.i18n.ts`).
+ * - The dialog is **non-modal** (`modal={false}`): Radix renders no overlay and
+ *   the page under it stays readable and clickable, so it is a notice rather
+ *   than an interstitial. It keeps `role="dialog"` with a labelled title and
+ *   description and a visible, labelled close; a non-modal dialog deliberately
+ *   does not trap focus or steal it on open.
+ * - Both are trilingual (`config/announcement.i18n.ts`); the dialog's close
+ *   button carries its own localized label rather than the built-in English
+ *   `sr-only` "Close".
  *
  * `enabled` is the host gate, decided by the server that mounts it: the public
  * site (and staging, and `pnpm dev`) show it, the staff portal does not.
@@ -106,12 +121,29 @@ export function SpmbAnnouncement({
   locale,
   enabled = true,
   withDialog = true,
+  initialIntakes,
+  initialBannerDismissed = false,
 }: {
   locale: Locale;
   enabled?: boolean;
   withDialog?: boolean;
+  /**
+   * The intakes the server already fetched, so the banner is in the first
+   * paint. The component is the first child of `<main>`, so rendering it only
+   * after the client query resolves pushed the page down — a measured CLS of
+   * 0.035 on `/`, `/profil` and `/wakaf-infaq`. The client still owns
+   * freshness; this is only what the first paint starts from.
+   */
+  initialIntakes?: PublicIntakeDTO[];
+  /**
+   * Whether this visitor already dismissed the banner for the announced intake,
+   * read server-side from the cookie mirror (`lib/announcement-cookies.ts`).
+   * The initial state must match the server's, or a return visitor sees the
+   * banner flash in and the page shift up at hydration.
+   */
+  initialBannerDismissed?: boolean;
 }) {
-  const { data: intakes = [] } = usePublicIntakes({
+  const { data } = usePublicIntakes({
     // The announcement's whole job is to appear the moment an intake opens (or
     // to go away when it closes). The global defaults — 1-minute stale time and
     // no refetch on focus — let a tab open since morning still show yesterday's
@@ -123,29 +155,43 @@ export function SpmbAnnouncement({
     refetchOnWindowFocus: true,
   });
   const copy = announcementContentFor(locale);
-  // Memoised so the derivation returns the same object across renders and the
-  // effects below depend on a stable value, not on a fresh one each time.
-  const announcement = useMemo(() => spmbAnnouncementOf(intakes), [intakes]);
+  // The server's value (`initialIntakes`) and the client query's fresher one
+  // describe the same intakes; `data` is undefined until the query resolves, so
+  // the first client render falls back to the server's — which is what keeps
+  // hydration identical and the banner present from the first paint. The
+  // fallback stays inside the memo: `[]` is a fresh array each render and would
+  // otherwise re-run the derivation (and re-fire the effects below) forever.
+  const announcement = useMemo(
+    () => spmbAnnouncementOf(data ?? initialIntakes ?? []),
+    [data, initialIntakes],
+  );
   const periodId = announcement?.period.id ?? "";
+  const canShow = enabled && !!announcement;
 
-  const [bannerOpen, setBannerOpen] = useState(false);
+  // Initialised from the server's decision, not `false`: the server already
+  // knows the announcement, so the banner is in the HTML it sends and the first
+  // client render must match it — including a banner this visitor had already
+  // dismissed, which the server learned from the cookie mirror. The layout
+  // effect below then applies the two things only the browser can know (the
+  // automation guard, and the live `localStorage` dismissal) before the browser
+  // paints, so nothing below the banner moves either way.
+  const [bannerOpen, setBannerOpen] = useState(
+    canShow && !initialBannerDismissed,
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
-  // Starts hidden and is released in an effect, so the server render and the
-  // first client paint agree; `hiddenUnderAutomation` reads `navigator`, which
-  // only exists on the client.
-  const [hidden, setHidden] = useState(true);
+  const [hidden, setHidden] = useState(false);
 
-  useEffect(() => {
+  useIsoLayoutEffect(() => {
     setHidden(hiddenUnderAutomation());
   }, []);
 
-  useEffect(() => {
-    if (hidden || !enabled || !announcement) {
+  useIsoLayoutEffect(() => {
+    if (hidden || !canShow) {
       setBannerOpen(false);
       return;
     }
     setBannerOpen(!isDismissed(BANNER_KEY, periodId));
-  }, [hidden, enabled, announcement, periodId]);
+  }, [hidden, canShow, announcement, periodId]);
 
   useEffect(() => {
     if (hidden || !enabled || !withDialog || !announcement) {
@@ -185,6 +231,9 @@ export function SpmbAnnouncement({
 
   const closeBanner = () => {
     rememberDismissed(BANNER_KEY, periodId);
+    // Mirror it where the next server render can read it, so the banner is
+    // omitted from that first paint instead of flashing in and shifting up.
+    writeBannerDismissCookie(periodId);
     setBannerOpen(false);
   };
   const closeDialog = () => {
@@ -238,12 +287,32 @@ export function SpmbAnnouncement({
       )}
       {withDialog && (
         <Dialog
+          // Non-modal on purpose. Google Search Central counts an overlay that
+          // covers the page while the reader is in it as an intrusive
+          // interstitial, and a five-second delay does not change that. With
+          // `modal={false}` Radix renders no `DialogOverlay` at all — the page
+          // under it stays visible and interactive — so this is a small notice,
+          // not a gate. See `decisions/spmb-announcement-publik.md`.
+          modal={false}
           open={dialogOpen}
           onOpenChange={(open) => {
             if (!open) closeDialog();
           }}
         >
-          <DialogContent data-testid="spmb-announcement-dialog">
+          <DialogContent
+            data-testid="spmb-announcement-dialog"
+            // A non-modal dialog must not steal focus when it appears mid-read;
+            // it is a notice, not a step the visitor has to answer.
+            onOpenAutoFocus={(event) => event.preventDefault()}
+            // A non-modal dialog dismisses on an outside pointer by default.
+            // Here that would write the dismissal the moment the visitor clicks
+            // anything on the page — a notice they never answered, remembered
+            // forever. The two ways out (the buttons, the X, Escape) are enough.
+            onPointerDownOutside={(event) => event.preventDefault()}
+            // The built-in X is language-blind (sr-only "Close"); this surface
+            // is trilingual, so it carries its own labelled close instead.
+            showCloseButton={false}
+          >
             <DialogHeader>
               <DialogTitle>{dialogTitle}</DialogTitle>
               <DialogDescription>{dialogBody}</DialogDescription>
@@ -258,6 +327,12 @@ export function SpmbAnnouncement({
                 </Link>
               </Button>
             </DialogFooter>
+            <DialogClose
+              aria-label={copy.dismiss}
+              className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </DialogClose>
           </DialogContent>
         </Dialog>
       )}

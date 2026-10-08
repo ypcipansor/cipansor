@@ -8,6 +8,7 @@ import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import type { ContentBlock } from "@/config/content";
 import { getServerLocale } from "@/lib/server-locale";
 import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
 import { translations } from "@/locales";
 
 /**
@@ -52,6 +53,14 @@ export async function PublicPage({
   // `isPortalHost` is false for localhost and previews, so dev and staging keep
   // it (the same polarity as `pwaEnabledForHost`).
   const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched here, on the server, so the banner is in the first paint and does
+  // not push the page down once the client query resolves (measured CLS 0.035).
+  // `loadPublicAnnouncement` also reads the dismissal cookie, so a visitor who
+  // already closed the banner does not get it back (and does not see the page
+  // shift up at hydration).
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -63,7 +72,12 @@ export async function PublicPage({
             its own space in the flow so the page body below is not hidden. The
             `pt-16` on `<main>` already clears the navbar for both the banner
             and the body. */}
-        <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
+        <SpmbAnnouncement
+          locale={locale}
+          enabled={showAnnouncement}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
+        />
         <header className="border-b border-border bg-muted/30">
           <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
             {breadcrumb && breadcrumb.length > 0 && (

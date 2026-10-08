@@ -107,6 +107,51 @@ test.describe("Pengumuman SPMB di situs publik", () => {
     await expect(page.getByTestId("spmb-announcement-dialog")).toHaveCount(0);
   });
 
+  test("the server-rendered banner is hidden before paint, so nothing shifts", async ({
+    page,
+  }) => {
+    // No `arm`. The banner is server-rendered (point 3), but the guard that
+    // keeps it out of unrelated specs is client-only — so without the pre-paint
+    // script in the root layout the banner was painted and then removed on
+    // hydration, pushing the hero up ~52px while Playwright sat between its
+    // stability check and its click. The landing spec's "Daftar SPMB" link
+    // missed exactly so, intermittently. The script adds a root class that
+    // hides the banner from the first paint; this proves the class is there,
+    // the banner never paints, and no layout shift follows.
+    await page.addInitScript(() => {
+      (window as unknown as { __shift: number }).__shift = 0;
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          const entry = e as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!entry.hadRecentInput) {
+            (window as unknown as { __shift: number }).__shift += entry.value;
+          }
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    const response = await page.goto("/");
+    const html = (await response?.text()) ?? "";
+    // The server did render it — the hiding is the client's first-paint job,
+    // not the server omitting it.
+    expect(html).toContain("spmb-announcement-banner");
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          document.documentElement.classList.contains("spmb-under-automation"),
+        ),
+      )
+      .toBe(true);
+    await expect(page.getByTestId("spmb-announcement-banner")).toBeHidden();
+    await page.waitForTimeout(6000);
+    const cls = await page.evaluate(
+      () => (window as unknown as { __shift: number }).__shift,
+    );
+    expect(cls).toBeLessThan(0.01);
+  });
+
   test("shows a banner under the header when a unit is open", async ({
     page,
   }) => {
@@ -144,6 +189,42 @@ test.describe("Pengumuman SPMB di situs publik", () => {
     await arm(page);
     await page.goto("/profil");
     await expect(page.getByTestId("spmb-announcement-banner")).toBeVisible();
+  });
+
+  test("the banner is in the first paint, so the page does not shift", async ({
+    page,
+  }) => {
+    // Point 3 of the review: rendering the banner only after the client query
+    // resolved left it out of the first paint, and inserting it pushed the page
+    // down — a measured CLS of 0.035 on `/`, `/profil` and `/wakaf-infaq`.
+    // The server now fetches the intakes and renders the banner into the HTML;
+    // this drives a real load and asserts the banner is in the server response
+    // *and* that no layout shift follows.
+    await arm(page);
+    await page.addInitScript(() => {
+      (window as unknown as { __shift: number }).__shift = 0;
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          const entry = e as PerformanceEntry & {
+            hadRecentInput: boolean;
+            value: number;
+          };
+          if (!entry.hadRecentInput) {
+            (window as unknown as { __shift: number }).__shift += entry.value;
+          }
+        }
+      }).observe({ type: "layout-shift", buffered: true });
+    });
+    const response = await page.goto("/");
+    const html = (await response?.text()) ?? "";
+    expect(html).toContain("spmb-announcement-banner");
+    await expect(page.getByTestId("spmb-announcement-banner")).toBeVisible();
+    // Well past the dialog delay, so a late insertion would have shifted by now.
+    await page.waitForTimeout(6000);
+    const cls = await page.evaluate(
+      () => (window as unknown as { __shift: number }).__shift,
+    );
+    expect(cls).toBeLessThan(0.01);
   });
 
   test("shows the banner — but no dialog — on the donation page", async ({

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act, within } from "@testing-library/react";
+import { render, screen, act, within, fireEvent } from "@testing-library/react";
 import type { PublicIntakeDTO } from "@cipansor/shared";
 import { spmbAnnouncementOf } from "@cipansor/shared";
 
@@ -115,7 +115,7 @@ const defaultIntakes = () => ({
   data: [intake({ window: "open", id: "period-1" })],
 });
 
-const intakes = vi.fn<() => { data: PublicIntakeDTO[] }>(defaultIntakes);
+const intakes = vi.fn<() => { data?: PublicIntakeDTO[] }>(defaultIntakes);
 
 vi.mock("@/hooks/use-admissions", () => ({
   usePublicIntakes: () => intakes(),
@@ -131,6 +131,7 @@ import { SpmbAnnouncement } from "./spmb-announcement";
 
 beforeEach(() => {
   localStorage.clear();
+  document.cookie = "spmb-banner-dismissed=; path=/; max-age=0";
   vi.useFakeTimers();
   intakes.mockReturnValue(defaultIntakes());
 });
@@ -249,6 +250,109 @@ describe("SpmbAnnouncement", () => {
     });
     render(<SpmbAnnouncement locale="id" />);
     expect(screen.getByTestId("spmb-announcement-banner")).toBeInTheDocument();
+  });
+
+  it("labels the dialog's close button in the reader's language", () => {
+    // Radix's built-in X carries an English sr-only "Close" whatever the
+    // locale; this surface is trilingual and carries its own labelled close.
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    const dialog = screen.getByTestId("spmb-announcement-dialog");
+    expect(
+      within(dialog).getByRole("button", { name: "Tutup pengumuman" }),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
+  it("opens as a non-modal notice, without an overlay over the page", () => {
+    // Point 2 of the review: a full-screen overlay counts as an intrusive
+    // interstitial even when delayed. Non-modal means Radix renders no
+    // `DialogOverlay`, so the page under the notice stays readable.
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("spmb-announcement-dialog")).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
+  });
+
+  it("does not remember a dismissal the visitor never made by clicking away", () => {
+    // A non-modal dialog closes on an outside pointer by default; here that
+    // would silently record "seen it" forever on any stray click. Clicking the
+    // page must leave the notice (and its dismissal) untouched.
+    render(<SpmbAnnouncement locale="id" />);
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    fireEvent.pointerDown(document.body);
+    expect(screen.getByTestId("spmb-announcement-dialog")).toBeInTheDocument();
+    expect(localStorage.getItem("spmb-announcement-dialog")).toBeNull();
+  });
+
+  it("renders the banner in the first paint from the server's intakes", () => {
+    // Point 3 of the review: the banner is the first child of `<main>`, so
+    // inserting it after the client query resolved pushed the page down — a
+    // measured CLS of ~0.035. The server fetches the intakes and passes them
+    // in, so the banner is in the HTML and the first client render; the
+    // pending query (`data` undefined) must fall back to them, not to [].
+    intakes.mockReturnValue({});
+    render(
+      <SpmbAnnouncement
+        locale="id"
+        initialIntakes={[intake({ window: "open", id: "period-1" })]}
+      />,
+    );
+    expect(screen.getByTestId("spmb-announcement-banner")).toBeInTheDocument();
+  });
+
+  it("does not paint a banner the server did not announce, so nothing shifts after", () => {
+    // The converse: the server found no open/upcoming intake, so it sent no
+    // banner and its reserved space is zero. A later query result must not
+    // pop one into the first paint's place.
+    intakes.mockReturnValue({});
+    render(<SpmbAnnouncement locale="id" initialIntakes={[]} />);
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("omits the server-rendered banner a return visitor already dismissed", () => {
+    // A returning visitor who closed the banner carries both the localStorage
+    // record (the client's source of truth) and the cookie mirror the server
+    // reads. Both must agree, or the visitor sees the banner painted from the
+    // server HTML and then the page shift up at hydration — the CLS this
+    // server rendering removes.
+    localStorage.setItem("spmb-announcement-banner", "period-1");
+    intakes.mockReturnValue({});
+    render(
+      <SpmbAnnouncement
+        locale="id"
+        initialIntakes={[intake({ window: "open", id: "period-1" })]}
+        initialBannerDismissed
+      />,
+    );
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
+  });
+
+  it("mirrors a banner dismissal into a cookie the server can read", () => {
+    // Otherwise the next server render would send the banner back in the first
+    // paint, and hydration would have to remove it.
+    render(<SpmbAnnouncement locale="id" />);
+    fireEvent.click(screen.getByRole("button", { name: "Tutup pengumuman" }));
+    expect(document.cookie).toContain("spmb-banner-dismissed=period-1");
+  });
+
+  it("paints no banner from the server's intakes on the portal", () => {
+    // `enabled={false}` still wins over server data: the portal never mounts it.
+    intakes.mockReturnValue({});
+    render(
+      <SpmbAnnouncement
+        locale="id"
+        enabled={false}
+        initialIntakes={[intake({ window: "open", id: "period-1" })]}
+      />,
+    );
+    expect(screen.queryByTestId("spmb-announcement-banner")).toBeNull();
   });
 
   it("opens the dialog only after the delay, not at once", () => {

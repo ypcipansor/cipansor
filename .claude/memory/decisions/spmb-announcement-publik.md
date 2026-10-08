@@ -37,9 +37,14 @@ Baymard (pengguna refleks menutup overlay saat halaman dimuat); GOV.UK
 1. **Banner = arahan Google, dan aman untuk Ad Grants.** Situs pernah ditolak
    Google for Nonprofits sekali; interstitial yang menutup konten adalah risiko
    yang tidak dibayar oleh apa pun.
-2. **Modal tertunda tetap memenuhi permintaan "pop-up tiap buka situs"** tanpa
-   menjadi interstitial: muncul sesudah 5 detik (bukan saat masuk), kecil, dua
-   jalan keluar, tidak pernah di `/public/spmb` dan halaman verifikasi.
+2. **Dialog tertunda tetap memenuhi permintaan "pop-up tiap buka situs"** tanpa
+   menjadi interstitial — dan penundaan 5 detik saja tidak cukup: Google
+   menghitung overlay yang menutup konten saat pengguna sedang membaca sebagai
+   interstitial juga, jadi dialognya **non-modal** (`modal={false}`): Radix
+   tidak merender `DialogOverlay` sama sekali, halaman di bawahnya tetap
+   terbaca dan bisa diklik, dan fokus tidak direbut. Muncul sesudah 5 detik
+   (bukan saat masuk), kecil, dua jalan keluar, tidak pernah di `/public/spmb`
+   dan halaman verifikasi.
 3. **C (corner card) ditolak** karena bertabrakan dengan InstallPrompt dan
    UpdatePrompt yang sudah di pojok kanan bawah.
 4. **D (pengumuman admin-authored) ditolak** karena menyentuh `schema.prisma`
@@ -99,6 +104,27 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
 - **Mundur di bawah otomasi** (`navigator.webdriver`), seperti
   `ServiceWorkerRegister`, kecuali `spmb-announcement-force = "1"` — supaya
   dialog 5 detik tidak menabrak suite e2e yang bukan tentang pengumuman ini.
+  Karena banner **dirender server** (butir berikutnya) sedangkan
+  `navigator.webdriver` hanya ada di peramban, penjaga ini dulu terlambat:
+  banner sempat dilukis, lalu dihapus saat hidrasi, menggeser hero ~52px tepat
+  saat Playwright menimbang stabilitas sebelum mengklik — tautan "Daftar SPMB"
+  di `landing.spec.ts` meleset. Diperbaiki dengan skrip pra-lukis di
+  `app/layout.tsx` yang menambahkan kelas `spmb-under-automation` ke `<html>`
+  sebelum body diurai; aturan CSS di `globals.css` menyembunyikannya sejak
+  lukisan pertama, dan komponennya tetap membuangnya dari DOM sesudahnya.
+  Skrip itu juga membaca `spmb-announcement-force` supaya spec pengumuman
+  sendiri tetap melihat bannernya.
+- **Banner ada di lukisan pertama (SSR).** Halaman publik mengambil intake di
+  server (`lib/public-intakes.server.ts`) dan menyerahkannya sebagai
+  `initialIntakes`; komponen menginisialisasi `bannerOpen` dari keputusan server
+  itu (`initialBannerDismissed`, dibaca dari cookie cermin
+  `lib/announcement-cookies.ts`), dan hanya menerapkan penjaga otomasi +
+  dismissal `localStorage` di `useLayoutEffect` — sebelum peramban melukis.
+  Sebelumnya banner hanya muncul setelah query klien selesai, menggeser halaman
+  ke bawah (CLS terukur ~0.035 di `/`, `/profil`, `/wakaf-infaq`). Karena
+  `bannerOpen` awal harus sama di server dan klien, dismissal banner juga
+  ditulis ke cookie yang bisa dibaca server; tanpa cermin itu pengunjung yang
+  pernah menutup banner melihatnya berkelip lalu halaman naik saat hidrasi.
 - **Trilingual** (`config/announcement.i18n.ts`, dijaga
   `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
   adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
@@ -117,6 +143,17 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   refetch yang memindahkan pengumuman ke periode yang pernah ditutup pengunjung
   meninggalkan dialog basi yang masih berbicara tentang intake lama.
   Diperbaiki 2026-10-08.
+- **Dialog non-modal** (`modal={false}`): tidak ada `DialogOverlay`, tidak ada
+  perangkap fokus, dan `onOpenAutoFocus` dibatalkan — ia pemberitahuan, bukan
+  langkah yang harus dijawab. Konsekuensinya `onPointerDownOutside` juga
+  dibatalkan: tanpa itu, klik apa pun di halaman menutup dialog sekaligus
+  menulis dismissal yang tidak pernah pengunjung buat. Diperbaiki 2026-10-08
+  (poin tinjauan: risiko interstitial).
+- **Tombol tutup dialog berlabel sendiri.** `DialogContent` bawaan merender X
+  dengan `sr-only` "Close" (Inggris) di semua bahasa; pengumuman ini tiga
+  bahasa, jadi dipasang `showCloseButton={false}` + `DialogClose` sendiri
+  dengan `aria-label={copy.dismiss}` (`Tutup pengumuman` / `Dismiss announcement`
+  / `إغلاق الإعلان`). Diperbaiki 2026-10-08.
 
 ## Uji
 
@@ -127,5 +164,9 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   `timeZone: "Asia/Jakarta"`, sehingga `2026-12-31T17:00:00.000Z` (tengah malam
   WIB) tetap tampil "1 Januari 2027", bukan "31 Desember".
 - `apps/web/e2e/spmb-announcement.spec.ts` — banner di beranda & halaman dalam,
-  dialog muncul, dismissal bertahan, guard otomasi. Menulis satu periode lalu
-  menghapusnya; dilewati di API produksi.
+  dialog muncul, dismissal bertahan, guard otomasi, dan (regresi) banner
+  server-render disembunyikan sebelum lukisan di bawah otomasi sehingga tidak
+  ada pergeseran tata letak. Menulis satu periode lalu menghapusnya; dilewati di
+  API produksi.
+- `apps/web/src/lib/public-intakes.server.test.ts` — pembacaan intake di server
+  (banner dismissal dari cookie, periode yang diumumkan).

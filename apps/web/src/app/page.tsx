@@ -14,6 +14,7 @@ import { publicContentFor } from "@/config/content.i18n";
 import { siteTextFor } from "@/config/site.i18n";
 import { getServerLocale } from "@/lib/server-locale";
 import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
 import { headers } from "next/headers";
 import { Metadata } from "next";
 import type { Locale } from "@/locales";
@@ -56,6 +57,13 @@ export default async function Home() {
   // registration is open. `isPortalHost` is false for localhost and previews,
   // so `pnpm dev` and staging keep it (the same polarity as `pwaEnabledForHost`).
   const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched on the server so the banner is in the first paint — otherwise the
+  // client query resolving after hydration pushed the hero down (CLS 0.035).
+  // The dismissal cookie travels with it so a returning visitor does not see
+  // the banner flash in.
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -70,7 +78,12 @@ export default async function Home() {
             cleared the navbar while the banner sat outside `<main>`; inside,
             that offset belongs to the hero, and the banner's flow box starts
             at the top of the page. */}
-        <SpmbAnnouncement locale={locale} enabled={showAnnouncement} />
+        <SpmbAnnouncement
+          locale={locale}
+          enabled={showAnnouncement}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
+        />
         <HeroSection locale={locale} />
         <StatsSection locale={locale} />
         <AboutSection locale={locale} />
