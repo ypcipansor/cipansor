@@ -173,7 +173,7 @@ describe('konsep awal surat', () => {
   it('melaporkan setiap placeholder bersiku di konsep setiap jenis surat', () => {
     for (const type of Object.values(LetterType)) {
       const draft = renderTemplateDraft(type, LetterNature.PUBLIC);
-      const all = draft.match(/\[[^\]\n]+\]/g) ?? [];
+      const all = draft.match(/\[[^\]\[\n]+\]/g) ?? [];
       expect(remainingPlaceholders(draft), type).toHaveLength(new Set(all).size);
     }
 
