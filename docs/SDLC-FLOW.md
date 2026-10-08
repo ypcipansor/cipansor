@@ -11,9 +11,12 @@ across two lanes that each do the part they are good at:
   check, the deploys. The rules live in `.github/scripts/` so they run by hand.
 
 Cloud cron schedules are in **Asia/Jakarta (WIB)**; GHA schedules are **UTC**.
-Every comment trigger carries a footer guard, because an automation posts
-through the same account as the reporter and would otherwise re-trigger itself
-(incident #680).
+Every comment trigger carries the footer guard
+`!icontains(comment.body, 'This comment was created by an AI agent')`, because an
+automation posts through the same account as the reporter and would otherwise
+re-trigger itself (incident #680). SDLC 08 (mentioned below) instead sets
+`destination: continue_conversation`, so every mention about one PR/issue shares a
+single conversation and a burst cannot exhaust the sandbox pool.
 
 ## End to end
 
@@ -38,6 +41,8 @@ flowchart TB
 
   subgraph PRL["2 · Pull request"]
     R --> C7["SDLC 07 · Ticket to PR"]:::cloud --> DPR([Draft PR])
+    MENT(["comment @openhands"]):::human -. "trusted author" .-> C8["SDLC 08 · Mention bot"]:::cloud
+    C8 --> DPR
     DPR --> C21["SDLC 21 · PR labeller"]:::cloud
     DPR --> C9["SDLC 09 · Code reviewer"]:::cloud
     DPR --> C5["SDLC 05 · Architecture reviewer"]:::cloud
@@ -60,8 +65,8 @@ flowchart TB
     MG --> C15["SDLC 15 · Documentation manager"]:::cloud
     MG --> STG["deploy-staging.yml (build + push image)"]:::gh
     STG --> PROD["deploy-production.yml (manual · sha)"]:::human
-    PROD --> REL2(["release published"])
-    REL2 --> C14["SDLC 14 · Release notes"]:::cloud
+    C14["SDLC 14 · Release note generator (cron Fri 22:00 WIB)"]:::cloud
+    C14 -. "cuts a -rc prerelease (notes in the Release body, no in-repo changelog)" .-> REL2(["GitHub Release (prerelease)"])
   end
 ```
 
@@ -141,11 +146,10 @@ flowchart LR
   MG --> C15["SDLC 15 · Documentation manager"]:::cloud
   MG --> STG["deploy-staging.yml"]:::gh
   STG --> PROD["deploy-production.yml (manual)"]:::human
-  PROD --> REL(["release published"])
-  REL --> C14["SDLC 14 · Release notes"]:::cloud
 
-  C12["SDLC 12 · Load tester → staging (monthly)"]:::cloud -.-> STG
+  C12["SDLC 12 · Load tester → staging (03:00 on the 1st)"]:::cloud -.-> STG
   C13["SDLC 13 · Deployment monitor (07:00)"]:::cloud -.-> PROD
+  C14["SDLC 14 · Release note generator (Fri 22:00) → -rc prerelease"]:::cloud -.-> PROD
   C16["SDLC 16 · Log monitor"]:::cloud -.-> PROD
   C17["SDLC 17 · Anomaly detector"]:::cloud -.-> PROD
   C18["SDLC 18 · Error resolver → fix PR"]:::cloud -.-> PROD
@@ -170,7 +174,7 @@ flowchart TD
 | Time | Automation | Job |
 |---|---|---|
 | 01:30 daily | SDLC 25 · Issue steward | age out stalled issues |
-| 05:00 daily | SDLC 27 · Fleet watchdog | health of all 28 automations |
+| 05:00 daily | SDLC 27 · Fleet watchdog | health of all 29 automations |
 | 07:00 daily | SDLC 13 · Deployment monitor | failed/stuck deploy → issue |
 | 07:15 daily | SDLC 16 · Log monitor | log patterns → issue |
 | 07:30 daily | SDLC 17 · Anomaly detector | metric anomalies → ticket |
@@ -178,11 +182,15 @@ flowchart TD
 | 09:00 daily | SDLC 23 · Bug hunter | proven bug → issue + draft PR |
 | 06:00 Mon | SDLC 24 · Standard scout | standards divergence → `pending-maintainer` |
 | 08:00 Mon | SDLC 03 · Feedback ingestion | feedback clusters → issue |
-| 08:15 Mon | SDLC 10 · Coverage expander | test gaps → PR |
+| 08:15 Mon | SDLC 10 · Test gap scout | one high-risk test gap → issue |
+| 22:00 Fri | SDLC 14 · Release note generator | cut the next `-rc` prerelease → notes in the Release body |
 | 03:00 1st | SDLC 12 · Load tester | k6 vs staging → regression |
+| 08:30 1st | SDLC 29 · Maturity audit | rate the 18 items → one issue |
 
-Scheduled Actions: `duplicate-sweep` (daily, closes a duplicate issue or PR 7 days after the
-warning) and `load-tests.yml` (daily 18:00 UTC = 01:00 WIB).
+Scheduled Actions: `duplicate-sweep` (daily 01:30 UTC = 08:30 WIB, closes a duplicate issue or
+PR 7 days after the warning) and `mutation` (Mondays 05:00 WIB). There is **no**
+`load-tests.yml` in `.github/workflows/` — SDLC 12 (Cloud cron) is the only load
+runner today; the only changelog comes from SDLC 14's Release body, not a workflow.
 
 ## Why it is shaped this way
 
@@ -197,6 +205,15 @@ warning) and `load-tests.yml` (daily 18:00 UTC = 01:00 WIB).
 - **Deterministic consequences belong to Actions.** The red-CI draft revert, the
   changes-requested revert, the 7-day duplicate close and the label-mismatch
   check are scripts, not agents: they must fire on time and cost no tokens.
+- **Release notes live in the GitHub Release, not in a file.** SDLC 14 runs weekly,
+  cuts the next `-rc` prerelease and writes the notes into the Release body from
+  the conventional commits since the last official release; it never writes
+  `CHANGELOG.md` into the repository and never opens a changelog PR. The official
+  (non-`rc`) release is a maintainer's manual act.
+- **The fleet is the framework plus its plumbing.** SDLC 01–18 map one-to-one to
+  the 18 Agentic SDLC items; SDLC 19–28 add the label/lifecycle pipelines, the
+  proactive hunter and the watchdog. SDLC 29 is a monthly audit that rates the
+  same 18 items and names the weakest, so the fleet can be steered deliberately.
 - **Warnings never block.** `pr-description-checks.yml` only comments; it cannot
   fail a build or a release.
 - **Rollback is manual.** SDLC 13 reports a bad deploy; it never rolls back.
