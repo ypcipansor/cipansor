@@ -8,15 +8,12 @@ export enum LetterDirection {
 }
 
 /**
- * Derajat kecepatan penyampaian — bukan derajat kerahasiaan.
- *
- * Pedoman tata naskah dinas mengenal empat tingkat. Urutannya dari yang paling
- * mendesak: KILAT (batas 24 jam) → URGENT/Sangat Segera (2 × 24 jam) →
- * IMMEDIATE/Segera → NORMAL/Biasa. Sebelumnya hanya tiga yang ada, sehingga
- * "Kilat" tergeser menjadi "Segera".
+ * Derajat kecepatan penyampaian — bukan derajat kerahasiaan. Tiga derajat,
+ * dari yang paling mendesak: URGENT/Sangat Segera (24 jam) →
+ * IMMEDIATE/Segera (2 × 24 jam) → NORMAL/Biasa (menurut urutan).
+ * Lihat `decisions/derajat-kecepatan-naskah.md`.
  */
 export enum LetterUrgency {
-  KILAT = "KILAT",
   URGENT = "URGENT",
   IMMEDIATE = "IMMEDIATE",
   NORMAL = "NORMAL",
@@ -631,7 +628,7 @@ export interface PublicKeyStatusResult {
    * tetap sah. Karena itu kode ini ikut, bukan sekadar status "DICABUT".
    */
   revocationCode?: string | null;
-  revokedReason?: string | null;
+  // No free-text reason: it is an internal note, and this answer is public.
   revokedAt?: string | Date | null;
   expiresAt?: string | Date | null;
 }

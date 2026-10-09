@@ -253,6 +253,8 @@ Dari `docs/EOFFICE_ESIGN_PLAN.md` §6:
 - `eoffice-revocation-mechanics.md` — passphrase, cap DICABUT, permohonan;
 - `eoffice-verify-by-upload-not-qr.md` — unggah PDF, bukan token;
 - `esign-standards-ceiling.md` — AATL, PSrE, riset yang jangan diulang.
+- `derajat-kecepatan-naskah.md` — tiga derajat: Sangat Segera (24 jam), Segera
+  (2 × 24 jam), Biasa; tidak ada Kilat terpisah.
 - `surat-keterangan-lewat-eoffice.md` — surat keterangan santri dibuat sebagai
   naskah E-Office yang terisi dari data santri, bukan dicetak dengan nomor
   buatan browser.

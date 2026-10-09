@@ -7516,22 +7516,17 @@ enum LetterDirection {
 
 /// Derajat kecepatan penyampaian naskah — bukan derajat kerahasiaan.
 ///
-/// Pedoman tata naskah dinas instansi mengenal **tiga**: **Amat Segera/Kilat**
-/// (hari yang sama, batas 24 jam), **Segera** (2 × 24 jam), dan **Biasa** (urut
-/// jadwal kurir). Sejumlah instansi menyisipkan satu tingkat lagi sehingga
-/// menjadi Kilat, Sangat Segera, Segera, Biasa. (Peraturan ANRI 5/2021 tentang
-/// Pedoman Umum Tata Naskah Dinas mengatur jenis dan pengendalian naskah, bukan
-/// daftar derajat kecepatan; daftar itu berasal dari pedoman tata naskah dinas
-/// instansi.) Skema ini dulu hanya menyimpan tiga, sehingga naskah "Kilat" —
-/// yang tenggatnya paling ketat — terpaksa dicatat sebagai "Segera" dan
-/// tenggatnya bergeser satu tingkat. `KILAT` ditambahkan agar tiap derajat
-/// punya wadahnya sendiri; nilai lama tidak diubah namanya supaya baris yang
-/// sudah ada tetap sah.
+/// **Tiga derajat** (keputusan pengguna 2026-10-09,
+/// `decisions/derajat-kecepatan-naskah.md`): **Sangat Segera** (hari yang sama,
+/// batas 24 jam), **Segera** (2 × 24 jam), **Biasa** (menurut urutan). Pedoman
+/// tata naskah dinas (Permenpan 80/2012, "Kecepatan Penyampaian") menamai
+/// derajat teratas "Amat Segera/Kilat"; *amat* dan *sangat* bersinonim, jadi
+/// `URGENT` tetap derajat 24 jam yang sama — arti baris lama tidak berubah.
+/// Tidak ada derajat keempat.
 enum LetterUrgency {
-  KILAT // Kilat — batas waktu 24 jam
-  URGENT // Sangat Segera — batas waktu 2 x 24 jam
-  IMMEDIATE // Segera
   NORMAL // Biasa
+  IMMEDIATE // Segera — batas 2 x 24 jam
+  URGENT // Sangat Segera — batas 24 jam
 }
 
 /// Jenis naskah dinas. Menentukan penomoran dan sifat yang boleh dipilih.

@@ -418,7 +418,6 @@ function CreateLetterForm() {
                         </FormControl>
                         <SelectContent>
                           {[
-                            LetterUrgency.KILAT,
                             LetterUrgency.URGENT,
                             LetterUrgency.IMMEDIATE,
                             LetterUrgency.NORMAL,

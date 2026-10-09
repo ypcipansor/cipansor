@@ -99,7 +99,6 @@ const STATUSES: Record<LetterDirection, LetterStatus[]> = {
 };
 
 const URGENCY_TONE: Record<LetterUrgency, string> = {
-  [LetterUrgency.KILAT]: "border-red-400 bg-red-100 text-red-800",
   [LetterUrgency.URGENT]: "border-red-300 bg-red-50 text-red-700",
   [LetterUrgency.IMMEDIATE]: "border-orange-300 bg-orange-50 text-orange-700",
   [LetterUrgency.NORMAL]: "border-slate-200 bg-slate-50 text-slate-600",

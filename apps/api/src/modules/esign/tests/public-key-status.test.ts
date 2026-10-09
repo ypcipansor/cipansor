@@ -52,7 +52,7 @@ describe('EsignService.publicKeyStatus', () => {
     expect(result.algorithm).toBe('Ed25519');
     // Kunci yang hidup tidak membawa jejak pencabutan sama sekali.
     expect(result.revocationCode).toBeNull();
-    expect(result.revokedReason).toBeNull();
+    expect(result).not.toHaveProperty('revokedReason');
     expect(result.revokedAt).toBeNull();
   });
 
@@ -122,7 +122,9 @@ describe('EsignService.publicKeyStatus', () => {
     // Inilah satu-satunya sebab yang membuat naskah lama meragukan — kode itu
     // harus sampai ke pembaca, bukan disamakan dengan "DICABUT" belaka.
     expect(result.revocationCode).toBe('KEY_COMPROMISE');
-    expect(result.revokedReason).toBe('Kunci diduga bocor dari komputer bersama.');
+    // Catatan bebasnya internal: jawaban publik hanya membawa kode sebabnya.
+    expect(result).not.toHaveProperty('revokedReason');
+    expect(JSON.stringify(result)).not.toContain('komputer bersama');
   });
 
   it('tidak menyertakan sebab pencabutan untuk kunci yang tidak dicabut', async () => {
@@ -138,7 +140,7 @@ describe('EsignService.publicKeyStatus', () => {
     const result = await EsignService.publicKeyStatus(FP);
     expect(result.status).toBe('EXPIRED');
     expect(result.revocationCode).toBeNull();
-    expect(result.revokedReason).toBeNull();
+    expect(result).not.toHaveProperty('revokedReason');
   });
 
   it('menjawab UNKNOWN — bukan galat — untuk sidik jari yang tidak terdaftar', async () => {
@@ -199,7 +201,9 @@ describe('EsignService.publicKeyStatus', () => {
 
     expect(result.status).toBe('REVOKED');
     expect(result.revocationCode).toBe('KEY_COMPROMISE');
-    expect(result.revokedReason).toBe('Kunci diduga bocor dari komputer bersama.');
+    // Catatan bebasnya internal: jawaban publik hanya membawa kode sebabnya.
+    expect(result).not.toHaveProperty('revokedReason');
+    expect(JSON.stringify(result)).not.toContain('komputer bersama');
   });
 
   it('tidak pernah melaporkan ACTIVE untuk kunci yang sudah digantikan', async () => {

@@ -104,7 +104,7 @@ test("an unknown fingerprint is reported as unknown, not as an error", async ({
   await expect(page.getByText(/sidik jari tidak dikenal/i)).toBeVisible();
 });
 
-test("a revoked key shows its reason and whether old letters are affected", async ({
+test("a revoked key shows its reason code and whether old letters are affected", async ({
   page,
 }) => {
   await page.route("**/api/esign/public/key-status**", async (route) => {
@@ -118,7 +118,8 @@ test("a revoked key shows its reason and whether old letters are affected", asyn
           status: "REVOKED",
           algorithm: "Ed25519",
           revocationCode: "KEY_COMPROMISE",
-          revokedReason: "Kunci diduga bocor.",
+          // An internal note an older API still sent; the page must not print it.
+          revokedReason: "Catatan internal: laptop bendahara.",
           revokedAt: "2026-08-02T10:00:00Z",
           expiresAt: "2027-08-01T00:00:00Z",
         },
@@ -142,4 +143,6 @@ test("a revoked key shows its reason and whether old letters are affected", asyn
       /keaslian naskah yang ditandatangani dengan kunci ini perlu diverifikasi ulang/i,
     ),
   ).toBeVisible();
+  // The public page shows the RFC 5280 code, never the admin's free-text note.
+  await expect(page.getByText(/laptop bendahara/i)).toHaveCount(0);
 });

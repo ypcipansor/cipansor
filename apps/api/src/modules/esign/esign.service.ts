@@ -2040,7 +2040,6 @@ export const EsignService = {
       approvedAt: true,
       expiresAt: true,
       revokedAt: true,
-      revokedReason: true,
       revocationCode: true,
     } as const;
 
@@ -2098,7 +2097,11 @@ export const EsignService = {
        * "DICABUT" menyamakan pemegang yang berhenti dengan kunci yang bocor.
        */
       revocationCode: key.revokedAt ? key.revocationCode : null,
-      revokedReason: key.revokedAt ? key.revokedReason : null,
+      // Tanpa `revokedReason`: itu teks bebas yang ditulis Super Admin untuk
+      // catatan internal ("diduga bocor dari komputer bersama", nama orang,
+      // kejadian), dan endpoint ini terbuka tanpa masuk. Daftar pencabutan
+      // RFC 5280 pun hanya membuka kodenya (§5.3.1); kode itulah yang
+      // menjawab pertanyaan pembaca: apakah naskah lama masih sah.
       revokedAt: key.revokedAt,
       expiresAt: key.expiresAt,
     };

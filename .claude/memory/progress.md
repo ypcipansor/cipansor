@@ -89,11 +89,11 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   destroys them (`db:retention-review`, weekly Monday 05:00 WIB — destruction
   needs a berita acara, not a script); the **public key-status surface**
   (AATL ICA7) at `/public/verify-key`, answering a key's state from the
-  fingerprint printed on every verification page; **`LetterUrgency.KILAT`**
-  in its ANRI order; the agenda CSV export moved onto the shared Axios
-  instance (it was a raw relative `fetch` that only worked behind nginx); and
-  the real PDF preview replacing the placeholder (`components/e-office/` no
-  longer carries the stub). Findings and the standards ceiling are in
+  fingerprint printed on every verification page; urgency labelled
+  Sangat Segera / Segera / Biasa (three degrees, decided 2026-10-09); the
+  agenda CSV export moved onto the shared Axios instance (it was a raw relative
+  `fetch` that only worked behind nginx); and an unused placeholder preview
+  component removed (the letter page already rendered the signed PDF). Findings and the standards ceiling are in
   [`docs/EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md) and
   `decisions/esign-standards-ceiling.md`. Round 2 closed out on PR **#628**
   (all checks green 2026-09-29): the Devin findings F1–F12 are fixed, the

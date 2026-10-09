@@ -241,9 +241,6 @@ function PublicKeyStatusContent() {
                       ? "Karena sebabnya dugaan kebocoran kunci, keaslian naskah yang ditandatangani dengan kunci ini perlu diverifikasi ulang — hubungi Yayasan."
                       : "Sebab ini tidak menyentuh keabsahan naskah yang sudah ditandatangani pada masa berlaku kunci — naskah itu tetap sah."}
                   </p>
-                  {data.revokedReason && (
-                    <p className="mt-2 italic">“{data.revokedReason}”</p>
-                  )}
                 </div>
               )}
 

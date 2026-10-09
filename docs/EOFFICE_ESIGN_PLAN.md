@@ -192,11 +192,13 @@ The flow is otherwise strong (§3.2). These are the gaps:
 
 | e | ✅ *Fixed after PR-4.* **A letter cannot be edited after it is created** | Found while building PR-4, not fixed by it. There is no `PATCH /letters/:id` — the only `router.patch` in the module is `/dispositions/:id/status`, and `UpdateLetterInput` is a DTO with no endpoint behind it. So the flow PR-2 completed has no middle step: a reviewer returns a draft, the page says *"Surat dikembalikan untuk diperbaiki"*, and the author's only available move is to resubmit the identical text. It also means lampiran and tembusan can only be attached at creation. Fixing it is a surface of its own — an edit form, a rule for which statuses and which fields are editable by whom, and re-clearing every paraf on save, since a paraf approves a specific text. |
 
-**Minor:** urgency had three levels (`NORMAL`/`IMMEDIATE`/`URGENT`); the
-pedoman tata naskah dinas recognises **Amat Segera/Kilat** (24 jam), **Segera**
-(2 × 24 jam) and **Biasa**, with several instances using a fourth — Kilat,
-Sangat Segera, Segera, Biasa. `KILAT` was added so the tightest degree has its
-own value.
+**Minor:** urgency has three levels (`NORMAL`/`IMMEDIATE`/`URGENT`), which is
+what the pedoman tata naskah dinas defines: **Amat Segera/Kilat** (24 jam),
+**Segera** (2 × 24 jam), **Biasa** (Permenpan 80/2012, "Kecepatan
+Penyampaian"). A `KILAT` value proposed in #628 would have relabelled every
+existing "Amat Segera" letter one tier lower; the user decided (2026-10-09) on
+three degrees labelled **Sangat Segera / Segera / Biasa** —
+`decisions/derajat-kecepatan-naskah.md`.
 
 ### 2.8 Access control — a cross-unit service role read the whole letter book
 
@@ -251,7 +253,7 @@ keeps `v1` and `v2` side by side, `CURRENT_CANONICAL_VERSION` is what signing
 uses, `LetterSignature.canonicalVersion` stores which rule was used, and
 `canonicalVersionOf(stored)` maps the pre-column `NULL` rows to `v1` — the only
 shape that existed when they were made. Verification reads the stored version
-and never guesses. Migration `20260929160000_letter_signature_canonical_version`.
+and never guesses. Migration `20261009010400_letter_signature_canonical_version`.
 
 Pinned by `esign.test.ts` (a `v1` payload and a `v2` payload differ; a `v1`
 signature verifies only under `v1`) and by `letter-verification.ts` reading the
@@ -278,7 +280,7 @@ refuses a file whose owner is not in the letter's own chain (drafter and
 assigned reviewers — the people who may legitimately supply a letter's bytes).
 A file with no ownership row is **refused**, not waved through: uploads made
 before the table existed cannot be proven anyone's, and guessing re-opens the
-hole. The drafter re-uploads. Migration `20260929170000_letter_upload_ownership`.
+hole. The drafter re-uploads. Migration `20261009010500_letter_upload_ownership`.
 
 ### 2.11 A revoked download was answered with the forgery sentence
 
@@ -301,7 +303,7 @@ without it (older revocations) fall back to the bounded recompute, exactly as
 before, so nothing stops being recognised. Nothing in the uploaded file is
 trusted: a hand-stamped "DICABUT" recomputes to a different hash and still gets
 the forgery sentence. Migration
-`20260929180000_letter_signed_document_revoked_hash`.
+`20261009010600_letter_signed_document_revoked_hash`.
 
 ### 2.12 The retention job must never destroy — a guard, not a promise
 

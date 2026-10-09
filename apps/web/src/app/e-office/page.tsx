@@ -157,7 +157,6 @@ export default function EOfficeMainPage() {
    */
   const getUrgencyBadge = (urgency: string) => {
     const config: Record<string, string> = {
-      KILAT: "bg-red-200 text-red-900 border-red-300",
       URGENT: "bg-red-100 text-red-800 border-red-200",
       IMMEDIATE: "bg-orange-100 text-orange-800 border-orange-200",
       NORMAL: "bg-gray-100 text-gray-800 border-gray-200",

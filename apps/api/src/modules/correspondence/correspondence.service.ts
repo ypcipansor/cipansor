@@ -2400,8 +2400,7 @@ export const CorrespondenceService = {
         prisma.letter.count({
           where: {
             unitId,
-            // Kilat is a tighter deadline than Segera, so it belongs here too.
-            urgency: { in: ['KILAT', 'IMMEDIATE', 'URGENT'] },
+            urgency: { in: ['IMMEDIATE', 'URGENT'] },
             status: { notIn: ['ARCHIVED', 'DISPOSED'] },
           },
         }),
