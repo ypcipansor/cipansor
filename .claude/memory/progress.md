@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-10-04**. What a new session needs to pick up the thread, newest
+Updated **2026-10-09**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -12,8 +12,8 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `6431b7731` (#654) on
-  2026-10-04. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `235c00ed8` (#720) on
+  2026-10-09, with the public SPMB announcement (#655); #657 follows. SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -32,10 +32,14 @@ backlog to [`roadmap.md`](roadmap.md).
   live".)
 - Role catalogue items decided but not built: wakasek per bidang as a
   timed assignment (Model A; wakasek is no longer a role code —
-  `decisions/peran-dan-tugas-tambahan.md`), `PESANTREN_ADMIN` (needs a pesantren unit first — every pesantren role is
-  scoped to SMP IT today), a Panitia SPMB assignment that expires, and the
+  `decisions/peran-dan-tugas-tambahan.md`), `PESANTREN_ADMIN` (possible once the Pesantren unit of part B is in), a Panitia SPMB assignment that expires, and the
   "Admin" → "Operator" label.
 - One Bendahara role with a unit scope waits for Model A (decided 2026-09-25).
+- **The public assistant on staging** — the user decided (2026-10-09) on a
+  key of staging's own with a cost cap, provisioned through a temporary cloud
+  role, then deferred doing it; ask again at the end of every report. Until
+  then staging runs the assistant switched off (#657 does that when the key
+  is missing).
 - **Accreditation certificates of SD IT and SMA Qur'an** — the user is
   asking the schools for them (2026-09-28); each unit appears on the public
   site once its certificate is entered. TK Qur'an has none yet — it was
@@ -83,7 +87,17 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
 
-- **The Pesantren unit — part A on a branch (2026-10-04).** Walking every
+- **Audit of #655, #657 and #628 (asked 2026-10-09).** #655 (public SPMB
+  announcement: a card at the bottom on every screen, decided that day) and
+  #657 (assistant on staging, mirrored on Arabic pages) are merged; #701
+  closed as covered by #657 (one name, `APP_ENV`); #628 (E-Office round 2:
+  three urgency degrees, `decisions/derajat-kecepatan-naskah.md`; key status
+  shows the reason code only; migrations renumbered after `main`) waits for
+  the review gate. CODEOWNERS removed (#720), the review-gate scripts fixed
+  (#716). Report: <https://claude.ai/artifact/Di6W55CSPJoUhpezzA1cXU>.
+
+- **The Pesantren unit — part A = #714 (green, waiting for the review gate),
+  part B on a branch (2026-10-09).** Walking every
   menu page of the pesantren's roles before and after moving them to a
   Pesantren unit showed the musyrif, ustadz and muhafidz losing the schools'
   santri in Muhadhoroh, Muhadatsah, Ibadah, Kitab and Sanad, and their unit
