@@ -127,22 +127,28 @@ test.describe("the Pesantren unit", () => {
     expect(url.searchParams.has("unitId")).toBe(false);
   });
 
-  test("a musyrif's Mutabaah Yaumiyah opens on a school, with every unit to pick", async ({
+  test("a musyrif's Mutabaah Yaumiyah offers every unit, not only their own", async ({
     page,
   }) => {
     const musyrif = await apiLogin(account("pesantren.musyrif@cipansor.or.id"));
     await injectSession(page, musyrif);
+    // The page asks for one unit's classes as soon as it knows the units — a
+    // locked reader would ask for none, or only ever for their own.
     const classes = page.waitForRequest(
       (r) => r.url().includes("/api/classes") && r.url().includes("unitId="),
     );
     await page.goto("/daily-report");
-    const asked = new URL((await classes).url()).searchParams.get("unitId");
-    // Not the Pesantren unit, which has no class and no santri.
-    expect(asked).not.toBe(pesantren.id);
+    expect(
+      new URL((await classes).url()).searchParams.get("unitId"),
+    ).toBeTruthy();
     await page.getByRole("combobox", { name: "Unit" }).click();
-    await expect(
-      page.getByRole("option", { name: "SMA Qur'an Cipansor" }),
-    ).toBeVisible();
+    for (const school of [
+      "SD IT Cipansor",
+      "SMP IT Cipansor",
+      "SMA Qur'an Cipansor",
+    ]) {
+      await expect(page.getByRole("option", { name: school })).toBeVisible();
+    }
   });
 
   test("a school's TU still counts its own unit", async ({ page }) => {
