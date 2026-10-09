@@ -317,3 +317,20 @@ textarea:focus-visible {
   }
 }
 
+/*
+ * SPMB banner under browser automation.
+ *
+ * The banner is server-rendered (so it is in the first paint and does not push
+ * the page down — see `components/landing/spmb-announcement.tsx`), but the
+ * e2e guard that keeps it out of unrelated specs only runs on the client. Left
+ * at that, the banner is painted and then removed a moment later, shifting
+ * everything below it under Playwright's click — the landing spec's "Daftar
+ * SPMB" link missed exactly so. The pre-paint script in `app/layout.tsx` sets
+ * this class when `navigator.webdriver` is on, so the banner is `display: none`
+ * from the first paint and never moves the page; the class is harmless for real
+ * visitors (their `navigator.webdriver` is false).
+ */
+html.spmb-under-automation [data-testid="spmb-announcement-banner"] {
+  display: none;
+}
+
