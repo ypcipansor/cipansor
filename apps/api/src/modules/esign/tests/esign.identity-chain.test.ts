@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { prisma } from '../../lib/prisma';
-import { EsignService } from './esign.service';
+import { prisma } from '../../../lib/prisma';
+import { EsignService } from '../esign.service';
 
 /**
  * Rantai identitas → pengajuan → keputusan, diuji sebagai satu jalan.
@@ -19,7 +19,7 @@ import { EsignService } from './esign.service';
  * satu ujung digeser tanpa ujung yang lain.
  */
 
-vi.mock('../../lib/prisma', () => ({
+vi.mock('../../../lib/prisma', () => ({
   prisma: {
     signingKeyRequest: {
       findFirst: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock('../../lib/prisma', () => ({
     $transaction: vi.fn((cb: any) => cb(prisma)),
   },
 }));
-vi.mock('../../lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }));
+vi.mock('../../../lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }));
 vi.mock('@/lib/event-bus', () => ({ eventBus: { emit: vi.fn() } }));
 
 /** Keadaan pemohon tepat sesudah mengisi formulir dan mengunggah KTP-nya. */
