@@ -100,17 +100,19 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         // Pre-authenticated state for faster tests
         // storageState: 'playwright/.auth/superAdmin.json',
-        // Constrained sandboxes may ship a pre-installed Chromium whose build
-        // differs from the one this Playwright version would download. When
-        // PW_CHROMIUM_EXECUTABLE_PATH is set, launch that binary instead of
-        // downloading. Unset in CI, so CI behaviour is unchanged.
-        ...(process.env.PW_CHROMIUM_EXECUTABLE_PATH
-          ? {
-              launchOptions: {
-                executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH,
-              },
-            }
-          : {}),
+        launchOptions: {
+          // A camera that always answers, so Absen Saya's selfie is taken the
+          // way a person takes it (`getUserMedia`), not uploaded behind the
+          // page's back. A test still has to grant the `camera` permission.
+          args: ["--use-fake-device-for-media-stream"],
+          // Constrained sandboxes may ship a pre-installed Chromium whose build
+          // differs from the one this Playwright version would download. When
+          // PW_CHROMIUM_EXECUTABLE_PATH is set, launch that binary instead of
+          // downloading. Unset in CI, so CI behaviour is unchanged.
+          ...(process.env.PW_CHROMIUM_EXECUTABLE_PATH
+            ? { executablePath: process.env.PW_CHROMIUM_EXECUTABLE_PATH }
+            : {}),
+        },
       },
       dependencies: ["setup"],
     },

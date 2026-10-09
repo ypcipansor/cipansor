@@ -62,7 +62,7 @@ test.describe("Absensi Pegawai — pages render and navigate", () => {
     await page.goto("/hr/attendance");
 
     await expect(
-      page.getByRole("heading", { name: "Absensi Karyawan", level: 1 }),
+      page.getByRole("heading", { name: "Absensi Pegawai", level: 1 }),
     ).toBeVisible();
 
     // The day picker (an Indonesian date) and the link to the bulk register.
@@ -335,6 +335,8 @@ async function photoStatus(session: AuthSession, recordId: string) {
 
 test.describe("Absen Saya — a punch is recorded", () => {
   test.describe.configure({ mode: "serial" });
+  // The day is the yayasan's: the admin list opens on the browser's today.
+  test.use({ timezoneId: "Asia/Jakarta" });
 
   let guru: AuthSession;
   let admin: AuthSession;
@@ -459,7 +461,92 @@ test.describe("Absen Saya — a punch is recorded", () => {
     expect((await photoStatus(colleague, checkInRecordId)).status).toBe(403);
   });
 
-  test("the teacher clocks out", async () => {
+  test("the teacher clocks out on screen, with the camera and the location", async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "only the chromium project is launched with a fake camera",
+    );
+    // The page's own Permissions-Policy once said `camera=()` and
+    // `geolocation=()`: the browser refused both without a prompt, every
+    // selfie fell back to a file, and no punch had a location. Only a test
+    // that takes the photo and reads the position in the page sees that.
+    await context.grantPermissions(["camera", "geolocation"]);
+    await context.setGeolocation({
+      latitude: -7.2,
+      longitude: 107.9,
+      accuracy: 20,
+    });
+    await injectSession(page, guru);
+    await page.goto("/hr/attendance/me");
+
+    await page.getByRole("button", { name: "Buka Kamera" }).click();
+    await page.getByRole("button", { name: "Ambil Foto" }).click();
+    await expect(
+      page.getByRole("button", { name: "Foto Ulang" }),
+    ).toBeVisible();
+    // The file picker is the fallback for a device with no camera only.
+    await expect(
+      page.getByRole("button", { name: "Pilih Foto dari Perangkat" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Baca Lokasi Saya" }).click();
+    await expect(
+      page.getByRole("button", { name: "Baca Ulang Lokasi" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Absen Pulang" }).click();
+    await waitForToast(page, /Absen pulang tercatat/);
+
+    const me = await apiRequest<{
+      data: {
+        attendance: {
+          checkOut: string | null;
+          records: {
+            kind: string;
+            hasPhoto: boolean;
+            photoSource?: string | null;
+            latitude?: number | null;
+          }[];
+        };
+      };
+    }>(guru, "GET", "/hr/attendance/me");
+    expect(me.data.attendance.checkOut).not.toBeNull();
+    const out = me.data.attendance.records.find((r) => r.kind === "CHECK_OUT");
+    expect(out).toMatchObject({ hasPhoto: true, photoSource: "CAMERA" });
+    expect(out?.latitude).toBeCloseTo(-7.2, 3);
+  });
+
+  test("the unit admin opens that punch's selfie and location", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "the punch with a camera photo is taken in chromium only",
+    );
+    const name = String(guru.user.name);
+    await injectSession(page, admin);
+    await page.goto("/hr/attendance");
+    await page.getByRole("button", { name: `Bukti Pulang ${name}` }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(
+      dialog.getByRole("img", { name: `Swafoto ${name}` }),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText(/Lokasi -7\.20000, 107\.90000/),
+    ).toBeVisible();
+  });
+
+  test("the teacher clocks out (browsers without a fake camera)", async ({
+    browserName,
+  }) => {
+    test.skip(
+      browserName === "chromium",
+      "chromium clocks out on screen in the test above",
+    );
     const out = await apiRequest<{
       data: { attendance: { checkOut: string | null } };
     }>(guru, "POST", "/hr/attendance/check-out", {});
@@ -513,6 +600,23 @@ test.describe("Pengaturan Absensi — who may write it", () => {
     expect(
       await statusOf(apiRequest(pengawas, "GET", "/hr/attendance?limit=5")),
     ).toBe(403);
+  });
+
+  test("an organ who opens the pages by URL is told who runs them", async ({
+    page,
+  }) => {
+    // Neither page is on an organ's menu, but the bucket opens the URL. It used
+    // to show the full form, a Simpan button, and a 403 toast for every tab.
+    const pengawas = await apiLogin(demo("yayasan.pengawas@cipansor.or.id"));
+    await injectSession(page, pengawas);
+    for (const path of ["/hr/attendance/settings", "/hr/attendance"]) {
+      await page.goto(path);
+      await expect(
+        page.getByText("Halaman ini dikelola super admin dan admin unit"),
+      ).toBeVisible();
+      await expect(page.getByRole("button", { name: "Simpan" })).toHaveCount(0);
+      await expect(page.getByRole("tab")).toHaveCount(0);
+    }
   });
 
   test("a unit admin naming another unit is refused, not quietly redirected", async () => {

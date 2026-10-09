@@ -47,6 +47,9 @@ import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { PunchEvidence } from "@/components/hr/PunchEvidence";
+import { StaffAttendanceAdminOnly } from "@/components/hr/StaffAttendanceAdminOnly";
+import { useAuth } from "@/hooks/use-auth";
+import { canManageStaffAttendance } from "@/lib/staff-attendance-access";
 
 /** The name is on `user` for both a staff member and a teacher record. */
 const attendanceName = (item: {
@@ -55,6 +58,13 @@ const attendanceName = (item: {
 }) => item.staff?.user?.name || item.teacher?.user?.name || "Tanpa nama";
 
 export default function StaffAttendancePage() {
+  const { user } = useAuth();
+  if (user && !canManageStaffAttendance(user))
+    return <StaffAttendanceAdminOnly title="Absensi Pegawai" />;
+  return <StaffAttendanceList />;
+}
+
+function StaffAttendanceList() {
   const [date, setDate] = useState<Date>(new Date());
   const [unitFilter, setUnitFilter] = useState<string>("");
   const [search, setSearch] = useState("");
@@ -114,7 +124,7 @@ export default function StaffAttendancePage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              Absensi Karyawan
+              Absensi Pegawai
             </h1>
             <p className="text-muted-foreground">
               Kelola kehadiran harian guru dan staf
@@ -171,7 +181,7 @@ export default function StaffAttendancePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.present}</div>
-              <p className="text-xs text-muted-foreground">Karyawan</p>
+              <p className="text-xs text-muted-foreground">Pegawai</p>
             </CardContent>
           </Card>
           <Card>
@@ -181,7 +191,7 @@ export default function StaffAttendancePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.late}</div>
-              <p className="text-xs text-muted-foreground">Karyawan</p>
+              <p className="text-xs text-muted-foreground">Pegawai</p>
             </CardContent>
           </Card>
           <Card>
@@ -191,7 +201,7 @@ export default function StaffAttendancePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.leave}</div>
-              <p className="text-xs text-muted-foreground">Karyawan</p>
+              <p className="text-xs text-muted-foreground">Pegawai</p>
             </CardContent>
           </Card>
           <Card>
@@ -203,7 +213,7 @@ export default function StaffAttendancePage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.absent}</div>
-              <p className="text-xs text-muted-foreground">Karyawan</p>
+              <p className="text-xs text-muted-foreground">Pegawai</p>
             </CardContent>
           </Card>
         </div>
@@ -215,7 +225,7 @@ export default function StaffAttendancePage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  placeholder="Cari nama karyawan..."
+                  placeholder="Cari nama pegawai..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9"
@@ -240,7 +250,7 @@ export default function StaffAttendancePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nama Karyawan</TableHead>
+                    <TableHead>Nama Pegawai</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>Jam Masuk</TableHead>
                     <TableHead>Jam Pulang</TableHead>

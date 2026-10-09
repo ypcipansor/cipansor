@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { getPrimaryRoleCode } from "@/lib/rbac";
+import { canManageStaffAttendance } from "@/lib/staff-attendance-access";
+import { StaffAttendanceAdminOnly } from "@/components/hr/StaffAttendanceAdminOnly";
 import { MIN_ATTENDANCE_RECORD_RETENTION_DAYS } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
@@ -109,6 +111,13 @@ const TRIGGERS = [
  * lateness into a deduction. Nothing here is a constant in code.
  */
 export default function AttendanceSettingsPage() {
+  const { user } = useAuth();
+  if (user && !canManageStaffAttendance(user))
+    return <StaffAttendanceAdminOnly title="Pengaturan Absensi" />;
+  return <AttendanceSettings />;
+}
+
+function AttendanceSettings() {
   const [unitId, setUnitId] = useState<string>("");
   const { data: units } = useUnits();
   const { user } = useAuth();
