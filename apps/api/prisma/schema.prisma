@@ -7985,7 +7985,9 @@ model LetterSignature {
   /// bentuk yang dipakai saat itu tidak boleh berubah setelahnya. Nilainya
   /// ikut ditandatangani (`canonicalPayload`), sehingga mengubahnya membuat
   /// tanda tangannya tidak lagi cocok — sama seperti mengubah isi naskahnya.
-  signingAuthorityForm SigningAuthorityForm? @map("signing_authority_form")
+  /// `NONE` (atas jabatan sendiri) untuk naskah tanpa garis kewenangan dan
+  /// untuk baris sebelum kolom ini ada — sama dengan migrasinya.
+  signingAuthorityForm SigningAuthorityForm @default(NONE) @map("signing_authority_form")
   /// Jabatan pejabat yang diwakili, mis. "Kepala SMA Qur'an Cipansor".
   /// Dicetak pada naskah di depan singkatan garis kewenangannya.
   representedOffice String? @map("represented_office")
