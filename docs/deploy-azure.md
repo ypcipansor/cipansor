@@ -50,9 +50,11 @@ outgrow it, they belong in Blob Storage, which the api cannot write to yet.
 
 | Setting | Production | Staging | Why |
 |---|---|---|---|
+| `APP_ENV` | `production`, set by `deploy-production.yml` | `staging`, set by `deploy-staging.yml` | Which deployed copy this is — distinct from `NODE_ENV`, which is `production` on both because both run the same images. It is what `/health` reports as `environment`, and what lets a guard say "not in production" and mean it: the chatbot refuses its `stub` provider in production, so staging — where the assistant is exercised with the real provider — needs to be distinguishable. A production build with it unset resolves to `production`; anything else to `local`. |
 | `SCHEDULER_ENABLED` | unset (on) | `false` | Staging must not bill, remind or escalate, even from demo data |
 | `OUTBOUND_MESSAGES_ENABLED` | unset (on) | `false` | E-mail, SMS and WhatsApp are logged, never sent — even if real credentials leak into staging |
 | `DOCUMENT_TEST_COPY` | unset (off) | `true`, set by `deploy-staging.yml` on every release | Every PDF the api renders and every page printed from the web is stamped "SALINAN UJI — BUKAN DOKUMEN SAH": staging's demo accounts carry the names of real office holders, their passwords are public, and the letterhead is the real one |
+| `CHATBOT_PROVIDER` | `openai-compatible` with a Key Vault key (when enabled) | `openai-compatible` with staging's own `CHATBOT_API_KEY`, set by `deploy-staging.yml` | Staging runs the REAL provider, not a double, so a walkthrough there answers the way production answers. It needs its own key (`secrets.CHATBOT_API_KEY`, plus `vars.CHATBOT_API_BASE_URL` and `vars.CHATBOT_MODEL` on the `staging` environment). When the key is absent the workflow sets `disabled` and warns — the assistant stays off rather than answering from a stub that could be mistaken for a release-ready model. |
 | `MIGRATE_ON_START` | `true` | `true` | The database is private; CI cannot reach it |
 | `PERSISTENT_DIR` | `/home/data` | `/home/data` | Uploads and identity documents survive restarts ([Files](#files)) |
 | Gmail / SMTP / WhatsApp credentials | Key Vault references | none | Second line of defence behind the switch above |
@@ -193,3 +195,13 @@ with `permission denied for schema public`. After `CREATE DATABASE … OWNER
 - Environments `staging` and `production`, each limited to the `main` branch.
 - Variables: `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `TURNSTILE_SITE_KEY`
   (repository), and `AZURE_CLIENT_ID` (per environment).
+- The `staging` environment also carries `vars.CHATBOT_API_BASE_URL` and
+  `vars.CHATBOT_MODEL`, plus `secrets.CHATBOT_API_KEY`. The three are required
+  together: `resolveProvider()` needs all of key, base URL and model, and with
+  any one missing the assistant is off. Without the secret,
+  `deploy-staging.yml` sets `CHATBOT_PROVIDER=disabled` and warns; with the
+  secret but a missing variable it now **fails the release** instead of writing
+  a half-configured provider that deploys cleanly and shows no assistant. Either
+  way the assistant is invisible on staging — the very bug the `APP_ENV` split
+  exists to fix. Treat a missing staging key as a release blocker, not a silent
+  degradation.
