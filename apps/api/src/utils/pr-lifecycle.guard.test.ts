@@ -252,7 +252,11 @@ describe('pr-lifecycle.sh', () => {
     };
 
     it('waits for fixes while the request is on the current head', () => {
-      const { calls, out } = run({ ...base, GH_STUB_CHECKS: allGreen, GH_STUB_REVIEWS: requested(SHA) });
+      const { calls, out } = run({
+        ...base,
+        GH_STUB_CHECKS: allGreen,
+        GH_STUB_REVIEWS: requested(SHA),
+      });
       expect(calls).not.toContain('curl');
       expect(out).toContain('leaving it open for fixes');
     });
