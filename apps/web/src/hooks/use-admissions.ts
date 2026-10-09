@@ -236,8 +236,16 @@ export function useUpdateAdmissionPeriod(id: string) {
 /**
  * Each unit's intake for the public SPMB page — no session. One per unit:
  * the period open now, else the next, else the last one closed.
+ *
+ * `options` lets a surface that must stay fresh (the site-wide announcement,
+ * whose whole point is to reflect an intake opening or closing) tighten
+ * freshness for itself. Defaults are unchanged for every other caller.
  */
-export function usePublicIntakes() {
+export function usePublicIntakes(options?: {
+  staleTime?: number;
+  refetchInterval?: number | false;
+  refetchOnWindowFocus?: boolean;
+}) {
   return useQuery({
     queryKey: ["admissions", "public", "intakes"] as const,
     queryFn: async () => {
@@ -246,7 +254,13 @@ export function usePublicIntakes() {
       );
       return response.data.data ?? [];
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: options?.staleTime ?? 5 * 60 * 1000,
+    ...(options?.refetchInterval !== undefined
+      ? { refetchInterval: options.refetchInterval }
+      : {}),
+    ...(options?.refetchOnWindowFocus !== undefined
+      ? { refetchOnWindowFocus: options.refetchOnWindowFocus }
+      : {}),
   });
 }
 

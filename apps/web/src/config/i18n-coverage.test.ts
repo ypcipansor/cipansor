@@ -10,6 +10,7 @@ import { publicContentFor } from "./content.i18n";
 import { accreditationContentFor } from "./accreditation.i18n";
 import { spmbContentFor } from "./spmb.i18n";
 import { spmbFormContentFor } from "./spmb-form.i18n";
+import { announcementContentFor } from "./announcement.i18n";
 import { formatNumber } from "@/lib/locale-format";
 
 /**
@@ -111,6 +112,7 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
   { name: "accreditation", of: accreditationContentFor },
   { name: "spmb", of: spmbContentFor },
   { name: "spmb form", of: spmbFormContentFor },
+  { name: "announcement", of: announcementContentFor },
   // The public assistant's own strings. They are not a `config/*.i18n.ts`
   // surface — the widget reads them straight off the locale tree — so this is
   // what notices when the greeting or a suggestion is added in one language

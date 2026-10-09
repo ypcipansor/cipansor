@@ -92,7 +92,10 @@ if [ -n "$missing" ]; then
       "_This comment was created by an AI agent (OpenHands) on behalf of the maintainer._"
   } > "$OUT"
   if [ -n "$CID" ]; then
-    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$OUT" >/dev/null; then
+    # -F, not -f: only a typed field reads `@file`. With -f the comment became
+    # the literal text "@/tmp/…/out", lost its marker, and the next run posted
+    # a fresh reminder — which the run after that clobbered again.
+    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -F body=@"$OUT" >/dev/null; then
       echo "PR #$PR: updated the missing-description reminder."
     else
       echo "::warning::could not update the description reminder on PR #$PR"

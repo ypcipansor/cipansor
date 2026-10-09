@@ -245,6 +245,22 @@ describe('pr-lifecycle.sh', () => {
     expect(calls).toContain('96eebf19-b64b-4035-9653-2d8b15b06ac4/dispatch');
   });
 
+  it('does not report a refused dispatch as dispatched', () => {
+    // curl exits 0 on a 401; only the status code tells the two apart.
+    const { out } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: allGreen,
+      GH_STUB_COMMENTS_LIST: '[]',
+      OPENHANDS_API_KEY: 'key',
+      GH_STUB_HTTP: '401',
+    });
+    expect(out).not.toContain('Dispatched review gate');
+    expect(out).toContain('::warning::Review-gate dispatch for PR #');
+    expect(out).toContain('HTTP 401');
+  });
+
   it('carries the AI-disclosure footer on the all-green notice', () => {
     const { calls } = run({
       GH_STUB_STATE: 'OPEN',
