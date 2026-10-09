@@ -8,11 +8,13 @@
 #                                       draft decision to a human
 #   green CI + ready PR              -> dispatch the review gate (SDLC 22)
 #   red CI                           -> quiet (checks are visible on the PR)
-#   changes requested on a ready PR  -> quiet (the gate posted the review)
+#   changes requested on the current head -> quiet (waiting for fixes)
+#   changes requested on an older commit + green head -> dispatch the gate again
 #
 # `pull_request_review` is also subscribed so a changes-requested review
-# submitted after CI finished is seen, but the rules above are now a no-op for
-# that case; it is kept so the script's own state view stays consistent.
+# submitted after CI finished is seen. A request on the current head is quiet;
+# once the author pushes a new head and it goes green, the gate is dispatched
+# again to review that head (#727).
 #
 # The rules live in .github/scripts/pr-lifecycle.sh so they can be run by hand.
 name: PR lifecycle
