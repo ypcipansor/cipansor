@@ -10,6 +10,7 @@ import { publicContentFor } from "./content.i18n";
 import { accreditationContentFor } from "./accreditation.i18n";
 import { spmbContentFor } from "./spmb.i18n";
 import { spmbFormContentFor } from "./spmb-form.i18n";
+import { announcementContentFor } from "./announcement.i18n";
 import { formatNumber } from "@/lib/locale-format";
 
 /**
@@ -105,6 +106,7 @@ const SURFACES: Array<{ name: string; of: (l: Locale) => unknown }> = [
   { name: "accreditation", of: accreditationContentFor },
   { name: "spmb", of: spmbContentFor },
   { name: "spmb form", of: spmbFormContentFor },
+  { name: "announcement", of: announcementContentFor },
 ];
 
 describe.each(SURFACES)("$name content", ({ of }) => {

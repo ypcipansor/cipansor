@@ -1,0 +1,227 @@
+# spmb-announcement-publik
+
+> KEPUTUSAN 2026-10-05: situs publik mengumumkan SPMB lewat **banner** (selalu,
+> selama ada unit yang buka) **+ dialog tertunda 5 detik, sekali per kunjungan
+> sampai ditutup untuk periode itu** (dikoreksi 2026-10-08). **2026-10-09:
+> dialognya kartu di bawah layar, bukan di tengah** — keputusan pengguna sesudah
+> pengukuran WCAG di bawah.
+> Sumbernya `GET /admissions/public/intakes` — tanpa perubahan skema. Di bawah:
+> pembandingnya, sumber standarnya, dan syaratnya. Jangan ulang risetnya.
+
+**Keputusan pengguna 2026-10-05**, sesudah satu putaran perbandingan enam
+alternatif (A banner, B modal tertunda, C corner card, D pengumuman admin,
+E tanpa pop-up, F hibrida). Pengguna memilih **F — hibrida (banner + modal
+tertunda)**, sesuai rekomendasi.
+
+## Masalah yang diukur
+
+- Halaman `/public/spmb` dan chatbot sudah membaca
+  `GET /admissions/public/intakes`, tapi **hanya di halaman-halaman itu**.
+  Pengunjung yang masuk lewat beranda atau halaman profil tidak tahu ada
+  pembukaan SPMB.
+- Badge hero pernah menulis tahun **"SPMB 2026 Telah Dibuka"** secara hardcode
+  dan jadi basi begitu intake berganti. Apa pun yang baru harus **diturunkan**
+  dari intake, bukan ditulis tangan.
+- Badge hero kemudian memakai aturan turunan yang sama, tetapi **diulang**
+  dengan banner yang baru: dua permukaan menyampaikan satu kalimat. Setelah
+  banner ada di setiap halaman publik, badge hero **dihapus** (2026-10-05) —
+  permintaannya sudah dipenuhi banner, dan satu pengumuman cukup satu
+  permukaan.
+
+## Kenapa F, bukan yang lain
+
+Sumber: Google Search Central *Avoid intrusive interstitials* (2025-12-10,
+"use banners instead of interstitials"); NN/g *Modal & Nonmodal Dialogs* dan
+*Popups* (jangan tampilkan pop-up sebelum konten, kecuali kewajiban hukum);
+Baymard (pengguna refleks menutup overlay saat halaman dimuat); GOV.UK
+*Notification banner* (untuk tenggat yang mendekat, dan "sparingly"); USWDS
+*Modal*; W3C WAI-ARIA APG + WCAG 2.1.2 (No Keyboard Trap) / 2.2.4.
+
+1. **Banner = arahan Google, dan aman untuk Ad Grants.** Situs pernah ditolak
+   Google for Nonprofits sekali; interstitial yang menutup konten adalah risiko
+   yang tidak dibayar oleh apa pun.
+2. **Dialog tertunda tetap memenuhi permintaan "pop-up tiap buka situs"** tanpa
+   menjadi interstitial — dan penundaan 5 detik saja tidak cukup: Google
+   menghitung overlay yang menutup konten saat pengguna sedang membaca sebagai
+   interstitial juga, jadi dialognya **non-modal** (`modal={false}`): Radix
+   tidak merender `DialogOverlay` sama sekali, halaman di bawahnya tetap
+   terbaca dan bisa diklik, dan fokus tidak direbut. Muncul sesudah 5 detik
+   (bukan saat masuk), kecil, dua jalan keluar, tidak pernah di `/public/spmb`
+   dan halaman verifikasi.
+3. **C (corner card) ditolak** karena bertabrakan dengan InstallPrompt dan
+   UpdatePrompt yang sudah di pojok kanan bawah. *Koreksi 2026-10-08:* premis
+   ini hanya berlaku di localhost dan pratinjau — di situs publik
+   (`cipansor.or.id`) PWA dimatikan (`pwaEnabledForHost`, `lib/host-split.ts`),
+   jadi kedua prompt itu tidak pernah tampil di sana.
+4. **D (pengumuman admin-authored) ditolak** karena menyentuh `schema.prisma`
+   (berisiko), butuh tata kelola "siapa boleh menyiarkan ke publik", dan isi
+   satu bahasa sulit dijaga di situs tiga bahasa. Kalau kelak perlu
+   mengumumkan hal **selain** SPMB, D yang dibuka — bukan ditambal ke sini.
+
+## Aturan turunannya (satu tempat)
+
+`spmbAnnouncementOf(intakes)` di `packages/shared/src/schemas/admissions.ts`:
+
+- unit yang `window === "open"` menang;
+- jika tidak ada, unit yang **paling cepat dibuka** (`upcoming`, `opensAt`
+  paling awal);
+- jika tidak ada, tidak ada pengumuman.
+
+Banner dan dialog memakai aturan yang sama, jadi keduanya tidak mungkin
+berbeda kalimat. **Chatbot tidak memakainya**: ia membaca sumber yang
+sama (`findPublicIntakes`) tetapi menjelaskan **setiap** unit satu per satu
+(jadwal gelombang, biaya, persyaratan) dalam `modules/chatbot/live-facts.ts`,
+bukan memilih satu pengumuman. Aturan turunan ini sengaja satu unit; chatbot
+butuh semuanya. Yang dijaga tetap sama: sumbernya satu, jadi tidak ada dua
+kebenaran tentang status pendaftaran.
+
+**Tanggal hanya milik unit yang disebut.** Pengumuman memilih **satu** unit
+(yang `open`, atau yang `upcoming` paling awal), jadi satu tanggal hanya benar
+untuk unit itu. Dialog **tidak boleh** menyebut "dan unit lainnya" lalu
+mencantumkan satu tanggal: unit lain bisa dibuka di hari yang berbeda, dan
+keluarga unit itu akan membaca tanggal yang salah. Kalimatnya menyebut tanggal
+itu sebagai milik unit yang disebut, lalu mengarahkan ke halaman SPMB untuk
+jadwal unit lain (lihat `config/announcement.i18n.ts`). Bug ini ditemukan di
+tinjauan PR #655 dan diperbaiki 2026-10-05.
+
+## Syarat yang mudah dilupakan
+
+- **Hanya host publik.** Dijaga `isPortalHost` di `app/page.tsx`,
+  `components/landing/public-page.tsx` dan `app/wakaf-infaq/page.tsx`. Polaritas:
+  "mati di portal", bukan "hidup di portal" — `isPortalHost` salah untuk
+  localhost, jadi bentuk terbalik akan mematikan fitur ini di `pnpm dev` dan
+  staging.
+- **Dipasang sebagai anak pertama `<main>`** (di `PublicPage` dan beranda),
+  supaya `sticky top-16` menempel persis di bawah navbar `fixed` (64px) tanpa
+  tertutup, dan kotak alirnya tidak menutup konten di bawahnya. Beranda tidak
+  lagi memakai `mt-16`: offset navbar dibawa hero-nya sendiri (`pt-24`).
+- **`/wakaf-infaq` memasang banner sendiri** (`withDialog={false}`): halaman itu
+  punya chrome sendiri, bukan `PublicPage`, dan dialog lima detik tidak boleh
+  menyela alur donasi. Hanya bannernya yang tampil.
+- **Dismissal disimpan per periode** (nilainya `period.id`), jadi pengumuman
+  tahun berikutnya muncul lagi; tidak ada nilai ajaib "off". Banner: cookie
+  `spmb-banner-dismissed` saja (dibaca server dan peramban). Dialog:
+  `localStorage` `spmb-announcement-dialog` bila ditutup dengan X, Escape, atau
+  tombol ajakan; `sessionStorage` `spmb-announcement-dialog-shown` mencatat
+  bahwa ia sudah tampil di kunjungan ini.
+- **Kesegaran status dijaga di komponen ini**, bukan default global:
+  `usePublicIntakes({ staleTime: 15 menit, refetchInterval: 15 menit,
+  refetchOnWindowFocus: true })`. Tanpa itu, tab yang terbuka sejak pagi masih
+  menampilkan status kemarin (`QueryProvider` mematikan refetch-on-focus dan
+  `usePublicIntakes` tidak polling).
+- **Mundur di bawah otomasi** (`navigator.webdriver`), seperti
+  `ServiceWorkerRegister`, kecuali `spmb-announcement-force = "1"` — supaya
+  dialog 5 detik tidak menabrak suite e2e yang bukan tentang pengumuman ini.
+  Karena banner **dirender server** (butir berikutnya) sedangkan
+  `navigator.webdriver` hanya ada di peramban, penjaga ini dulu terlambat:
+  banner sempat dilukis, lalu dihapus saat hidrasi, menggeser hero ~52px tepat
+  saat Playwright menimbang stabilitas sebelum mengklik — tautan "Daftar SPMB"
+  di `landing.spec.ts` meleset. Diperbaiki dengan skrip pra-lukis di
+  `app/layout.tsx` yang menambahkan kelas `spmb-under-automation` ke `<html>`
+  sebelum body diurai; aturan CSS di `globals.css` menyembunyikannya sejak
+  lukisan pertama, dan komponennya tetap membuangnya dari DOM sesudahnya.
+  Skrip itu juga membaca `spmb-announcement-force` supaya spec pengumuman
+  sendiri tetap melihat bannernya.
+- **Banner ada di lukisan pertama (SSR).** Halaman publik mengambil intake di
+  server (`lib/public-intakes.server.ts`) dan menyerahkannya sebagai
+  `initialIntakes`; komponen menginisialisasi `bannerOpen` dari keputusan server
+  itu (`initialBannerDismissed`, dibaca dari cookie
+  `lib/announcement-cookies.ts`), dan hanya menerapkan penjaga otomasi +
+  cookie yang sama di `useLayoutEffect` — sebelum peramban melukis.
+  Sebelumnya banner hanya muncul setelah query klien selesai, menggeser halaman
+  ke bawah (CLS terukur ~0.035 di `/`, `/profil`, `/wakaf-infaq`). Karena
+  `bannerOpen` awal harus sama di server dan klien, dismissal banner juga
+  ditulis ke cookie yang bisa dibaca server; tanpa cermin itu pengunjung yang
+  pernah menutup banner melihatnya berkelip lalu halaman naik saat hidrasi.
+  Karena pengumuman ini opsional sedangkan halaman tidak, pengambilan di server
+  diberi **batas waktu** (`AbortController`, 2 detik): API yang menggantung tak
+  boleh menahan render halaman — pada lewat batas, pengumuman hilang seperti
+  halnya galat jaringan. `NEXT_PUBLIC_API_URL=''` (berarti "same-origin" di
+  bundle, lihat `lib/api.ts`) tidak bisa dipakai server apa adanya — `fetch`
+  Node menolak URL relatif — jadi server memakai `API_INTERNAL_URL`, lalu
+  `NEXT_PUBLIC_API_URL` yang absolut, lalu `http://127.0.0.1:3001` (sidecar App
+  Service berbagi loopback). **Origin tidak pernah diambil dari header
+  permintaan** (koreksi 2026-10-08: revisi sebelumnya memakai
+  `x-forwarded-host`/`host`, sehingga server mengambil host mana pun yang
+  disebut permintaan dan, di Azure, keluar lewat alamat publik dan Cloudflare
+  untuk mencapai API di mesin yang sama). Hasilnya di-cache 60 detik
+  (`next.revalidate`) — sama bagi semua pengunjung, dan klien tetap mengambil
+  ulang saat halaman dimuat. Cookie banner berumur **400 hari** — batas yang
+  dipegang Chrome/Edge (RFC 6265bis); Safari menyimpan cookie tulisan skrip
+  7 hari, jadi di sana banner kembali sesudah seminggu, serempak di server dan
+  peramban, tanpa kilatan.
+- **Trilingual** (`config/announcement.i18n.ts`, dijaga
+  `config/i18n-coverage.test.ts`); tahun ajaran dan nama unit dicetak apa
+  adanya di semua bahasa, seperti halaman SPMB. Teksnya **dipisah per status**:
+  saat `upcoming`, banner/dialog tidak boleh berbunyi "telah dibuka" atau
+  "Daftar sekarang" (belum ada yang bisa mendaftar) — ajakannya "Lihat info
+  SPMB".
+- **CTA dialog adalah tautan, bukan tombol di dalam tautan.** `DialogFooter`
+  memakai `<Button asChild><Link href="/public/spmb">…</Link></Button>`
+  (`Button` mendukung `asChild` lewat Radix `Slot`). Sebelumnya
+  `<Link><Button>` menaruh `<button>` di dalam `<a>` — HTML tidak valid, dan
+  `getByRole("link", …)` yang benar. Ditemukan di tinjauan PR #655, diperbaiki
+  2026-10-08.
+- **Dialog yang terbuka ikut tertutup saat refetch pindah ke periode yang sudah
+  ditutup.** Effect dialog memanggil `setDialogOpen(false)` ketika
+  `isDismissed(DIALOG_KEY, periodId)` benar, bukan sekadar `return`. Tanpa itu,
+  refetch yang memindahkan pengumuman ke periode yang pernah ditutup pengunjung
+  meninggalkan dialog basi yang masih berbicara tentang intake lama.
+  Diperbaiki 2026-10-08.
+- **Dialog non-modal** (`modal={false}`): tidak ada `DialogOverlay`, tidak ada
+  perangkap fokus, dan `onOpenAutoFocus` dibatalkan — ia pemberitahuan, bukan
+  langkah yang harus dijawab. Konsekuensinya **`onInteractOutside`** dibatalkan
+  (klik *dan* fokus di luar dialog). Versi yang hanya membatalkan
+  `onPointerDownOutside` membiarkan satu tekan Tab di halaman menutup dialog
+  dan mencatat dismissal permanen — pengguna papan ketik tak pernah bisa
+  mencapai tombolnya (terukur 2026-10-08).
+- **Kartu di bawah, di semua layar (keputusan pengguna 2026-10-09).** Di
+  tengah, dialog menutup bagian halaman yang sedang dibaca (32% layar ponsel
+  dengan empat unit disebut) dan menutup penuh lima tautan yang dicapai pengguna
+  papan ketik di 1280 px — gagal WCAG 2.2 SC 2.4.11 (AA), yang menyebut dialog
+  non-modal tanpa fokus sebagai pola berisiko. Pengguna sempat menimbang "tengah
+  di desktop, menyesuaikan di ponsel", lalu memilih pojok bawah di semua layar
+  karena kegagalan itu terukur di desktop. Ponsel: selebar layar di atas tombol
+  asisten. Layar lebar: pojok awal baca (kiri; kanan di halaman Arab), seberang
+  tombol asisten; `bottom-24` menghindari tombol itu di sisi mana pun. Selama
+  terbuka, `scroll-padding-bottom` dan ruang setinggi kartu di akhir halaman
+  menjaga elemen terfokus tetap di atas kartu (teknik C43). Terukur sesudahnya:
+  tak ada elemen terfokus yang tertutup; kartu menutup 7,9% layar desktop.
+- **Sekali per kunjungan.** Permintaan pengguna: jendela "setiap kali situs
+  publik dibuka" — per kunjungan, bukan per halaman. Sebelum koreksi
+  2026-10-08, dialog yang belum dijawab muncul lagi di **setiap** halaman yang
+  dibuka (terukur: `/`, `/profil`, `/unit`, `/campus`).
+- **"Nanti saja" berarti nanti:** menutup untuk kunjungan ini saja, kembali di
+  kunjungan berikutnya. X, Escape, dan tombol ajakan menutupnya untuk periode
+  itu. Sebelumnya "Nanti saja" menutup permanen.
+- **Menyebut semua unit yang buka** ("TK Qur'an, SD IT, dan SMP IT", digabung
+  `Intl.ListFormat` per bahasa). Sebelumnya hanya unit pertama urutan API yang
+  disebut — dengan keempat unit buka di staging, dialog berkata "untuk TK
+  Qur'an" kepada keluarga yang mencari SMA Qur'an.
+- **Tombol tutup dialog berlabel sendiri.** `DialogContent` bawaan merender X
+  dengan `sr-only` "Close" (Inggris) di semua bahasa; pengumuman ini tiga
+  bahasa, jadi dipasang `showCloseButton={false}` + `DialogClose` sendiri
+  dengan `aria-label={copy.dismiss}` (`Tutup pengumuman` / `Dismiss announcement`
+  / `إغلاق الإعلان`). Diperbaiki 2026-10-08.
+
+## Uji
+
+- `apps/web/src/components/landing/spmb-announcement.test.tsx` — aturan turunan
+  + komponen (banner, dialog tertunda, dismissal per periode, dialog basi
+  ikut tertutup saat refetch pindah ke periode yang sudah ditutup, gate portal,
+  Tab tidak menutup dialog, sekali per kunjungan, "Nanti saja" vs X, semua
+  unit yang buka disebut).
+- `apps/web/src/lib/locale-format.test.ts` — `dateFormatterFor` mengunci
+  `timeZone: "Asia/Jakarta"`, sehingga `2026-12-31T17:00:00.000Z` (tengah malam
+  WIB) tetap tampil "1 Januari 2027", bukan "31 Desember".
+- `apps/web/e2e/spmb-announcement.spec.ts` — banner di beranda & halaman dalam,
+  dialog muncul, dismissal bertahan, guard otomasi, dan (regresi) banner
+  server-render disembunyikan sebelum lukisan di bawah otomasi sehingga tidak
+  ada pergeseran tata letak. Menulis satu periode lalu menghapusnya; dilewati di
+  API produksi.
+- `apps/web/src/lib/public-intakes.server.test.ts` — pembacaan intake di server
+  (banner dismissal dari cookie, periode yang diumumkan, batas waktu terhadap
+  permintaan yang tak pernah menjawab, origin kosong → loopback dan tidak pernah
+  dari header permintaan, satu fetch ber-cache untuk semua tampilan halaman).
+- `apps/web/src/lib/announcement-cookies.test.ts` — cookie dismissal menulis
+  dan membaca periode yang benar, dengan umur 400 hari.
