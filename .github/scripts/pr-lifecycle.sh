@@ -3,7 +3,9 @@
 #
 #   green checks on a draft PR    -> post the all-green comment (informational)
 #   green checks on a ready PR    -> dispatch the review gate (SDLC 22)
-#   red checks / changes requested -> do nothing
+#   red checks                      -> do nothing
+#   changes requested on the head   -> do nothing (waiting for fixes)
+#   changes requested on an older commit, green head -> dispatch the gate again
 #
 # This script never approves, never merges and never changes the draft/ready
 # state. A maintainer decides when a PR is ready; the review gate (SDLC 22)
@@ -199,11 +201,20 @@ $AI_FOOTER"
 }
 
 if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
-  # The gate already posted the request-changes review. Leave the PR open so the
-  # author can push fixes and the gate can re-review; branch protection holds the
-  # merge until the review is resolved.
-  echo "PR #$PR has changes requested; leaving it open for fixes."
-  exit 0
+  # The commit the most recent changes-requested review was made on. On the
+  # current head, the PR waits for fixes and branch protection holds the merge.
+  # On an older commit, the author has pushed since: carry on, so a green head
+  # goes back to the gate, which reviews the new head (one review per head
+  # commit) and gives its own verdict. Exiting here unconditionally meant the
+  # gate's request was final: nothing else dispatches it, and #628 sat green
+  # and fixed with no re-review (#727).
+  REQUESTED_AT=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null \
+    | jq -rs '[.[][] | select(.state == "CHANGES_REQUESTED")] | last | .commit_id // empty' 2>/dev/null || true)
+  if [ -z "$REQUESTED_AT" ] || [ "$REQUESTED_AT" = "$HEAD" ]; then
+    echo "PR #$PR has changes requested; leaving it open for fixes."
+    exit 0
+  fi
+  echo "PR #$PR had changes requested on $REQUESTED_AT; the head $HEAD came after, so a green head goes back to the review gate."
 fi
 
 if [ -n "$RED" ]; then

@@ -16,7 +16,10 @@ import { join, resolve } from 'path';
  *  - a green draft PR gets its all-green notice without waiting for Analyze or
  *    CodeQL, which no checked-in workflow publishes;
  *  - a green **ready** PR dispatches the `SDLC 22` review gate (via `curl`)
- *    rather than relying on a `ready_for_review` transition that will not come.
+ *    rather than relying on a `ready_for_review` transition that will not come;
+ *  - a changes-requested review holds the PR only while it is on the current
+ *    head: once the author has pushed and the head is green, the gate is
+ *    dispatched again (#727).
  *
  * Each check fails against the pre-review script and passes after it.
  */
@@ -45,6 +48,7 @@ case "$1" in
   api)
     case "$*" in
       *check-runs*) printf '%s\\n' "\${GH_STUB_CHECKS:-}" ;;
+      *"/reviews"*) printf '%s\\n' "\${GH_STUB_REVIEWS:-[]}" ;;
       *"comments?per_page"*)
         printf '%s' "\${GH_STUB_COMMENTS_LIST:-[]}" \
           | jq -r '.[] | select(.body | contains("<!-- pr-lifecycle:")) | .id' ;;
@@ -229,6 +233,48 @@ describe('pr-lifecycle.sh', () => {
     });
     expect(calls).not.toContain('COMMENT');
     expect(calls).not.toContain('READY');
+  });
+
+  describe('after the gate requested changes', () => {
+    const requested = (commit: string) =>
+      JSON.stringify([
+        { state: 'COMMENTED', commit_id: 'old000' },
+        { state: 'CHANGES_REQUESTED', commit_id: commit },
+      ]);
+    const base = {
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_REVIEW: 'CHANGES_REQUESTED',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_COMMENTS_LIST: '[]',
+      OPENHANDS_API_KEY: 'key',
+      GH_STUB_HTTP: '200',
+    };
+
+    it('waits for fixes while the request is on the current head', () => {
+      const { calls, out } = run({ ...base, GH_STUB_CHECKS: allGreen, GH_STUB_REVIEWS: requested(SHA) });
+      expect(calls).not.toContain('curl');
+      expect(out).toContain('leaving it open for fixes');
+    });
+
+    it('sends a green head pushed after the request back to the gate', () => {
+      const { calls, out } = run({
+        ...base,
+        GH_STUB_CHECKS: allGreen,
+        GH_STUB_REVIEWS: requested('fff111'),
+      });
+      expect(calls).toContain('96eebf19-b64b-4035-9653-2d8b15b06ac4/dispatch');
+      expect(out).toContain('Dispatched review gate for PR #7');
+    });
+
+    it('does not dispatch while that newer head is red', () => {
+      const { calls } = run({
+        ...base,
+        GH_STUB_CHECKS: paginatedRed,
+        GH_STUB_REVIEWS: requested('fff111'),
+      });
+      expect(calls).not.toContain('curl');
+    });
   });
 
   it('dispatches the review gate for a green ready PR', () => {
