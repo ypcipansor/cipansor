@@ -391,9 +391,9 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   index; stale docs deleted; roadmap and known issues cut to open work;
   decisions and lessons moved here from the machine-local memory; golden rules
   10 (before/after screenshots) and 11 (menu path + state).
-- **Licence decided (2026-09-25): proprietary, owned by Yayasan Pesantren
-  Cipansor — not open source**, because the repository becomes private. Never
-  add an open-source licence, badge, or "contributions welcome" text.
+- **Licence: Apache License 2.0 since 2026-10-09** (`decisions/lisensi.md`),
+  replacing the proprietary licence of 2026-09-25. Names, logos, photographs
+  and personal data are outside it (`NOTICE`).
 
 ## Next
 
