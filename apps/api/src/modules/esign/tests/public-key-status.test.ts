@@ -18,7 +18,6 @@ const findUnique = vi.mocked(prisma.userSigningKey.findUnique);
 const findHistory = vi.mocked(prisma.signingKeyStatusRecord.findUnique);
 
 const MATERIAL = createKeyMaterial('kalimat-sandi-status-2026');
-const PUBLIC_KEY = MATERIAL.publicKey;
 const FP = MATERIAL.fingerprint;
 const DAY = 24 * 60 * 60 * 1000;
 

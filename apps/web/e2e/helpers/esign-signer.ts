@@ -144,8 +144,7 @@ export async function ensureSigner(
     );
   }
 
-  let approvedAwaitingActivation = status.data.approvedAwaitingActivation;
-  if (!approvedAwaitingActivation) {
+  if (!status.data.approvedAwaitingActivation) {
     if (!status.data.pendingRequest) {
       await apiRequest(session, "POST", "/esign/me/request", {
         reason: "Enrolment for the signing-authority e2e flow.",
@@ -176,7 +175,6 @@ export async function ensureSigner(
       grantedDays: 365,
       identityVerification: { note: "KTP diperiksa: data cocok (e2e)." },
     });
-    approvedAwaitingActivation = true;
   }
 
   await apiRequest(session, "POST", "/esign/me/activate", {
