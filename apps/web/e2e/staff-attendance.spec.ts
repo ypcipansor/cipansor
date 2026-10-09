@@ -517,8 +517,11 @@ test.describe("Pengaturan Absensi — who may write it", () => {
 
   test("a unit admin naming another unit is refused, not quietly redirected", async () => {
     const admin = await apiLogin(demo("smpit.admin@cipansor.or.id"));
+    // A unit admin's /units lists their own unit only, so the other unit's id
+    // comes from the super admin.
+    const superAdmin = await apiLogin(SEED_USERS.superAdmin);
     const units = await apiRequest<{ data: { id: string; name: string }[] }>(
-      admin,
+      superAdmin,
       "GET",
       "/units?limit=50",
     );
