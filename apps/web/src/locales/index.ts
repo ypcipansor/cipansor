@@ -39,6 +39,24 @@ export function dirFor(locale: Locale): "ltr" | "rtl" {
 }
 
 /**
+ * Fills `{name}` placeholders in a translated string.
+ *
+ * Placeholders live in the translation so word order stays with the translator
+ * — English and Arabic order a sentence differently from Indonesian, and
+ * assembling it in code would freeze Indonesian grammar into all three. A
+ * placeholder with no matching key is left as written, so a missing value shows
+ * the gap instead of printing "undefined".
+ */
+export function fillPlaceholders(
+  template: string,
+  vars: Record<string, string | number>,
+): string {
+  return template.replace(/\{(\w+)\}/g, (match, key) =>
+    key in vars ? String(vars[key]) : match,
+  );
+}
+
+/**
  * All valid dot-paths into the translation tree, e.g. "common.save".
  * Using these as the `t()` argument type makes typos a compile error.
  */

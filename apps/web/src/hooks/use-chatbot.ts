@@ -9,6 +9,7 @@ import type {
   ChatMessage,
   PublicChatRequest,
   PublicChatResponse,
+  PublicChatStatus,
 } from "@cipansor/shared";
 
 /**
@@ -22,9 +23,10 @@ import type {
 export function useChatbotAvailability() {
   return useQuery({
     queryKey: ["chatbot", "status"],
-    queryFn: async (): Promise<boolean> => {
+    queryFn: async (): Promise<PublicChatStatus> => {
       const response = await api.get("/chatbot/public/status");
-      return response.data?.data?.available === true;
+      const data = response.data?.data;
+      return { available: data?.available === true };
     },
     // The answer changes only on redeploy, and a failure here should not put
     // the widget into a retry loop on every public page view.

@@ -37,7 +37,7 @@ import { config } from '@/config';
 import * as chatbotService from '../chatbot.service';
 import { estimateCost, monthToDateUsage } from '../usage.service';
 import * as transcriptService from '../transcript.service';
-import { ask, escalate, getUsage } from '../chatbot.controller';
+import { ask, escalate, getUsage, status } from '../chatbot.controller';
 import * as escalationService from '../escalation.service';
 import { prisma } from '@/lib/prisma';
 
@@ -337,5 +337,30 @@ describe('escalate', () => {
     expect(res.body.data).toMatchObject({ accepted: true });
     expect(createEscalation).not.toHaveBeenCalled();
     expect(attemptDelivery).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * GET /chatbot/public/status — what the widget reads before it renders.
+ */
+describe('GET /chatbot/public/status', () => {
+  const resolveProvider = vi.mocked(chatbotService.resolveProvider);
+
+  it('reports unavailable when the assistant is off', async () => {
+    resolveProvider.mockReturnValue(null);
+
+    const res = fakeRes();
+    await status(fakeReq({}), res, vi.fn());
+
+    expect(res.body.data).toEqual({ available: false });
+  });
+
+  it('reports available when a provider is configured', async () => {
+    resolveProvider.mockReturnValue({ name: 'openai-compatible', complete: vi.fn() });
+
+    const res = fakeRes();
+    await status(fakeReq({}), res, vi.fn());
+
+    expect(res.body.data).toEqual({ available: true });
   });
 });

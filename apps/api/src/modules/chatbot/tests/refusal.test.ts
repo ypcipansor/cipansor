@@ -26,6 +26,19 @@ describe('looksLikeRefusal', () => {
       'Maaf, saya belum memiliki informasi untuk menjawab pertanyaan itu.',
       // Penanya berbahasa Inggris.
       "I'm sorry, I don't have that information.",
+      // Penanya berbahasa Arab. Aturan 6 menyuruh model menjawab dalam bahasa
+      // penanya, jadi penolakan pun berbahasa Arab — dan sebelum pola ini ada,
+      // `refused` tetap `false`: tawaran penerusan tidak pernah muncul, dan
+      // penolakannya ikut masuk cache.
+      'عذرًا، ليس لديّ معلومات عن هذا.',
+      'لا أملك هذه المعلومة.',
+      'هذه المعلومات غير متوفرة لديّ.',
+      'لا أستطيع الإجابة على هذا السؤال.',
+      'هذا السؤال خارج نطاق معلوماتي.',
+      'المعلومات غير مدرجة في المصادر الرسمية.',
+      'لم أجد معلومات حول هذا الموضوع.',
+      'لم تُدرج هذه المعلومة في المصادر.',
+      'التفاصيل غير مذكورة في المصادر.',
     ];
 
     for (const answer of declines) {
@@ -43,6 +56,24 @@ describe('looksLikeRefusal', () => {
       'Berkas yang belum lengkap dapat dilengkapi kemudian.',
       // Jawaban meta yang dilaporkan pengguna — pemicu seluruh perbaikan ini.
       'Tentu, Bapak/Ibu. Berikut informasi yang tersedia di asisten ini seputar Pesantren Cipansor 😊',
+      // Jebakan yang sama dalam bahasa Arab: yang dinegasi adalah BIAYANYA,
+      // bukan asistennya. Pola Arab pertama sengaja menuntut objek orang
+      // pertama (لديّ, أملك, …) supaya kalimat seperti ini tidak ikut tertangkap.
+      'الرسوم غير قابلة للاسترداد.',
+      'لا يمكن استرداد الرسوم.',
+      'المعلومات متوفرة على موقعنا الإلكتروني.',
+      'لا توجد رسوم للتسجيل.',
+      'الطلاب لا يستطيعون إحضار الهاتف.',
+      // Temuan review: kata benda informasi bisa MENDAHULUI negasi
+      // tentang hal lain. Kalimat ini MENJAWAB biaya ("tidak ada biaya"),
+      // tetapi pola Arab kedua versi pertama menangkapnya sebagai
+      // penolakan — tawaran penerusan yang tidak perlu, dan jawabannya
+      // kehilangan cache. Pola sekarang menuntut negasinya melekat pada
+      // kata benda informasi itu sendiri.
+      'وفق المعلومات الرسمية، لا توجد رسوم للتسجيل.',
+      'وفق البيانات المتاحة، لا توجد منح دراسية حالياً.',
+      // Menyebut kata benda informasi secara afirmatif.
+      'المعلومات الرسمية تذكر أن التسجيل مفتوح.',
     ];
 
     for (const answer of answers) {

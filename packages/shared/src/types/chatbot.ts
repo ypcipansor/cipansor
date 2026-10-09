@@ -82,6 +82,18 @@ export interface PublicChatResponse {
 }
 
 /**
+ * Whether the public assistant is available.
+ *
+ * GET /api/chatbot/public/status
+ *
+ * `available` is the field the widget acts on: false means no provider is
+ * configured, and the widget does not render at all.
+ */
+export interface PublicChatStatus {
+  available: boolean;
+}
+
+/**
  * The editable persona (tone/style) for the public assistant, as seen by a
  * super admin.
  *
