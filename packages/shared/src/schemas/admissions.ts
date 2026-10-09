@@ -640,3 +640,69 @@ export interface PublicIntakeDTO {
     >
   >;
 }
+
+/** Which unit's intake the announcement speaks for, and how it stands. */
+export interface SpmbAnnouncementIntake {
+  /** "open" — registration is on today; "upcoming" — it opens on `opensAt`. */
+  window: Exclude<IntakeWindow, "closed">;
+  /**
+   * The units it speaks for: **every** unit taking registrations when the
+   * window is open, in the API's unit order; the one that opens soonest when it
+   * is upcoming (its date is that unit's own).
+   */
+  units: { name: string }[];
+  /** `id` is what a dismissal is remembered against, so next year's intake returns. */
+  period: { id: string; academicYear: string | null; opensAt: string | null };
+}
+
+/**
+ * What the public site's announcement speaks about, or null when there is
+ * nothing to announce.
+ *
+ * One rule, derived so the banner and the dialog cannot state different
+ * things. The chatbot reads the same intakes, but it explains each unit
+ * separately, so it does not follow this rule:
+ *
+ * - units whose registration is **open** today win, and all of them are
+ *   named — it is the more useful message, and naming only the first (TK
+ *   Qur'an, in the API's order) told an SMA Qur'an family nothing while all
+ *   four schools were open; an announcement that says "opens on 1 January"
+ *   while a sibling school is taking registrations reads as "not open yet";
+ * - otherwise a unit that **opens soonest** is announced, with the day it
+ *   opens;
+ * - otherwise nothing is announced (every intake is closed).
+ *
+ * `academicYear` rides along so the caller can name the year it is announcing
+ * rather than writing one into the markup — the bug the old hardcoded badge
+ * had. Kept pure (no clock, no I/O) so both apps and the tests can call it.
+ */
+export function spmbAnnouncementOf(
+  intakes: readonly PublicIntakeDTO[],
+): SpmbAnnouncementIntake | null {
+  const openNow = intakes.filter((i) => i.period.window === "open");
+  const open = openNow[0];
+  if (open) {
+    return {
+      window: "open",
+      units: openNow.map((i) => ({ name: i.unit.name })),
+      period: {
+        id: open.period.id,
+        academicYear: open.period.academicYear,
+        opensAt: null,
+      },
+    };
+  }
+  const soonest = intakes
+    .filter((i) => i.period.window === "upcoming" && i.period.opensAt)
+    .sort((a, b) => a.period.opensAt!.localeCompare(b.period.opensAt!))[0];
+  if (!soonest) return null;
+  return {
+    window: "upcoming",
+    units: [{ name: soonest.unit.name }],
+    period: {
+      id: soonest.period.id,
+      academicYear: soonest.period.academicYear,
+      opensAt: soonest.period.opensAt,
+    },
+  };
+}
