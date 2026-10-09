@@ -24,7 +24,7 @@ import {
   Trophy,
   Medal,
   Crown,
-  Flame,
+  Target,
   Star,
   TrendingUp,
   Users,
@@ -32,11 +32,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth";
+import { defaultSantriUnitId, useUnits } from "@/hooks/use-units";
 import {
   useIbadahLeaderboard,
   LeaderboardPeriod,
   LEADERBOARD_PERIODS,
-  IbadahLeaderboard,
 } from "@/hooks/use-ibadah";
 
 // Period mapping for UI filter to API enum
@@ -78,7 +78,8 @@ interface LeaderboardEntry {
   name: string;
   class: string;
   score: number;
-  streak: number;
+  /** Share of the period's targets done, in percent. */
+  completion: number;
   avatar: string;
 }
 
@@ -86,10 +87,22 @@ export default function IbadahLeaderboardPage() {
   const { user } = useAuthStore();
   const [period, setPeriod] = useState("week");
   const [category, setCategory] = useState("all");
+  const [unitChoice, setUnitChoice] = useState("");
+
+  // A ranking is per unit. Whoever reaches several units — the pesantren's
+  // staff, the yayasan — picks one; it opens on their own when it has santri,
+  // else on the first that does (the pesantren unit holds no school's santri).
+  const { data: units } = useUnits({ limit: 100 });
+  const unitId =
+    unitChoice ||
+    defaultSantriUnitId(units, user?.unitId) ||
+    user?.unitId ||
+    user?.unit?.id ||
+    "";
 
   // Fetch leaderboard data
   const { data: leaderboardData, isLoading } = useIbadahLeaderboard({
-    unitId: user?.unitId || user?.unit?.id || "",
+    unitId,
     periodType: PERIOD_MAP[period] || "WEEKLY",
     limit: 10,
   });
@@ -97,12 +110,15 @@ export default function IbadahLeaderboardPage() {
   // Transform API data to UI format
   const leaderboard: LeaderboardEntry[] = useMemo(() => {
     if (!leaderboardData) return [];
-    return leaderboardData.map((item: any, index) => ({
+    // The fields the API sends (`IbadahLeaderboardEntry`). This used to read
+    // `student.name` and `streakDays`, which it never sent — every name was
+    // "Unknown" — and added the bonus to a total that already holds it.
+    return leaderboardData.map((item, index) => ({
       rank: item.rank || index + 1,
-      name: item.student?.name || item.student?.user?.name || "Unknown",
-      class: item.student?.class?.name || "-",
-      score: item.totalPoints + (item.bonusPoints || 0),
-      streak: item.streakDays || 0,
+      name: item.studentName,
+      class: item.className || "-",
+      score: item.totalPoints,
+      completion: Math.round(item.completionRate),
       avatar: index < 3 ? ["🥇", "🥈", "🥉"][index] : "👤",
     }));
   }, [leaderboardData]);
@@ -111,15 +127,9 @@ export default function IbadahLeaderboardPage() {
   // (React Compiler auto-memoizes; manual useMemo could not be preserved here.)
   const currentUserEntry = ((): { rank: number | string; score: number } => {
     if (!user?.id || !leaderboardData) return { rank: "-", score: 0 };
-    const found = leaderboardData.find(
-      (item: any) =>
-        item.studentId === user.id || item.student?.userId === user.id,
-    );
+    const found = leaderboardData.find((item) => item.userId === user.id);
     if (found) {
-      return {
-        rank: found.rank || "-",
-        score: found.totalPoints + (found.bonusPoints || 0),
-      };
+      return { rank: found.rank || "-", score: found.totalPoints };
     }
     return { rank: "-", score: 0 };
   })();
@@ -210,12 +220,12 @@ export default function IbadahLeaderboardPage() {
                     </div>
                     <div className="text-center">
                       <div className="flex items-center gap-1">
-                        <Flame className="h-5 w-5 text-orange-500" />
+                        <Target className="h-5 w-5 text-orange-500" />
                         <span className="text-xl font-bold">
-                          {student.streak}
+                          {student.completion}%
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground">Streak</p>
+                      <p className="text-xs text-muted-foreground">Capaian</p>
                     </div>
                   </div>
                 </CardContent>
@@ -226,6 +236,21 @@ export default function IbadahLeaderboardPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap gap-4">
+          {units && units.length > 1 && (
+            <Select value={unitId} onValueChange={setUnitChoice}>
+              <SelectTrigger className="w-[200px]" aria-label="Unit">
+                <SelectValue placeholder="Pilih unit" />
+              </SelectTrigger>
+              <SelectContent>
+                {units.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
           <Select value={period} onValueChange={setPeriod}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
@@ -339,9 +364,14 @@ export default function IbadahLeaderboardPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-6">
-                      <div className="flex items-center gap-1">
-                        <Flame className="h-4 w-4 text-orange-500" />
-                        <span className="font-medium">{student.streak}</span>
+                      <div
+                        className="flex items-center gap-1"
+                        title="Capaian target"
+                      >
+                        <Target className="h-4 w-4 text-orange-500" />
+                        <span className="font-medium">
+                          {student.completion}%
+                        </span>
                       </div>
                       <Badge variant="secondary" className="text-lg px-3">
                         {student.score}

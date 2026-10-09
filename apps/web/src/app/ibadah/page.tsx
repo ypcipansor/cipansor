@@ -23,7 +23,6 @@ import {
   Target,
   CheckCircle,
   Clock,
-  Flame,
   Star,
   Users,
   BarChart3,
@@ -67,7 +66,7 @@ import {
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -82,15 +81,16 @@ import {
   getCategoryInfo,
   getVerificationStatusInfo,
   formatPoints,
-  getStreakEmoji,
   type IbadahCategory,
   type LeaderboardPeriod,
   type VerificationStatus,
 } from "@/hooks/use-ibadah";
-import { useUnits } from "@/hooks/use-units";
+import { defaultSantriUnitId, useUnits } from "@/hooks/use-units";
+import { useAuthStore } from "@/stores/auth";
 import { cn } from "@/lib/utils";
 
 export default function IbadahPage() {
+  const { user } = useAuthStore();
   const [activeTab, setActiveTab] = useState("records");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -126,7 +126,9 @@ export default function IbadahPage() {
 
   const { data: leaderboardData, isLoading: leaderboardLoading } =
     useIbadahLeaderboard({
-      unitId: selectedUnit || units[0]?.id || "",
+      // The reader's unit when it has santri, else the first that does: the
+      // pesantren's staff belong to the pesantren unit, which has none.
+      unitId: selectedUnit || defaultSantriUnitId(units, user?.unitId) || "",
       periodType: leaderboardPeriod,
       limit: 10,
     });
@@ -762,7 +764,7 @@ export default function IbadahPage() {
 
                     return (
                       <div
-                        key={entry.id}
+                        key={entry.studentId}
                         className={cn(
                           "flex items-center gap-4 p-3 rounded-lg transition-colors",
                           isTop3 ? "bg-muted/50" : "hover:bg-muted/30",
@@ -782,18 +784,19 @@ export default function IbadahPage() {
                         </div>
 
                         <Avatar className="h-10 w-10">
-                          <AvatarImage src={entry.student?.avatar} />
                           <AvatarFallback>
-                            {entry.student?.name?.charAt(0) || "?"}
+                            {entry.studentName.charAt(0) || "?"}
                           </AvatarFallback>
                         </Avatar>
 
                         <div className="flex-1 min-w-0">
                           <p className="font-medium truncate">
-                            {entry.student?.name}
+                            {entry.studentName}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {entry.student?.class?.name} • {entry.student?.nis}
+                            {[entry.className, entry.nis]
+                              .filter(Boolean)
+                              .join(" • ")}
                           </p>
                         </div>
 
@@ -802,10 +805,8 @@ export default function IbadahPage() {
                             <Star className="h-4 w-4 text-yellow-500" />
                             {formatPoints(entry.totalPoints)}
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Flame className="h-3 w-3 text-orange-500" />
-                            {entry.streakDays} hari{" "}
-                            {getStreakEmoji(entry.streakDays)}
+                          <div className="text-xs text-muted-foreground">
+                            {entry.recordCount} catatan
                           </div>
                         </div>
 
