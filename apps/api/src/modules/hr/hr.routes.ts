@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { UserRole } from '@prisma/client';
 import * as controller from './hr.controller';
 import * as settingsController from './attendance-settings.controller';
@@ -9,6 +10,7 @@ import { employeeDocumentController } from './employee-documents.controller';
 import { employmentHistoryController } from './employment-history.controller';
 import { authenticate, authorize } from '../../middleware/auth';
 import { validateQuery } from '../../middleware/error';
+import { MAX_ATTENDANCE_PHOTO_BYTES } from '../../utils/attendance-photo-store';
 import {
   queryStaffAttendanceSchema,
   queryLeaveSchema,
@@ -221,6 +223,26 @@ router.get(
   '/attendance/me',
   authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
   settingsController.getMyAttendanceToday
+);
+
+// The selfie goes to the private attendance store, not the general /upload:
+// files there are readable by every signed-in account.
+const punchPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_ATTENDANCE_PHOTO_BYTES, files: 1 },
+});
+
+router.post(
+  '/attendance/photo',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  punchPhotoUpload.single('file'),
+  settingsController.uploadPunchPhoto
+);
+
+router.get(
+  '/attendance/records/:id/photo',
+  authorize(UserRole.SUPER_ADMIN, UserRole.UNIT_ADMIN, UserRole.TEACHER, UserRole.STAFF),
+  settingsController.getPunchPhoto
 );
 
 router.get(

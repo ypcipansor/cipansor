@@ -127,30 +127,53 @@ export const payrollComponentSchema = z.object({
 // Every optional field is nullable: the settings form copies a saved row back
 // into the draft, and a database null (rate, cap, legal basis, dates) would
 // otherwise make an unchanged rule fail to save.
-export const payrollPolicyRuleSchema = z.object({
-  unitId: z.string().uuid().nullable().optional(),
-  code: z.string().min(2).max(60),
-  kind: z.enum(['EARNING', 'DEDUCTION']).default('DEDUCTION'),
-  trigger: z.enum(['LATE', 'ABSENT', 'EARLY_LEAVE', 'PRESENT', 'OVERTIME']),
-  basis: z.string().min(2),
-  mode: z.enum(['NOMINAL', 'PERSENTASE', 'PRORATA', 'PENGALI', 'BERTINGKAT', 'FORMULA', 'MANUAL']),
-  rate: z.coerce.number().nullable().optional(),
-  unit: z.enum(['PER_MENIT', 'PER_HARI', 'PER_KEJADIAN', 'PER_BULAN']).default('PER_KEJADIAN'),
-  tiersJson: z.record(z.string(), z.unknown()).nullable().optional(),
-  formulaExpr: z.string().max(500).nullable().optional(),
-  capPerDay: z.coerce.number().nullable().optional(),
-  capPerMonth: z.coerce.number().nullable().optional(),
-  rounding: z.enum(['NONE', 'ROUND', 'FLOOR', 'CEIL']).default('NONE'),
-  priority: z.coerce.number().int().default(0),
-  legalBasisDoc: z.string().max(500).nullable().optional(),
-  isActive: z.boolean().default(false),
-  effectiveFrom: z.string().nullable().optional(),
-  effectiveTo: z.string().nullable().optional(),
-});
+export const payrollPolicyRuleSchema = z
+  .object({
+    unitId: z.string().uuid().nullable().optional(),
+    code: z.string().min(2).max(60),
+    kind: z.enum(['EARNING', 'DEDUCTION']).default('DEDUCTION'),
+    trigger: z.enum(['LATE', 'ABSENT', 'EARLY_LEAVE', 'PRESENT', 'OVERTIME']),
+    basis: z.string().min(2),
+    mode: z.enum([
+      'NOMINAL',
+      'PERSENTASE',
+      'PRORATA',
+      'PENGALI',
+      'BERTINGKAT',
+      'FORMULA',
+      'MANUAL',
+    ]),
+    rate: z.coerce.number().nullable().optional(),
+    unit: z.enum(['PER_MENIT', 'PER_HARI', 'PER_KEJADIAN', 'PER_BULAN']).default('PER_KEJADIAN'),
+    tiersJson: z.record(z.string(), z.unknown()).nullable().optional(),
+    formulaExpr: z.string().max(500).nullable().optional(),
+    capPerDay: z.coerce.number().nullable().optional(),
+    capPerMonth: z.coerce.number().nullable().optional(),
+    rounding: z.enum(['NONE', 'ROUND', 'FLOOR', 'CEIL']).default('NONE'),
+    priority: z.coerce.number().int().default(0),
+    legalBasisDoc: z.string().max(500).nullable().optional(),
+    isActive: z.boolean().default(false),
+    effectiveFrom: z.string().nullable().optional(),
+    effectiveTo: z.string().nullable().optional(),
+  })
+  // A deduction is lawful only as the perjanjian kerja, peraturan kepegawaian
+  // or PKB sets it (PP 36/2021 Ps. 63(2)); an active one must name that
+  // document. A draft (inactive) rule may be saved without it.
+  .refine((r) => !(r.isActive && r.kind === 'DEDUCTION') || Boolean(r.legalBasisDoc?.trim()), {
+    message:
+      'Aturan potongan yang aktif wajib menyebut dasar hukumnya (perjanjian kerja, peraturan kepegawaian, atau PKB)',
+    path: ['legalBasisDoc'],
+  });
 
 export const payrollGuardConfigSchema = z.object({
   unitId: z.string().uuid().nullable().optional(),
-  maxDeductionPercent: z.coerce.number().int().min(0).max(100).default(50),
+  // PP 36/2021 Ps. 65: deductions from one wage payment, at most 50% of it.
+  maxDeductionPercent: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(50, 'Potongan paling banyak 50% dari setiap pembayaran upah (PP 36/2021 Ps. 65)')
+    .default(50),
   minBasicSharePercent: z.coerce.number().int().min(0).max(100).default(75),
   mustStayAboveUmk: z.boolean().default(true),
   // An empty UMK input sends null; null means "no UMK bound configured".

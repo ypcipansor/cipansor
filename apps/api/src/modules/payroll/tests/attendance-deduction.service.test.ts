@@ -6,6 +6,10 @@ import {
   allowanceCapFor,
   deductionCapFor,
   guardCapFor,
+  pickGuard,
+  effectiveRules,
+  hasLegalBasis,
+  DEFAULT_GUARD,
 } from '../attendance-deduction.service';
 
 const ctx = {
@@ -259,5 +263,66 @@ describe('guard limits', () => {
       umkNominal: 2_500_000,
     });
     expect(cap).toBe(500_000);
+  });
+});
+
+describe('the legal ceiling (PP 36/2021 Ps. 65)', () => {
+  it('holds deductions to 50% of the payment even when a row says 100%', () => {
+    // A row saved before the schema refused it. 4M gross: 50% is 2M, not 4M.
+    const cap = guardCapFor(4_000_000, {
+      maxDeductionPercent: 100,
+      minBasicSharePercent: 0,
+      mustStayAboveUmk: false,
+      umkNominal: null,
+    });
+    expect(cap).toBe(2_000_000);
+  });
+
+  it('gives a unit with no guard row the legal ceiling, not no ceiling', () => {
+    expect(pickGuard([], 'unit-1')).toEqual(DEFAULT_GUARD);
+    expect(guardCapFor(4_000_000, pickGuard([], 'unit-1'))).toBe(2_000_000);
+  });
+});
+
+describe('pickGuard', () => {
+  const row = (unitId: string | null, maxDeductionPercent: number) => ({
+    unitId,
+    maxDeductionPercent,
+    minBasicSharePercent: 0,
+    mustStayAboveUmk: false,
+    umkNominal: null,
+  });
+
+  it("prefers the unit's own row over the yayasan-wide one, in either order", () => {
+    // One unordered query used to return whichever row the database found first.
+    expect(pickGuard([row(null, 40), row('unit-1', 20)], 'unit-1').maxDeductionPercent).toBe(20);
+    expect(pickGuard([row('unit-1', 20), row(null, 40)], 'unit-1').maxDeductionPercent).toBe(20);
+  });
+
+  it('falls back to the yayasan-wide row', () => {
+    expect(pickGuard([row(null, 40)], 'unit-1').maxDeductionPercent).toBe(40);
+  });
+});
+
+describe('effectiveRules', () => {
+  it('lets a unit rule replace the yayasan rule with the same code', () => {
+    // Before, both applied and a late arrival was fined twice.
+    const rules = [
+      { unitId: null, code: 'TELAT' },
+      { unitId: 'unit-1', code: 'TELAT' },
+      { unitId: null, code: 'ALPA' },
+    ];
+    expect(effectiveRules(rules)).toEqual([
+      { unitId: 'unit-1', code: 'TELAT' },
+      { unitId: null, code: 'ALPA' },
+    ]);
+  });
+});
+
+describe('hasLegalBasis', () => {
+  it('requires a named document, not whitespace', () => {
+    expect(hasLegalBasis({ legalBasisDoc: 'Peraturan Kepegawaian Yayasan Ps. 12' })).toBe(true);
+    expect(hasLegalBasis({ legalBasisDoc: '   ' })).toBe(false);
+    expect(hasLegalBasis({ legalBasisDoc: null })).toBe(false);
   });
 });

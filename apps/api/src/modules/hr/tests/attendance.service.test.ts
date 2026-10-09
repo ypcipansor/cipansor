@@ -5,7 +5,13 @@ vi.mock('../../../lib/prisma', () => ({
     staff: { findUnique: vi.fn() },
     attendanceSite: { findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
     attendancePolicy: { findFirst: vi.fn(), findMany: vi.fn() },
-    attendanceRecord: { create: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), groupBy: vi.fn() },
+    attendanceRecord: {
+      create: vi.fn(),
+      findMany: vi.fn(),
+      findFirst: vi.fn(),
+      updateMany: vi.fn(),
+      groupBy: vi.fn(),
+    },
     staffAttendance: { upsert: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn() },
     shiftAssignment: { findFirst: vi.fn() },
     shiftRotation: { findFirst: vi.fn(), findUnique: vi.fn(), update: vi.fn() },
@@ -19,16 +25,28 @@ vi.mock('../../../lib/prisma', () => ({
     retentionPolicy: { findMany: vi.fn() },
     unit: { findMany: vi.fn() },
     $transaction: vi.fn(),
-    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
   },
 }));
 
-vi.mock('../../../utils/managed-upload', () => ({
-  deleteManagedUpload: vi.fn(),
+vi.mock('../../../utils/attendance-photo-store', () => ({
+  attendancePhotoRefusal: vi.fn(),
+  deleteAttendancePhoto: vi.fn(),
+  listAttendancePhotos: vi.fn(),
+  readAttendancePhoto: vi.fn(),
+  storeAttendancePhoto: vi.fn(),
+  isAcceptedAttendancePhoto: vi.fn(),
+  looksLikeImage: vi.fn(),
+  ATTENDANCE_PHOTO_ORPHAN_GRACE_MS: 24 * 60 * 60 * 1000,
+  MAX_ATTENDANCE_PHOTO_BYTES: 5 * 1024 * 1024,
 }));
 
 import { prisma } from '../../../lib/prisma';
-import { deleteManagedUpload } from '../../../utils/managed-upload';
+import {
+  attendancePhotoRefusal,
+  deleteAttendancePhoto,
+  listAttendancePhotos,
+} from '../../../utils/attendance-photo-store';
 import { todayWib, dayOf } from '../../../utils/wib';
 import {
   selfCheckIn,
@@ -50,8 +68,11 @@ import { bulkAttendanceSchema } from '../hr.schema';
 
 const m = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
   $transaction: ReturnType<typeof vi.fn>;
-  $queryRaw: ReturnType<typeof vi.fn>;
+  $executeRaw: ReturnType<typeof vi.fn>;
 };
+
+/** A reference as the private photo store writes it, for the caller `user-1`. */
+const PHOTO_REF = 'user-1-photo.jpg';
 
 /** A shift that starts at 07:00 WIB with a 15-minute grace. */
 const pagiShift = {
@@ -85,8 +106,11 @@ beforeEach(() => {
   m.retentionPolicy.findMany.mockResolvedValue([]);
   m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }]);
   m.attendancePolicy.findMany.mockResolvedValue([]);
-  m.$queryRaw.mockResolvedValue([]);
-  vi.mocked(deleteManagedUpload).mockResolvedValue('deleted');
+  m.$executeRaw.mockResolvedValue(1);
+  m.attendanceRecord.findFirst.mockResolvedValue(null);
+  vi.mocked(attendancePhotoRefusal).mockResolvedValue(null);
+  vi.mocked(deleteAttendancePhoto).mockResolvedValue(undefined);
+  vi.mocked(listAttendancePhotos).mockResolvedValue([]);
   // The punch and its evidence are one write; run the callback against the mock.
   m.$transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
     typeof fn === 'function' ? fn(prisma) : Promise.all(fn as unknown[])
@@ -135,7 +159,9 @@ describe('selfCheckIn', () => {
       outsideRadiusAction: 'FLAG',
     });
 
-    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/selfie/i);
+    await expect(selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /swafoto/i
+    );
     expect(m.staffAttendance.upsert).not.toHaveBeenCalled();
   });
 
@@ -143,7 +169,9 @@ describe('selfCheckIn', () => {
     m.staff.findUnique.mockResolvedValue(staffRow);
     m.attendanceExemption.findFirst.mockResolvedValue({ id: 'ex-1' });
 
-    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/dikecualikan/i);
+    await expect(selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /dikecualikan/i
+    );
     expect(m.staffAttendance.upsert).not.toHaveBeenCalled();
   });
 
@@ -153,14 +181,18 @@ describe('selfCheckIn', () => {
       { title: 'Libur unit', startDate: dayOf(todayWib()), endDate: null },
     ]);
 
-    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/bukan hari kerja/i);
+    await expect(selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /bukan hari kerja/i
+    );
   });
 
   it('refuses a second check-in on the same day', async () => {
     m.staff.findUnique.mockResolvedValue(staffRow);
     m.staffAttendance.findUnique.mockResolvedValue({ id: 'att-1', checkIn: new Date() });
 
-    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/sudah absen masuk/i);
+    await expect(selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /sudah absen masuk/i
+    );
   });
 
   it('rejects a check-in outside the geofence when the policy says REJECT', async () => {
@@ -175,7 +207,7 @@ describe('selfCheckIn', () => {
     ]);
 
     await expect(
-      selfCheckIn({ staffId: 'staff-1', latitude: -6.6, longitude: 106.9 })
+      selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1', latitude: -6.6, longitude: 106.9 })
     ).rejects.toThrow(/luar lokasi/i);
     expect(m.staffAttendance.upsert).not.toHaveBeenCalled();
   });
@@ -193,22 +225,24 @@ describe('selfCheckIn', () => {
 
     const result = await selfCheckIn({
       staffId: 'staff-1',
+      actorUserId: 'user-1',
       latitude: -6.5,
       longitude: 106.8,
-      photoUrl: 'https://example.test/selfie.jpg',
+      photoRef: PHOTO_REF,
     });
 
     expect(result.withinRadius).toBe(true);
     const record = m.attendanceRecord.create.mock.calls[0][0].data;
     expect(record.kind).toBe('CHECK_IN');
     expect(record.distanceMeters).toBe(0);
-    expect(record.photoUrl).toBe('https://example.test/selfie.jpg');
+    expect(record.photoRef).toBe(PHOTO_REF);
+    expect(record.photoSource).toBe('CAMERA');
   });
 
   it('files the punch under the WIB day, not the UTC day', async () => {
     m.staff.findUnique.mockResolvedValue(staffRow);
 
-    await selfCheckIn({ staffId: 'staff-1' });
+    await selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' });
 
     const write = m.staffAttendance.upsert.mock.calls[0][0];
     expect(write.create.date).toEqual(dayOf(todayWib()));
@@ -222,7 +256,7 @@ describe('selfCheckIn', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-02T00:30:00Z'));
     try {
-      const result = await selfCheckIn({ staffId: 'staff-1' });
+      const result = await selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' });
       expect(result.lateMinutes).toBe(15);
       expect(m.staffAttendance.upsert.mock.calls[0][0].create.status).toBe('LATE');
     } finally {
@@ -233,9 +267,9 @@ describe('selfCheckIn', () => {
   it('takes the staff lock and re-reads the day inside one transaction', async () => {
     m.staff.findUnique.mockResolvedValue(staffRow);
 
-    await selfCheckIn({ staffId: 'staff-1' });
+    await selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' });
 
-    expect(m.$queryRaw).toHaveBeenCalled();
+    expect(m.$executeRaw).toHaveBeenCalled();
     expect(m.$transaction).toHaveBeenCalledTimes(1);
     // Both the day row and its evidence are written inside that transaction.
     expect(m.staffAttendance.upsert).toHaveBeenCalledTimes(1);
@@ -248,8 +282,143 @@ describe('selfCheckIn', () => {
 
     // The rejection escapes the callback, which is what makes a real database
     // roll the day row back; it is not swallowed or compensated afterwards.
-    await expect(selfCheckIn({ staffId: 'staff-1' })).rejects.toThrow(/evidence failed/);
+    await expect(selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /evidence failed/
+    );
     expect(m.$transaction).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('punch evidence', () => {
+  const staffRow = { unitId: 'unit-1', user: { id: 'user-1' } };
+  const selfieRequired = {
+    requireSelfie: true,
+    requireLocation: false,
+    outsideRadiusAction: 'FLAG',
+  };
+
+  it('refuses a photo the private store does not vouch for (not the caller’s, or too old)', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendancePolicy.findFirst.mockResolvedValue(selfieRequired);
+    vi.mocked(attendancePhotoRefusal).mockResolvedValue(
+      'Foto absen sudah kedaluwarsa; ambil foto lagi'
+    );
+
+    await expect(
+      selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1', photoRef: 'yesterday.jpg' })
+    ).rejects.toThrow(/kedaluwarsa/);
+    expect(attendancePhotoRefusal).toHaveBeenCalledWith('yesterday.jpg', 'user-1');
+    expect(m.staffAttendance.upsert).not.toHaveBeenCalled();
+  });
+
+  it('refuses a photo another punch already used', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendancePolicy.findFirst.mockResolvedValue(selfieRequired);
+    m.attendanceRecord.findFirst.mockResolvedValue({ id: 'earlier-punch' });
+
+    await expect(
+      selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1', photoRef: PHOTO_REF })
+    ).rejects.toThrow(/sudah dipakai/);
+    expect(m.staffAttendance.upsert).not.toHaveBeenCalled();
+  });
+
+  it('records a photo picked from a file as FILE, for the admin to review', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendancePolicy.findFirst.mockResolvedValue(selfieRequired);
+
+    await selfCheckIn({
+      staffId: 'staff-1',
+      actorUserId: 'user-1',
+      photoRef: PHOTO_REF,
+      photoSource: 'FILE',
+    });
+
+    expect(m.attendanceRecord.create.mock.calls[0][0].data.photoSource).toBe('FILE');
+  });
+
+  it('answers the punch without the stored photo reference', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendanceRecord.create.mockResolvedValue({
+      id: 'rec-1',
+      kind: 'CHECK_IN',
+      photoRef: PHOTO_REF,
+    });
+
+    const result = await selfCheckIn({
+      staffId: 'staff-1',
+      actorUserId: 'user-1',
+      photoRef: PHOTO_REF,
+    });
+
+    expect(result.record).toEqual({ id: 'rec-1', kind: 'CHECK_IN', hasPhoto: true });
+  });
+
+  it('accepts a rostered shift on a day the unit is closed', async () => {
+    // The guard and the nurse work Sundays and national holidays.
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.shiftAssignment.findFirst.mockResolvedValue({ shift: pagiShift });
+    m.calendarEvent.findMany.mockResolvedValue([
+      { title: 'Libur nasional', startDate: dayOf(todayWib()), endDate: null },
+    ]);
+
+    await selfCheckIn({ staffId: 'staff-1', actorUserId: 'user-1' });
+
+    expect(m.staffAttendance.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('flags rather than refuses under REJECT when the GPS error could put the person inside', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendancePolicy.findFirst.mockResolvedValue({
+      requireSelfie: false,
+      requireLocation: true,
+      outsideRadiusAction: 'REJECT',
+    });
+    // ~111 m north of a 100 m site, reported to ±80 m.
+    m.attendanceSite.findMany.mockResolvedValue([
+      { id: 'site-1', latitude: -6.5, longitude: 106.8, radiusMeters: 100 },
+    ]);
+
+    const result = await selfCheckIn({
+      staffId: 'staff-1',
+      actorUserId: 'user-1',
+      latitude: -6.499,
+      longitude: 106.8,
+      accuracyMeters: 80,
+    });
+
+    expect(result.withinRadius).toBe(false);
+    expect(m.attendanceRecord.create.mock.calls[0][0].data.isWithinRadius).toBe(false);
+  });
+
+  it('applies REJECT to a checkout from outside the site too', async () => {
+    m.staff.findUnique.mockResolvedValue(staffRow);
+    m.attendancePolicy.findFirst.mockResolvedValue({
+      requireSelfie: false,
+      requireLocation: true,
+      outsideRadiusAction: 'REJECT',
+    });
+    m.attendanceSite.findMany.mockResolvedValue([
+      { id: 'site-1', latitude: -6.5, longitude: 106.8, radiusMeters: 100 },
+    ]);
+    m.staffAttendance.findUnique.mockResolvedValue({
+      id: 'att-1',
+      checkIn: new Date(),
+      checkOut: null,
+      records: [],
+    });
+
+    await expect(
+      selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1', latitude: -6.6, longitude: 106.9 })
+    ).rejects.toThrow(/luar lokasi/i);
+    expect(m.staffAttendance.update).not.toHaveBeenCalled();
+  });
+
+  it('tells an account without a staff record whom to ask', async () => {
+    m.staff.findUnique.mockResolvedValue(null);
+
+    await expect(selfCheckIn({ staffId: 'staff-x', actorUserId: 'user-x' })).rejects.toThrow(
+      /admin unit/
+    );
   });
 });
 
@@ -260,7 +429,9 @@ describe('selfCheckOut', () => {
     m.staff.findUnique.mockResolvedValue(staffRow);
     m.staffAttendance.findUnique.mockResolvedValue(null);
 
-    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/absen masuk/i);
+    await expect(selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /absen masuk/i
+    );
   });
 
   it('refuses a second checkout', async () => {
@@ -272,7 +443,9 @@ describe('selfCheckOut', () => {
       records: [],
     });
 
-    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/sudah absen keluar/i);
+    await expect(selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /sudah absen keluar/i
+    );
   });
 
   it('writes a CHECK_OUT record against the day row', async () => {
@@ -285,7 +458,7 @@ describe('selfCheckOut', () => {
     });
     m.staffAttendance.update.mockResolvedValue({ id: 'att-1' });
 
-    await selfCheckOut({ staffId: 'staff-1', photoUrl: 'https://example.test/out.jpg' });
+    await selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1', photoRef: PHOTO_REF });
 
     expect(m.attendanceRecord.create.mock.calls[0][0].data.kind).toBe('CHECK_OUT');
   });
@@ -300,9 +473,9 @@ describe('selfCheckOut', () => {
     });
     m.staffAttendance.update.mockResolvedValue({ id: 'att-1' });
 
-    await selfCheckOut({ staffId: 'staff-1' });
+    await selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' });
 
-    expect(m.$queryRaw).toHaveBeenCalled();
+    expect(m.$executeRaw).toHaveBeenCalled();
     expect(m.$transaction).toHaveBeenCalledTimes(1);
     // The row lookup happens inside the transaction, not before it.
     expect(m.staffAttendance.findUnique).toHaveBeenCalled();
@@ -318,7 +491,9 @@ describe('selfCheckOut', () => {
     });
     m.attendanceRecord.create.mockRejectedValue(new Error('evidence failed'));
 
-    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/evidence failed/);
+    await expect(selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /evidence failed/
+    );
     expect(m.$transaction).toHaveBeenCalledTimes(1);
   });
 });
@@ -330,6 +505,7 @@ describe('getMyAttendance', () => {
       id: 'att-1',
       checkIn: new Date(),
       checkOut: null,
+      records: [],
     });
 
     const result = await getMyAttendance('staff-1', '2026-03-02');
@@ -348,6 +524,48 @@ describe('getMyAttendance', () => {
     expect(result.isExempt).toBe(true);
     expect(result.canCheckIn).toBe(false);
     expect(result.canCheckOut).toBe(false);
+  });
+});
+
+describe('getMyAttendance — what the page is told', () => {
+  it('says the unit has not configured a policy, and that nothing is required', async () => {
+    m.staff.findUnique.mockResolvedValue({ unitId: 'unit-1', user: { id: 'user-1' } });
+
+    const result = await getMyAttendance('staff-1', '2026-03-02');
+
+    expect(result.hasProfile).toBe(true);
+    expect(result.requirements).toEqual({
+      configured: false,
+      requireSelfie: false,
+      requireLocation: false,
+      outsideRadiusAction: 'FLAG',
+      photoRetentionDays: 365,
+    });
+  });
+
+  it('reports a photo by presence, never by its stored reference', async () => {
+    m.staff.findUnique.mockResolvedValue({ unitId: 'unit-1', user: { id: 'user-1' } });
+    m.staffAttendance.findUnique.mockResolvedValue({
+      id: 'att-1',
+      checkIn: new Date(),
+      checkOut: null,
+      records: [{ id: 'rec-1', kind: 'CHECK_IN', photoRef: PHOTO_REF, photoSource: 'CAMERA' }],
+    });
+
+    const result = await getMyAttendance('staff-1', '2026-03-02');
+
+    expect(result.attendance?.records).toEqual([
+      { id: 'rec-1', kind: 'CHECK_IN', photoSource: 'CAMERA', hasPhoto: true },
+    ]);
+  });
+
+  it('answers an account with no staff record instead of failing', async () => {
+    m.staff.findUnique.mockResolvedValue(null);
+
+    const result = await getMyAttendance('staff-x', '2026-03-02');
+
+    expect(result.hasProfile).toBe(false);
+    expect(result.canCheckIn).toBe(false);
   });
 });
 
@@ -441,15 +659,39 @@ describe('resolveDelegatedStaffId', () => {
 
 describe('scopedUnitId', () => {
   it('pins a unit admin to their own unit', () => {
-    expect(scopedUnitId({ roleCode: 'SDIT_ADMIN', unitId: 'unit-1' }, 'unit-9')).toBe('unit-1');
+    expect(scopedUnitId({ roleCode: 'SDIT_ADMIN', unitId: 'unit-1' }, null)).toBe('unit-1');
+    expect(scopedUnitId({ roleCode: 'SDIT_ADMIN', unitId: 'unit-1' }, 'unit-1')).toBe('unit-1');
   });
 
-  it('lets a super admin name any unit', () => {
+  it('refuses a unit admin who names another unit, rather than rewriting it', () => {
+    // Before: SD IT's admin asking for unit-9 silently got unit-1 back, and a
+    // write meant for unit-9 changed their own unit without a word.
+    expect(() => scopedUnitId({ roleCode: 'SDIT_ADMIN', unitId: 'unit-1' }, 'unit-9')).toThrow(
+      /luar unit/i
+    );
+  });
+
+  it('lets a super admin name any unit, or none for yayasan-wide', () => {
     expect(scopedUnitId({ roleCode: 'SUPER_ADMIN', unitId: null }, 'unit-9')).toBe('unit-9');
+    expect(scopedUnitId({ roleCode: 'SUPER_ADMIN', unitId: null }, null)).toBeNull();
   });
 
-  it('does not pin a yayasan governance role to a unit', () => {
-    expect(scopedUnitId({ roleCode: 'YAYASAN_KETUA', unitId: null }, 'unit-9')).toBe('unit-9');
+  it.each(['YAYASAN_KETUA', 'YAYASAN_PENGAWAS', 'YAYASAN_BENDAHARA', 'YAYASAN_PEMBINA'])(
+    'refuses %s, who shares the UNIT_ADMIN bucket but administers no unit',
+    (roleCode) => {
+      // Before: an organ fell into the super admin's branch and could rewrite
+      // any unit's attendance policy and the yayasan payroll guard.
+      expect(() => scopedUnitId({ roleCode, role: 'UNIT_ADMIN', unitId: null }, 'unit-9')).toThrow(
+        /super admin dan admin unit/i
+      );
+      expect(() => scopedUnitId({ roleCode, role: 'UNIT_ADMIN', unitId: null }, null)).toThrow(
+        /super admin dan admin unit/i
+      );
+    }
+  );
+
+  it.each(['SMPIT_GURU', 'SMPIT_TATA_USAHA', 'SMPIT_KEPALA_SEKOLAH'])('refuses %s', (roleCode) => {
+    expect(() => scopedUnitId({ roleCode, unitId: 'unit-1' }, null)).toThrow(/admin unit/i);
   });
 });
 
@@ -516,7 +758,7 @@ describe('overnight shifts', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-30T00:00:00Z')); // 07:00 WIB on the 30th
     try {
-      await selfCheckOut({ staffId: 'staff-1' });
+      await selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' });
       expect(m.staffAttendance.update.mock.calls[0][0].where).toEqual({ id: 'att-night' });
     } finally {
       vi.useRealTimers();
@@ -526,7 +768,9 @@ describe('overnight shifts', () => {
   it('still refuses a checkout with no open row at all', async () => {
     m.staff.findUnique.mockResolvedValue({ unitId: 'unit-1' });
     m.staffAttendance.findUnique.mockResolvedValue(null);
-    await expect(selfCheckOut({ staffId: 'staff-1' })).rejects.toThrow(/absen masuk/i);
+    await expect(selfCheckOut({ staffId: 'staff-1', actorUserId: 'user-1' })).rejects.toThrow(
+      /absen masuk/i
+    );
   });
 });
 
@@ -572,143 +816,105 @@ describe('scoped settings writes cannot change unit', () => {
   });
 });
 
-describe('enforceAttendanceRetention — shared photos', () => {
+describe('enforceAttendanceRetention', () => {
   const now = new Date('2026-10-01T00:00:00Z');
 
-  /**
-   * Route the two scans: a due query (`photoUrl: { not: null }`) returns the
-   * rows due in the requested units; the live-eligibility query
-   * (`photoUrl: { in: … }`) returns the URLs still referenced by a live record.
-   */
-  function mockRetentionScan(
-    dueRows: { id: string; photoUrl: string; unitId: string }[],
-    liveUrls: string[]
-  ) {
+  /** The due-scan returns the rows due in the requested units. */
+  function mockDueRows(rows: { id: string; photoRef: string; unitId: string }[]) {
     m.attendanceRecord.findMany.mockImplementation(async (args: { where: Record<string, any> }) => {
       const where = args.where;
-      if (where.photoUrl?.in) return liveUrls.map((photoUrl) => ({ photoUrl }));
+      if (where.photoRef?.in) return [];
       const unitIds: string[] = where.attendance.staff.unitId.in;
-      return dueRows
+      return rows
         .filter((r) => unitIds.includes(r.unitId))
-        .map((r) => ({ id: r.id, photoUrl: r.photoUrl }));
+        .map((r) => ({ id: r.id, photoRef: r.photoRef }));
     });
   }
 
-  it('keeps a file another, unexpired record still points at', async () => {
-    const shared = 'http://localhost:3000/uploads/shared.jpg';
-    mockRetentionScan([{ id: 'r-old', photoUrl: shared, unitId: 'unit-1' }], [shared]);
+  it("deletes an expired punch's photo from the private store, then clears its reference", async () => {
+    mockDueRows([{ id: 'r-1', photoRef: 'old.jpg', unitId: 'unit-1' }]);
 
     const result = await enforceAttendanceRetention(now);
 
-    // The expired row drops its reference; the file survives for the other row.
-    expect(deleteManagedUpload).not.toHaveBeenCalled();
+    expect(deleteAttendancePhoto).toHaveBeenCalledWith('old.jpg');
     expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
-      where: { id: 'r-old', photoUrl: shared },
-      data: { photoUrl: null },
+      where: { id: 'r-1', photoRef: 'old.jpg' },
+      data: { photoRef: null },
     });
     expect(result.photosErased).toBe(1);
   });
 
-  it('keeps a file a live record in another unit window still points at', async () => {
-    // Unit A keeps 30 days, unit B 365. A's record is 40 days old (due); B's is
-    // 10 days old (live). The shared file must not be deleted for A.
-    const shared = 'http://localhost:3000/uploads/shared.jpg';
-    m.unit.findMany.mockResolvedValue([{ id: 'unit-a' }, { id: 'unit-b' }]);
-    m.attendancePolicy.findMany.mockResolvedValue([
-      { unitId: 'unit-a', photoRetentionDays: 30 },
-      { unitId: 'unit-b', photoRetentionDays: 365 },
-    ]);
-    mockRetentionScan([{ id: 'r-a', photoUrl: shared, unitId: 'unit-a' }], [shared]);
+  it('keeps the reference when the file could not be deleted, so the next run retries', async () => {
+    mockDueRows([{ id: 'r-1', photoRef: 'old.jpg', unitId: 'unit-1' }]);
+    vi.mocked(deleteAttendancePhoto).mockRejectedValue(new Error('EACCES'));
 
-    const result = await enforceAttendanceRetention(now);
-
-    expect(deleteManagedUpload).not.toHaveBeenCalled();
-    expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
-      where: { id: 'r-a', photoUrl: shared },
-      data: { photoUrl: null },
-    });
-    expect(result.photosErased).toBe(1);
-  });
-
-  it('deletes a file once no unexpired record references it', async () => {
-    const url = 'http://localhost:3000/uploads/solo.jpg';
-    mockRetentionScan([{ id: 'r-1', photoUrl: url, unitId: 'unit-1' }], []);
-
-    await enforceAttendanceRetention(now);
-
-    expect(deleteManagedUpload).toHaveBeenCalledWith(url);
-    expect(m.attendanceRecord.updateMany).toHaveBeenCalledWith({
-      where: { id: 'r-1', photoUrl: url },
-      data: { photoUrl: null },
-    });
+    await expect(enforceAttendanceRetention(now)).rejects.toThrow('EACCES');
+    expect(m.attendanceRecord.updateMany).not.toHaveBeenCalled();
   });
 
   it('reads only the rows that can have expired, not the whole photo history', async () => {
-    mockRetentionScan([], []);
+    mockDueRows([]);
 
     await enforceAttendanceRetention(now);
 
     const where = m.attendanceRecord.findMany.mock.calls[0][0].where;
-    expect(where.photoUrl).toEqual({ not: null });
-    // Bounded by the retention horizon, so the scan cannot grow without limit.
+    expect(where.photoRef).toEqual({ not: null });
     expect(where.capturedAt.lt).toBeInstanceOf(Date);
   });
 
   it('scopes the due-scan per retention window so a long window is not revisited daily', async () => {
-    // unit-1 keeps photos 365 days, unit-2 only 30.
     m.unit.findMany.mockResolvedValue([{ id: 'unit-1' }, { id: 'unit-2' }]);
     m.attendancePolicy.findMany.mockResolvedValue([
       { unitId: 'unit-1', photoRetentionDays: 365 },
       { unitId: 'unit-2', photoRetentionDays: 30 },
     ]);
-    mockRetentionScan([], []);
+    mockDueRows([]);
 
     await enforceAttendanceRetention(now);
 
-    // One due-set query per distinct window, each scoped to its own units and
-    // cutoff, so unit-1's not-yet-due rows are never loaded before day 365.
     const due = m.attendanceRecord.findMany.mock.calls
       .map((c) => c[0].where)
-      .filter((w) => w.photoUrl?.not === null);
+      .filter((w) => w.photoRef?.not === null);
     expect(due).toHaveLength(2);
     const short = due.find((w) => w.attendance.staff.unitId.in.includes('unit-2'));
     const long = due.find((w) => w.attendance.staff.unitId.in.includes('unit-1'));
-    expect(short.attendance.staff.unitId.in).toEqual(['unit-2']);
-    expect(long.attendance.staff.unitId.in).toEqual(['unit-1']);
     expect(short.capturedAt.lt.getTime()).toBeGreaterThan(long.capturedAt.lt.getTime());
   });
 
-  it('judges deletion eligibility globally, not per window', async () => {
-    // Two windows; the due row is in the short one, the live reference in the
-    // long one. The live query must be able to see across both.
-    const shared = 'http://localhost:3000/uploads/shared.jpg';
-    m.unit.findMany.mockResolvedValue([{ id: 'unit-a' }, { id: 'unit-b' }]);
-    m.attendancePolicy.findMany.mockResolvedValue([
-      { unitId: 'unit-a', photoRetentionDays: 30 },
-      { unitId: 'unit-b', photoRetentionDays: 365 },
+  it('sweeps a photo no punch used once it is a day old, and only that one', async () => {
+    const dayOld = new Date(now.getTime() - 25 * 60 * 60 * 1000);
+    const fresh = new Date(now.getTime() - 60 * 1000);
+    vi.mocked(listAttendancePhotos).mockResolvedValue([
+      { ref: 'unused.jpg', modifiedAt: dayOld },
+      { ref: 'used.jpg', modifiedAt: dayOld },
+      { ref: 'just-taken.jpg', modifiedAt: fresh },
     ]);
-    mockRetentionScan([{ id: 'r-a', photoUrl: shared, unitId: 'unit-a' }], [shared]);
+    m.attendanceRecord.findMany.mockImplementation(async (args: { where: Record<string, any> }) =>
+      args.where.photoRef?.in ? [{ photoRef: 'used.jpg' }] : []
+    );
 
     await enforceAttendanceRetention(now);
 
-    const liveQuery = m.attendanceRecord.findMany.mock.calls
-      .map((c) => c[0].where)
-      .find((w) => Array.isArray(w.photoUrl?.in));
-    expect(liveQuery.photoUrl.in).toEqual([shared]);
-    // One clause per window, so a reference in either unit counts as live.
-    expect(liveQuery.OR).toHaveLength(2);
+    expect(deleteAttendancePhoto).toHaveBeenCalledWith('unused.jpg');
+    expect(deleteAttendancePhoto).not.toHaveBeenCalledWith('used.jpg');
+    expect(deleteAttendancePhoto).not.toHaveBeenCalledWith('just-taken.jpg');
   });
 
-  it('leaves an external URL and its reference alone', async () => {
-    const url = 'https://photos.example/selfie.jpg';
-    mockRetentionScan([{ id: 'r-1', photoUrl: url, unitId: 'unit-1' }], []);
-    vi.mocked(deleteManagedUpload).mockResolvedValue('unsupported');
+  it('never deletes attendance rows younger than ten years, whatever the policy says', async () => {
+    // A row written before the schema refused it: 30 days. The rows are what
+    // the payslips were computed from (UU KUP Ps. 28(11)).
+    m.attendancePolicy.findMany.mockResolvedValue([
+      { unitId: 'unit-1', photoRetentionDays: 365, recordRetentionDays: 30 },
+    ]);
+    m.retentionPolicy.findMany.mockResolvedValue([
+      { dataType: 'ATTENDANCE_RECORD', retentionDays: 30 },
+    ]);
+    mockDueRows([]);
 
-    const result = await enforceAttendanceRetention(now);
+    await enforceAttendanceRetention(now);
 
-    // No managed bytes to remove: clearing the field would lose the only
-    // reference to a photo still stored elsewhere.
-    expect(m.attendanceRecord.updateMany).not.toHaveBeenCalled();
-    expect(result.photosErased).toBe(0);
+    const cutoff: Date = m.staffAttendance.deleteMany.mock.calls[0][0].where.date.lt;
+    const tenYearsAgo = now.getTime() - 3650 * 86_400_000;
+    expect(cutoff.getTime()).toBeLessThanOrEqual(tenYearsAgo);
   });
 });

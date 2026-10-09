@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { getPrimaryRoleCode } from "@/lib/rbac";
+import { MIN_ATTENDANCE_RECORD_RETENTION_DAYS } from "@cipansor/shared";
 import { MainLayout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -108,7 +111,14 @@ const TRIGGERS = [
 export default function AttendanceSettingsPage() {
   const [unitId, setUnitId] = useState<string>("");
   const { data: units } = useUnits();
-  const scope = unitId ? { unitId } : undefined;
+  const { user } = useAuth();
+  // Only the super admin chooses a unit (or the yayasan default). A unit admin
+  // is pinned to their unit by the API, which refuses another unit outright,
+  // so offering them a picker would only offer refusals.
+  const isSuperAdmin = getPrimaryRoleCode(user) === "SUPER_ADMIN";
+  const scope = isSuperAdmin && unitId ? { unitId } : undefined;
+  /** The unit whose settings are on screen; null = the yayasan default. */
+  const shownUnitId = isSuperAdmin ? unitId || null : (user?.unitId ?? null);
 
   return (
     <MainLayout>
@@ -123,22 +133,24 @@ export default function AttendanceSettingsPage() {
               kehadiran
             </p>
           </div>
-          <Select
-            value={unitId || "ALL"}
-            onValueChange={(v) => setUnitId(v === "ALL" ? "" : v)}
-          >
-            <SelectTrigger className="w-[220px]">
-              <SelectValue placeholder="Semua unit" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Semua unit (yayasan)</SelectItem>
-              {units?.map((u) => (
-                <SelectItem key={u.id} value={u.id}>
-                  {u.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {isSuperAdmin && (
+            <Select
+              value={unitId || "ALL"}
+              onValueChange={(v) => setUnitId(v === "ALL" ? "" : v)}
+            >
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Semua unit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">Semua unit (yayasan)</SelectItem>
+                {units?.map((u) => (
+                  <SelectItem key={u.id} value={u.id}>
+                    {u.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
 
         <Tabs defaultValue="sites">
@@ -171,7 +183,7 @@ export default function AttendanceSettingsPage() {
             <HolidaysTab scope={scope} />
           </TabsContent>
           <TabsContent value="policy">
-            <PolicyTab scope={scope} />
+            <PolicyTab scope={scope} shownUnitId={shownUnitId} />
           </TabsContent>
           <TabsContent value="exempt">
             <ExemptionsTab />
@@ -1070,30 +1082,40 @@ function HolidayDraftsCard({ unitId }: { unitId?: string }) {
   );
 }
 
-function PolicyTab({ scope }: { scope: Scope }) {
+function PolicyTab({
+  scope,
+  shownUnitId,
+}: {
+  scope: Scope;
+  shownUnitId: string | null;
+}) {
   const { data: policies } = useAttendancePolicies(scope);
   const upsert = useUpsertAttendancePolicy();
-  const policy = policies?.[0];
+  // The list holds the unit's own row and the yayasan default; which one is
+  // on screen decides what saving does, so pick it explicitly rather than
+  // taking whichever came first.
+  const own = policies?.find((p) => (p.unitId ?? null) === shownUnitId);
+  const inherited =
+    !own && shownUnitId ? policies?.find((p) => p.unitId == null) : undefined;
+  const policy = own ?? inherited;
 
-  const [form, setForm] = useState({
-    graceMinutes: String(policy?.graceMinutes ?? 15),
-    requireSelfie: policy?.requireSelfie ?? true,
-    requireLocation: policy?.requireLocation ?? true,
-    outsideRadiusAction: policy?.outsideRadiusAction ?? "FLAG",
-    photoRetentionDays: String(policy?.photoRetentionDays ?? 365),
-    recordRetentionDays: String(policy?.recordRetentionDays ?? 3650),
+  const formOf = (p?: typeof policy) => ({
+    graceMinutes: String(p?.graceMinutes ?? 15),
+    // Off until switched on (decided 2026-10-09): no selfie is collected
+    // before the staff privacy notice exists.
+    requireSelfie: p?.requireSelfie ?? false,
+    requireLocation: p?.requireLocation ?? false,
+    outsideRadiusAction: p?.outsideRadiusAction ?? "FLAG",
+    photoRetentionDays: String(p?.photoRetentionDays ?? 365),
+    recordRetentionDays: String(
+      p?.recordRetentionDays ?? MIN_ATTENDANCE_RECORD_RETENTION_DAYS,
+    ),
   });
+  const [form, setForm] = useState(formOf(policy));
 
   useEffect(() => {
-    if (!policy) return;
-    setForm({
-      graceMinutes: String(policy.graceMinutes ?? 15),
-      requireSelfie: policy.requireSelfie ?? true,
-      requireLocation: policy.requireLocation ?? true,
-      outsideRadiusAction: policy.outsideRadiusAction ?? "FLAG",
-      photoRetentionDays: String(policy.photoRetentionDays ?? 365),
-      recordRetentionDays: String(policy.recordRetentionDays ?? 3650),
-    });
+    setForm(formOf(policy));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [policy?.id]);
 
   return (
@@ -1102,6 +1124,17 @@ function PolicyTab({ scope }: { scope: Scope }) {
         <CardTitle>Kebijakan Absensi</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
+        {policies && !policy ? (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+            Belum diatur. Selama kebijakan ini belum disimpan, swafoto dan
+            lokasi tidak diwajibkan dan absen tidak ditolak di luar lokasi.
+          </p>
+        ) : inherited ? (
+          <p className="rounded-md border p-3 text-sm text-muted-foreground">
+            Unit ini mengikuti kebijakan yayasan. Menyimpan di sini membuat
+            kebijakan khusus untuk unit ini.
+          </p>
+        ) : null}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>Toleransi keterlambatan (menit)</Label>
@@ -1131,9 +1164,15 @@ function PolicyTab({ scope }: { scope: Scope }) {
                 <SelectItem value="REJECT">Tolak absen</SelectItem>
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              Peramban tidak dapat membedakan lokasi palsu dari yang asli, jadi
+              tanda ini bahan tinjauan, bukan bukti. &quot;Tolak&quot; hanya
+              menolak posisi yang tetap di luar setelah ketelitian GPS
+              diperhitungkan.
+            </p>
           </div>
           <div className="space-y-2">
-            <Label>Simpan foto (hari)</Label>
+            <Label>Simpan swafoto (hari)</Label>
             <Input
               value={form.photoRetentionDays}
               onChange={(e) =>
@@ -1144,45 +1183,63 @@ function PolicyTab({ scope }: { scope: Scope }) {
           <div className="space-y-2">
             <Label>Simpan catatan absensi (hari)</Label>
             <Input
+              type="number"
+              min={MIN_ATTENDANCE_RECORD_RETENTION_DAYS}
               value={form.recordRetentionDays}
               onChange={(e) =>
                 setForm({ ...form, recordRetentionDays: e.target.value })
               }
             />
+            <p className="text-xs text-muted-foreground">
+              Paling singkat {MIN_ATTENDANCE_RECORD_RETENTION_DAYS} hari (10
+              tahun): catatan ini dasar penggajian (UU KUP Ps. 28 ayat 11).
+            </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-8">
-          <label className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={form.requireSelfie}
-              onCheckedChange={(v) => setForm({ ...form, requireSelfie: v })}
-            />
-            Wajib selfie
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <Switch
-              checked={form.requireLocation}
-              onCheckedChange={(v) => setForm({ ...form, requireLocation: v })}
-            />
-            Wajib lokasi
-          </label>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-8">
+            <label className="flex items-center gap-2 text-sm">
+              <Switch
+                checked={form.requireSelfie}
+                onCheckedChange={(v) => setForm({ ...form, requireSelfie: v })}
+              />
+              Wajib swafoto
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <Switch
+                checked={form.requireLocation}
+                onCheckedChange={(v) =>
+                  setForm({ ...form, requireLocation: v })
+                }
+              />
+              Wajib lokasi
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Swafoto adalah data pribadi spesifik (UU PDP Ps. 4). Nyalakan
+            sesudah pemberitahuan privasi pegawai diterbitkan.
+          </p>
         </div>
 
         <Button
           disabled={upsert.isPending}
           onClick={async () => {
-            await upsert.mutateAsync({
-              unitId: scope?.unitId ?? null,
-              graceMinutes: Number(form.graceMinutes),
-              requireSelfie: form.requireSelfie,
-              requireLocation: form.requireLocation,
-              outsideRadiusAction: form.outsideRadiusAction,
-              photoRetentionDays: Number(form.photoRetentionDays),
-              recordRetentionDays: Number(form.recordRetentionDays),
-              isActive: true,
-            });
-            toast.success("Kebijakan disimpan");
+            try {
+              await upsert.mutateAsync({
+                unitId: scope?.unitId ?? null,
+                graceMinutes: Number(form.graceMinutes),
+                requireSelfie: form.requireSelfie,
+                requireLocation: form.requireLocation,
+                outsideRadiusAction: form.outsideRadiusAction,
+                photoRetentionDays: Number(form.photoRetentionDays),
+                recordRetentionDays: Number(form.recordRetentionDays),
+                isActive: true,
+              });
+              toast.success("Kebijakan disimpan");
+            } catch {
+              // The API client already shows the server's reason.
+            }
           }}
         >
           Simpan
@@ -1537,6 +1594,9 @@ function PayrollTab({ scope }: { scope: Scope }) {
             <div className="space-y-2">
               <Label>Maks potongan (% bruto)</Label>
               <Input
+                type="number"
+                min={0}
+                max={50}
                 value={guardForm.maxDeductionPercent}
                 onChange={(e) =>
                   setGuardForm({
@@ -1577,20 +1637,28 @@ function PayrollTab({ scope }: { scope: Scope }) {
               Tidak boleh di bawah UMK
             </label>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Seluruh potongan dari satu pembayaran upah paling banyak 50% (PP
+            36/2021 Ps. 65). Batas itu berlaku walau baris ini belum disimpan.
+          </p>
           <Button
             disabled={upsertGuard.isPending}
             onClick={async () => {
-              await upsertGuard.mutateAsync({
-                unitId: scope?.unitId ?? null,
-                maxDeductionPercent: Number(guardForm.maxDeductionPercent),
-                minBasicSharePercent: Number(guardForm.minBasicSharePercent),
-                mustStayAboveUmk: guardForm.mustStayAboveUmk,
-                umkNominal: guardForm.umkNominal
-                  ? Number(guardForm.umkNominal)
-                  : null,
-                isActive: true,
-              });
-              toast.success("Batas potongan disimpan");
+              try {
+                await upsertGuard.mutateAsync({
+                  unitId: scope?.unitId ?? null,
+                  maxDeductionPercent: Number(guardForm.maxDeductionPercent),
+                  minBasicSharePercent: Number(guardForm.minBasicSharePercent),
+                  mustStayAboveUmk: guardForm.mustStayAboveUmk,
+                  umkNominal: guardForm.umkNominal
+                    ? Number(guardForm.umkNominal)
+                    : null,
+                  isActive: true,
+                });
+                toast.success("Batas potongan disimpan");
+              } catch {
+                // The API client already shows the server's reason.
+              }
             }}
           >
             Simpan
@@ -1741,12 +1809,16 @@ function PayrollTab({ scope }: { scope: Scope }) {
           <Button
             disabled={upsertRule.isPending || !draft.code}
             onClick={async () => {
-              await upsertRule.mutateAsync({
-                ...draft,
-                unitId: scope?.unitId ?? null,
-              });
-              toast.success("Aturan disimpan");
-              setDraft(emptyRule);
+              try {
+                await upsertRule.mutateAsync({
+                  ...draft,
+                  unitId: scope?.unitId ?? null,
+                });
+                toast.success("Aturan disimpan");
+                setDraft(emptyRule);
+              } catch {
+                // The API client already shows the server's reason.
+              }
             }}
           >
             Simpan Aturan

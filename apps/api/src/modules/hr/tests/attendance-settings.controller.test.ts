@@ -6,12 +6,22 @@ vi.mock('../hr.service', () => ({
   selfCheckOut: vi.fn(),
   getMyAttendance: vi.fn(),
   resolveStaffIdForUser: vi.fn(),
+  findStaffIdForUser: vi.fn(),
+  noStaffProfileToday: vi.fn((date: string) => ({ hasProfile: false, date, canCheckIn: false })),
+  storePunchPhoto: vi.fn(),
+  readPunchPhoto: vi.fn(),
   resolveDelegatedStaffId: vi.fn(),
   scopedUnitId: vi.fn((_user: unknown, requested?: string | null) => requested ?? null),
 }));
 
 import * as service from '../hr.service';
-import { selfCheckIn, selfCheckOut, getMyAttendanceToday } from '../attendance-settings.controller';
+import {
+  selfCheckIn,
+  selfCheckOut,
+  getMyAttendanceToday,
+  uploadPunchPhoto,
+  getPunchPhoto,
+} from '../attendance-settings.controller';
 
 function mockReqRes(overrides: Partial<Request> = {}) {
   const req = {
@@ -33,6 +43,14 @@ function mockReqRes(overrides: Partial<Request> = {}) {
       (this as any).jsonPayload = payload;
       return this;
     },
+    headers: {} as Record<string, string>,
+    setHeader(name: string, value: string) {
+      (this as any).headers[name] = value;
+    },
+    send(body: unknown) {
+      (this as any).sent = body;
+      return this;
+    },
   } as unknown as Response & { statusCode: number; jsonPayload: any };
 
   return { req, res };
@@ -47,6 +65,7 @@ async function run(handler: any, req: Request, res: Response) {
 beforeEach(() => {
   vi.clearAllMocks();
   (service.resolveStaffIdForUser as any).mockResolvedValue('staff-self');
+  (service.findStaffIdForUser as any).mockResolvedValue('staff-self');
   (service.resolveDelegatedStaffId as any).mockResolvedValue('staff-other');
   (service.selfCheckIn as any).mockResolvedValue({ lateMinutes: 0, withinRadius: true });
   (service.selfCheckOut as any).mockResolvedValue({ withinRadius: true });
@@ -60,7 +79,7 @@ describe('self attendance — whose row may be written', () => {
 
     expect(service.resolveStaffIdForUser).toHaveBeenCalledWith('user-1');
     expect(service.selfCheckIn).toHaveBeenCalledWith(
-      expect.objectContaining({ staffId: 'staff-self' })
+      expect.objectContaining({ staffId: 'staff-self', actorUserId: 'user-1' })
     );
   });
 
@@ -124,5 +143,53 @@ describe('getMyAttendanceToday', () => {
     const day = (service.getMyAttendance as any).mock.calls[0][1];
     expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(day).toBe(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }));
+  });
+});
+
+describe('getMyAttendanceToday — an account with no staff record', () => {
+  it('answers with hasProfile false instead of a 404', async () => {
+    (service.findStaffIdForUser as any).mockResolvedValue(null);
+    const { req, res } = mockReqRes();
+    const next = await run(getMyAttendanceToday, req, res);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(service.getMyAttendance).not.toHaveBeenCalled();
+    expect((res as any).jsonPayload.data.hasProfile).toBe(false);
+  });
+});
+
+describe('punch photos', () => {
+  it('refuses an upload with no file', async () => {
+    const { req, res } = mockReqRes();
+    const next = await run(uploadPunchPhoto, req, res);
+
+    expect(service.storePunchPhoto).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'BAD_REQUEST' }));
+  });
+
+  it('stores the photo under the caller', async () => {
+    (service.storePunchPhoto as any).mockResolvedValue({ photoRef: 'ref.jpg' });
+    const file = { buffer: Buffer.from([0xff, 0xd8, 0xff]), mimetype: 'image/jpeg', size: 3 };
+    const { req, res } = mockReqRes({ file } as never);
+    await run(uploadPunchPhoto, req, res);
+
+    expect(service.storePunchPhoto).toHaveBeenCalledWith('user-1', file);
+    expect((res as any).statusCode).toBe(201);
+  });
+
+  it('serves a photo uncached, with the reader checked by the service', async () => {
+    (service.readPunchPhoto as any).mockResolvedValue({
+      buffer: Buffer.from('x'),
+      mimeType: 'image/jpeg',
+    });
+    const { req, res } = mockReqRes({ params: { id: 'rec-1' } } as never);
+    await run(getPunchPhoto, req, res);
+
+    expect(service.readPunchPhoto).toHaveBeenCalledWith(
+      'rec-1',
+      expect.objectContaining({ sub: 'user-1' })
+    );
+    expect((res as any).headers['Cache-Control']).toBe('private, no-store');
+    expect((res as any).headers['Content-Type']).toBe('image/jpeg');
   });
 });

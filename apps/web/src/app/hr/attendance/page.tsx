@@ -46,6 +46,7 @@ import {
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { PunchEvidence } from "@/components/hr/PunchEvidence";
 
 /** The name is on `user` for both a staff member and a teacher record. */
 const attendanceName = (item: {
@@ -244,13 +245,14 @@ export default function StaffAttendancePage() {
                     <TableHead>Jam Masuk</TableHead>
                     <TableHead>Jam Pulang</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Bukti</TableHead>
                     <TableHead>Catatan</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {isLoading ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8">
+                      <TableCell colSpan={7} className="text-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto" />
                       </TableCell>
                     </TableRow>
@@ -276,6 +278,12 @@ export default function StaffAttendancePage() {
                             : "-"}
                         </TableCell>
                         <TableCell>{getStatusBadge(item.status)}</TableCell>
+                        <TableCell>
+                          <PunchEvidence
+                            name={attendanceName(item)}
+                            records={item.records ?? []}
+                          />
+                        </TableCell>
                         <TableCell
                           className="max-w-[200px] truncate"
                           title={item.notes ?? undefined}
@@ -287,7 +295,7 @@ export default function StaffAttendancePage() {
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={7}
                         className="text-center py-8 text-muted-foreground"
                       >
                         Belum ada data absensi untuk tanggal ini

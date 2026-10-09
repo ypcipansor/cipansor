@@ -22,8 +22,10 @@ import {
  *     set at the allowance side, so the basic salary is never reduced.
  *  2. The result never crosses the guard config: total deductions stay under
  *     `maxDeductionPercent` of gross and the basic share stays at or above
- *     `minBasicSharePercent`. PP 36/2021 art. 32 allows reducing "upah" only
- *     within those bounds; a breach is reported, not silently applied.
+ *     `minBasicSharePercent`; a breach is reported, not silently applied. The
+ *     percentage can never exceed 50 — PP 36/2021 Ps. 65 caps every deduction
+ *     from one wage payment together at 50% — and a unit with no guard row
+ *     gets that legal bound, not none.
  */
 
 export interface DeductionLine {
@@ -75,13 +77,73 @@ export interface GuardLimits {
   umkNominal: number | null;
 }
 
+/** Whether a rule names the written document it rests on. */
+export function hasLegalBasis(rule: { legalBasisDoc: string | null }): boolean {
+  return Boolean(rule.legalBasisDoc && rule.legalBasisDoc.trim().length > 0);
+}
+
+/** PP 36/2021 Ps. 65: all deductions from one wage payment, at most 50% of it. */
+export const LEGAL_MAX_DEDUCTION_PERCENT = 50;
+
+/**
+ * The guard a unit has before an admin writes one: the legal ceiling and
+ * nothing else. The basic-share and UMK checks are the yayasan's own figures
+ * (a UMK nominal, a share of its salary structure) and stay off until set —
+ * guessing them would block payslips over numbers nobody chose.
+ */
+export const DEFAULT_GUARD: GuardLimits = {
+  maxDeductionPercent: LEGAL_MAX_DEDUCTION_PERCENT,
+  minBasicSharePercent: 0,
+  mustStayAboveUmk: false,
+  umkNominal: null,
+};
+
+/**
+ * The guard for a unit: its own row, else the yayasan-wide row, else
+ * `DEFAULT_GUARD`. The order is explicit — reading "the unit's or the
+ * yayasan's" with one unordered query returned whichever the database found
+ * first.
+ */
+export function pickGuard<
+  T extends {
+    unitId: string | null;
+    maxDeductionPercent: number;
+    minBasicSharePercent: number;
+    mustStayAboveUmk: boolean;
+    umkNominal: Prisma.Decimal | number | null;
+  },
+>(rows: T[], unitId: string | null): GuardLimits {
+  const row =
+    (unitId ? rows.find((r) => r.unitId === unitId) : undefined) ??
+    rows.find((r) => r.unitId === null);
+  if (!row) return DEFAULT_GUARD;
+  return {
+    maxDeductionPercent: row.maxDeductionPercent,
+    minBasicSharePercent: row.minBasicSharePercent,
+    mustStayAboveUmk: row.mustStayAboveUmk,
+    umkNominal: row.umkNominal === null ? null : Number(row.umkNominal),
+  };
+}
+
+/**
+ * The rules that apply to a unit: its own, plus the yayasan-wide ones it has
+ * not replaced. A unit rule with the same `code` as a yayasan rule takes its
+ * place — before, both applied, and a late arrival was fined twice.
+ */
+export function effectiveRules<T extends { unitId: string | null; code: string }>(rules: T[]): T[] {
+  const unitCodes = new Set(rules.filter((r) => r.unitId !== null).map((r) => r.code));
+  return rules.filter((r) => r.unitId !== null || !unitCodes.has(r.code));
+}
+
 /**
  * The rupiah ceiling the guard config alone imposes on a payslip's deductions.
- * `Infinity` when no guard is configured — the allowance side still caps below.
+ * `Infinity` when no guard is given — the allowance side still caps below.
+ * The percentage is held to the legal 50% even if a row says more.
  */
 export function guardCapFor(gross: number, guard: GuardLimits | null): number {
   if (!guard) return Infinity;
-  let cap = (gross * guard.maxDeductionPercent) / 100;
+  const percent = Math.min(guard.maxDeductionPercent, LEGAL_MAX_DEDUCTION_PERCENT);
+  let cap = (gross * percent) / 100;
   const keepBasic = (gross * guard.minBasicSharePercent) / 100;
   cap = Math.min(cap, gross - keepBasic);
   if (guard.mustStayAboveUmk && guard.umkNominal !== null) {
@@ -440,7 +502,7 @@ export const attendanceDeductionService = {
    */
   async rulesFor(unitId: string | null, asOf?: Date) {
     const day = asOf ? dayOf(dayString(asOf)) : undefined;
-    return prisma.payrollPolicyRule.findMany({
+    const rules = await prisma.payrollPolicyRule.findMany({
       where: {
         isActive: true,
         OR: [{ unitId }, { unitId: null }],
@@ -455,6 +517,7 @@ export const attendanceDeductionService = {
       },
       orderBy: [{ priority: 'asc' }, { code: 'asc' }],
     });
+    return effectiveRules(rules);
   },
 
   /**
@@ -469,8 +532,14 @@ export const attendanceDeductionService = {
     });
     if (!period) throw Errors.notFound('Periode penggajian');
 
-    const rules = await this.rulesFor(period.unitId, period.startDate);
-    const guardRow = await prisma.payrollGuardConfig.findFirst({
+    const allRules = await this.rulesFor(period.unitId, period.startDate);
+    // A deduction needs its written basis — the perjanjian kerja, peraturan
+    // kepegawaian or PKB that sets it (PP 36/2021 Ps. 63(2)). The settings
+    // refuse to activate one without it; a row from before that rule is
+    // skipped here and named, rather than charged.
+    const rules = allRules.filter((r) => r.kind !== 'DEDUCTION' || hasLegalBasis(r));
+    const unbasedRules = allRules.filter((r) => r.kind === 'DEDUCTION' && !hasLegalBasis(r));
+    const guardRows = await prisma.payrollGuardConfig.findMany({
       where: { isActive: true, OR: [{ unitId: period.unitId }, { unitId: null }] },
     });
     // The slip only taxes the base salary when an active basic component is
@@ -482,14 +551,7 @@ export const attendanceDeductionService = {
     });
     const basicComponent = basicComponents.find((c) => isBasicSalaryComponent(c));
     const baseIsTaxable = basicComponent?.isTaxable ?? false;
-    const guard: GuardLimits | null = guardRow
-      ? {
-          maxDeductionPercent: guardRow.maxDeductionPercent,
-          minBasicSharePercent: guardRow.minBasicSharePercent,
-          mustStayAboveUmk: guardRow.mustStayAboveUmk,
-          umkNominal: guardRow.umkNominal === null ? null : Number(guardRow.umkNominal),
-        }
-      : null;
+    const guard = pickGuard(guardRows, period.unitId);
 
     // Only staff who actually draw a salary can have a payslip, so only they
     // belong in this computation. Staff without one used to be included, and
@@ -593,7 +655,9 @@ export const attendanceDeductionService = {
         (rolesByUser.get(staff.user.id) ?? []).some((code) => exemptRoleCodes.has(code));
 
       const lines: DeductionLine[] = [];
-      const guardWarnings: string[] = [];
+      const guardWarnings: string[] = unbasedRules.map(
+        (r) => `Aturan ${r.code} tidak diterapkan: belum ada dasar hukum tertulis`
+      );
       const guardBreaches: string[] = [];
       if (!isExempt) {
         for (const rule of rules) {

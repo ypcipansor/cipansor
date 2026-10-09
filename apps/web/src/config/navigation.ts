@@ -1288,7 +1288,9 @@ const adminNavigation: NavGroup[] = [
             icon: ClipboardCheck,
           },
           {
-            title: "Absen Mandiri",
+            // One name for one page on every menu (it was "Absen Mandiri" here
+            // and "Absen Saya" everywhere else).
+            title: "Absen Saya",
             href: "/hr/attendance/me",
             icon: Camera,
           },
@@ -1796,6 +1798,14 @@ const kepalaSekolahNavigation: NavGroup[] = [
         icon: ClipboardCheck,
       },
       {
+        // The kepala sekolah is a salaried employee and clocks in like every
+        // other one (decided 2026-10-09); an exemption is a setting, not a
+        // missing menu item.
+        title: "Absen Saya",
+        href: "/hr/attendance/me",
+        icon: Camera,
+      },
+      {
         // The TK kepala sekolah reads and supervises the children's days.
         title: "Laporan Harian",
         href: "/daily-report",
@@ -2006,7 +2016,12 @@ const pesantrenPimpinanNavigation: NavGroup[] = [
 const pesantrenPengasuhanNavigation: NavGroup[] = [
   {
     title: "Ringkasan",
-    items: [{ title: "Dashboard", href: "/teacher", icon: LayoutDashboard }],
+    items: [
+      { title: "Dashboard", href: "/teacher", icon: LayoutDashboard },
+      // Musyrif, ustadz and muhafidz are salaried employees and clock in
+      // (decided 2026-10-09); the Pimpinan Pesantren is exempt by default.
+      { title: "Absen Saya", href: "/hr/attendance/me", icon: Camera },
+    ],
   },
   {
     title: "Halaqoh & Tahfidz",

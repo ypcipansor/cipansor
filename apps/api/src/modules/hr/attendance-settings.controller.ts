@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { todayWib } from '../../utils/wib';
 import * as service from './hr.service';
+import { Errors } from '../../middleware/error';
 import {
   selfAttendanceSchema,
   attendanceSiteSchema,
@@ -44,7 +45,7 @@ export async function selfCheckIn(req: Request, res: Response, next: NextFunctio
   try {
     const data = selfAttendanceSchema.parse(req.body);
     const staffId = await resolveTargetStaffId(req, data.staffId);
-    const result = await service.selfCheckIn({ ...data, staffId });
+    const result = await service.selfCheckIn({ ...data, staffId, actorUserId: req.user!.sub });
     res.status(201).json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -55,7 +56,7 @@ export async function selfCheckOut(req: Request, res: Response, next: NextFuncti
   try {
     const data = selfAttendanceSchema.parse(req.body);
     const staffId = await resolveTargetStaffId(req, data.staffId);
-    const result = await service.selfCheckOut({ ...data, staffId });
+    const result = await service.selfCheckOut({ ...data, staffId, actorUserId: req.user!.sub });
     res.json({ success: true, data: result });
   } catch (error) {
     next(error);
@@ -64,9 +65,38 @@ export async function selfCheckOut(req: Request, res: Response, next: NextFuncti
 
 export async function getMyAttendanceToday(req: Request, res: Response, next: NextFunction) {
   try {
-    const staffId = await resolveSelfStaffId(req);
-    const data = await service.getMyAttendance(staffId, todayWib());
+    // No staff record is an answer, not an error: the page tells the employee
+    // whom to ask instead of showing greyed-out buttons with no reason.
+    const staffId = await service.findStaffIdForUser(req.user!.sub);
+    const day = todayWib();
+    const data = staffId
+      ? await service.getMyAttendance(staffId, day)
+      : service.noStaffProfileToday(day);
     res.json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** Keep a selfie the caller just took; the punch then names it by reference. */
+export async function uploadPunchPhoto(req: Request, res: Response, next: NextFunction) {
+  try {
+    if (!req.file) throw Errors.badRequest('Foto absen belum dipilih');
+    const data = await service.storePunchPhoto(req.user!.sub, req.file);
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** One punch's selfie, for the person in it or an admin of their unit. */
+export async function getPunchPhoto(req: Request, res: Response, next: NextFunction) {
+  try {
+    const photo = await service.readPunchPhoto(req.params.id, req.user!);
+    res.setHeader('Content-Type', photo.mimeType);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(photo.buffer);
   } catch (error) {
     next(error);
   }

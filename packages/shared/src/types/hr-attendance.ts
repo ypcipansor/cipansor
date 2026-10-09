@@ -16,7 +16,14 @@ import type {
 export interface AttendanceEvidence {
   id: string;
   kind: "CHECK_IN" | "CHECK_OUT";
-  photoUrl?: string | null;
+  /**
+   * Whether a selfie backs this punch. The photo itself is never in a list: it
+   * is fetched one at a time from `GET /hr/attendance/records/{id}/photo`,
+   * which checks who is asking and records the read.
+   */
+  hasPhoto: boolean;
+  /** FILE = picked from the device because no camera was available; review it. */
+  photoSource?: "CAMERA" | "FILE" | null;
   latitude?: number | null;
   longitude?: number | null;
   distanceMeters?: number | null;
@@ -68,8 +75,25 @@ export interface MyAttendance {
   records: AttendanceEvidence[];
 }
 
+/** What the caller's unit asks for on a punch, as the API will enforce it. */
+export interface AttendanceRequirements {
+  /** False when neither the unit nor the yayasan has a policy row yet. */
+  configured: boolean;
+  requireSelfie: boolean;
+  requireLocation: boolean;
+  outsideRadiusAction: "FLAG" | "REJECT";
+  /** After this many days the selfie is deleted by the retention job. */
+  photoRetentionDays: number;
+}
+
 /** GET /hr/attendance/me — the day's row plus what the caller may do next. */
 export interface MyAttendanceToday {
+  /**
+   * False when the account has no staff record yet: nobody can clock in
+   * without one, and the page says so instead of greying the buttons out.
+   */
+  hasProfile: boolean;
+  requirements: AttendanceRequirements;
   date: string;
   attendance: MyAttendance | null;
   shift: {

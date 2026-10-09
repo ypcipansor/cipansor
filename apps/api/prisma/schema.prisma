@@ -2132,7 +2132,12 @@ model AttendanceRecord {
   id             String    @id @default(uuid())
   attendanceId   String    @map("attendance_id")
   kind           String    @default("CHECK_IN") // CHECK_IN | CHECK_OUT
-  photoUrl       String?   @map("photo_url")
+  /// A file in the private attendance store (`utils/attendance-photo-store.ts`),
+  /// never a public URL: a selfie is a facial image (UU PDP Ps. 4).
+  photoRef       String?   @unique @map("photo_ref")
+  /// CAMERA (taken live on the page) | FILE (picked from the device because no
+  /// camera was available). A FILE photo is flagged for the admin to review.
+  photoSource    String?   @map("photo_source")
   latitude       Float?
   longitude      Float?
   accuracyMeters Float?    @map("accuracy_meters")
@@ -2163,7 +2168,7 @@ model AttendanceSite {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  unit Unit? @relation(fields: [unitId], references: [id])
+  unit Unit? @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   records AttendanceRecord[]
 
@@ -2184,7 +2189,7 @@ model WorkShift {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  unit        Unit?             @relation(fields: [unitId], references: [id])
+  unit        Unit?             @relation(fields: [unitId], references: [id], onDelete: Cascade)
   assignments ShiftAssignment[]
   rotations   ShiftRotation[]
   attendance  StaffAttendance[]
@@ -2242,7 +2247,7 @@ model WorkWeekConfig {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  unit Unit? @relation(fields: [unitId], references: [id])
+  unit Unit? @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@index([unitId])
   @@map("work_week_configs")
@@ -2280,7 +2285,7 @@ model AttendancePolicy {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
 
-  unit Unit? @relation(fields: [unitId], references: [id])
+  unit Unit? @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@index([unitId])
   @@map("attendance_policies")

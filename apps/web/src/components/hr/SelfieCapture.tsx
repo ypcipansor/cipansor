@@ -11,29 +11,38 @@ export interface GeoPoint {
   accuracyMeters?: number;
 }
 
+export type PhotoSource = "CAMERA" | "FILE";
+
 /**
  * Selfie + geotag capture for clock-in/out.
  *
- * The camera is best-effort: a browser without one (or a denied permission)
- * must not block attendance, so the operator can fall back to a file upload
- * and to coordinates typed by hand. The policy decides whether the evidence is
- * required at all — this component only supplies it.
+ * The photo is taken live from the camera. Picking a file is offered only when
+ * the camera cannot be opened, and such a photo is marked FILE so the unit
+ * admin can review it (decided 2026-10-09): a gallery picker accepts any old
+ * picture, which proves nothing about today. Location is read by the device;
+ * there is no way to type coordinates — a typed position would defeat the
+ * geofence it is checked against.
  */
 export function SelfieCapture({
   photoBlob,
+  photoSource,
   onPhoto,
   geo,
   onGeo,
+  readLocationOnOpen,
 }: {
   photoBlob: Blob | null;
-  onPhoto: (blob: Blob | null) => void;
+  photoSource: PhotoSource | null;
+  onPhoto: (blob: Blob | null, source: PhotoSource | null) => void;
   geo: GeoPoint | null;
   onGeo: (point: GeoPoint | null) => void;
+  /** Read the position once when the page opens (the unit requires it). */
+  readLocationOnOpen: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
   const [starting, setStarting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState<string | null>(null);
@@ -59,21 +68,21 @@ export function SelfieCapture({
 
   const startCamera = async () => {
     setStarting(true);
-    setCameraError(null);
     try {
+      if (!navigator.mediaDevices?.getUserMedia)
+        throw new Error("no camera API");
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
       });
       streamRef.current = stream;
       setCameraOn(true);
+      onPhoto(null, null);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
     } catch {
-      setCameraError(
-        "Kamera tidak dapat diakses. Gunakan tombol unggah foto sebagai gantinya.",
-      );
+      setCameraUnavailable(true);
     } finally {
       setStarting(false);
     }
@@ -90,7 +99,7 @@ export function SelfieCapture({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     canvas.toBlob(
       (blob) => {
-        if (blob) onPhoto(blob);
+        if (blob) onPhoto(blob, "CAMERA");
         stopStream();
       },
       "image/jpeg",
@@ -98,11 +107,11 @@ export function SelfieCapture({
     );
   };
 
-  const locate = () => {
+  const locate = useCallback(() => {
     setLocating(true);
     setGeoError(null);
     if (!navigator.geolocation) {
-      setGeoError("Perangkat ini tidak mendukung lokasi.");
+      setGeoError("Perangkat ini tidak dapat membaca lokasi.");
       setLocating(false);
       return;
     }
@@ -117,79 +126,114 @@ export function SelfieCapture({
       },
       () => {
         setGeoError(
-          "Lokasi tidak dapat dibaca. Izinkan akses lokasi atau isi koordinat manual.",
+          "Lokasi tidak dapat dibaca. Izinkan akses lokasi untuk situs ini di pengaturan peramban, lalu baca ulang.",
         );
         setLocating(false);
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  };
+  }, [onGeo]);
+
+  // Ask once on open when the unit needs a position, so the employee does not
+  // have to find the button first; the button stays for a retry.
+  const asked = useRef(false);
+  useEffect(() => {
+    if (readLocationOnOpen && !asked.current) {
+      asked.current = true;
+      locate();
+    }
+  }, [readLocationOnOpen, locate]);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={startCamera}
-          disabled={starting}
-        >
-          {starting ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Camera className="mr-2 h-4 w-4" />
-          )}
-          Nyalakan Kamera
-        </Button>
-        <Button type="button" onClick={takePhoto} disabled={!cameraOn}>
-          <Camera className="mr-2 h-4 w-4" />
-          Ambil Foto
-        </Button>
-        <Button type="button" variant="outline" asChild>
-          <label className="cursor-pointer">
-            <Upload className="mr-2 h-4 w-4" />
-            Unggah Foto
-            <input
-              type="file"
-              accept="image/*"
-              capture="user"
-              className="hidden"
-              onChange={(e) => onPhoto(e.target.files?.[0] ?? null)}
-            />
-          </label>
-        </Button>
-        {photoBlob && (
-          <Button type="button" variant="ghost" onClick={() => onPhoto(null)}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Ambil Ulang
-          </Button>
-        )}
-      </div>
-
-      {cameraError && (
-        <p className="text-sm text-amber-600" role="status">
-          {cameraError}
-        </p>
-      )}
-
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="overflow-hidden rounded-md border bg-muted">
-          {previewUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={previewUrl}
-              alt="Pratinjau selfie absen"
-              className="h-56 w-full object-cover"
-            />
-          ) : (
-            <video
-              ref={videoRef}
-              playsInline
-              muted
-              className="h-56 w-full bg-black object-cover"
-            />
+        <div className="space-y-2">
+          <div className="relative overflow-hidden rounded-md border bg-muted">
+            {previewUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={previewUrl}
+                alt="Pratinjau swafoto absen"
+                className="h-56 w-full object-cover"
+              />
+            ) : (
+              <>
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  aria-label="Kamera"
+                  className={
+                    cameraOn ? "h-56 w-full bg-black object-cover" : "hidden"
+                  }
+                />
+                {!cameraOn && (
+                  <div className="flex h-56 flex-col items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Camera className="h-8 w-8" aria-hidden />
+                    Kamera belum dibuka
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {cameraOn ? (
+              <Button type="button" onClick={takePhoto}>
+                <Camera className="mr-2 h-4 w-4" />
+                Ambil Foto
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                variant={photoBlob ? "outline" : "default"}
+                onClick={startCamera}
+                disabled={starting}
+              >
+                {starting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : photoBlob ? (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                ) : (
+                  <Camera className="mr-2 h-4 w-4" />
+                )}
+                {photoBlob ? "Foto Ulang" : "Buka Kamera"}
+              </Button>
+            )}
+            {cameraUnavailable && (
+              <Button type="button" variant="outline" asChild>
+                <label className="cursor-pointer">
+                  <Upload className="mr-2 h-4 w-4" />
+                  Pilih Foto dari Perangkat
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="user"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      onPhoto(file, file ? "FILE" : null);
+                    }}
+                  />
+                </label>
+              </Button>
+            )}
+          </div>
+          {cameraUnavailable && (
+            <p
+              className="text-sm text-amber-700 dark:text-amber-400"
+              role="status"
+            >
+              Kamera tidak dapat dibuka. Anda boleh memilih foto dari perangkat;
+              absen dengan foto dari berkas ditandai untuk ditinjau admin unit.
+            </p>
+          )}
+          {photoSource === "FILE" && photoBlob && (
+            <p className="text-xs text-muted-foreground">
+              Foto ini dari berkas, bukan dari kamera.
+            </p>
           )}
         </div>
+
         <div className="space-y-3">
           <Button
             type="button"
@@ -202,22 +246,28 @@ export function SelfieCapture({
             ) : (
               <MapPin className="mr-2 h-4 w-4" />
             )}
-            Baca Lokasi Saya
+            {geo ? "Baca Ulang Lokasi" : "Baca Lokasi Saya"}
           </Button>
           {geo ? (
             <p className="text-sm text-muted-foreground">
-              {geo.latitude.toFixed(6)}, {geo.longitude.toFixed(6)}
+              Lokasi terbaca
               {geo.accuracyMeters
-                ? ` (±${Math.round(geo.accuracyMeters)} m)`
+                ? `, ketelitian ±${Math.round(geo.accuracyMeters)} m`
                 : ""}
+              .
             </p>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Lokasi belum dibaca.
-            </p>
+            !geoError && (
+              <p className="text-sm text-muted-foreground">
+                {locating ? "Membaca lokasi…" : "Lokasi belum dibaca."}
+              </p>
+            )
           )}
           {geoError && (
-            <p className="text-sm text-amber-600" role="status">
+            <p
+              className="text-sm text-amber-700 dark:text-amber-400"
+              role="status"
+            >
               {geoError}
             </p>
           )}

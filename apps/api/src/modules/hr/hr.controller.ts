@@ -32,8 +32,10 @@ export async function getStaffAttendance(req: Request, res: Response, next: Next
     const query = res.locals.validatedQuery;
     const user = req.user!;
 
-    // A unit admin sees only their own unit; SUPER_ADMIN may pass any unitId.
-    // Without this the list returned every unit's rows to a unit admin.
+    // A unit admin sees only their own unit; SUPER_ADMIN may pass any unitId;
+    // a yayasan organ (same bucket, no unit) is refused rather than handed
+    // every unit's punches and coordinates.
+    service.assertHrAdmin(user);
     if (service.isUnitAdminUser(user)) {
       if (!user.unitId) throw Errors.forbidden('Akun admin belum terhubung ke unit');
       query.unitId = user.unitId;

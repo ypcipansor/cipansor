@@ -81,7 +81,10 @@ export const selfAttendanceSchema = z.object({
   latitude: z.coerce.number().min(-90).max(90).optional(),
   longitude: z.coerce.number().min(-180).max(180).optional(),
   accuracyMeters: z.coerce.number().min(0).optional(),
-  photoUrl: z.string().min(1).optional(),
+  /** The reference `POST /hr/attendance/photo` returned — not a URL. */
+  photoRef: z.string().min(1).max(200).optional(),
+  /** CAMERA when taken live on the page; FILE when picked because no camera was available. */
+  photoSource: z.enum(["CAMERA", "FILE"]).optional(),
   deviceInfo: z.string().max(500).optional(),
 });
 export type SelfAttendanceInput = z.infer<typeof selfAttendanceSchema>;
@@ -162,14 +165,35 @@ export const workWeekConfigSchema = z.object({
 });
 export type WorkWeekConfigInput = z.infer<typeof workWeekConfigSchema>;
 
+/**
+ * The shortest a staff attendance row may be kept. The rows are what a payslip's
+ * deductions were computed from — a document underlying the books — and UU KUP
+ * Ps. 28(11) keeps those ten years. A shorter setting would have the retention
+ * job delete the evidence for wages already paid.
+ */
+export const MIN_ATTENDANCE_RECORD_RETENTION_DAYS = 3650;
+
+/**
+ * Selfie and location are off until an admin switches them on (decided
+ * 2026-10-09): a facial image is specific personal data (UU PDP Ps. 4), and is
+ * not collected before the staff privacy notice exists.
+ */
 export const attendancePolicySchema = z.object({
   unitId: z.string().uuid().nullable().optional(),
   graceMinutes: z.coerce.number().int().min(0).max(180).default(15),
-  requireSelfie: z.boolean().default(true),
-  requireLocation: z.boolean().default(true),
+  requireSelfie: z.boolean().default(false),
+  requireLocation: z.boolean().default(false),
   outsideRadiusAction: z.enum(["FLAG", "REJECT"]).default("FLAG"),
   photoRetentionDays: z.coerce.number().int().min(1).max(3650).default(365),
-  recordRetentionDays: z.coerce.number().int().min(30).max(36500).default(3650),
+  recordRetentionDays: z.coerce
+    .number()
+    .int()
+    .min(
+      MIN_ATTENDANCE_RECORD_RETENTION_DAYS,
+      "Catatan absensi disimpan paling singkat 10 tahun (dasar penggajian, UU KUP Ps. 28 ayat 11)",
+    )
+    .max(36500)
+    .default(MIN_ATTENDANCE_RECORD_RETENTION_DAYS),
   isActive: z.boolean().default(true),
 });
 export type AttendancePolicyInput = z.infer<typeof attendancePolicySchema>;

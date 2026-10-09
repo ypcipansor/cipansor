@@ -5,6 +5,14 @@
 -- satu orang adalah satu baris `staff_id`, dan guru ditautkan lewat
 -- `teachers.staff_id`. Baris absensi guru lama dipindahkan ke identitas Staff
 -- yang dibuat di sini — bukan dihapus, agar riwayat kehadiran tidak hilang.
+--
+-- Satu transaksi: `migrate deploy` menjalankan berkas ini pernyataan demi
+-- pernyataan, jadi tanpa BEGIN/COMMIT kegagalan di tengah meninggalkan baris
+-- Staff yang sudah dibuat tetapi absensinya belum dipindahkan. `ADD VALUE` di
+-- dalam transaksi sah sejak PostgreSQL 12, selama nilai barunya tidak dipakai
+-- di transaksi yang sama — dan di sini tidak.
+
+BEGIN;
 
 -- AlterEnum
 ALTER TYPE "StaffAttendanceStatus" ADD VALUE 'HOLIDAY';
@@ -80,7 +88,8 @@ CREATE TABLE "attendance_records" (
     "id" TEXT NOT NULL,
     "attendance_id" TEXT NOT NULL,
     "kind" TEXT NOT NULL DEFAULT 'CHECK_IN',
-    "photo_url" TEXT,
+    "photo_ref" TEXT,
+    "photo_source" TEXT,
     "latitude" DOUBLE PRECISION,
     "longitude" DOUBLE PRECISION,
     "accuracy_meters" DOUBLE PRECISION,
@@ -275,6 +284,9 @@ CREATE INDEX "attendance_records_site_id_idx" ON "attendance_records"("site_id")
 -- CreateIndex
 CREATE UNIQUE INDEX "attendance_records_attendance_id_kind_key" ON "attendance_records"("attendance_id", "kind");
 
+-- Satu swafoto untuk satu absen: foto yang sama tidak bisa dipakai dua kali.
+CREATE UNIQUE INDEX "attendance_records_photo_ref_key" ON "attendance_records"("photo_ref");
+
 -- CreateIndex
 CREATE INDEX "attendance_sites_unit_id_idx" ON "attendance_sites"("unit_id");
 
@@ -336,10 +348,10 @@ ALTER TABLE "attendance_records" ADD CONSTRAINT "attendance_records_attendance_i
 ALTER TABLE "attendance_records" ADD CONSTRAINT "attendance_records_site_id_fkey" FOREIGN KEY ("site_id") REFERENCES "attendance_sites"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "attendance_sites" ADD CONSTRAINT "attendance_sites_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "attendance_sites" ADD CONSTRAINT "attendance_sites_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "work_shifts" ADD CONSTRAINT "work_shifts_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "work_shifts" ADD CONSTRAINT "work_shifts_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "shift_assignments" ADD CONSTRAINT "shift_assignments_staff_id_fkey" FOREIGN KEY ("staff_id") REFERENCES "staff"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -351,11 +363,22 @@ ALTER TABLE "shift_assignments" ADD CONSTRAINT "shift_assignments_shift_id_fkey"
 ALTER TABLE "shift_rotations" ADD CONSTRAINT "shift_rotations_shift_id_fkey" FOREIGN KEY ("shift_id") REFERENCES "work_shifts"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "work_week_configs" ADD CONSTRAINT "work_week_configs_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "work_week_configs" ADD CONSTRAINT "work_week_configs_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "attendance_policies" ADD CONSTRAINT "attendance_policies_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "attendance_policies" ADD CONSTRAINT "attendance_policies_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AlterTable: holiday imports land as drafts for review before they affect payroll
 ALTER TABLE "calendar_events" ADD COLUMN "is_draft" BOOLEAN NOT NULL DEFAULT false;
 
+-- Pimpinan Pesantren dikecualikan dari absen mandiri sebagai bawaan
+-- (keputusan 2026-10-09). Barisnya biasa, jadi admin dapat menghapusnya di
+-- Pengaturan Absensi → Pengecualian bila yayasan memutuskan lain.
+INSERT INTO "attendance_exemptions" ("id", "role_code", "staff_id", "reason", "is_active", "created_at", "updated_at")
+SELECT gen_random_uuid()::text, 'PESANTREN_PENGASUH', NULL,
+       'Pimpinan Pesantren — dikecualikan bawaan (keputusan 2026-10-09)', true, now(), now()
+WHERE NOT EXISTS (
+    SELECT 1 FROM "attendance_exemptions" WHERE "role_code" = 'PESANTREN_PENGASUH' AND "staff_id" IS NULL
+);
+
+COMMIT;

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../../../lib/prisma', () => ({
   prisma: {
     payrollPeriod: { findUnique: vi.fn() },
-    payrollGuardConfig: { findFirst: vi.fn() },
+    payrollGuardConfig: { findMany: vi.fn() },
     payrollPolicyRule: { findMany: vi.fn() },
     salaryComponent: { findMany: vi.fn() },
     staff: { findMany: vi.fn() },
@@ -61,7 +61,7 @@ const STAFF = [
 beforeEach(() => {
   vi.clearAllMocks();
   m.payrollPeriod.findUnique.mockResolvedValue(PERIOD as never);
-  m.payrollGuardConfig.findFirst.mockResolvedValue(null as never);
+  m.payrollGuardConfig.findMany.mockResolvedValue([] as never);
   m.payrollPolicyRule.findMany.mockResolvedValue([] as never);
   m.staff.findMany.mockResolvedValue(STAFF as never);
   m.staffAttendance.findMany.mockResolvedValue([] as never);
@@ -101,5 +101,47 @@ describe('computeForPeriod — PPh 21 basis matches the slip', () => {
     const [row] = await attendanceDeductionService.computeForPeriod(PERIOD.id);
 
     expect(row.allowanceCap).toBe(1_000_000);
+  });
+});
+
+describe('computeForPeriod — rules and guard', () => {
+  const baseRule = {
+    unitId: null,
+    code: 'POTONGAN_TELAT',
+    kind: 'DEDUCTION',
+    trigger: 'LATE',
+    basis: 'MEAL_ALLOWANCE',
+    mode: 'NOMINAL',
+    rate: 10_000,
+    unit: 'PER_KEJADIAN',
+    tiersJson: null,
+    formulaExpr: null,
+    capPerDay: null,
+    capPerMonth: null,
+    rounding: 'NONE',
+    priority: 0,
+    isActive: true,
+  };
+
+  beforeEach(() => {
+    m.salaryComponent.findMany.mockResolvedValue([] as never);
+  });
+
+  it('skips a deduction rule with no written basis and names it', async () => {
+    m.payrollPolicyRule.findMany.mockResolvedValue([{ ...baseRule, legalBasisDoc: null }] as never);
+
+    const [row] = await attendanceDeductionService.computeForPeriod(PERIOD.id);
+
+    expect(row.guardWarnings).toContain(
+      'Aturan POTONGAN_TELAT tidak diterapkan: belum ada dasar hukum tertulis'
+    );
+  });
+
+  it('reads every guard row for the unit and the yayasan, not whichever comes first', async () => {
+    await attendanceDeductionService.computeForPeriod(PERIOD.id);
+
+    expect(m.payrollGuardConfig.findMany).toHaveBeenCalledWith({
+      where: { isActive: true, OR: [{ unitId: 'unit-1' }, { unitId: null }] },
+    });
   });
 });

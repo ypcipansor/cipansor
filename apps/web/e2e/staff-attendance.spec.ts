@@ -3,10 +3,12 @@ import {
   SEED_USERS,
   apiLogin,
   apiRequest,
+  injectSession,
   loginAs,
   type AuthSession,
 } from "./helpers/auth-api";
 import { waitForToast } from "./helpers/page-helpers";
+import { DEMO_ACCOUNTS } from "../../../packages/shared/src/types/demo-accounts";
 
 /**
  * Absensi pegawai — the pages the selfie/geotag work added, driven the way a
@@ -20,7 +22,7 @@ import { waitForToast } from "./helpers/page-helpers";
  * The pages are:
  *   - Kepegawaian → Absensi Pegawai    (/hr/attendance)
  *   - Kepegawaian → Absensi Massal     (/hr/attendance/bulk)
- *   - Kepegawaian → Absen Mandiri      (/hr/attendance/me)
+ *   - Kepegawaian → Absen Saya         (/hr/attendance/me)
  *   - Kepegawaian → Pengaturan Absensi (/hr/attendance/settings)
  *
  * Writes go to a fixed past day so they cannot disturb today's register, which
@@ -91,17 +93,19 @@ test.describe("Absensi Pegawai — pages render and navigate", () => {
     page,
   }) => {
     // Every employee clocks in for themselves; a teacher is not an admin and
-    // still reaches Absen Mandiri (the API authorizes TEACHER there).
+    // still reaches Absen Saya (the API authorizes TEACHER there).
     await loginAs(page, "teacher");
     await page.goto("/hr/attendance/me");
 
     await expect(
-      page.getByRole("heading", { name: "Absen Mandiri", level: 1 }),
+      page.getByRole("heading", { name: "Absen Saya", level: 1 }),
     ).toBeVisible();
     await expect(page.getByText("Status Hari Ini")).toBeVisible();
-    await expect(page.getByText("Ambil Bukti Kehadiran")).toBeVisible();
+    await expect(page.getByText("Bukti Kehadiran")).toBeVisible();
 
-    // Both punches and the evidence controls are on the page.
+    // Both punches and the evidence controls are on the page. The photo is
+    // taken from the camera; picking a file is offered only once the camera
+    // cannot be opened (decided 2026-10-09), so it is not on the page yet.
     await expect(
       page.getByRole("button", { name: "Absen Masuk" }),
     ).toBeVisible();
@@ -109,13 +113,11 @@ test.describe("Absensi Pegawai — pages render and navigate", () => {
       page.getByRole("button", { name: "Absen Pulang" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Nyalakan Kamera" }),
+      page.getByRole("button", { name: "Buka Kamera" }),
     ).toBeVisible();
-    // "Unggah Foto" is a file-input label inside a Button (asChild), so it is
-    // exposed as text, not as a button role.
-    await expect(page.getByText("Unggah Foto")).toBeVisible();
+    await expect(page.getByText("Pilih Foto dari Perangkat")).toHaveCount(0);
     await expect(
-      page.getByRole("button", { name: "Baca Lokasi Saya" }),
+      page.getByRole("button", { name: /Baca (Ulang )?Lokasi/ }),
     ).toBeVisible();
   });
 });
@@ -286,4 +288,277 @@ test("a unit admin cannot change the yayasan-wide holiday source", async () => {
     (error: Error) => Number(/→ (\d{3})/.exec(error.message)?.[1] ?? 0),
   );
   expect(status).toBe(403);
+});
+
+// ---------------------------------------------------------------------------
+// The punch itself, against the real API and a real Postgres. Until 2026-10-09
+// every check-in answered 500: the staff lock went through `$queryRaw`, which
+// cannot read the `void` that `pg_advisory_xact_lock` returns, and the unit
+// tests mocked it away. Nothing here mocks it.
+// ---------------------------------------------------------------------------
+
+const API = process.env.API_URL || "http://localhost:3001/api";
+
+const demo = (email: string) => {
+  const found = DEMO_ACCOUNTS.find((a) => a.email === email);
+  if (!found) throw new Error(`No demo account ${email}`);
+  return { email: found.email, password: found.password };
+};
+
+const statusOf = (call: Promise<unknown>) =>
+  call.then(
+    () => 200,
+    (error: Error) => Number(/→ (\d{3})/.exec(error.message)?.[1] ?? 0),
+  );
+
+/** A few bytes that start the way a JPEG does — what the store checks. */
+const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46]);
+
+async function uploadPhoto(session: AuthSession): Promise<string> {
+  const form = new FormData();
+  form.append("file", new Blob([JPEG], { type: "image/jpeg" }), "absen.jpg");
+  const res = await fetch(`${API}/hr/attendance/photo`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${session.accessToken}` },
+    body: form,
+  });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { data: { photoRef: string } }).data.photoRef;
+}
+
+async function photoStatus(session: AuthSession, recordId: string) {
+  const res = await fetch(`${API}/hr/attendance/records/${recordId}/photo`, {
+    headers: { authorization: `Bearer ${session.accessToken}` },
+  });
+  return { status: res.status, type: res.headers.get("content-type") };
+}
+
+test.describe("Absen Saya — a punch is recorded", () => {
+  test.describe.configure({ mode: "serial" });
+
+  let guru: AuthSession;
+  let admin: AuthSession;
+  let staffId = "";
+  let shiftId = "";
+  let assignmentId = "";
+  let checkInRecordId = "";
+
+  /** Remove whatever the teacher punched today, so a re-run starts clean. */
+  async function clearToday() {
+    const me = await apiRequest<{
+      data: { attendance: { id: string } | null };
+    }>(guru, "GET", "/hr/attendance/me");
+    if (me.data.attendance) {
+      await apiRequest(
+        admin,
+        "DELETE",
+        `/hr/attendance/${me.data.attendance.id}`,
+        {
+          reason: "Uji e2e Absen Saya — dibersihkan",
+        },
+      );
+    }
+  }
+
+  test.beforeAll(async () => {
+    guru = await apiLogin(demo("smpit.guru@cipansor.or.id"));
+    admin = await apiLogin(demo("smpit.admin@cipansor.or.id"));
+    const staff = await apiRequest<{ data: { id: string; userId: string }[] }>(
+      admin,
+      "GET",
+      `/hr/staff?limit=100&unitId=${String(guru.user.unitId ?? "")}`,
+    );
+    staffId = staff.data.find((s) => s.userId === guru.user.id)?.id ?? "";
+    expect(staffId, "the teacher has a staff record").not.toBe("");
+
+    // A shift for today makes it a working day for this person whatever the
+    // calendar says — so the test does not depend on the weekday it runs on,
+    // and it exercises the rule that a rostered shift beats a closed day.
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Jakarta",
+    });
+    const shift = await apiRequest<{ data: { id: string } }>(
+      admin,
+      "POST",
+      "/hr/attendance/shifts",
+      {
+        name: `Shift Absen Saya ${RUN}`,
+        startTime: "00:00",
+        endTime: "23:59",
+        graceMinutes: 0,
+      },
+    );
+    shiftId = shift.data.id;
+    const assignment = await apiRequest<{ data: { id: string } }>(
+      admin,
+      "POST",
+      "/hr/attendance/shift-assignments",
+      { staffId, shiftId, effectiveFrom: today, effectiveTo: today },
+    );
+    assignmentId = assignment.data.id;
+    await clearToday();
+  });
+
+  test.afterAll(async () => {
+    await clearToday();
+    if (assignmentId)
+      await apiRequest(
+        admin,
+        "DELETE",
+        `/hr/attendance/shift-assignments/${assignmentId}`,
+      );
+    if (shiftId)
+      await apiRequest(admin, "DELETE", `/hr/attendance/shifts/${shiftId}`);
+  });
+
+  test("the teacher clocks in with a selfie from the private store", async () => {
+    const photoRef = await uploadPhoto(guru);
+    const result = await apiRequest<{
+      data: { record: { id: string; hasPhoto: boolean; photoRef?: string } };
+    }>(guru, "POST", "/hr/attendance/check-in", {
+      photoRef,
+      photoSource: "CAMERA",
+    });
+
+    expect(result.data.record.hasPhoto).toBe(true);
+    // The stored reference never leaves the server.
+    expect(result.data.record.photoRef).toBeUndefined();
+    checkInRecordId = result.data.record.id;
+  });
+
+  test("a photo backs one punch only, and only for the person who took it", async () => {
+    const used = await apiRequest<{
+      data: { attendance: { records: { id: string }[] } };
+    }>(guru, "GET", "/hr/attendance/me");
+    expect(used.data.attendance.records.map((r) => r.id)).toContain(
+      checkInRecordId,
+    );
+
+    // Someone else's photo, for the teacher's checkout: refused.
+    const kepala = await apiLogin(demo("smpit.kepala@cipansor.or.id"));
+    const othersPhoto = await uploadPhoto(kepala);
+    expect(
+      await statusOf(
+        apiRequest(guru, "POST", "/hr/attendance/check-out", {
+          photoRef: othersPhoto,
+        }),
+      ),
+    ).toBe(400);
+  });
+
+  test("the selfie opens for its owner and the unit admin, not for another unit", async () => {
+    expect(await photoStatus(guru, checkInRecordId)).toEqual({
+      status: 200,
+      type: "image/jpeg",
+    });
+    expect((await photoStatus(admin, checkInRecordId)).status).toBe(200);
+
+    const otherAdmin = await apiLogin(demo("sdit.admin@cipansor.or.id"));
+    expect((await photoStatus(otherAdmin, checkInRecordId)).status).toBe(403);
+    const colleague = await apiLogin(demo("smpit.tu@cipansor.or.id"));
+    expect((await photoStatus(colleague, checkInRecordId)).status).toBe(403);
+  });
+
+  test("the teacher clocks out", async () => {
+    const out = await apiRequest<{
+      data: { attendance: { checkOut: string | null } };
+    }>(guru, "POST", "/hr/attendance/check-out", {});
+    expect(out.data.attendance.checkOut).not.toBeNull();
+  });
+});
+
+test("an employee with no staff record is told whom to ask", async ({
+  page,
+}) => {
+  // The seed gives SMP IT's tata usaha no staff row. The page used to show
+  // greyed-out buttons with no reason at all.
+  const tu = await apiLogin(demo("smpit.tu@cipansor.or.id"));
+  const me = await apiRequest<{ data: { hasProfile: boolean } }>(
+    tu,
+    "GET",
+    "/hr/attendance/me",
+  );
+  expect(me.data.hasProfile).toBe(false);
+
+  await injectSession(page, tu);
+  await page.goto("/hr/attendance/me");
+  await expect(
+    page.getByText("Data kepegawaian Anda belum dibuat"),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Absen Masuk" })).toHaveCount(
+    0,
+  );
+});
+
+test.describe("Pengaturan Absensi — who may write it", () => {
+  test("a yayasan organ is refused, though it shares the admin bucket", async () => {
+    // Before 2026-10-09 the Pengawas could rewrite every unit's policy and the
+    // payroll guard: the organs fell into the super admin's branch.
+    const pengawas = await apiLogin(demo("yayasan.pengawas@cipansor.or.id"));
+    expect(
+      await statusOf(
+        apiRequest(pengawas, "PUT", "/hr/attendance/policies", {
+          unitId: null,
+        }),
+      ),
+    ).toBe(403);
+    expect(
+      await statusOf(
+        apiRequest(pengawas, "PUT", "/hr/payroll/guard-config", {
+          unitId: null,
+          maxDeductionPercent: 50,
+        }),
+      ),
+    ).toBe(403);
+    expect(
+      await statusOf(apiRequest(pengawas, "GET", "/hr/attendance?limit=5")),
+    ).toBe(403);
+  });
+
+  test("a unit admin naming another unit is refused, not quietly redirected", async () => {
+    const admin = await apiLogin(demo("smpit.admin@cipansor.or.id"));
+    const units = await apiRequest<{ data: { id: string; name: string }[] }>(
+      admin,
+      "GET",
+      "/units?limit=50",
+    );
+    const sdit = units.data.find((u) => /^SD IT/.test(u.name));
+    expect(sdit).toBeDefined();
+    expect(
+      await statusOf(
+        apiRequest(admin, "PUT", "/hr/attendance/policies", {
+          unitId: sdit!.id,
+        }),
+      ),
+    ).toBe(403);
+  });
+
+  test("deductions above 50% of a wage payment are refused (PP 36/2021 Ps. 65)", async () => {
+    const superAdmin = await apiLogin(SEED_USERS.superAdmin);
+    expect(
+      await statusOf(
+        apiRequest(superAdmin, "PUT", "/hr/payroll/guard-config", {
+          unitId: null,
+          maxDeductionPercent: 51,
+        }),
+      ),
+    ).toBe(400);
+  });
+
+  test("an active deduction rule must name its legal basis", async () => {
+    const superAdmin = await apiLogin(SEED_USERS.superAdmin);
+    expect(
+      await statusOf(
+        apiRequest(superAdmin, "PUT", "/hr/payroll/policy-rules/new", {
+          code: `E2E_TANPA_DASAR_${RUN}`,
+          kind: "DEDUCTION",
+          trigger: "LATE",
+          basis: "TUNJANGAN_KEHADIRAN",
+          mode: "NOMINAL",
+          rate: 10000,
+          isActive: true,
+        }),
+      ),
+    ).toBe(400);
+  });
 });

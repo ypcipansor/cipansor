@@ -117,7 +117,9 @@ export async function fetchHolidaysForYear(
   const url = `${sourceUrl}?year=${year}`;
   let response: Response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    // `redirect: 'error'`: the source must be https when it is saved, and that
+    // check means nothing if a redirect may take the request anywhere else.
+    response = await fetch(url, { signal: AbortSignal.timeout(15_000), redirect: 'error' });
   } catch {
     throw Errors.badRequest(`Tidak dapat menghubungi sumber libur (${url})`);
   }

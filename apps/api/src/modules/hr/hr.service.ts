@@ -20,8 +20,8 @@ import {
 import { randomBytes } from 'crypto';
 import { hashPassword } from '../../lib/password';
 import { assertPasswordAllowed } from '../../lib/password-policy';
-import { Errors } from '../../middleware/error';
-import { ADMIN_ROLE_CODES } from '@cipansor/shared';
+import { ApiError, ErrorCode, Errors } from '../../middleware/error';
+import { ADMIN_ROLE_CODES, MIN_ATTENDANCE_RECORD_RETENTION_DAYS } from '@cipansor/shared';
 import {
   dayOf,
   dayString,
@@ -36,7 +36,17 @@ import {
   isNonWorkingDay as sharedIsNonWorkingDay,
   workWeekFor,
 } from '../../utils/work-calendar';
-import { deleteManagedUpload } from '../../utils/managed-upload';
+import {
+  attendancePhotoRefusal,
+  deleteAttendancePhoto,
+  isAcceptedAttendancePhoto,
+  listAttendancePhotos,
+  looksLikeImage,
+  readAttendancePhoto,
+  storeAttendancePhoto,
+  ATTENDANCE_PHOTO_ORPHAN_GRACE_MS,
+  MAX_ATTENDANCE_PHOTO_BYTES,
+} from '../../utils/attendance-photo-store';
 
 // =====================================
 // EMPLOYEE SERVICE (UNIFIED TEACHER & STAFF)
@@ -467,11 +477,16 @@ export async function getStaffAttendance(params: {
         shift: { select: { id: true, name: true, startTime: true, endTime: true } },
         records: {
           select: {
+            id: true,
             kind: true,
-            photoUrl: true,
+            photoRef: true,
+            photoSource: true,
             latitude: true,
             longitude: true,
+            accuracyMeters: true,
+            distanceMeters: true,
             isWithinRadius: true,
+            capturedAt: true,
           },
         },
         staff: {
@@ -486,13 +501,13 @@ export async function getStaffAttendance(params: {
   ]);
 
   return {
-    data,
+    data: data.map((row) => ({ ...row, records: row.records.map(evidenceView) })),
     meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
   };
 }
 
 export async function getStaffAttendanceById(id: string) {
-  return prisma.staffAttendance.findUnique({
+  const row = await prisma.staffAttendance.findUnique({
     where: { id },
     include: {
       shift: true,
@@ -505,6 +520,7 @@ export async function getStaffAttendanceById(id: string) {
       },
     },
   });
+  return row ? { ...row, records: row.records.map(evidenceView) } : null;
 }
 
 /**
@@ -530,15 +546,27 @@ export async function resolveStaffId(input: {
 }
 
 /** The caller's own Staff row, reached directly or through their Teacher row. */
-export async function resolveStaffIdForUser(userId: string): Promise<string> {
+export async function findStaffIdForUser(userId: string): Promise<string | null> {
   const [staff, teacher] = await Promise.all([
     prisma.staff.findUnique({ where: { userId }, select: { id: true } }),
     prisma.teacher.findUnique({ where: { userId }, select: { staffId: true } }),
   ]);
-  if (staff) return staff.id;
-  if (teacher?.staffId) return teacher.staffId;
-  throw Errors.notFound('Profil pegawai');
+  return staff?.id ?? teacher?.staffId ?? null;
 }
+
+export async function resolveStaffIdForUser(userId: string): Promise<string> {
+  const staffId = await findStaffIdForUser(userId);
+  if (staffId) return staffId;
+  throw new ApiError(ErrorCode.NOT_FOUND, NO_STAFF_PROFILE_MESSAGE);
+}
+
+/**
+ * The answer an employee gets when their account has no staff record. Every
+ * guru has one (the migration made it from the teacher row); other employees
+ * get theirs from the unit admin, so the message says whom to ask.
+ */
+export const NO_STAFF_PROFILE_MESSAGE =
+  'Data kepegawaian Anda belum dibuat, jadi absen belum bisa dicatat. Minta admin unit menambahkannya.';
 
 /**
  * Resolve a staff id named by an administrator. Only a super admin or a unit
@@ -970,11 +998,79 @@ export async function getWorkCalendar(month: number, year: number, unitId?: stri
 
 export interface SelfAttendanceInput {
   staffId: string;
+  /** Who pressed the button — the employee, or an admin punching for them. */
+  actorUserId: string;
   latitude?: number;
   longitude?: number;
   accuracyMeters?: number;
-  photoUrl?: string;
+  photoRef?: string;
+  photoSource?: 'CAMERA' | 'FILE';
   deviceInfo?: string;
+}
+
+type PolicyRow = Awaited<ReturnType<typeof getAttendancePolicy>>;
+
+/**
+ * What a punch must carry, as this service enforces it. No policy row means
+ * nothing is required (decided 2026-10-09: selfie and location stay off until
+ * an admin switches them on), and `configured: false` lets the page and the
+ * settings say so instead of leaving it to be discovered.
+ */
+export function attendanceRequirements(policy: PolicyRow) {
+  return {
+    configured: Boolean(policy),
+    requireSelfie: policy?.requireSelfie ?? false,
+    requireLocation: policy?.requireLocation ?? false,
+    outsideRadiusAction: (policy?.outsideRadiusAction === 'REJECT' ? 'REJECT' : 'FLAG') as
+      'FLAG' | 'REJECT',
+    photoRetentionDays: policy?.photoRetentionDays ?? 365,
+  };
+}
+
+/**
+ * Refuse a punch that lacks what the policy requires, or whose photo is not a
+ * fresh, unused one taken by the person pressing the button. Without the
+ * ownership and age checks a "required selfie" was any string — yesterday's
+ * upload, or a colleague's.
+ */
+async function assertPunchEvidence(
+  input: SelfAttendanceInput,
+  policy: PolicyRow,
+  what: 'masuk' | 'pulang'
+) {
+  const required = attendanceRequirements(policy);
+  if (required.requireSelfie && !input.photoRef) {
+    throw Errors.badRequest(`Swafoto wajib diambil untuk absen ${what}`);
+  }
+  if (required.requireLocation && (input.latitude === undefined || input.longitude === undefined)) {
+    throw Errors.badRequest(`Lokasi wajib dibaca untuk absen ${what}`);
+  }
+  if (input.photoRef) {
+    const refusal = await attendancePhotoRefusal(input.photoRef, input.actorUserId);
+    if (refusal) throw Errors.badRequest(refusal);
+    const used = await prisma.attendanceRecord.findFirst({
+      where: { photoRef: input.photoRef },
+      select: { id: true },
+    });
+    if (used) throw Errors.badRequest('Foto ini sudah dipakai untuk absen lain; ambil foto lagi');
+  }
+}
+
+/**
+ * Inside or outside the nearest site. `certainlyOutside` subtracts the
+ * reported GPS accuracy first, so REJECT refuses only a position that is
+ * outside however the error falls; a phone indoors with ±80 m is flagged,
+ * not turned away. A browser cannot tell a faked position from a real one, so
+ * the flag is a prompt for review, never proof.
+ */
+function radiusVerdict(match: Awaited<ReturnType<typeof nearestSite>>, accuracyMeters?: number) {
+  if (!match) return { withinRadius: null, certainlyOutside: false };
+  const withinRadius = match.distanceMeters <= match.site.radiusMeters;
+  const margin = Math.max(0, accuracyMeters ?? 0);
+  return {
+    withinRadius,
+    certainlyOutside: match.distanceMeters - margin > match.site.radiusMeters,
+  };
 }
 
 /**
@@ -1009,7 +1105,9 @@ const ATTENDANCE_LOCK_NAMESPACE = 1002;
 
 /** Hold the staff member's attendance lock for the rest of the transaction. */
 async function lockStaffAttendance(tx: Prisma.TransactionClient, staffId: string) {
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(${ATTENDANCE_LOCK_NAMESPACE}::int, hashtext(${staffId})::int)`;
+  // $executeRaw, not $queryRaw: the lock function returns `void`, which
+  // $queryRaw cannot deserialize — every punch failed with a 500.
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(${ATTENDANCE_LOCK_NAMESPACE}::int, hashtext(${staffId})::int)`;
 }
 
 /** The evidence row for a punch; check-in and check-out share its shape. */
@@ -1023,7 +1121,8 @@ function attendanceEvidence(
   return {
     attendanceId,
     kind,
-    photoUrl: input.photoUrl,
+    photoRef: input.photoRef,
+    photoSource: input.photoRef ? (input.photoSource ?? 'CAMERA') : null,
     latitude: input.latitude,
     longitude: input.longitude,
     accuracyMeters: input.accuracyMeters,
@@ -1039,7 +1138,7 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
     where: { id: input.staffId },
     select: { unitId: true, user: { select: { id: true } } },
   });
-  if (!staff) throw Errors.notFound('Staff');
+  if (!staff) throw new ApiError(ErrorCode.NOT_FOUND, NO_STAFF_PROFILE_MESSAGE);
 
   // A person exempt from clocking in is refused rather than recorded, so the
   // register never shows a punch for someone the policy says is not on it.
@@ -1049,28 +1148,26 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
   }
 
   const day = todayWib();
-  if (await isNonWorkingDay(day, staff.unitId)) {
+  // A shift on the roster makes the day a working day for that person even
+  // when the unit is closed: the guard and the nurse work Sundays and national
+  // holidays, and were turned away before their shift was ever looked at.
+  const shift = await resolveShiftForDate(input.staffId, day);
+  if (!shift && (await isNonWorkingDay(day, staff.unitId))) {
     throw Errors.badRequest('Hari ini bukan hari kerja');
   }
 
   const policy = await getAttendancePolicy(staff.unitId);
-  if (policy?.requireSelfie && !input.photoUrl) {
-    throw Errors.badRequest('Foto selfie wajib diambil untuk absen masuk');
-  }
-  if (policy?.requireLocation && (input.latitude === undefined || input.longitude === undefined)) {
-    throw Errors.badRequest('Lokasi wajib diaktifkan untuk absen masuk');
-  }
+  await assertPunchEvidence(input, policy, 'masuk');
 
   const now = new Date();
   const date = dayOf(day);
 
   const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
-  const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
-  if (policy?.outsideRadiusAction === 'REJECT' && withinRadius === false) {
+  const { withinRadius, certainlyOutside } = radiusVerdict(match, input.accuracyMeters);
+  if (policy?.outsideRadiusAction === 'REJECT' && certainlyOutside) {
     throw Errors.badRequest('Anda berada di luar lokasi absen yang diizinkan');
   }
 
-  const shift = await resolveShiftForDate(input.staffId, day);
   const lateMinutes = shift ? computeLateMinutes(now, shift, policy?.graceMinutes, day) : undefined;
   const status =
     lateMinutes && lateMinutes > 0 ? StaffAttendanceStatus.LATE : StaffAttendanceStatus.PRESENT;
@@ -1110,7 +1207,7 @@ export async function selfCheckIn(input: SelfAttendanceInput) {
     return { attendance, record };
   });
 
-  return { attendance, record, lateMinutes: lateMinutes ?? 0, withinRadius };
+  return { attendance, record: evidenceView(record), lateMinutes: lateMinutes ?? 0, withinRadius };
 }
 
 /**
@@ -1150,21 +1247,21 @@ export async function selfCheckOut(input: SelfAttendanceInput) {
     where: { id: input.staffId },
     select: { unitId: true },
   });
-  if (!staff) throw Errors.notFound('Staff');
+  if (!staff) throw new ApiError(ErrorCode.NOT_FOUND, NO_STAFF_PROFILE_MESSAGE);
 
   const policy = await getAttendancePolicy(staff.unitId);
-  if (policy?.requireSelfie && !input.photoUrl) {
-    throw Errors.badRequest('Foto selfie wajib diambil untuk absen keluar');
-  }
-  if (policy?.requireLocation && (input.latitude === undefined || input.longitude === undefined)) {
-    throw Errors.badRequest('Lokasi wajib diaktifkan untuk absen keluar');
-  }
+  await assertPunchEvidence(input, policy, 'pulang');
 
   const now = new Date();
   const day = todayWib();
 
   const match = await nearestSite(input.latitude, input.longitude, staff.unitId);
-  const withinRadius = match ? match.distanceMeters <= match.site.radiusMeters : null;
+  const { withinRadius, certainlyOutside } = radiusVerdict(match, input.accuracyMeters);
+  // REJECT holds for leaving as it does for arriving; before, a checkout from
+  // anywhere was recorded under a policy that refused the same check-in.
+  if (policy?.outsideRadiusAction === 'REJECT' && certainlyOutside) {
+    throw Errors.badRequest('Anda berada di luar lokasi absen yang diizinkan');
+  }
 
   // The checkout time and its evidence are one write, for the same reason as
   // the check-in. The open row is found inside the staff lock so a concurrent
@@ -1187,27 +1284,102 @@ export async function selfCheckOut(input: SelfAttendanceInput) {
     return { attendance, record };
   });
 
-  return { attendance, record, withinRadius };
+  return { attendance, record: evidenceView(record), withinRadius };
+}
+
+/**
+ * Keep a selfie the caller just took and return its reference for the punch.
+ * Taken by the person pressing the button — the employee, or the admin
+ * punching for them — and usable once, within ten minutes.
+ */
+export async function storePunchPhoto(
+  userId: string,
+  file: { buffer: Buffer; mimetype: string; size: number }
+) {
+  if (!isAcceptedAttendancePhoto(file.mimetype) || !looksLikeImage(file.buffer, file.mimetype)) {
+    throw Errors.badRequest('Foto absen harus berupa gambar JPEG, PNG, atau WebP');
+  }
+  if (file.size > MAX_ATTENDANCE_PHOTO_BYTES) {
+    throw Errors.badRequest('Foto absen paling besar 5 MB');
+  }
+  return { photoRef: await storeAttendancePhoto(userId, file.buffer, file.mimetype) };
+}
+
+/**
+ * A punch's selfie, for the person in it, the admin of their unit, or the
+ * super admin — and every read is recorded. The photo is a facial image (UU PDP
+ * Ps. 4); who looked at it is something the yayasan must be able to answer.
+ */
+export async function readPunchPhoto(
+  recordId: string,
+  user: { sub: string; roleCode?: string | null; role?: string | null; unitId?: string | null }
+) {
+  const record = await prisma.attendanceRecord.findUnique({
+    where: { id: recordId },
+    select: {
+      photoRef: true,
+      attendance: { select: { staff: { select: { unitId: true, userId: true } } } },
+    },
+  });
+  if (!record?.photoRef) throw new ApiError(ErrorCode.NOT_FOUND, 'Foto absen tidak ditemukan');
+  const staff = record.attendance.staff;
+  if (staff.userId !== user.sub) {
+    assertWithinScope(scopedUnitId(user, null), staff.unitId, 'Foto absen');
+  }
+  const photo = await readAttendancePhoto(record.photoRef);
+  await prisma.auditLog.create({
+    data: { userId: user.sub, action: 'READ', entity: 'AttendancePhoto', entityId: recordId },
+  });
+  return photo;
 }
 
 /** The caller's own attendance for a WIB day, with the evidence rows. */
+/**
+ * An evidence row as a list shows it: whether a photo exists and where it came
+ * from, never the stored reference — the photo is fetched one at a time from
+ * the endpoint that checks the reader.
+ */
+export function evidenceView<T extends { photoRef?: string | null }>(record: T) {
+  const { photoRef, ...rest } = record;
+  return { ...rest, hasPhoto: Boolean(photoRef) };
+}
+
+/** The answer for an account with no staff record: nothing can be punched yet. */
+export function noStaffProfileToday(day: string) {
+  return {
+    hasProfile: false,
+    requirements: attendanceRequirements(null),
+    date: day,
+    attendance: null,
+    shift: null,
+    isWorkDay: false,
+    isExempt: false,
+    openAttendance: null,
+    canCheckIn: false,
+    canCheckOut: false,
+  };
+}
+
 export async function getMyAttendance(staffId: string, day: string) {
   const staff = await prisma.staff.findUnique({
     where: { id: staffId },
     select: { unitId: true, user: { select: { id: true } } },
   });
-  if (!staff) throw Errors.notFound('Staff');
+  if (!staff) return noStaffProfileToday(day);
 
   const roleCodes = staff.user ? await roleCodesOf(staff.user.id) : [];
-  const [attendance, exempt, shift, isWorkDay] = await Promise.all([
+  const [attendance, exempt, shift, nonWorkingDay, policy] = await Promise.all([
     prisma.staffAttendance.findUnique({
       where: { staffId_date: { staffId, date: dayOf(day) } },
       include: { records: true, shift: true },
     }),
     isExemptFromAttendance(staffId, roleCodes),
     resolveShiftForDate(staffId, day),
-    isNonWorkingDay(day, staff.unitId).then((nonWork) => !nonWork),
+    isNonWorkingDay(day, staff.unitId),
+    getAttendancePolicy(staff.unitId),
   ]);
+  // Same rule as the check-in: a rostered shift makes it a working day.
+  const isWorkDay = Boolean(shift) || !nonWorkingDay;
 
   // An overnight shift checked in yesterday stays open into today; surface that
   // row so the checkout button is available after midnight.
@@ -1215,8 +1387,12 @@ export async function getMyAttendance(staffId: string, day: string) {
   const overnight = openPrevious && openPrevious.id !== attendance?.id ? openPrevious : null;
 
   return {
+    hasProfile: true,
+    requirements: attendanceRequirements(policy),
     date: day,
-    attendance,
+    attendance: attendance
+      ? { ...attendance, records: attendance.records.map(evidenceView) }
+      : null,
     shift,
     isWorkDay,
     isExempt: exempt,
@@ -1233,20 +1409,38 @@ export async function getMyAttendance(staffId: string, day: string) {
 
 /**
  * The unit an admin may act on. A unit admin is pinned to their own unit; the
- * super admin may name any (or none, meaning yayasan-wide). Prefers `roleCode`
- * because the deprecated `role` bucket maps yayasan governance roles
- * (Pembina/Ketua/Bendahara/Pengawas) to `UNIT_ADMIN`, which would have let them
- * edit a school unit's settings.
+ * super admin may name any (or none, meaning yayasan-wide); anyone else is
+ * refused (`assertHrAdmin`). Prefers `roleCode` because the deprecated `role`
+ * bucket maps yayasan governance roles (Pembina/Ketua/Bendahara/Pengawas) to
+ * `UNIT_ADMIN`.
  */
 export function scopedUnitId(
   user: { roleCode?: string | null; role?: string | null; unitId?: string | null },
   requested?: string | null
 ): string | null {
+  assertHrAdmin(user);
   if (isUnitAdminUser(user)) {
     if (!user.unitId) throw Errors.forbidden('Akun admin belum terhubung ke unit');
+    // Naming another unit is a refusal, not a silent rewrite: an admin who
+    // meant to change SD IT and changed their own unit would never know.
+    if (requested && requested !== user.unitId) {
+      throw Errors.forbidden('Unit itu berada di luar unit Anda');
+    }
     return user.unitId;
   }
   return requested ?? null;
+}
+
+/**
+ * Staff attendance and its settings are run by the super admin and a unit's
+ * admin — the two the menu shows them to. The yayasan's organs share the
+ * `UNIT_ADMIN` bucket with unit admins, so `authorize()` lets them through; the
+ * role code is what tells them apart. Before this they fell into the super
+ * admin's branch and could rewrite any unit's policy and the payroll guard.
+ */
+export function assertHrAdmin(user: { roleCode?: string | null; role?: string | null }): void {
+  if (isSuperAdminUser(user) || isUnitAdminUser(user)) return;
+  throw Errors.forbidden('Hanya super admin dan admin unit yang mengelola absensi pegawai');
 }
 
 export function isSuperAdminUser(user: {
@@ -1692,9 +1886,10 @@ export async function upsertRetentionPolicy(data: Prisma.RetentionPolicyUnchecke
  * The window comes from the unit's `AttendancePolicy` (`photoRetentionDays`,
  * `recordRetentionDays`), falling back to the global `RetentionPolicy` row
  * (`ATTENDANCE_PHOTO` / `ATTENDANCE_RECORD`) and then to the 1-year photo /
- * 10-year record defaults. Photos are deleted from storage before their URLs
- * are cleared, so clearing the URL cannot leave the bytes behind with nothing
- * left to identify them by.
+ * 10-year record defaults; records are never kept less than ten years. Photos
+ * are deleted from the private store before their references are cleared, so
+ * clearing a reference cannot leave the bytes behind with nothing left to
+ * identify them by.
  *
  * A row still linked to an active approved leave is kept even past its record
  * window: `cancelLeave` restores it (and its balance) on cancellation, and a
@@ -1722,17 +1917,8 @@ export async function enforceAttendanceRetention(now = new Date()) {
     photoDaysByUnit.set(unit.id, policy?.photoRetentionDays ?? globalPhotoDays);
   }
 
-  // A selfie URL can be shared: a check-in and its check-out may store the same
-  // upload, and nothing forbids the same upload being referenced by records in
-  // two different units. Unlinking the file for one record therefore breaks the
-  // others, so a file is only removed once no *live* reference remains.
-  //
   // The due-scan runs per retention window, so a unit with a long window is not
-  // revisited day after day before its deadline. Eligibility to delete, though,
-  // is judged globally: a file is kept while any record that references it is
-  // still live under *that record's own* unit policy, even when it sits in
-  // another window. The live check is bounded to the URLs actually due (the
-  // candidate set), not the whole photo history.
+  // revisited day after day before its deadline.
   const unitsByWindow = new Map<number, string[]>();
   for (const unit of units) {
     const days = photoDaysByUnit.get(unit.id) ?? globalPhotoDays;
@@ -1741,75 +1927,68 @@ export async function enforceAttendanceRetention(now = new Date()) {
     unitsByWindow.set(days, list);
   }
 
-  const duePhotos: { id: string; photoUrl: string }[] = [];
+  const duePhotos: { id: string; photoRef: string }[] = [];
   for (const [days, unitIds] of unitsByWindow) {
     const cutoff = new Date(now.getTime() - days * 86_400_000);
     const rows = await prisma.attendanceRecord.findMany({
       where: {
-        photoUrl: { not: null },
+        photoRef: { not: null },
         capturedAt: { lt: cutoff },
         attendance: { staff: { unitId: { in: unitIds } } },
       },
-      select: { id: true, photoUrl: true },
+      select: { id: true, photoRef: true },
     });
     for (const row of rows) {
-      if (row.photoUrl) duePhotos.push({ id: row.id, photoUrl: row.photoUrl });
+      if (row.photoRef) duePhotos.push({ id: row.id, photoRef: row.photoRef });
     }
   }
 
-  const candidateUrls = [...new Set(duePhotos.map((row) => row.photoUrl))];
-  const liveUrls = new Set<string>();
-  if (candidateUrls.length > 0) {
-    const live = await prisma.attendanceRecord.findMany({
-      where: {
-        photoUrl: { in: candidateUrls },
-        OR: [...unitsByWindow].map(([days, unitIds]) => ({
-          capturedAt: { gte: new Date(now.getTime() - days * 86_400_000) },
-          attendance: { staff: { unitId: { in: unitIds } } },
-        })),
-      },
-      select: { photoUrl: true },
-      distinct: ['photoUrl'],
-    });
-    for (const row of live) {
-      if (row.photoUrl) liveUrls.add(row.photoUrl);
-    }
-  }
-
-  // A file is deleted at most once per run even when several expired rows share
-  // it; the later rows then just drop their reference.
-  const fileDeleted = new Set<string>();
+  // Each photo belongs to exactly one punch (`photoRef` is unique), so an
+  // expired row's file can go with it. The bytes go first and the reference
+  // after, so a failed delete leaves the reference to retry by, not an
+  // unnamed file.
   for (const photo of duePhotos) {
-    const url = photo.photoUrl;
-    // Another live record still points at this file: clearing this row's
-    // reference is safe, deleting the file is not.
-    if (liveUrls.has(url)) {
-      const cleared = await prisma.attendanceRecord.updateMany({
-        where: { id: photo.id, photoUrl: url },
-        data: { photoUrl: null },
-      });
-      photosErased += cleared.count;
-      continue;
-    }
-    // Delete the bytes first; clear the URL only after they are gone (or were
-    // already gone). An external URL has no adapter to remove it, and clearing
-    // the field would lose the only reference to a photo still stored there.
-    if (!fileDeleted.has(url)) {
-      const result = await deleteManagedUpload(url);
-      if (result === 'unsupported') continue;
-      fileDeleted.add(url);
-    }
+    await deleteAttendancePhoto(photo.photoRef);
     const cleared = await prisma.attendanceRecord.updateMany({
-      where: { id: photo.id, photoUrl: url },
-      data: { photoUrl: null },
+      where: { id: photo.id, photoRef: photo.photoRef },
+      data: { photoRef: null },
     });
     photosErased += cleared.count;
+  }
+
+  // A photo taken but never used for a punch has no row to expire with it.
+  // Sweep those once they are older than any punch could still be.
+  const onDisk = await listAttendancePhotos();
+  const stale = onDisk.filter(
+    (f) => now.getTime() - f.modifiedAt.getTime() > ATTENDANCE_PHOTO_ORPHAN_GRACE_MS
+  );
+  if (stale.length > 0) {
+    const referenced = new Set(
+      (
+        await prisma.attendanceRecord.findMany({
+          where: { photoRef: { in: stale.map((f) => f.ref) } },
+          select: { photoRef: true },
+        })
+      ).map((r) => r.photoRef)
+    );
+    for (const file of stale) {
+      if (referenced.has(file.ref)) continue;
+      await deleteAttendancePhoto(file.ref);
+      photosErased += 1;
+    }
   }
 
   for (const unit of units) {
     const policy =
       policies.find((p) => p.unitId === unit.id) ?? policies.find((p) => p.unitId === null);
-    const recordDays = policy?.recordRetentionDays ?? globalRecordDays;
+    // Never below ten years, whatever a row says: these rows are what the
+    // payslips were computed from (UU KUP Ps. 28(11)). The schema refuses a
+    // shorter policy; this holds for rows written before it did, and for the
+    // global RetentionPolicy row, which has no such floor of its own.
+    const recordDays = Math.max(
+      policy?.recordRetentionDays ?? globalRecordDays,
+      MIN_ATTENDANCE_RECORD_RETENTION_DAYS
+    );
 
     // Rows still carrying an active approved leave are kept: cancelling that
     // leave restores them, and a purged row would leave the cancellation with

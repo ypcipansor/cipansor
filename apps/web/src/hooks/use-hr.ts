@@ -15,6 +15,7 @@ import {
   type MyAttendance,
   type MyAttendanceToday,
   type RetentionPolicy,
+  type SelfAttendanceInput,
   type ShiftAssignment,
   type ShiftRotation,
   type StaffAttendance,
@@ -1432,12 +1433,50 @@ export function useAddPayrollAdjustment() {
 // ============================================
 
 /** GET /hr/attendance/me — the day's row plus what the caller may do next. */
-export interface SelfAttendancePayload {
-  latitude?: number;
-  longitude?: number;
-  accuracyMeters?: number;
-  photoUrl?: string;
-  deviceInfo?: string;
+/** The punch body, as `@cipansor/shared` validates it — minus the admin-only staffId. */
+export type SelfAttendancePayload = Omit<SelfAttendanceInput, "staffId">;
+
+/**
+ * Keep a selfie in the private attendance store and get back the reference a
+ * punch names it by. Not `/upload`: that store is readable by every signed-in
+ * account, and a selfie is a facial image.
+ */
+export function useUploadPunchPhoto() {
+  return useMutation({
+    mutationFn: async (photo: Blob) => {
+      const form = new FormData();
+      const type = photo.type || "image/jpeg";
+      const ext =
+        type === "image/png" ? "png" : type === "image/webp" ? "webp" : "jpg";
+      form.append("file", new File([photo], `absen.${ext}`, { type }));
+      const response = await api.post("/hr/attendance/photo", form, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return response.data.data as { photoRef: string };
+    },
+  });
+}
+
+/**
+ * One punch's selfie as a Blob, fetched only when asked for (`enabled`). The
+ * API checks the reader and records the read, so a list never loads them all.
+ */
+export function usePunchPhoto(recordId: string | null) {
+  return useQuery({
+    queryKey: ["punch-photo", recordId],
+    enabled: Boolean(recordId),
+    staleTime: Infinity,
+    gcTime: 60_000,
+    queryFn: async () => {
+      const response = await api.get(
+        `/hr/attendance/records/${recordId}/photo`,
+        {
+          responseType: "blob",
+        },
+      );
+      return response.data as Blob;
+    },
+  });
 }
 
 export function useMyAttendanceToday() {
