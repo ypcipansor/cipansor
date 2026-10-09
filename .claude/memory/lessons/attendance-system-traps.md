@@ -74,6 +74,19 @@ change whose precondition is another row must make both writes and the check
 one atomic step; a guard read outside the write is a race, and a partial write
 is a stranded record.
 
+## The lock that made every punch fail, behind a mock that answered for it
+
+The advisory lock above went through `tx.$queryRaw`. `pg_advisory_xact_lock`
+returns `void`, and Prisma's `$queryRaw` cannot deserialize a `void` column, so
+on a real Postgres **every** check-in and check-out answered 500. The unit
+tests mocked `$queryRaw` to return `[]` and asserted it was called, and the
+e2e only checked that the page opened — so a feature whose one job is to
+record a punch shipped without ever recording one. Use `$executeRaw` for a
+statement whose result you do not read. More generally: a mock of the database
+call is the one place the database's refusal cannot appear, so the path that
+writes must have one e2e that writes against the real database (found
+2026-10-09, `staff-attendance.spec.ts` "a punch is recorded").
+
 ## A retention sweep that loads the whole history
 
 The selfie retention job read *every* record that had a photo on each daily

@@ -3,6 +3,15 @@
 > Keputusan pengguna 2026-09-29 — setiap pengguna Sistem Informasi Cipansor
 > menyetujui Syarat & Ketentuan, Kebijakan Privasi, dan batasan regulasi
 > **sekali**, di halaman khusus sesudah login. Menolak = keluar (logout).
+>
+> **Diubah untuk pegawai 2026-10-09 (D1).** Pemrosesan data pegawai —
+> termasuk swafoto dan lokasi absen — berdasar **perjanjian kerja dan
+> kepentingan sah** (UU 27/2022 Ps. 20 ayat 2 huruf b dan f), bukan
+> persetujuan. Pegawai **membaca** pemberitahuan privasi dan S&K sekali sesudah
+> login, ditandai "sudah membaca" per versi; yang keberatan dicatat admin unit
+> sebagai pengecualian; **tidak ada logout**. Alasannya: persetujuan pegawai
+> kepada pemberi kerjanya tidak bebas, dan "menolak = logout" menghalangi orang
+> bekerja. Bagi pengguna lain aturan 2026-09-29 tetap.
 
 Ini tempat mencatatnya. Sebelumnya belum ada halaman Syarat & Ketentuan
 maupun Kebijakan Privasi di portal; dokumen ini yang menyebutkannya pertama
@@ -16,7 +25,7 @@ kali.
 | Bentuk | Halaman khusus (`/persetujuan`), bukan pop up yang bisa ditutup |
 | Isi | Syarat & Ketentuan, Kebijakan Privasi (termasuk selfie + geolokasi absensi), batasan regulasi |
 | Versi | Disetujui **per versi**. Versi baru → diminta lagi |
-| Menolak | Keluar (logout) dan kembali ke halaman masuk |
+| Menolak | Keluar (logout) dan kembali ke halaman masuk — **kecuali pegawai** (2026-10-09): pegawai tidak menolak, ia membaca; keberatannya dicatat admin unit |
 | Bukti | `UserConsent`: siapa, versi berapa, kapan, dari alamat IP mana |
 | Siapa yang menyunting teks | Super Admin (versi baru, tidak menyunting yang sudah disetujui) |
 

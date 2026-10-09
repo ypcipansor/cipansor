@@ -118,35 +118,20 @@ items before 2026-09-25 is in the history of this file and of
         the student's record, which then takes its agenda number, TTE and
         verification like any naskah. Its menu place is Akademik → Students.
 
-0a. **Absensi pegawai** — audited 2026-09-29 (`decisions/absensi-pegawai.md`,
-    defects in `known-issues.md`). **The user asked to be reminded when it is
-    time to implement this.** PR #630 is the implementation branch; phase 0 is
-    mostly in (`f301fda`, `c43bd1b`, `1bb39b5`, fourth review round), each with
-    a regression test:
-    1. ~~bulk attendance accepts `yyyy-MM-dd`~~ — shared `attendanceDate`;
-    2. ~~selfie and location default to required when a unit has no
-       `AttendancePolicy` row~~ — still **needs a seeded default row**: the read
-       is still `policy?.requireSelfie`, so a fresh DB (no row) fails open;
-    3. ~~one identity for the basic salary~~ — `classification = 'POKOK'` read
-       in `resolveBasis`; **`baseSalary` vs its payslip line still disagree**;
-    4. ~~a night shift's check-out looks back for an open CHECK_IN~~;
-    5. **open** — pick one, not both: an evening job marks `ABSENT` for a work
-       day with no row, or payroll stops blocking on `unresolvedDates`
-       (it still blocks, now scoped to the requested staff);
-    6. **open** — corrections carry a reason and write an `AuditLog`, but there
-       is **no UI** and `delete` is still a hard delete;
-    7. ~~a retention job for selfies~~ — daily job, one number; the due-scan is
-       per retention window and deletion eligibility is judged globally across
-       all live references;
-    8. ~~e2e for `/hr/attendance/me`, `/bulk` and `/settings`~~.
-    Then phase 1: `tiersJson` as an array; `EARLY_LEAVE`/`OVERTIME` derived
-    from check-out; the 1/173 overtime basis per PP 35/2021 Ps. 32; enforce
-    `legalBasisDoc`; `annualQuota` from `LeaveTypeConfig`; seed every
-    attendance config table; staff (non-teacher) leave access; the config
-    endpoints' UI and a Cuti tab; a holiday draft. Phase 2: split the
-    `staff-attendance` module out of `hr`; drop the `teacherId` branches; the
-    FLAG review queue; photos and distances in the list. The questions that
-    need the user's answer are in `progress.md`.
+0a. **Absensi pegawai** — audited 2026-09-29 and again 2026-10-09
+    (`decisions/absensi-pegawai.md`, open defects in `known-issues.md`).
+    **The user asked to be reminded when it is time to implement this.** PR
+    #630 is the implementation branch. Before self-attendance is switched on
+    in a unit: (1) staff records for every non-teaching employee, (2) the staff
+    privacy notice (D1) with its per-version acknowledgement, (3) a DPIA for the
+    selfie (UU PDP Ps. 34), (4) the unit's sites, work week and policy saved.
+    Then, in order: payroll stops blocking on `unresolvedDates` (or an evening
+    job writes `ABSENT` — pick one); the FLAG/FILE review queue; corrections UI
+    and a soft delete; `EARLY_LEAVE`/`OVERTIME` derived from check-out with an
+    overtime order and approval (PP 35/2021); `tiersJson` as an array; the 50%
+    ceiling counting the slip's other deductions; seed every attendance config
+    table; non-teaching staff leave access; drop the `teacherId` branches;
+    split `staff-attendance` out of `hr`.
 
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"

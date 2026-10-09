@@ -2,7 +2,7 @@
 
 Open defects only, each rechecked against the code on **2026-09-25**
 (asrama and schema entries on 2026-09-26; daily report, schedules,
-counselling and growth on 2026-09-27; staff attendance on 2026-09-29). The
+counselling and growth on 2026-09-27; staff attendance on 2026-10-09). The
 ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
 [`progress.md`](./progress.md); the system overview is
 [`ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
@@ -16,118 +16,50 @@ ordered backlog is [`roadmap.md`](./roadmap.md); where the work stands is
   weakness that is still open is recorded outside the repository until it is
   fixed; say here only that a module needs review.
 
-## Absensi pegawai — audit 2026-09-29 (sisa)
+## Staff attendance (absensi pegawai) — still open, rechecked 2026-10-09
 
-Audited against the code, the standard practice and the regulation the same day
-(`decisions/absensi-pegawai.md` has the sources). Ordered by severity in
-`roadmap.md` §0. The decision it breaks is named on each line.
+The second audit of PR #630 (2026-10-09) closed: every punch answering 500,
+yayasan organs writing any unit's settings, selfies in the public uploads
+directory, the 50% deduction ceiling (PP 36/2021 Ps. 65) that could be passed,
+unit and yayasan rules both applying, deduction rules with no legal basis,
+record retention under ten years, REJECT not applying at checkout, and shift
+workers refused on a closed day. Still open:
 
-PR #630 (`f301fda`, `c43bd1b`, `1bb39b5`, fourth review round) closed most of
-this list — the bulk date, the night-shift check-out, the deduction basis, the
-correction reason/audit, the retention job, the holiday draft, the shared DTOs,
-the unit scoping. What is genuinely still open is noted inline below and in
-`roadmap.md` §0a: the fail-open policy read needs a seeded default row; payroll
-still blocks on `unresolvedDates`; the correction UI is missing and `delete` is
-still hard. Each entry was re-read against the branch, not the old note.
-
-- **Absensi massal selalu gagal 400.** `bulkAttendanceSchema` wants
-  `date: z.string().datetime()`, the page sends a `<input type="date">` value
-  (`"2026-09-29"`) — Zod 4.6.5 answers `Invalid ISO datetime` (verified in
-  `apps/api`). The Simpan button on *Kepegawaian → Absensi Massal* has never
-  worked.
-- **Nobody ever writes `ABSENT`, and payroll is blocked on it.**
-  `computeForPeriod` collects every work day with no row as `unresolvedDates`,
-  and `payroll.service.ts` refuses to generate a payslip while any exist. The
-  standard is the opposite — record the exception, assume present
-  (`decisions/absensi-pegawai.md`). Together with the bulk bug, no payslip can
-  be produced for anyone.
-- **A night shift cannot clock out.** `selfCheckOut` looks only at today's row,
-  so a 22:00–06:00 shift (in at day D, out at D+1) answers "Belum ada absen
-  masuk hari ini". `crossesMidnight` only affects the lateness sum. The
-  decision says this must work; the standard says a punch pair is never cut at
-  midnight.
-- **Selfie and geotag fail open.** `selfCheckIn`/`selfCheckOut` read
-  `policy?.requireSelfie` / `policy?.requireLocation`; with no
-  `AttendancePolicy` row for the unit, both checks are skipped and a punch with
-  neither evidence passes — though the model defaults them to `true`. No seed
-  creates the row, so on a fresh database R1 is off. `outsideRadiusAction` is
-  the same shape: no `AttendanceSite` means `withinRadius` is always `null`, so
-  `REJECT` never rejects.
-- **`REJECT` applies to check-in only.** `selfCheckOut` computes
-  `withinRadius` and never consults the policy, so someone refused at the gate
-  in the morning may clock out from anywhere.
-- **The deduction basis can carry the basic salary.** The allowance filter
-  excludes the literal code `'GAJI_POKOK'`, but `seed.ts` creates the basic
-  salary as **`BASIC_SALARY`**, so on a seeded database it is counted as an
-  allowance (basis `TETAP`/`TUNJANGAN`, and `gross` double-counts it);
-  `seedDefaults()` uses `GAJI_POKOK`, so the same concept has two codes.
-  Separately, `SalaryComponent.classification` — the field the schema names as
-  the decider — is never read by `resolveBasis`, and nothing ever sets `POKOK`.
-- **`baseSalary` and the basic-salary line disagree.** `EmployeeSalary.baseSalary`
-  (3.5 M in the seed) is what the guard compares; the payslip adds the
-  `BASIC_SALARY` item (3.0 M) on top. Two numbers for one concept.
-- **The 1/173 overtime basis is wrong.** `resolveBasis` computes
-  `UPAH_SEJAM` as allowances ÷ 173; PP 35/2021 Ps. 32 says 1/173 of a month's
-  *upah*, with a 100%/75% floor. Overtime is therefore underpaid — and
-  `EARLY_LEAVE`/`OVERTIME` counts are initialised to 0 and never incremented,
-  so the triggers do nothing and there is no overtime approval either
-  (PP 35/2021 requires one).
-- **Corrections carry no reason, leave no audit trail, and there is no UI.**
-  `updateStaffAttendanceSchema` has no `reason`; `updateStaffAttendance` writes
-  no `AuditLog`; no web hook or page calls it; `deleteStaffAttendance` hard
-  deletes the row and its selfie evidence. The decision requires reason +
-  audit, and segregation of duties requires an approver distinct from the
-  editor.
-- **The selfie retention job does not exist.** Nothing in `apps/api/src/jobs`
-  reads `photoRetentionDays`, `recordRetentionDays` or `RetentionPolicy`, so
-  photos are kept forever — UU 27/2022 Ps. 42(1)a wants processing to end when
-  the retention period does. `AttendancePolicy.photoRetentionDays` and
-  `RetentionPolicy` are two sources for one number.
-- **`tiersJson` cannot be used.** The schema types it as an object
-  (`z.record`), `tieredAmount` requires `Array.isArray`, so mode `BERTINGKAT`
-  always yields `null` and no line appears.
-- **`legalBasisDoc` is not enforced.** `rulesFor` filters on `isActive` and the
-  date range only, so a deduction rule with no legal basis still applies —
-  which is the half of PP 36/2021 Ps. 59–60 that makes a fine lawful. The
-  comment in `attendance-deduction.service.ts` cites "PP 36/2021 art. 32" for
-  this; that article is the overtime basis (PP 35/2021), not a deduction bound
-  (PP 36/2021 Ps. 65).
-- **Annual leave is still hardcoded.** `getLeaveBalance` has
-  `const annualQuota = 12` with a "can be configured" comment, and
-  `LeaveTypeConfig` is not read there.
-- **`WorkWeekConfig` falls back to Monday–Saturday, 7 hours** when a unit has
-  no row, so a Saturday with no attendance row blocks the payslip. No seed
-  writes the row either.
-- **Staff who are not teachers cannot file leave.** `/hr/leaves/new` lives
-  under `/hr`, and the `STAFF` bucket in `rbac.ts` allows only
-  `/hr/attendance/me`, so TU, pustakawan, keamanan and unit-usaha staff are
-  bounced by the middleware.
-- **Config endpoints with no web consumer** (`golden rule #8`):
-  `/hr/leave-type-configs` and `/hr/retention-policies` (GET/PUT) have no hook
-  in `apps/web/src`, and the settings page has no Cuti tab.
-- **Bulk attendance loads the first 100 staff only** — `useStaffList` forces
-  `limit: 100` and the page uses it as-is.
-- **Holiday sync has no draft.** `syncHolidaysForYear` writes `CalendarEvent`
-  rows directly; the decision wants a draft for the admin to review, and the
-  model has no column for one.
-- **Two deduction paths.** `attendanceDeductionService.computeForPeriod` and the
-  older `presentDays`/`absentDays`/`lateDays` block in `payroll.service.ts`
-  both exist; the second must be removed or proven not to add a second
-  deduction.
-- **No consent record.** `decisions/persetujuan-pengguna.md` asks for a
-  one-time terms/privacy consent; nothing implements it, and UU 27/2022
-  Ps. 24 requires the controller to be able to prove it.
-- **Dead code and dead statuses.** `teacherId` is gone from the model (the
-  migration dropped the column) but still lives in three schemas, in
-  `resolveStaffId`, in the web `StaffAttendance` type and in list-page
-  fallbacks; `payrollComponentSchema` (`hr.schema.ts`) has no importer;
-  `StaffAttendanceStatus.HOLIDAY` is never written.
-- **No e2e for the three new pages** (`/hr/attendance/me`, `/bulk`,
-  `/settings`) — `golden rule #7`. It is why the bulk-date bug shipped.
-- **The list hides what it already has.** `getStaffAttendance` includes
-  `records{photoUrl,latitude,longitude,isWithinRadius}`, but the table shows
-  none of it, and `FLAG` has no review queue — the standard calls a manager
-  exception workflow "must-have".
+- **Payroll stops on a work day with no attendance row.** `computeForPeriod`
+  collects `unresolvedDates` and `payroll.service.ts` refuses the payslip while
+  any exist. The standard is the reverse: record the exception, assume present
+  (`decisions/absensi-pegawai.md`).
+- **Non-teaching employees have no staff record.** The migration makes a
+  `staff` row from every `teachers` row; TU, bendahara, pustakawan, perawat,
+  keamanan, a kepala sekolah without a teacher row and others get none. *Absen
+  Saya* now says so, but admins have no "employees without a record" list.
+  Prepare the records before self-attendance is switched on.
+- **The staff privacy notice is not built** (decision D1, 2026-10-09, in
+  `persetujuan-pengguna.md`). Until it is, selfie and location stay off in
+  every unit.
+- **`EARLY_LEAVE` and `OVERTIME` are never counted.** `earlyLeaveDays` and
+  `overtimeMinutes` start at 0 and never grow, so rules on those triggers do
+  nothing although the settings page offers them. Overtime also has no order
+  and approval (PP 35/2021).
+- **`BERTINGKAT` cannot be used.** The schema takes `tiersJson` as an object
+  (`z.record`), `tieredAmount` requires an array, so the tiers are always empty.
+- **The 50% ceiling ignores the slip's other deductions.** Loans and other
+  slip deductions are PP 36/2021 Ps. 63 deductions too, but the guard caps the
+  attendance deductions only.
+- **`WorkWeekConfig` falls back to Monday–Saturday, 7 hours** when a unit has no
+  row, and no seed writes one.
+- **No review queue.** *Absensi Pegawai* now marks a punch outside the site and
+  a photo from a file, but there is no "needs review" filter and no record
+  that a punch was reviewed.
+- **Corrections have no UI**, and `delete` still removes the row (and its
+  evidence) instead of marking it.
+- **Non-teaching staff cannot file leave.** `/hr/leaves/new` is under `/hr`,
+  and the `STAFF` bucket in `rbac.ts` opens only `/hr/attendance/me`.
+- **The bulk register loads the first 100 employees only** (`useStaffList`
+  forces `limit: 100`).
+- **Dead code.** `teacherId` is still in three `hr.schema.ts` schemas and in
+  the web type though the column is gone; `payrollComponentSchema` has no
+  importer; `StaffAttendanceStatus.HOLIDAY` is never written.
 
 ## Broken flows and wrong figures
 
