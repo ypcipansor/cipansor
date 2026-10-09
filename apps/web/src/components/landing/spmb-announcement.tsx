@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { Megaphone, X } from "lucide-react";
 import { spmbAnnouncementOf, type PublicIntakeDTO } from "@cipansor/shared";
@@ -15,7 +23,7 @@ import type { Locale } from "@/locales";
 import {
   Dialog,
   DialogClose,
-  DialogContent,
+  DialogPortal,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -116,6 +124,44 @@ function rememberShownThisVisit(periodId: string) {
   } catch {
     // Without session storage the dialog may appear on the next page too.
   }
+}
+
+/**
+ * While the card is open, keep the content a keyboard user moves to from
+ * hiding behind it (WCAG 2.2 SC 2.4.11, technique C43): the page's
+ * `scroll-padding-bottom` makes the browser scroll a focused element clear of
+ * the card, and the same space at the end of the body lets the last links of
+ * the footer scroll above it too. Both are removed when the card closes.
+ */
+function useReserveBottom(
+  open: boolean,
+  ref: RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    const body = document.body;
+    const before = {
+      scroll: root.style.scrollPaddingBottom,
+      pad: body.style.paddingBottom,
+    };
+    const apply = () => {
+      const card = ref.current;
+      if (!card) return;
+      const space =
+        Math.ceil(window.innerHeight - card.getBoundingClientRect().top) + 8;
+      root.style.scrollPaddingBottom = `${space}px`;
+      body.style.paddingBottom = `${space}px`;
+    };
+    const frame = window.requestAnimationFrame(apply);
+    window.addEventListener("resize", apply);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", apply);
+      root.style.scrollPaddingBottom = before.scroll;
+      body.style.paddingBottom = before.pad;
+    };
+  }, [open, ref]);
 }
 
 /** "TK Qur'an, SD IT, dan SMP IT" — the units joined in the reader's language. */
@@ -223,6 +269,8 @@ export function SpmbAnnouncement({
     canShow && !initialBannerDismissed,
   );
   const [dialogOpen, setDialogOpen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useReserveBottom(dialogOpen, dialogRef);
   const [hidden, setHidden] = useState(false);
 
   useIsoLayoutEffect(() => {
@@ -354,43 +402,57 @@ export function SpmbAnnouncement({
             if (!open) closeDialog();
           }}
         >
-          <DialogContent
-            data-testid="spmb-announcement-dialog"
-            // A non-modal dialog must not steal focus when it appears mid-read;
-            // it is a notice, not a step the visitor has to answer.
-            onOpenAutoFocus={(event) => event.preventDefault()}
-            // A non-modal dialog dismisses on any interaction outside it — a
-            // pointer, and also *focus* moving to the page. Either would write
-            // the dismissal for a notice the visitor never answered: a single
-            // Tab press anywhere closed it for good, so a keyboard user could
-            // never reach its buttons. The ways out are the buttons, the X and
-            // Escape. (`onInteractOutside` covers both pointer and focus.)
-            onInteractOutside={(event) => event.preventDefault()}
-            // The built-in X is language-blind (sr-only "Close"); this surface
-            // is trilingual, so it carries its own labelled close instead.
-            showCloseButton={false}
-          >
-            <DialogHeader>
-              <DialogTitle>{dialogTitle}</DialogTitle>
-              <DialogDescription>{dialogBody}</DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="ghost" onClick={closeDialogForThisVisit}>
-                {copy.dialogLater}
-              </Button>
-              <Button asChild>
-                <Link href="/public/spmb" onClick={closeDialog}>
-                  {dialogCta}
-                </Link>
-              </Button>
-            </DialogFooter>
-            <DialogClose
-              aria-label={copy.dismiss}
-              className="ring-offset-background focus:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+          <DialogPortal>
+            <DialogPrimitive.Content
+              ref={dialogRef}
+              data-testid="spmb-announcement-dialog"
+              // A card at the bottom, not a box in the middle of the page
+              // (decided 2026-10-09). Centred, it covered the reading area — a
+              // third of a phone screen — and hid five links a keyboard user
+              // tabbed to (WCAG 2.2 SC 2.4.11, measured at 1280 px). Phones: the
+              // full width above the assistant's launcher. Wider screens: the
+              // reading-start corner (left; right in Arabic), across from the
+              // launcher. `bottom-24` clears the launcher on either side, so the
+              // two never overlap whichever corner the launcher takes. While it
+              // is open, `useReserveBottom` keeps focused content scrolled clear
+              // of it (technique C43).
+              className="bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=open]:slide-in-from-bottom-4 fixed inset-x-4 bottom-24 z-50 grid gap-3 rounded-lg border p-5 shadow-lg duration-200 sm:inset-x-auto sm:start-4 sm:w-full sm:max-w-sm"
+              // A non-modal dialog must not steal focus when it appears mid-read;
+              // it is a notice, not a step the visitor has to answer.
+              onOpenAutoFocus={(event) => event.preventDefault()}
+              // A non-modal dialog dismisses on any interaction outside it — a
+              // pointer, and also *focus* moving to the page. Either would write
+              // the dismissal for a notice the visitor never answered: a single
+              // Tab press anywhere closed it for good, so a keyboard user could
+              // never reach its buttons. The ways out are the buttons, the X and
+              // Escape. (`onInteractOutside` covers both pointer and focus.)
+              onInteractOutside={(event) => event.preventDefault()}
             >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </DialogClose>
-          </DialogContent>
+              {/* `text-start`: the shared header aligns physically left, which
+                put Arabic text against the wrong edge. `pe-8` keeps the title
+                clear of the close button. */}
+              <DialogHeader className="pe-8 text-start sm:text-start">
+                <DialogTitle>{dialogTitle}</DialogTitle>
+                <DialogDescription>{dialogBody}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="ghost" onClick={closeDialogForThisVisit}>
+                  {copy.dialogLater}
+                </Button>
+                <Button asChild>
+                  <Link href="/public/spmb" onClick={closeDialog}>
+                    {dialogCta}
+                  </Link>
+                </Button>
+              </DialogFooter>
+              <DialogClose
+                aria-label={copy.dismiss}
+                className="ring-offset-background focus:ring-ring absolute top-4 end-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </DialogClose>
+            </DialogPrimitive.Content>
+          </DialogPortal>
         </Dialog>
       )}
     </>

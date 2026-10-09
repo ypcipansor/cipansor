@@ -2,7 +2,9 @@
 
 > KEPUTUSAN 2026-10-05: situs publik mengumumkan SPMB lewat **banner** (selalu,
 > selama ada unit yang buka) **+ dialog tertunda 5 detik, sekali per kunjungan
-> sampai ditutup untuk periode itu** (dikoreksi 2026-10-08).
+> sampai ditutup untuk periode itu** (dikoreksi 2026-10-08). **2026-10-09:
+> dialognya kartu di bawah layar, bukan di tengah** — keputusan pengguna sesudah
+> pengukuran WCAG di bawah.
 > Sumbernya `GET /admissions/public/intakes` — tanpa perubahan skema. Di bawah:
 > pembandingnya, sumber standarnya, dan syaratnya. Jangan ulang risetnya.
 
@@ -173,6 +175,18 @@ tinjauan PR #655 dan diperbaiki 2026-10-05.
   `onPointerDownOutside` membiarkan satu tekan Tab di halaman menutup dialog
   dan mencatat dismissal permanen — pengguna papan ketik tak pernah bisa
   mencapai tombolnya (terukur 2026-10-08).
+- **Kartu di bawah, di semua layar (keputusan pengguna 2026-10-09).** Di
+  tengah, dialog menutup bagian halaman yang sedang dibaca (32% layar ponsel
+  dengan empat unit disebut) dan menutup penuh lima tautan yang dicapai pengguna
+  papan ketik di 1280 px — gagal WCAG 2.2 SC 2.4.11 (AA), yang menyebut dialog
+  non-modal tanpa fokus sebagai pola berisiko. Pengguna sempat menimbang "tengah
+  di desktop, menyesuaikan di ponsel", lalu memilih pojok bawah di semua layar
+  karena kegagalan itu terukur di desktop. Ponsel: selebar layar di atas tombol
+  asisten. Layar lebar: pojok awal baca (kiri; kanan di halaman Arab), seberang
+  tombol asisten; `bottom-24` menghindari tombol itu di sisi mana pun. Selama
+  terbuka, `scroll-padding-bottom` dan ruang setinggi kartu di akhir halaman
+  menjaga elemen terfokus tetap di atas kartu (teknik C43). Terukur sesudahnya:
+  tak ada elemen terfokus yang tertutup; kartu menutup 7,9% layar desktop.
 - **Sekali per kunjungan.** Permintaan pengguna: jendela "setiap kali situs
   publik dibuka" — per kunjungan, bukan per halaman. Sebelum koreksi
   2026-10-08, dialog yang belum dijawab muncul lagi di **setiap** halaman yang

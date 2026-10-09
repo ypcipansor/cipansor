@@ -275,6 +275,48 @@ test.describe("Pengumuman SPMB di situs publik", () => {
     await expect(page.getByTestId("spmb-announcement-dialog")).toHaveCount(0);
   });
 
+  test("the dialog is a card at the bottom that never hides keyboard focus", async ({
+    page,
+  }) => {
+    // Decided 2026-10-09: centred, the dialog covered the reading area and
+    // hid five links a keyboard user tabbed to (WCAG 2.2 SC 2.4.11). This
+    // walks the page with Tab and fails if any focused element is entirely
+    // under the card — moving it back to the middle turns this red.
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await arm(page);
+    await page.goto("/profil");
+    const dialog = page.getByTestId("spmb-announcement-dialog");
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    const box = (await dialog.boundingBox())!;
+    expect(box.y).toBeGreaterThan(900 / 2);
+    expect(box.x).toBeLessThan(1280 / 2);
+
+    const hidden: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      await page.keyboard.press("Tab");
+      const under = await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        const card = document.querySelector(
+          '[data-testid="spmb-announcement-dialog"]',
+        );
+        if (!el || !card || card.contains(el) || el === document.body)
+          return null;
+        const b = el.getBoundingClientRect();
+        const c = card.getBoundingClientRect();
+        const inside =
+          b.width > 0 &&
+          b.left >= c.left &&
+          b.right <= c.right &&
+          b.top >= c.top &&
+          b.bottom <= c.bottom;
+        return inside ? (el.innerText || el.tagName).slice(0, 40) : null;
+      });
+      if (under) hidden.push(under);
+    }
+    expect(hidden).toEqual([]);
+  });
+
   test("a Tab press on the page does not dismiss the dialog", async ({
     page,
   }) => {
