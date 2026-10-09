@@ -1,9 +1,29 @@
 # Lisensi
 
-> **Diputuskan pengguna 2026-10-09:** kode sumber berlisensi **Apache License
-> 2.0**. Menggantikan keputusan 2026-09-25 (proprietary, karena repositori
-> akan menjadi privat). Pengguna meminta "MIT atau Apache, yang mana yang lebih
-> baik"; Apache 2.0 dipilih atas alasan di bawah.
+> **Diputuskan pengguna 2026-10-09:** **selama repositori publik**, kode
+> sumber berlisensi **Apache License 2.0**; **begitu repositori menjadi
+> privat, lisensinya diganti kembali menjadi tertutup (proprietary)**.
+> Menggantikan keputusan 2026-09-25 (proprietary saja). Pengguna meminta "MIT
+> atau Apache, yang mana yang lebih baik"; Apache 2.0 dipilih atas alasan di
+> bawah.
+
+## Saat repositori menjadi privat
+
+Satu PR yang sama dengan pengalihan visibilitas, atau sesegera mungkin
+sesudahnya:
+
+- `LICENSE` kembali ke teks proprietary. Teks lama ada di riwayat git, di
+  commit sebelum #724 (`git show <commit>^:LICENSE`). Perbarui tahunnya, lalu
+  hapus `NOTICE` atau sesuaikan isinya.
+- `"license": "UNLICENSED"` di keempat `package.json`, dan lencana serta
+  bagian lisensi di README kembali seperti semula.
+- Baris di `progress.md` dan di indeks ikut diperbarui.
+
+Pergantian ini hanya berlaku ke depan. **Versi yang sudah terbit di bawah
+Apache 2.0 tetap Apache 2.0** bagi siapa pun yang telah menyalinnya; lihat
+"Akibat" di bawah. Kontribusi pihak luar yang masuk di bawah Apache 2.0 boleh
+tetap dipakai dalam versi tertutup, selama pemberitahuan lisensinya
+dipertahankan untuk bagian itu.
 
 ## Mengapa Apache 2.0, bukan MIT
 
