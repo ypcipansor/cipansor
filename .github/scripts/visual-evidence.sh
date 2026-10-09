@@ -67,7 +67,8 @@ reviewer can see the change without checking out the branch.
 _This comment was created by an AI agent (OpenHands) on behalf of the maintainer._
 EOF
   if [ -n "$CID" ]; then
-    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -f body=@"$TMP" >/dev/null; then
+    # -F, not -f: only a typed field reads `@file` (see pr-template-guard.sh).
+    if gh api -X PATCH "repos/$REPO/issues/comments/$CID" -F body=@"$TMP" >/dev/null; then
       echo "PR #$PR: UI change without before/after visuals; reminder updated."
     else
       echo "::warning::could not update the visual reminder on PR #$PR"
