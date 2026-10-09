@@ -176,7 +176,7 @@ function PublicKeyStatusContent() {
 
         {data && copy && (
           <Card className="shadow-md border-slate-200">
-            <CardContent className="space-y-4 pt-6">
+            <CardContent className="space-y-4">
               <div className={`rounded-md border p-4 ${copy.tone}`}>
                 <div className="flex items-center gap-2 font-semibold">
                   {copy.icon}
