@@ -239,13 +239,20 @@ if (config.env !== 'test') {
 // public address until it reports the SHA they released, so "deployed" means
 // the new code is answering, not just that a container was started. Null for
 // images built without it, such as the VM's own builds.
+//
+// `environment` is `config.appEnv` — the DEPLOYED COPY (`local`/`staging`/
+// `production`) — not `NODE_ENV`. Both images set `NODE_ENV=production`, so this
+// field used to report "production" from staging too, and anyone debugging
+// staging read the wrong answer. `nodeEnv` keeps the build mode visible for
+// what it actually means.
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     commit: process.env.GIT_COMMIT_SHA || null,
-    environment: config.env,
+    environment: config.appEnv,
+    nodeEnv: config.env,
   });
 });
 
