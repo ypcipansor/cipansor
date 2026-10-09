@@ -588,7 +588,8 @@ export function useDailyCheckIn() {
 // ======================
 
 export interface LeaderboardParams {
-  unitId: string;
+  /** Narrows within the reader's santri; without it the API ranks all of them. */
+  unitId?: string;
   periodType: LeaderboardPeriod;
   classId?: string;
   dormRoomId?: string;
@@ -606,7 +607,6 @@ export function useIbadahLeaderboard(params: LeaderboardParams) {
       // The entries are nested under data.data; return the array.
       return response.data.data?.data ?? [];
     },
-    enabled: !!params.unitId,
   });
 }
 
