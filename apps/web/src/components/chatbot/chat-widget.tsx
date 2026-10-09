@@ -218,7 +218,7 @@ export function ChatWidget() {
         <div
           role="dialog"
           aria-label={t("public.chatbot.dialogLabel")}
-          className="fixed bottom-24 right-4 z-50 flex h-[min(32rem,calc(100vh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
+          className="fixed bottom-24 end-4 z-50 flex h-[min(32rem,calc(100vh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
         >
           <div className="flex items-center justify-between border-b border-border bg-primary px-4 py-3 text-primary-foreground">
             <div>
@@ -383,7 +383,7 @@ export function ChatWidget() {
           onClick={() => setOpen(true)}
           tabIndex={-1}
           aria-hidden="true"
-          className="fixed bottom-[1.85rem] right-20 z-50 hidden rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-lg transition-transform hover:scale-105 sm:block"
+          className="fixed bottom-[1.85rem] end-20 z-50 hidden rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-lg transition-transform hover:scale-105 sm:block"
         >
           {t("public.chatbot.launcherInvite")}
         </button>
@@ -405,8 +405,11 @@ export function ChatWidget() {
             ? t("public.chatbot.launcherClose")
             : t("public.chatbot.launcherOpen")
         }
+        // `end-*`, bukan `right-*` — juga pada panel dan pil ajakan: di
+        // halaman Arab (RTL) tombol dan panelnya pindah ke tepi kiri, seperti
+        // tombol mengambang menurut pedoman bidirectionality Material Design.
         className={cn(
-          "fixed bottom-6 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105",
+          "fixed bottom-6 end-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105",
         )}
       >
         {open ? (
