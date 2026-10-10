@@ -232,7 +232,7 @@ describe('pr-template-guard.sh', () => {
     expect(calls).toContain('PATCH');
     expect(calls).not.toContain('COMMENT');
     expect(calls).toContain('PATCHBODY <!-- pr-template-guard -->');
-    expect(calls).toContain("This pull request's description is missing");
+    expect(calls).toContain('Deskripsi pull request ini belum lengkap');
     expect(calls).not.toMatch(/PATCHBODY @/);
   });
 
