@@ -30,7 +30,9 @@ satu jalur PR (satu tempat gate, satu bentuk diff) dan membuat penulis PR selalu
 
 ## Desain target — armada otomatis penuh
 
-Bagian ini adalah **sasaran**, bukan potret keadaan sekarang. Bagian-bagian
+Bagian ini adalah **sasaran**, bukan potret keadaan sekarang. **Disetujui
+maintainer 2026-10-10**, termasuk keempat pilihan di "Selama publik vs sesudah
+privat" dan "Instruksi pelaksanaan". Bagian-bagian
 sesudahnya menggambarkan armada apa adanya, dan "Selisih dari keadaan sekarang"
 di akhir bagian ini adalah daftar pekerjaannya. Setiap automation, baik cloud
 maupun Actions, menyesuaikan diri dengan invarian di bawah. Bila sebuah prompt
@@ -153,7 +155,7 @@ repositori privat:
 
 | Kebutuhan | Selama publik | Sesudah privat (Team) | Dipakai di sini |
 |---|---|---|---|
-| Persetujuan rilis produksi | *required reviewers* pada environment `production` | tidak tersedia | **label `rilis-disetujui` pada issue rilis**, diperiksa `deploy-production.yml` lewat timeline API: diterapkan oleh akun maintainer (dari UI GitHub, atau oleh agen hanya atas perintah maintainer dalam percakapan itu), untuk SHA itu. Bisa dipakai di kedua fase. |
+| Persetujuan rilis produksi | *required reviewers* pada environment `production` | tidak tersedia | **label `rilis-disetujui` pada issue rilis** (dipilih maintainer), diperiksa `deploy-production.yml` lewat timeline API: diterapkan oleh akun maintainer (dari UI GitHub, atau oleh agen hanya atas perintah maintainer dalam percakapan itu), untuk SHA itu. Bisa dipakai di kedua fase. |
 | Uji gabungan PR yang bertumpuk (aturan emas 9) | *merge queue* | tidak tersedia | **ruleset `strict` (cabang harus mutakhir)** + job Actions yang memperbarui cabang PR ber-auto-merge saat `main` bergerak. Bisa dipakai di kedua fase. |
 | Kuota menit Actions | gratis | 3.000 menit/bulan | event dulu (invarian 1); laporan pemakaian mingguan (invarian 13) |
 
@@ -191,6 +193,66 @@ Daftar ini yang perlu disesuaikan. Setiap butir menjadi issue tersendiri;
 7. **WIP dan batas putaran.** Belum ada. Tambahkan pada `Tiket jadi PR` dan
    `Gerbang tinjau PR`.
 8. **Laporan pemakaian.** Belum ada. Tambahkan pada `Pengawas armada`.
+
+### Instruksi pelaksanaan
+
+Untuk setiap automation, terutama OpenHands: **ikuti bagian ini.** Bila
+prompt atau jadwal sebuah automation berbeda dari desain target, yang benar
+adalah desain target. Ubah automation-nya, bukan dokumen ini. Dokumen ini
+hanya berubah lewat PR yang disetujui maintainer.
+
+**Rilis produksi, langkah demi langkah** (keputusan 2026-10-10):
+
+1. Setiap Jumat, `Pembuat catatan rilis` memotong pre-release `vX.Y.Z-rcN`
+   dari SHA yang sedang disajikan staging, menjalankan `load-tests.yml`
+   (k6 smoke) terhadap staging, lalu membuka **satu** issue
+   `Rilis vX.Y.Z-rcN` berisi: daftar PR yang masuk, hasil k6 dibanding
+   baseline, migrasi yang ikut, langkah data pasca-rilis (masing-masing
+   ditandai "perlu persetujuan sendiri"), dan SHA-nya. Bila rc minggu lalu
+   belum disetujui, issue lama ditutup sebagai digantikan, bukan ditumpuk.
+2. Maintainer membaca issue itu. Bila setuju, ia memasang label
+   `rilis-disetujui` dari UI GitHub (juga dari ponsel).
+3. Pemasangan label itu memicu `deploy-production.yml`. Workflow memeriksa
+   lewat timeline API bahwa label dipasang oleh akun maintainer, pada issue
+   rilis untuk SHA itu, dan bahwa staging masih menyajikan SHA itu. Bila
+   salah satu tidak terpenuhi, rilis ditolak dengan alasannya di issue.
+4. Workflow mengambil cadangan, menjalankan pra-cek migrasi, men-deploy, dan
+   menunggu `/healthz` produksi menyajikan SHA itu. `deploy-watch.yml`
+   membuka issue bila ada yang gagal. Tidak ada rollback otomatis.
+5. Langkah data pasca-rilis (loader, reset sandi massal) **tidak** ikut
+   otomatis. Masing-masing menunggu persetujuannya sendiri di issue rilis
+   (gerbang manusia 3).
+6. Rilis resmi (tanpa `-rc`) dibuat dari rc yang sudah di produksi, dengan
+   catatan di body Release. Tidak ada berkas CHANGELOG.
+
+**Urutan pekerjaan** (satu issue per butir, lalu PR sesuai templat; tiap
+butir mengikuti aturan emas di `AGENTS.md`):
+
+1. **Maintainer** mematikan cron cloud `Penjaga issue` dan `Uji beban` di
+   `app.all-hands.dev`.
+2. **Pemeriksa gerbang macet** (Actions): PR ready dan hijau tanpa review
+   gerbang pada head itu > 2 jam → satu issue `gerbang-macet` dan satu
+   dispatch ulang. Dikerjakan pertama, karena gerbang yang diam menahan semua
+   merge.
+3. **Triase satu pemilik**: hanya `Pelabel issue` yang menulis triase,
+   estimasi, dan label, dalam satu komentar yang diperbarui. Automation lain
+   tidak berkomentar triase.
+4. **Pembaruan cabang otomatis** (Actions): saat `main` bergerak, cabang PR
+   yang ber-auto-merge dan tertinggal diperbarui lewat API, sehingga CI
+   berjalan ulang di atas `main` terbaru. **Sesudah** job ini ada di `main`,
+   ruleset `main` dinyalakan `strict` (cabang harus mutakhir). Mengubah
+   ruleset adalah tindakan admin; maintainer melakukannya atau mengizinkannya.
+5. **Rilis lewat label**: issue rilis mingguan (langkah 1 di atas),
+   pemeriksaan label di `deploy-production.yml`, dan `docs/deploy-azure.md` →
+   "How a change is released" ditulis ulang sesuai alur itu.
+6. **Temuan keamanan ke advisory privat**: *private vulnerability reporting*
+   menyala, `SECURITY.md` menjelaskan cara melapor, dan `Pemburu bug`,
+   `Pemindai standar`, serta `Pemindai celah uji` membuka draf advisory, bukan
+   issue, untuk temuan keamanan.
+7. **WIP ≤ 3 dan ≤ 3 putaran review** pada `Tiket jadi PR` dan
+   `Gerbang tinjau PR`.
+8. **Laporan pemakaian mingguan** pada `Pengawas armada`: menit Actions dan
+   token per automation, dibanding anggarannya.
 
 ## Menyeluruh
 
