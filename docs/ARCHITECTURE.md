@@ -61,13 +61,16 @@ Cross-cutting foundations (reuse, don't reinvent):
   `src/jobs/web-push-dispatch.job.ts` (`dispatchPendingPush`), per the stored
   preferences (`.claude/memory/decisions/notifikasi-push.md`).
 - **Scheduled work** — `src/jobs/` (node-cron): snapshots, summaries, cleanup,
-  auto-billing, SPP reminders, identity and transcript purges, and the Web Push
-  dispatcher. The jobs run **inside the API process with no lock**, so the design
-  assumes **one API instance**: a second instance would run each job twice (SPP
-  reminders sent twice). A lock (`pg_try_advisory_lock`) or a separate worker must
-  come before any scale-out. `SCHEDULER_ENABLED=false` switches them off (staging);
-  the Web Push dispatcher runs on its own and is deliberately not behind that
-  switch.
+  auto-billing, SPP reminders, identity and transcript purges. The jobs run
+  **inside the API process with no lock**, so the design assumes **one API
+  instance**: a second instance would run each job twice (SPP reminders sent
+  twice). A lock (`pg_try_advisory_lock`) or a separate worker must come before
+  any scale-out. `SCHEDULER_ENABLED=false` switches them off (staging).
+  The **Web Push dispatcher** is the exception on both counts: it is started on
+  its own, not behind `SCHEDULER_ENABLED` (it creates nothing, only relays what
+  the environment's own users were notified of), and it is already safe on
+  several instances, because each run claims its rows with
+  `FOR UPDATE SKIP LOCKED` (`modules/notifications/push-dispatch.service.ts`).
 
 ### Data layer (Prisma 7)
 
