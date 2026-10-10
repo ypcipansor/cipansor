@@ -115,7 +115,7 @@ pnpm --filter api db:generate         # generate Prisma client (after schema edi
 pnpm --filter @cipansor/shared build  # build shared package (consumed by both apps)
 
 # Local stack (Postgres + Redis) for running/testing end-to-end
-docker compose -f docker-compose.dev.yml up -d
+docker compose up -d db redis         # the db and redis services of docker-compose.yml
 pnpm --filter api db:push             # apply schema to the dev DB
 ALLOW_DESTRUCTIVE_SEED=1 E2E_FIXED_2FA=1 pnpm --filter api db:seed  # WIPES every table, then demo data
 

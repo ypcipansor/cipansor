@@ -797,10 +797,10 @@ Diukur dari `.env.example` (82 kunci). Nama dan fungsi saja, tanpa nilai.
 
 Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure).
 
-- **Membangun & menjalankan lokal:** `pnpm install`; `docker compose -f
-  docker-compose.dev.yml up -d` (PostgreSQL + Redis); `pnpm --filter api
-  db:push`; `pnpm --filter api db:seed` (menghapus seluruh tabel), dengan
-  `E2E_FIXED_2FA=1` untuk suite e2e; `pnpm dev`.
+- **Membangun & menjalankan lokal:** `pnpm install`; `cp .env.example .env`;
+  `docker compose up -d db redis` (PostgreSQL + Redis); `pnpm --filter api
+  db:push`; `ALLOW_DESTRUCTIVE_SEED=1 pnpm --filter api db:seed` (menghapus
+  seluruh tabel), dengan `E2E_FIXED_2FA=1` untuk suite e2e; `pnpm dev`.
 - **Migrasi basis data:** edit `schema.prisma`, lalu `pnpm --filter api
   db:generate` dan `db:migrate` (migrasi tersimpan) atau `db:push` (dev).
   Baseline `0_init` dapat diputar dari basis data kosong.

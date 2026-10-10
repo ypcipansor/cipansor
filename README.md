@@ -189,17 +189,16 @@ GitHub Actions, Azure App Service ([`docs/deploy-azure.md`](docs/deploy-azure.md
 ### Prasyarat
 
 - Node.js 22 dan pnpm 9 (lewat Corepack)
-- Docker, untuk PostgreSQL 16 dan Redis 7 (`docker-compose.dev.yml`)
+- Docker, untuk PostgreSQL 16 dan Redis 7 (layanan `db` dan `redis` di `docker-compose.yml`)
 
 ### Langkah
 
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env          # isi DATABASE_URL, REDIS_URL, JWT_SECRET
-cp apps/web/.env.example apps/web/.env.local
+cp .env.example .env                             # isi DATABASE_URL, REDIS_URL, JWT_SECRET
 pnpm --filter @cipansor/shared build
 
-docker compose -f docker-compose.dev.yml up -d   # Postgres + Redis
+docker compose up -d db redis                    # Postgres + Redis
 pnpm --filter api db:generate
 pnpm --filter api db:push
 # Seed MENGOSONGKAN SEMUA TABEL sebelum mengisi data demo — jangan pernah ke produksi.
