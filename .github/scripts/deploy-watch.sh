@@ -47,7 +47,11 @@ auth=()
 # body with `x=$(req ...)`, which runs req in a subshell — a variable set there
 # never reaches the caller.
 CODE_FILE=$(mktemp)
-trap 'rm -f "$CODE_FILE"' EXIT
+# A workflow whose runs could not be read: the watch saw nothing, which must
+# not end green (lesson github-actions-minutes-exhausted, "a monitor that
+# hears nothing"). Written to a file because check() runs in a pipe.
+BLIND_FILE=$(mktemp)
+trap 'rm -f "$CODE_FILE" "$BLIND_FILE"' EXIT
 httpcode() { cat "$CODE_FILE" 2>/dev/null || echo ""; }
 
 req() { # req <GET|POST> <url> [data-file] -> body on stdout; httpcode() set
@@ -64,7 +68,10 @@ req() { # req <GET|POST> <url> [data-file] -> body on stdout; httpcode() set
         -d '{}' -o "$out" -w '%{http_code}' "$url" 2>/dev/null || true)
     fi
   else
-    code=$(curl -sS --max-time 30 "${auth[@]}" \
+    # -L: a job's logs answer 302 to a signed blob URL. curl drops the
+    # Authorization header on a redirect to another host, which the signed URL
+    # does not need.
+    code=$(curl -sS -L --max-time 30 "${auth[@]}" \
       -H 'Accept: application/vnd.github+json' \
       -o "$out" -w '%{http_code}' "$url" 2>/dev/null || true)
   fi
@@ -135,7 +142,9 @@ report() {
   url=$(printf '%s' "$run" | jq -r '.html_url')
   marker="deploy-watch:run=$id"
 
-  existing=$(req GET "$API/repos/$REPO/issues?state=open&labels=$LABEL&per_page=100")
+  # Closed ones too: closing a report while its run is still the latest must
+  # not raise the same report again on the next check.
+  existing=$(req GET "$API/repos/$REPO/issues?state=all&labels=$LABEL&per_page=100")
   if [ "$(httpcode)" = 200 ] && printf '%s' "$existing" \
     | jq -e --arg m "$marker" '[.[]? | (.body // "") | contains($m)] | any' >/dev/null 2>&1; then
     log "$name: run $id already reported (open issue carries $marker) — nothing to do"
@@ -191,6 +200,7 @@ check() {
   runs=$(req GET "$API/repos/$REPO/actions/workflows/$wf/runs?per_page=15")
   if [ "$(httpcode)" != 200 ]; then
     log "$name: could not list runs (HTTP $(httpcode))"
+    printf '%s (HTTP %s)\n' "$name" "$(httpcode)" >> "$BLIND_FILE"
     return 0
   fi
   # A `skipped` run deployed nothing: its gate job did not run because CI or
@@ -229,12 +239,23 @@ check() {
     return 0
   fi
 
+  # Green but nothing deployed: with no code between the commit staging runs
+  # and this one, its `Update …` job is skipped and the site keeps serving the
+  # earlier commit on purpose (docs/deploy-azure.md, step 2). Only check that
+  # the site answers; the commit it reports is not this run's.
+  local jobs expected=$sha
+  jobs=$(req GET "$API/repos/$REPO/actions/runs/$id/jobs")
+  if [ "$(httpcode)" = 200 ] && printf '%s' "$jobs" \
+    | jq -e '[(.jobs // [])[] | select((.name | startswith("Update ")) and .conclusion == "skipped")] | length > 0' >/dev/null 2>&1; then
+    expected=""
+  fi
+
   # Green — verify the site actually serves this commit (the deploy job's own
   # acceptance test, re-run later in case the site degraded since).
   health=$(probe "$base/healthz?release=$sha")
   hcode=$(httpcode)
   hcommit=$(printf '%s' "$health" | jq -r '.commit // empty' 2>/dev/null || true)
-  if [ "$hcode" != 200 ] || [ "$hcommit" != "$sha" ]; then
+  if [ "$hcode" != 200 ] || { [ -n "$expected" ] && [ "$hcommit" != "$expected" ]; }; then
     report "$name" "$wf" "$latest" degraded \
       "The run is green but $base/healthz is not answering with this commit. The site is not serving what the workflow released — the api container may be restarting or a migration failed on start." \
       "$base/healthz: HTTP ${hcode:-000}, commit '${hcommit:-none}', expected $sha
@@ -251,7 +272,11 @@ body: $(printf '%s' "$health" | head -c 400)"
     return 0
   fi
 
-  log "$name: run $id success — $base is serving $sha (api and web)"
+  if [ -n "$expected" ]; then
+    log "$name: run $id success — $base is serving $sha (api and web)"
+  else
+    log "$name: run $id deployed nothing (no code changed) — $base answers, serving ${hcommit:-?}"
+  fi
 }
 
 main() {
@@ -261,6 +286,10 @@ main() {
     [ -n "${wf:-}" ] || continue
     check "$name" "$wf" "$base"
   done
+  if [ -s "$BLIND_FILE" ]; then
+    echo "::error::deploy-watch could not read the runs of: $(paste -sd, "$BLIND_FILE"). Nothing was checked for them (does the token have actions: read?)."
+    exit 1
+  fi
 }
 
 main "$@"

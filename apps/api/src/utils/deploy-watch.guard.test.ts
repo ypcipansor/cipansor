@@ -30,7 +30,14 @@ type Scenario = {
   healthCommit: string | null; // null => /healthz unreachable
   manifestStatus: number;
   existingIssueBody: string | null;
+  /** The run's jobs; the default is the failed `Update staging`. */
+  jobs?: { id: number; name: string; conclusion: string }[];
+  /** Job logs answer 302 to a blob URL, as GitHub's do. */
+  logsRedirect?: boolean;
+  /** HTTP status of the runs listing (403 = a token without actions: read). */
+  runsStatus?: number;
 };
+let issuesQuery = '';
 
 let scenario: Scenario;
 let server: Server;
@@ -76,15 +83,22 @@ function handler(req: IncomingMessage, res: ServerResponse) {
     return scenario.manifestStatus === 200 ? json(200, {}) : text(scenario.manifestStatus, 'boom');
   }
   if (path.endsWith('/actions/workflows/deploy-staging.yml/runs')) {
+    if (scenario.runsStatus && scenario.runsStatus !== 200) return json(scenario.runsStatus, {});
     return json(200, { workflow_runs: [runJson()] });
   }
   if (path.endsWith('/actions/workflows/deploy-production.yml/runs')) {
     return json(200, { workflow_runs: [] });
   }
   if (/\/actions\/runs\/\d+\/jobs$/.test(path)) {
-    return json(200, { jobs: [{ id: 7, name: 'Update staging', conclusion: 'failure' }] });
+    return json(200, {
+      jobs: scenario.jobs ?? [{ id: 7, name: 'Update staging', conclusion: 'failure' }],
+    });
   }
-  if (/\/actions\/jobs\/\d+\/logs$/.test(path)) {
+  if (/\/actions\/jobs\/\d+\/logs$/.test(path) && scenario.logsRedirect) {
+    res.writeHead(302, { Location: `${baseUrl}/blob/job-7.log`, 'Content-Length': 0 });
+    return res.end();
+  }
+  if (/\/actions\/jobs\/\d+\/logs$/.test(path) || path === '/blob/job-7.log') {
     return text(
       200,
       '2026-10-07T00:00:00Z waiting for release\n' +
@@ -93,6 +107,7 @@ function handler(req: IncomingMessage, res: ServerResponse) {
     );
   }
   if (path.endsWith('/issues') && req.method === 'GET') {
+    issuesQuery = (req.url || '').split('?')[1] ?? '';
     const body = scenario.existingIssueBody;
     return json(200, body ? [{ number: 1, body }] : []);
   }
@@ -120,6 +135,7 @@ function resetScenario(over: Partial<Scenario> = {}) {
     ...over,
   };
   openedBodies = [];
+  issuesQuery = '';
 }
 
 async function runWatch(): Promise<string> {
@@ -182,6 +198,48 @@ describe('deploy-watch.sh', () => {
   it('stays quiet about a skipped run — the failure is upstream, not a deploy', async () => {
     resetScenario({ conclusion: 'skipped' });
     await runWatch();
+    expect(openedBodies).toEqual([]);
+  });
+
+  it('follows the redirect GitHub answers for job logs, so the issue carries them', async () => {
+    resetScenario({ conclusion: 'failure', logsRedirect: true });
+    await runWatch();
+    expect(openedBodies).toHaveLength(1);
+    expect(openedBodies[0]).toContain('staging not answering with commit deadbeef');
+  });
+
+  it('a green run that deployed nothing (no code changed) is not "degraded"', async () => {
+    // docs-only merge: the Update job is skipped and the site keeps the
+    // earlier commit on purpose.
+    resetScenario({
+      healthCommit: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      jobs: [
+        { id: 6, name: 'CI and E2E passed on x', conclusion: 'success' },
+        { id: 7, name: 'Update staging', conclusion: 'skipped' },
+      ],
+    });
+    await runWatch();
+    expect(openedBodies).toEqual([]);
+  });
+
+  it('…but it still reports a site that does not answer', async () => {
+    resetScenario({
+      healthCommit: null,
+      jobs: [{ id: 7, name: 'Update staging', conclusion: 'skipped' }],
+    });
+    await runWatch();
+    expect(openedBodies).toHaveLength(1);
+  });
+
+  it('looks for an earlier report among closed issues too', async () => {
+    resetScenario({ conclusion: 'failure' });
+    await runWatch();
+    expect(issuesQuery).toContain('state=all');
+  });
+
+  it('a watch that cannot read the runs fails loudly instead of passing', async () => {
+    resetScenario({ runsStatus: 403 });
+    await expect(runWatch()).rejects.toMatchObject({ code: 1 });
     expect(openedBodies).toEqual([]);
   });
 
@@ -280,6 +338,8 @@ describe('deploy-watch workflow', () => {
     // A cron here was ~1,440 runs a month (decided 2026-10-10).
     expect(text).not.toMatch(/^\s*schedule:/m);
     expect(text).toMatch(/^\s*issues:\s*write/m);
+    // Listing runs and reading logs need it; without it every call is a 403.
+    expect(text).toMatch(/^\s*actions:\s*read/m);
     expect(text).toMatch(/^\s*issues:\s*write/m);
     expect(text).toMatch(/timeout-minutes:/);
   });

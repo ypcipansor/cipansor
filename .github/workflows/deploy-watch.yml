@@ -36,6 +36,9 @@ concurrency:
 
 permissions:
   contents: read
+  # Listing a workflow's runs and reading a job's logs need the actions scope;
+  # without it every call answers 403 and the watch would see nothing.
+  actions: read
   issues: write
 
 jobs:
