@@ -75,16 +75,23 @@ jobs:
               --container-name "$c" --image "$ACR.azurecr.io/cipansor-$c:$SHA" \
               --target-port "${port[$c]}" -o none
           done
-          # Web Push: this environment's own VAPID pair (decisions/
-          # notifikasi-push.md), from the environment's secret and variable.
-          # Absent = push stays off, so nothing here forces a pair on anyone.
-          # -o none: the command would otherwise echo the settings back.
+          # Pin the deployed-copy identity on every release, alongside the VAPID
+          # pair. Production is where the chatbot must never answer from a
+          # deterministic double; APP_ENV=production makes that explicit rather
+          # than relying on the build-mode inference, and it is what /health
+          # reports as `environment` — NODE_ENV is `production` on staging too,
+          # so it cannot carry this distinction. Never DOCUMENT_TEST_COPY: that
+          # is staging's stamp and must not appear on a real document.
+          settings=(APP_ENV=production)
           if [ -n "$VAPID_PRIVATE_KEY" ] && [ -n "$VAPID_PUBLIC_KEY" ]; then
-            az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
-              --settings VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY" \
-              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY" \
-              VAPID_SUBJECT=mailto:halo@cipansor.or.id -o none
+            settings+=(
+              VAPID_PUBLIC_KEY="$VAPID_PUBLIC_KEY"
+              VAPID_PRIVATE_KEY="$VAPID_PRIVATE_KEY"
+              VAPID_SUBJECT=mailto:halo@cipansor.or.id
+            )
           fi
+          az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
+            --settings "${settings[@]}" -o none
           az webapp restart -g "$RESOURCE_GROUP" -n "$APP"
         env:
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}

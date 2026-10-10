@@ -2,7 +2,7 @@
   "name": "api",
   "version": "0.1.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
     "build:strict": "tsc",
@@ -24,6 +24,7 @@
     "db:seed:ekskul-2027-2028": "tsx prisma/seed-ekskul-2027-2028.ts",
     "db:archive-letters": "tsx prisma/scripts/archive-signed-letters.ts",
     "db:purge-identity-documents": "tsx prisma/scripts/purge-identity-documents.ts",
+    "db:retention-review": "tsx prisma/scripts/review-letter-retention.ts",
     "db:studio": "prisma studio --config prisma/prisma.config.ts",
     "chatbot:eval": "tsx src/modules/chatbot/eval/run.ts"
   },

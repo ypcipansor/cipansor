@@ -7,7 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
-import { prisma } from '@/lib/prisma';
+import { databaseReady } from '@/lib/database-ready';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
 import { csrfProtection } from '@/middleware/csrf';
 import {
@@ -241,28 +241,28 @@ if (config.env !== 'test') {
 // the new code is answering, not just that a container was started. Null for
 // images built without it, such as the VM's own builds.
 //
-// It also probes the database: a process whose Postgres is unreachable cannot
-// serve a single query, so it answers 503 (not-ready) instead of a healthy 200.
-// Before this, the body was static and never touched Prisma, so a load balancer
-// or the release workflow kept routing traffic to a DB-less instance (#665).
-// `status` stays "ok" on success so existing consumers keep working.
+// `environment` is `config.appEnv` — the DEPLOYED COPY (`local`/`staging`/
+// `production`) — not `NODE_ENV`. Both images set `NODE_ENV=production`, so this
+// field used to report "production" from staging too, and anyone debugging
+// staging read the wrong answer. `nodeEnv` keeps the build mode visible for
+// what it actually means.
+//
+// It is also the readiness check (#665): a process whose Postgres is
+// unreachable cannot serve a single query, so it answers 503 instead of a
+// healthy 200, and the release workflow keeps waiting rather than counting it
+// as deployed. The probe is bounded and shared (`databaseReady`), because this
+// endpoint is public and not rate limited.
 app.get('/health', async (_req, res) => {
-  const payload = {
-    status: 'ok',
+  const ready = await databaseReady();
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ok' : 'unavailable',
+    database: ready ? 'ok' : 'unreachable',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     commit: process.env.GIT_COMMIT_SHA || null,
-    environment: config.env,
-  };
-
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-  } catch {
-    res.status(503).json({ ...payload, status: 'unavailable' });
-    return;
-  }
-
-  res.json(payload);
+    environment: config.appEnv,
+    nodeEnv: config.env,
+  });
 });
 
 // Swagger API Documentation (disabled in production for security)
