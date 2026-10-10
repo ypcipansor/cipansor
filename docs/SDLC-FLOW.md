@@ -75,7 +75,10 @@ flowchart TB
     MG --> C14["Pengelola dokumentasi"]:::cloud
     MG --> STG["deploy-staging.yml (build + push image)"]:::gh
     STG --> PROD["deploy-production.yml (manual · sha)"]:::human
-    PROD -. "workflow gagal" .-> BR["main-failure-bridge.yml"]:::gh --> C12["Pemantau deployment"]:::cloud
+    STG -. "selesai" .-> DW["deploy-watch.yml"]:::gh
+    PROD -. "selesai" .-> DW
+    DW -- "gagal / macet / commit salah" --> DWI(["satu issue deploy-watch per run"]):::gh
+    MG -. "CI atau E2E gagal di main" .-> BR["main-failure-bridge.yml"]:::gh --> C12["Pemantau deployment"]:::cloud
     C13["Pembuat catatan rilis (cron Jum 22:00 WIB)"]:::cloud
     C13 -. "memotong pre-release -rc (catatan di body Release, tanpa changelog di repo)" .-> REL2(["GitHub Release (prerelease)"])
   end
@@ -157,8 +160,10 @@ flowchart LR
   MG --> STG["deploy-staging.yml"]:::gh
   STG --> PROD["deploy-production.yml (manual)"]:::human
 
-  C11["Uji beban → staging (03:00 tanggal 1)"]:::cloud -.-> STG
-  C12["Pemantau deployment (reaktif via bridge)"]:::cloud -.-> PROD
+  STG -. selesai .-> DW["deploy-watch.yml → issue deploy-watch"]:::gh
+  PROD -. selesai .-> DW
+  LT["load-tests.yml (k6, manual sebelum rilis)"]:::human -.-> STG
+  C12["Pemantau deployment (CI/E2E gagal di main, via bridge)"]:::cloud
   C13["Pembuat catatan rilis (Jum 22:00) → pre-release -rc"]:::cloud -.-> PROD
   C20["Pemindai standar (Sen 06:00) → issue pending-maintainer"]:::cloud -.-> PROD
   C19["Pemburu bug (harian 09:00) → issue bug berbukti"]:::cloud -.-> PROD
@@ -179,20 +184,27 @@ flowchart TD
 
 | Waktu           | Automation            | Tugas                                                           |
 | --------------- | --------------------- | --------------------------------------------------------------- |
-| 01:30 harian    | Penjaga issue         | mengusangkan issue yang macet                                   |
 | 05:00 harian    | Pengawas armada       | kesehatan semua automation                                      |
 | 09:00 harian    | Pemburu bug           | bug terbukti → satu issue berbukti                              |
 | 06:00 Senin     | Pemindai standar      | penyimpangan standar → `pending-maintainer`                     |
 | 08:15 Senin     | Pemindai celah uji    | satu celah uji berisiko → issue                                 |
 | 22:00 Jumat     | Pembuat catatan rilis | memotong pre-release `-rc` berikutnya → catatan di body Release |
-| 03:00 tanggal 1 | Uji beban             | k6 vs staging → regresi                                         |
 | 08:30 tanggal 1 | Audit kematangan      | menilai 18 item → satu issue                                    |
 
-Actions terjadwal: `duplicate-sweep` (harian 01:30 UTC = 08:30 WIB, menutup
-issue atau PR duplikat 7 hari setelah peringatan). Tidak ada `load-tests.yml` di
-`.github/workflows/` — `Uji beban` (cron cloud) adalah satu-satunya pelari beban
-saat ini; satu-satunya changelog berasal dari body Release `Pembuat catatan
-rilis`, bukan workflow.
+Actions terjadwal: hanya `duplicate-sweep` (harian 01:30 UTC = 08:30 WIB,
+menutup issue atau PR duplikat 7 hari setelah peringatan). Actions berbasis
+event: `deploy-watch.yml`, sesudah tiap `Deploy staging`/`Deploy production`
+selesai. Manual: `load-tests.yml` (k6 vs staging), langkah wajib sebelum tiap
+rilis produksi (`docs/deploy-azure.md` → "How a change is released").
+Satu-satunya catatan rilis berasal dari body Release `Pembuat catatan rilis`,
+bukan berkas di repositori.
+
+Yang **sengaja tidak ada** (diputuskan 2026-10-10): tidak ada penutupan issue
+berdasarkan umur — issue yang menunggu keputusan yayasan atau rilis memang
+lama, dan stale bot menutupnya tanpa ada yang menyelesaikan; tidak ada uji
+beban terjadwal — tanpa lalu lintas nyata, run berkala mengukur staging yang
+sama-sama sepi; tidak ada pantauan metrik terjadwal sebelum ada pengguna
+nyata.
 
 ## Peran — siapa berbuat sebagai siapa
 
@@ -208,8 +220,8 @@ rilis`, bukan workflow.
 | Peninjau kode         | tinjauan baris demi baris + blok `suggestion`                                                                  |
 | Pemindai celah uji    | satu celah pengujian berisiko → issue                                                                          |
 | Otomasi QA            | menjalankan alur yang berubah, melaporkan lulus/gagal                                                          |
-| Uji beban             | k6 vs staging                                                                                                  |
-| Pemantau deployment   | kegagalan workflow di `main` → issue diagnosis                                                                 |
+| Uji beban             | k6 vs staging — kini `load-tests.yml`, dijalankan manual sebelum tiap rilis (bukan cron)                       |
+| Pemantau deployment   | CI atau E2E yang gagal di `main` → issue diagnosis (penyebabnya)                                               |
 | Pembuat catatan rilis | pre-release `-rc` + catatan rilis dari conventional commits                                                    |
 | Pengelola dokumentasi | merge yang berdampak dokumentasi → issue dokumentasi basi                                                      |
 | Pelabel issue         | tipe + prioritas + kesiapan (`ready`/`needs-info`/`question`/`duplicate`)                                      |
@@ -254,14 +266,34 @@ _menulis_ artefak tidak pernah menjadi akun yang _menyetujuinya_.
   bertindak saat dipicu dan memeriksa check-run sendiri, tidak melakukan apa pun
   selama masih ada yang berjalan, dan `pr-lifecycle.yml` (pada `workflow_run`)
   men-dispatch-nya begitu semua check wajib lulus. `Pemantau deployment` memakai
-  pola yang sama: `main-failure-bridge.yml` men-dispatch-nya saat workflow di
+  pola yang sama: `main-failure-bridge.yml` men-dispatch-nya saat CI atau E2E di
   `main` selesai gagal dan run yang gagal itu masih menjadi tip `main`; event `workflow_run` di automation
   itu hanya pelengkap best-effort, dan promptnya melakukan dedupe per run ID agar
   tidak ada issue ganda. Keduanya butuh rahasia repo `OPENHANDS_API_KEY`.
 - **Konsekuensi deterministik milik Actions.** Jembatan hasil CI, penutupan
-  duplikat 7 hari, pemeriksaan ketidaksesuaian label, dan jembatan kegagalan
-  `main` adalah skrip, bukan agen: harus menyala tepat waktu dan tidak memakan
+  duplikat 7 hari, pemeriksaan ketidaksesuaian label, jembatan kegagalan
+  `main`, dan pengawas deploy adalah skrip, bukan agen: harus menyala tepat waktu dan tidak memakan
   token.
+- **Satu masalah, satu peringatan.** Setiap kegagalan punya tepat satu
+  pelapor, dan pelapor itu menyimpan penanda per run sehingga run yang sama
+  tidak dilaporkan dua kali:
+
+  | Yang gagal | Pelapor | Isi issue |
+  |---|---|---|
+  | CI atau E2E di `main` | `main-failure-bridge.yml` → `Pemantau deployment` | diagnosis penyebab (kode mana, mengapa) — butuh penilaian, jadi agen |
+  | `Deploy staging`/`Deploy production` gagal, macet > 45 menit, atau hijau tetapi `/healthz` tidak menyajikan commit-nya | `deploy-watch.yml` (skrip) | id run, commit, baris log yang gagal — gejala yang pasti, jadi skrip |
+  | Situs menurun tanpa deploy (kontainer restart, pengaturan rusak) | Health check App Service + availability test Application Insights | dari platform, di luar repositori |
+
+  Run deploy yang `skipped` (gerbangnya tidak jalan karena CI/E2E gagal) tidak
+  dilaporkan pengawas deploy: penyebabnya sudah dilaporkan bridge. Rantai
+  `E2E Tests (push) → Deploy staging → deploy-watch.yml` adalah tingkat
+  `workflow_run` ketiga, batas maksimum GitHub; jangan menambah tingkat
+  keempat. Dasarnya: Google SRE meminta setiap peringatan dapat ditindaklanjuti,
+  membedakan gejala ("apa yang rusak") dari penyebab ("mengapa"), dan
+  menghindari halaman ganda untuk masalah yang sama; manajemen event PagerDuty
+  menyatukan event dengan kunci dedupe per masalah; dan DORA mengukur
+  *change fail rate* serta *failed deployment recovery time*, yang hanya bisa
+  dihitung bila setiap deploy gagal tercatat tepat sekali. Rujukan di bawah.
 - **Satu penulis PR.** Hanya `Tiket jadi PR` yang membuka PR. Semua temuan lain
   membuka issue; `bot-implement` menyerahkannya ke penulis tunggal itu. Ini
   menghapus PR spekulatif dari automation lain dan menjaga satu bentuk diff.
@@ -293,10 +325,34 @@ PR` (item 1–18) memetakan satu-ke-satu ke 18 item Agentic SDLC; `Pelabel issue
   terlemah, sehingga armada bisa diarahkan dengan sengaja.
 - **Peringatan tidak pernah memblokir, kecuali gate templat.** Hanya job
   `template` yang memblokir; `visual-evidence` hanya berkomentar.
-- **Rollback manual.** `Pemantau deployment` melaporkan deploy buruk; ia tidak
-  pernah memutar balik.
+- **Rollback manual.** `deploy-watch.yml` dan `Pemantau deployment` hanya
+  melaporkan; tidak ada yang memutar balik, menjalankan ulang, atau mengganti
+  kontainer. Manusia memutuskan (`docs/deploy-azure.md`).
 - **Tinjauan mengusulkan perbaikannya.** `Peninjau kode`/`Peninjau
 arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
   perbaikan berlaku dengan satu klik.
 - **Guard self-comment wajib.** Setiap automation yang dipicu komentar menjaga
   pemeriksaan footer `This comment was created by an AI agent` (#680).
+
+## Rujukan
+
+- Google SRE Book, "Monitoring Distributed Systems" — setiap peringatan harus
+  dapat ditindaklanjuti; gejala vs penyebab; halaman ganda untuk satu masalah:
+  <https://sre.google/sre-book/monitoring-distributed-systems/>
+- PagerDuty, "Event Management" — `dedup_key` menyatukan event satu masalah ke
+  satu insiden: <https://support.pagerduty.com/main/docs/event-management>
+- DORA, "DORA's software delivery metrics: the four keys" — *change fail rate*,
+  *failed deployment recovery time*: <https://dora.dev/guides/dora-metrics-four-keys/>
+- GitHub Docs, "Events that trigger workflows" → `workflow_run` — paling banyak
+  tiga tingkat rantai, dan hanya dari berkas di cabang bawaan:
+  <https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run>
+- Microsoft Learn, "Monitor App Service instances by using Health check":
+  <https://learn.microsoft.com/azure/app-service/monitor-instances-health-check>
+- Microsoft Learn, "Application Insights availability tests":
+  <https://learn.microsoft.com/azure/azure-monitor/app/availability>
+- Grafana k6, "Automated performance testing" — mulai dari smoke test,
+  bandingkan run yang identik: <https://grafana.com/docs/k6/latest/testing-guides/automated-performance-testing/>
+- Drew DeVault, "GitHub stale bot considered harmful" (2021):
+  <https://drewdevault.com/2021/10/26/stalebot.html>; Khatoonabadi dkk.,
+  "Understanding the Helpfulness of Stale Bot for Pull-Based Development"
+  (ACM TOSEM 2023): <https://doi.org/10.1145/3624739>

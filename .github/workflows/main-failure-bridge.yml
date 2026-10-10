@@ -12,11 +12,14 @@
 name: Main failure bridge
 
 on:
-  # Only workflows that actually run on `main`: CI and E2E on a push, and the
-  # staging deploy that follows a green E2E run. `Deploy production` is manual
-  # (workflow_dispatch), so it never produces a `workflow_run` here.
+  # The code checks that run on a push to `main`: a failure there needs a
+  # diagnosis (the "why"), which is what the monitor is for. The deploys are
+  # NOT here: `deploy-watch.yml` reports a failed, hung or wrong-commit deploy
+  # deterministically, and a deploy run skipped because CI/E2E failed is the
+  # failure this bridge already reports. One problem, one issue (decided
+  # 2026-10-10; docs/SDLC-FLOW.md → "Satu masalah, satu peringatan").
   workflow_run:
-    workflows: [CI, E2E Tests, Deploy staging]
+    workflows: [CI, E2E Tests]
     types: [completed]
 
 # `commits/main` is read with contents: read; nothing here reads check runs.

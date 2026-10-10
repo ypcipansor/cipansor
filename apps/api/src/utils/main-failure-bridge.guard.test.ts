@@ -32,14 +32,15 @@ describe('main-failure-bridge.yml', () => {
     expect(BRIDGE).not.toMatch(/^\s*pull_request:/m);
   });
 
-  it('watches only workflows that run on main', () => {
+  it('watches the code checks on main, and leaves the deploys to deploy-watch', () => {
     // Read the `workflows:` list itself, not the whole file: the comments name
     // the excluded workflows, so a whole-file check would be self-defeating.
     const list = BRIDGE.match(/workflows:\s*(\[[^\]]*\])/)?.[1] ?? '';
     expect(list).toContain('CI');
     expect(list).toContain('E2E Tests');
-    expect(list).toContain('Deploy staging');
-    // A manual workflow never produces a `workflow_run` on main.
+    // deploy-watch.yml reports the deploys; listing them here too would open
+    // a second issue for one failed deploy.
+    expect(list).not.toContain('Deploy staging');
     expect(list).not.toContain('Deploy production');
   });
 
