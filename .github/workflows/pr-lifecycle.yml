@@ -6,7 +6,7 @@
 #
 #   green CI + draft PR              -> post the all-green comment, leave the
 #                                       draft decision to a human
-#   green CI + ready PR              -> dispatch the review gate (SDLC 22)
+#   green CI + ready PR              -> dispatch the review gate (`Gerbang tinjau PR`)
 #   red CI                           -> quiet (checks are visible on the PR)
 #   changes requested on a ready PR  -> quiet (the gate posted the review)
 #
