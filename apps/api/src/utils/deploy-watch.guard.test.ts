@@ -176,6 +176,15 @@ describe('deploy-watch.sh', () => {
     expect(openedBodies[0]).toContain('cancelled');
   });
 
+  // A skipped run deployed nothing: E2E or CI did not pass on main, and that
+  // failure is reported upstream. Calling it a failed deploy would be a second
+  // alert for one problem (lesson from 2026-10-09, a skipped run in the history).
+  it('stays quiet about a skipped run — the failure is upstream, not a deploy', async () => {
+    resetScenario({ conclusion: 'skipped' });
+    await runWatch();
+    expect(openedBodies).toEqual([]);
+  });
+
   it('reports a run stuck past the threshold and stays quiet below it', async () => {
     resetScenario({ status: 'in_progress', conclusion: null, minutesAgo: 120 });
     await runWatch();

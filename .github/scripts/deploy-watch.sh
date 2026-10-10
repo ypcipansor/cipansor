@@ -193,7 +193,11 @@ check() {
     log "$name: could not list runs (HTTP $(httpcode))"
     return 0
   fi
-  latest=$(printf '%s' "$runs" | jq -c '(.workflow_runs // []) | sort_by(.created_at) | last // empty')
+  # A `skipped` run deployed nothing: its gate job did not run because CI or
+  # E2E did not pass on main. That failure is upstream and is reported there
+  # (main-failure-bridge.yml); calling it a failed deploy would raise a second
+  # alert for one problem. The run that matters is the latest one that tried.
+  latest=$(printf '%s' "$runs" | jq -c '(.workflow_runs // []) | map(select(.conclusion != "skipped")) | sort_by(.created_at) | last // empty')
   if [ -z "$latest" ] || [ "$latest" = null ]; then
     log "$name: no runs to watch"
     return 0
