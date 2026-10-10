@@ -97,9 +97,12 @@ picker and no punch ever carried a location. Unit tests mock the component's
 inputs and the e2e punched through the API, so nothing was red; the first
 person to open the camera in a real browser would have found it. Two checks
 now hold it: `security-headers.test.ts` reads the components for those calls
-and fails when the header denies one, and a Chromium e2e (fake camera in
-`playwright.config.ts`, granted permissions) takes the photo and reads the
-location on screen. The policy belongs to the *document*, so allowing it on one
+and fails when the header denies one, and a Chromium e2e reads
+`document.featurePolicy` in the page, then takes the photo and reads the
+location on screen. Its camera is a canvas stream injected by the test: CI's
+headless Chromium (the headless shell) opens no fake camera even with
+`--use-fake-device-for-media-stream`, which passed on a full Chromium locally
+and failed every try in CI. The policy belongs to the *document*, so allowing it on one
 path is not enough: a client-side navigation keeps the policy of the page the
 session was loaded on. When a page starts using a powerful feature, change the
 header in the same change — and test the flow in a browser, not only its API.

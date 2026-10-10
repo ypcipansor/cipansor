@@ -468,13 +468,36 @@ test.describe("Absen Saya — a punch is recorded", () => {
   }) => {
     test.skip(
       browserName !== "chromium",
-      "only the chromium project is launched with a fake camera",
+      "document.featurePolicy, read below, is Chromium's",
     );
-    // The page's own Permissions-Policy once said `camera=()` and
-    // `geolocation=()`: the browser refused both without a prompt, every
-    // selfie fell back to a file, and no punch had a location. Only a test
-    // that takes the photo and reads the position in the page sees that.
-    await context.grantPermissions(["camera", "geolocation"]);
+    // A camera made of a canvas. The page's own path still runs as on a
+    // phone — getUserMedia, the <video>, the canvas it draws on, the upload —
+    // but CI's headless Chromium has no camera to fake, so the device itself
+    // comes from here. That steps around the browser's own camera check, which
+    // is why the policy is read from the document below.
+    await page.addInitScript(() => {
+      const devices = navigator.mediaDevices;
+      const real = devices.getUserMedia.bind(devices);
+      devices.getUserMedia = async (constraints?: MediaStreamConstraints) => {
+        if (!constraints?.video) return real(constraints);
+        const canvas = document.createElement("canvas");
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext("2d")!;
+        let hue = 0;
+        const paint = () => {
+          hue = (hue + 9) % 360;
+          ctx.fillStyle = `hsl(${hue} 55% 45%)`;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        };
+        paint();
+        setInterval(paint, 100);
+        return canvas.captureStream(10);
+      };
+    });
+    // The position is the browser's own (Playwright's emulation), so it does
+    // go through the document's policy.
+    await context.grantPermissions(["geolocation"]);
     await context.setGeolocation({
       latitude: -7.2,
       longitude: 107.9,
@@ -482,6 +505,20 @@ test.describe("Absen Saya — a punch is recorded", () => {
     });
     await injectSession(page, guru);
     await page.goto("/hr/attendance/me");
+
+    // The page's Permissions-Policy once said `camera=()` and
+    // `geolocation=()`: the browser refused both without a prompt, every
+    // selfie fell back to a file and no punch had a location.
+    const allowed = await page.evaluate(() => {
+      const doc = document as Document & {
+        featurePolicy?: { allowsFeature(feature: string): boolean };
+      };
+      return {
+        camera: doc.featurePolicy?.allowsFeature("camera"),
+        geolocation: doc.featurePolicy?.allowsFeature("geolocation"),
+      };
+    });
+    expect(allowed).toEqual({ camera: true, geolocation: true });
 
     await page.getByRole("button", { name: "Buka Kamera" }).click();
     await page.getByRole("button", { name: "Ambil Foto" }).click();
