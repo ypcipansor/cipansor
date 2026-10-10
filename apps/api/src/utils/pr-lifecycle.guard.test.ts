@@ -15,7 +15,7 @@ import { join, resolve } from 'path';
  *    numeric id — the GraphQL node id is rejected there;
  *  - a green draft PR gets its all-green notice without waiting for Analyze or
  *    CodeQL, which no checked-in workflow publishes;
- *  - a green **ready** PR dispatches the `SDLC 22` review gate (via `curl`)
+ *  - a green **ready** PR dispatches the `Gerbang tinjau PR` review gate (via `curl`)
  *    rather than relying on a `ready_for_review` transition that will not come;
  *  - a changes-requested review holds the PR only while it is on the current
  *    head: once the author has pushed and the head is green, the gate is

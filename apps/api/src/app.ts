@@ -7,6 +7,7 @@ import swaggerUi from 'swagger-ui-express';
 import { config } from '@/config';
 import { buildCorsMiddleware } from '@/config/cors';
 import { logger } from '@/lib/logger';
+import { databaseReady } from '@/lib/database-ready';
 import { errorHandler, notFoundHandler } from '@/middleware/error';
 import { csrfProtection } from '@/middleware/csrf';
 import {
@@ -232,7 +233,7 @@ if (config.env !== 'test') {
   );
 }
 
-// Health check endpoint (not rate limited).
+// Readiness check endpoint (not rate limited).
 //
 // `commit` is the git SHA the image was built from (GIT_COMMIT_SHA, baked in by
 // the Azure release workflows). Those workflows poll this endpoint through the
@@ -245,9 +246,17 @@ if (config.env !== 'test') {
 // field used to report "production" from staging too, and anyone debugging
 // staging read the wrong answer. `nodeEnv` keeps the build mode visible for
 // what it actually means.
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
+//
+// It is also the readiness check (#665): a process whose Postgres is
+// unreachable cannot serve a single query, so it answers 503 instead of a
+// healthy 200, and the release workflow keeps waiting rather than counting it
+// as deployed. The probe is bounded and shared (`databaseReady`), because this
+// endpoint is public and not rate limited.
+app.get('/health', async (_req, res) => {
+  const ready = await databaseReady();
+  res.status(ready ? 200 : 503).json({
+    status: ready ? 'ok' : 'unavailable',
+    database: ready ? 'ok' : 'unreachable',
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
     commit: process.env.GIT_COMMIT_SHA || null,

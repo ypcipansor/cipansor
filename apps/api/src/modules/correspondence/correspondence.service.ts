@@ -1,3 +1,4 @@
+import { wibDayOf } from '@/utils/wib-day';
 import {
   Prisma,
   LetterFlowAction,
@@ -100,6 +101,8 @@ async function recordFlow(
  */
 const DEFAULT_AGENDA_FORMAT = '[NO]/[TYPE]/Y-CPS/[ROMAN]/[YEAR]';
 
+const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
 /** Pengguna internal yang disebut dalam daftar tembusan, tanpa duplikat. */
 function ccUserIds(cc?: LetterCcInput[] | null): string[] {
   return Array.from(new Set((cc ?? []).map((c) => c.userId).filter((id): id is string => !!id)));
@@ -193,11 +196,12 @@ export const CorrespondenceService = {
 
     const newNumber = updatedAgenda.lastNumber;
 
-    // 4. Format String
-    const date = new Date();
-    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-    const romanMonth = romanMonths[date.getMonth()];
-    const year = date.getFullYear().toString();
+    // 4. Format String. Bulan dan tahun menurut kalender WIB, bukan zona jam
+    // server: nomor dicetak ke naskah resmi, dan kontainer API berjalan dalam
+    // UTC, sehingga surat pukul 00:00–07:00 WIB tanggal 1 dulu memakai bulan,
+    // bahkan tahun, kemarin (#743).
+    const [year, month] = wibDayOf(new Date()).split('-');
+    const romanMonth = ROMAN_MONTHS[Number(month) - 1];
 
     let formatted = agenda.format
       .replace('[NO]', newNumber.toString().padStart(3, '0'))
