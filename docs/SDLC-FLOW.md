@@ -631,3 +631,8 @@ arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
 - Prometheus Operator runbook, "Watchdog" — peringatan yang selalu menyala
   sebagai *dead man's switch* untuk jalur peringatan itu sendiri:
   <https://runbooks.prometheus-operator.dev/runbooks/general/watchdog/>
+- DORA, "Streamlining change approval" — persetujuan yang berat memperlambat
+  pengiriman dan memperbesar dampak tiap rilis; tinjauan sejawat yang didukung
+  otomasi dan pengujian menurunkan risiko tanpa mengorbankan kinerja (dasar
+  catatan HUMAN hanya untuk PR berisiko):
+  <https://dora.dev/capabilities/streamlining-change-approval/>
