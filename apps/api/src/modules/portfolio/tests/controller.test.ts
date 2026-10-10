@@ -28,7 +28,7 @@ function mockReqRes(overrides: Partial<Request> = {}) {
     query: {},
     params: {},
     body: {},
-    user: { sub: 'user-1' },
+    user: { sub: 'user-1', roleCode: 'SMPIT_GURU', unitId: 'unit-smp' },
     ...overrides,
   } as unknown as Request;
   const res = {
@@ -88,7 +88,7 @@ describe('portfolio controller', () => {
     await run(controller.addComment, req, res);
     expect(portfolioService.addPortfolioComment).toHaveBeenCalledWith(
       { portfolioId: 'p1', content: 'hi' },
-      { sub: 'user-1' }
+      req.user
     );
     expect((res as any).statusCode).toBe(201);
   });
@@ -120,6 +120,8 @@ describe('portfolio controller hands the verified user to every service call', (
       body: { content: 'x' } as any,
     });
     await run(handler as any, req, res);
-    expect(fn.mock.calls.at(-1)!.at(-1)).toEqual({ sub: 'user-1' });
+    // The verified user itself — role and unit included, which studentScope
+    // reads — not a copy that keeps only the id.
+    expect(fn.mock.calls.at(-1)!.at(-1)).toBe(req.user);
   });
 });
