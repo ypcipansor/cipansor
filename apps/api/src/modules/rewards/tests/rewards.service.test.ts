@@ -47,6 +47,17 @@ const parent: ScopeActor = { sub: 'parent-1', roleCode: 'SDIT_ORANG_TUA', unitId
 
 const studentId = '11111111-1111-1111-1111-111111111111';
 
+// What `STUDENT_SUMMARY_SELECT` returns for one santri (utils/student-summary.ts).
+const summaryStudent = {
+  id: studentId,
+  nis: '2024001',
+  photoUrl: null,
+  user: { id: 'user-s1', name: 'Ahmad Santri' },
+  unit: { id: 'unit-1', name: 'SD IT', type: 'SD' },
+  enrollments: [{ class: { id: 'class-1', name: '4A' } }],
+};
+const SUMMARY_KEYS = ['enrollments', 'id', 'nis', 'photoUrl', 'unit', 'user'];
+
 describe('rewards service — unit scope (CWE-863)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -184,7 +195,7 @@ describe('rewards service — behaviour', () => {
   });
 
   it('paginates and reports the total', async () => {
-    mocked.reward.findMany.mockResolvedValue([{ id: 'a' }]);
+    mocked.reward.findMany.mockResolvedValue([{ id: 'a', student: summaryStudent }]);
     mocked.reward.count.mockResolvedValue(11);
 
     const result = await getRewards({ page: 2, limit: 2 }, teacher);
@@ -216,5 +227,62 @@ describe('rewards service — behaviour', () => {
       deducted: 10,
       balance: 20,
     });
+  });
+});
+
+describe('rewards service — names the santri, nothing more', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.student.findFirst.mockResolvedValue({ id: studentId });
+    mocked.reward.findMany.mockResolvedValue([{ id: 'reward-1', student: summaryStudent }]);
+    mocked.reward.count.mockResolvedValue(1);
+    mocked.reward.findFirst.mockResolvedValue({ id: 'reward-1', student: summaryStudent });
+    mocked.reward.create.mockResolvedValue({ id: 'reward-1', student: summaryStudent });
+    mocked.reward.update.mockResolvedValue({ id: 'reward-1', student: summaryStudent });
+  });
+
+  it('selects only the summary columns of the santri on every read and write', async () => {
+    await getRewards({ page: 1, limit: 20 }, teacher);
+    await getRewardById('reward-1', teacher);
+    await createReward(
+      { studentId, category: 'tahfidz', description: 'Hafal juz 30', points: 10 },
+      'teacher-1',
+      teacher
+    );
+    await updateReward('reward-1', { description: 'Hafal juz 29 dan 30' }, teacher);
+
+    const calls = [
+      mocked.reward.findMany.mock.calls[0][0],
+      mocked.reward.findFirst.mock.calls[0][0],
+      mocked.reward.create.mock.calls[0][0],
+      mocked.reward.update.mock.calls[0][0],
+    ];
+    for (const call of calls) {
+      // `include` on the relation would send every column of the santri row.
+      expect(call.include.student.include).toBeUndefined();
+      expect(Object.keys(call.include.student.select).sort()).toEqual(SUMMARY_KEYS);
+    }
+  });
+
+  it('puts the name and the active class at the top of the santri', async () => {
+    const { data } = await getRewards({ page: 1, limit: 20 }, teacher);
+    const one = await getRewardById('reward-1', teacher);
+
+    for (const row of [data[0], one]) {
+      expect(row?.student).toEqual({
+        id: studentId,
+        nis: '2024001',
+        photoUrl: null,
+        user: { id: 'user-s1', name: 'Ahmad Santri' },
+        unit: { id: 'unit-1', name: 'SD IT', type: 'SD' },
+        name: 'Ahmad Santri',
+        class: { id: 'class-1', name: '4A' },
+      });
+    }
+  });
+
+  it('answers null for a row outside the caller\u2019s reach, not an empty santri', async () => {
+    mocked.reward.findFirst.mockResolvedValue(null);
+    await expect(getRewardById('reward-1', teacher)).resolves.toBeNull();
   });
 });

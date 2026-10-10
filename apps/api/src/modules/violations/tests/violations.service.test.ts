@@ -39,6 +39,17 @@ const parent: ScopeActor = { sub: 'parent-1', roleCode: 'SDIT_ORANG_TUA', unitId
 
 const studentId = '11111111-1111-1111-1111-111111111111';
 
+// What `STUDENT_SUMMARY_SELECT` returns for one santri (utils/student-summary.ts).
+const summaryStudent = {
+  id: studentId,
+  nis: '2024001',
+  photoUrl: null,
+  user: { id: 'user-s1', name: 'Ahmad Santri' },
+  unit: { id: 'unit-1', name: 'SD IT', type: 'SD' },
+  enrollments: [{ class: { id: 'class-1', name: '4A' } }],
+};
+const SUMMARY_KEYS = ['enrollments', 'id', 'nis', 'photoUrl', 'unit', 'user'];
+
 describe('violations service — unit scope (CWE-863)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -172,7 +183,7 @@ describe('violations service — behaviour', () => {
   });
 
   it('paginates and reports the total', async () => {
-    mocked.violation.findMany.mockResolvedValue([{ id: 'a' }]);
+    mocked.violation.findMany.mockResolvedValue([{ id: 'a', student: summaryStudent }]);
     mocked.violation.count.mockResolvedValue(11);
 
     const result = await getViolations({ page: 2, limit: 2 }, teacher);
@@ -190,5 +201,69 @@ describe('violations service — behaviour', () => {
       equals: 'ibadah',
       mode: 'insensitive',
     });
+  });
+});
+
+describe('violations service — names the santri, nothing more', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocked.student.findFirst.mockResolvedValue({ id: studentId });
+    mocked.violation.findMany.mockResolvedValue([{ id: 'violation-1', student: summaryStudent }]);
+    mocked.violation.count.mockResolvedValue(1);
+    mocked.violation.findFirst.mockResolvedValue({ id: 'violation-1', student: summaryStudent });
+    mocked.violation.create.mockResolvedValue({ id: 'violation-1', student: summaryStudent });
+    mocked.violation.update.mockResolvedValue({ id: 'violation-1', student: summaryStudent });
+  });
+
+  it('selects only the summary columns of the santri on every read and write', async () => {
+    await getViolations({ page: 1, limit: 20 }, teacher);
+    await getViolationById('violation-1', teacher);
+    await createViolation(
+      {
+        studentId,
+        type: 'MINOR',
+        category: 'ketertiban',
+        description: 'Terlambat masuk kelas',
+        occurredAt: new Date('2026-09-01').toISOString(),
+        points: 5,
+      },
+      'teacher-1',
+      teacher
+    );
+    await updateViolation('violation-1', { description: 'Terlambat dua kali' }, teacher);
+
+    const calls = [
+      mocked.violation.findMany.mock.calls[0][0],
+      mocked.violation.findFirst.mock.calls[0][0],
+      mocked.violation.create.mock.calls[0][0],
+      mocked.violation.update.mock.calls[0][0],
+    ];
+    for (const call of calls) {
+      // `include` on the relation would send every column of the santri row.
+      expect(call.include.student.include).toBeUndefined();
+      expect(Object.keys(call.include.student.select).sort()).toEqual(SUMMARY_KEYS);
+    }
+  });
+
+  it('puts the name and the active class at the top of the santri', async () => {
+    const { data } = await getViolations({ page: 1, limit: 20 }, teacher);
+    const one = await getViolationById('violation-1', teacher);
+
+    for (const row of [data[0], one]) {
+      expect(row?.student).toEqual({
+        id: studentId,
+        nis: '2024001',
+        photoUrl: null,
+        user: { id: 'user-s1', name: 'Ahmad Santri' },
+        unit: { id: 'unit-1', name: 'SD IT', type: 'SD' },
+        name: 'Ahmad Santri',
+        class: { id: 'class-1', name: '4A' },
+      });
+    }
+  });
+
+  it('answers null for a row outside the caller\u2019s reach, not an empty santri', async () => {
+    mocked.violation.findFirst.mockResolvedValue(null);
+    await expect(getViolationById('violation-1', teacher)).resolves.toBeNull();
   });
 });

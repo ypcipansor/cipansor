@@ -7,6 +7,7 @@ import {
   studentScope,
   type ScopeActor,
 } from '../../utils/student-scope';
+import { STUDENT_SUMMARY_SELECT, withStudentSummary } from '../../utils/student-summary';
 
 /**
  * `studentScope` returns the santri the caller may see; folding it into the
@@ -25,21 +26,18 @@ export async function createViolation(
   actor: ScopeActor
 ) {
   await assertStudentInScope(data.studentId, actor);
-  return prisma.violation.create({
+  const created = await prisma.violation.create({
     data: {
       ...data,
       occurredAt: new Date(data.occurredAt),
       reportedById,
     } as any,
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       reportedBy: { select: { id: true, name: true } },
     },
   });
+  return withStudentSummary(created);
 }
 
 export async function getViolations(query: QueryViolationDto, actor: ScopeActor) {
@@ -70,12 +68,7 @@ export async function getViolations(query: QueryViolationDto, actor: ScopeActor)
     prisma.violation.findMany({
       where,
       include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            unit: { select: { id: true, name: true } },
-          },
-        },
+        student: { select: STUDENT_SUMMARY_SELECT },
         reportedBy: { select: { id: true, name: true } },
       },
       orderBy: { occurredAt: 'desc' },
@@ -86,7 +79,7 @@ export async function getViolations(query: QueryViolationDto, actor: ScopeActor)
   ]);
 
   return {
-    data,
+    data: data.map(withStudentSummary),
     meta: {
       page,
       limit,
@@ -97,38 +90,31 @@ export async function getViolations(query: QueryViolationDto, actor: ScopeActor)
 }
 
 export async function getViolationById(id: string, actor: ScopeActor) {
-  return prisma.violation.findFirst({
+  const row = await prisma.violation.findFirst({
     where: { AND: [{ id }, { student: studentScope(actor) }] },
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-          unit: { select: { id: true, name: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       reportedBy: { select: { id: true, name: true } },
     },
   });
+  return row ? withStudentSummary(row) : null;
 }
 
 export async function updateViolation(id: string, data: UpdateViolationDto, actor: ScopeActor) {
   const existing = await getViolationById(id, actor);
   if (!existing) return null;
-  return prisma.violation.update({
+  const updated = await prisma.violation.update({
     where: { id },
     data: {
       ...data,
       ...(data.occurredAt && { occurredAt: new Date(data.occurredAt) }),
     },
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       reportedBy: { select: { id: true, name: true } },
     },
   });
+  return withStudentSummary(updated);
 }
 
 export async function deleteViolation(id: string, actor: ScopeActor) {

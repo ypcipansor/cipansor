@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { certificateVerificationUrl } from '../../utils/verification-url';
 import { assertStudentInScope, studentScope } from '../../utils/student-scope';
+import { STUDENT_SUMMARY_SELECT, toStudentSummary } from '../../utils/student-summary';
 import { generateCertificatePdfBuffer } from '../../utils/generate-certificate-pdf';
 import { Errors } from '../../middleware/error';
 import type {
@@ -25,27 +26,11 @@ export interface CertificateActor {
 }
 
 /**
- * The santri a certificate names, as far as the certificate shows them. Never
- * `include` on `student`: that sends every column of the row — NIK, KK, the
- * parents' NIK and income — to whoever reads the certificate
- * (`.claude/memory/lessons/prisma-include-leaks-pii.md`).
+ * The santri a certificate names, as far as the certificate shows them
+ * (`STUDENT_SUMMARY_SELECT`; never `include` on `student`).
  */
-const studentSelect = {
-  id: true,
-  nis: true,
-  photoUrl: true,
-  user: { select: { id: true, name: true } },
-  unit: { select: { id: true, name: true, type: true } },
-  enrollments: {
-    where: { status: 'active' },
-    orderBy: { createdAt: 'desc' as const },
-    take: 1,
-    select: { class: { select: { id: true, name: true } } },
-  },
-} as const;
-
 const studentInclude = {
-  student: { select: studentSelect },
+  student: { select: STUDENT_SUMMARY_SELECT },
   createdBy: { select: { id: true, name: true } },
 } as const;
 
@@ -59,11 +44,7 @@ type CertificateRow = Prisma.DigitalCertificateGetPayload<{ include: typeof stud
  */
 function toCertificateDto(row: CertificateRow) {
   const { student, ...certificate } = row;
-  const { enrollments, ...rest } = student;
-  return {
-    ...certificate,
-    student: { ...rest, name: rest.user.name, class: enrollments[0]?.class },
-  };
+  return { ...certificate, student: toStudentSummary(student) };
 }
 
 /**

@@ -6,6 +6,7 @@ import {
   studentScope,
   type ScopeActor,
 } from '../../utils/student-scope';
+import { STUDENT_SUMMARY_SELECT, withStudentSummary } from '../../utils/student-summary';
 
 /**
  * `studentScope` returns the santri the caller may see; folding it into the
@@ -20,21 +21,18 @@ function scopedWhere(actor: ScopeActor, extra: Record<string, unknown> = {}) {
 
 export async function createReward(data: CreateRewardDto, givenById: string, actor: ScopeActor) {
   await assertStudentInScope(data.studentId, actor);
-  return prisma.reward.create({
+  const created = await prisma.reward.create({
     data: {
       ...data,
       givenAt: data.givenAt ? new Date(data.givenAt) : new Date(),
       givenById,
     } as any,
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       givenBy: { select: { id: true, name: true } },
     },
   });
+  return withStudentSummary(created);
 }
 
 export async function getRewards(query: QueryRewardDto, actor: ScopeActor) {
@@ -64,12 +62,7 @@ export async function getRewards(query: QueryRewardDto, actor: ScopeActor) {
     prisma.reward.findMany({
       where,
       include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true, email: true } },
-            unit: { select: { id: true, name: true } },
-          },
-        },
+        student: { select: STUDENT_SUMMARY_SELECT },
         givenBy: { select: { id: true, name: true } },
       },
       orderBy: { givenAt: 'desc' },
@@ -80,7 +73,7 @@ export async function getRewards(query: QueryRewardDto, actor: ScopeActor) {
   ]);
 
   return {
-    data,
+    data: data.map(withStudentSummary),
     meta: {
       page,
       limit,
@@ -91,38 +84,31 @@ export async function getRewards(query: QueryRewardDto, actor: ScopeActor) {
 }
 
 export async function getRewardById(id: string, actor: ScopeActor) {
-  return prisma.reward.findFirst({
+  const row = await prisma.reward.findFirst({
     where: { AND: [{ id }, { student: studentScope(actor) }] },
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true, email: true } },
-          unit: { select: { id: true, name: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       givenBy: { select: { id: true, name: true } },
     },
   });
+  return row ? withStudentSummary(row) : null;
 }
 
 export async function updateReward(id: string, data: UpdateRewardDto, actor: ScopeActor) {
   const existing = await getRewardById(id, actor);
   if (!existing) return null;
-  return prisma.reward.update({
+  const updated = await prisma.reward.update({
     where: { id },
     data: {
       ...data,
       ...(data.givenAt && { givenAt: new Date(data.givenAt) }),
     },
     include: {
-      student: {
-        include: {
-          user: { select: { id: true, name: true } },
-        },
-      },
+      student: { select: STUDENT_SUMMARY_SELECT },
       givenBy: { select: { id: true, name: true } },
     },
   });
+  return withStudentSummary(updated);
 }
 
 export async function deleteReward(id: string, actor: ScopeActor) {
