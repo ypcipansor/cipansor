@@ -90,6 +90,13 @@ const publicPrefixes = [
    * lists in agreement (Flag 11).
    */
   "/public/verify-card",
+  /**
+   * Where the public key-status page lives (AATL ICA7). Kept in step with
+   * `PUBLIC_PATH_PREFIXES` in lib/host-split.ts (the sync test enforces it).
+   * Listing it here makes the read-without-a-session intent explicit; without
+   * the matching entry in host-split.ts the page would 404 on the apex.
+   */
+  "/public/verify-key",
 ];
 
 /**

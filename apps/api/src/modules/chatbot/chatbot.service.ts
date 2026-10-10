@@ -48,10 +48,20 @@ export class ChatbotUnavailableError extends Error {
 /**
  * Builds the configured provider, or returns null when the assistant is off.
  *
- * The stub is refused outside development on purpose: it answers by echoing
- * retrieved text, which reads like a working service while being unable to
- * handle any question that is not a near-verbatim match. Shipping that to real
- * visitors would be a quieter failure than an outage, and a worse one.
+ * The stub is refused in production on purpose: it answers by echoing retrieved
+ * text, which reads like a working service while being unable to handle any
+ * question that is not a near-verbatim match. Shipping that to real visitors
+ * would be a quieter failure than an outage, and a worse one.
+ *
+ * That guard reads `config.appEnv`, not `config.env`. `NODE_ENV` is
+ * `production` on staging too — both run the same images — so the guard used to
+ * fire on the one environment whose whole job is to test the feature before a
+ * release, and the assistant could never be exercised anywhere but production.
+ * `appEnv` is what distinguishes the two (see `resolveAppEnv` in config).
+ *
+ * Staging runs the REAL provider (`openai-compatible`) with its own key, not a
+ * double: a walkthrough there answers the way production answers, which is the
+ * whole point of staging. The double stays for unit tests only.
  */
 export function resolveProvider(): LlmProvider | null {
   const { provider, baseUrl, apiKey, model } = config.chatbot;
@@ -61,7 +71,7 @@ export function resolveProvider(): LlmProvider | null {
       return null;
 
     case 'stub':
-      if (config.env === 'production') {
+      if (config.appEnv === 'production') {
         logger.error('CHATBOT_PROVIDER=stub is not permitted in production; chatbot disabled');
         return null;
       }

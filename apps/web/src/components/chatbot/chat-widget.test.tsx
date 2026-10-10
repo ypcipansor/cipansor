@@ -2,9 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mutateAsync = vi.fn();
+const availability = vi.hoisted(() => ({
+  value: { available: true },
+}));
 
 vi.mock("@/hooks/use-chatbot", () => ({
-  useChatbotAvailability: () => ({ data: true, isLoading: false }),
+  useChatbotAvailability: () => ({
+    data: availability.value,
+    isLoading: false,
+  }),
   usePublicChat: () => ({ mutateAsync, isPending: false }),
   // Alur penerusan dirender oleh widget ini, jadi hook-nya harus ada di mock —
   // tanpa ini komponennya melempar saat dipasang dan tawarannya tidak pernah
@@ -21,7 +27,24 @@ vi.mock("@/components/security/turnstile-widget", () => ({
   }),
 }));
 
+// The widget reads its text from `useI18n()`, so every render goes through the
+// provider — and the provider calls `router.refresh()`, which throws outside a
+// Next app-router tree. Mocking it is not incidental: a component that lost its
+// i18n wiring would throw here rather than quietly render Indonesian.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+
 import { ChatWidget } from "./chat-widget";
+import { I18nProvider } from "@/providers/i18n-provider";
+
+function renderWidget() {
+  return render(
+    <I18nProvider initialLocale="id">
+      <ChatWidget />
+    </I18nProvider>,
+  );
+}
 
 /** Galat axios sebagaimana bentuknya sampai ke komponen. */
 function apiError(status: number, code: string) {
@@ -29,7 +52,7 @@ function apiError(status: number, code: string) {
 }
 
 async function tanya(pertanyaan: string) {
-  render(<ChatWidget />);
+  renderWidget();
   fireEvent.click(screen.getByLabelText("Buka asisten informasi"));
   fireEvent.change(screen.getByLabelText("Pertanyaan"), {
     target: { value: pertanyaan },
@@ -42,6 +65,7 @@ async function tanya(pertanyaan: string) {
 // yang tidak ada hubungannya dengan yang sedang diperiksa.
 beforeEach(() => {
   vi.clearAllMocks();
+  availability.value = { available: true };
   Element.prototype.scrollTo = vi.fn();
 });
 
@@ -133,5 +157,46 @@ describe("ChatWidget dan tawaran meneruskan pertanyaan", () => {
 
     await waitFor(() => expect(screen.getByText(/sedang ramai/i)).toBeTruthy());
     expect(screen.queryByText(/berkenan saya teruskan/i)).toBeNull();
+  });
+});
+
+/**
+ * Widget ada di situs PUBLIK, dan situs publik id/en/ar di setiap halaman.
+ * Sebelum blok i18n-nya ada, seluruh kalimatnya hardcoded Indonesia: pengunjung
+ * berbahasa Inggris atau Arab mendapat asisten berbahasa Indonesia di halaman
+ * yang tombol bahasanya sendiri sudah berganti. Uji ini mengunci terjemahannya
+ * pada tempatnya.
+ */
+describe("ChatWidget dan bahasa", () => {
+  function renderLocale(locale: "id" | "en" | "ar") {
+    render(
+      <I18nProvider initialLocale={locale}>
+        <ChatWidget />
+      </I18nProvider>,
+    );
+  }
+
+  it("menyapa dalam bahasa Inggris ketika lokalnya Inggris", () => {
+    renderLocale("en");
+    fireEvent.click(screen.getByLabelText("Open the information assistant"));
+
+    expect(screen.getByText(/How can I help/i)).toBeTruthy();
+    expect(screen.queryByText(/Ada yang bisa saya bantu/i)).toBeNull();
+  });
+
+  it("menyapa dalam bahasa Arab ketika lokalnya Arab", () => {
+    renderLocale("ar");
+    fireEvent.click(screen.getByLabelText("افتح مساعد المعلومات"));
+
+    expect(screen.getByText(/كيف أستطيع مساعدتك/)).toBeTruthy();
+  });
+
+  it("memakai label tombol berbahasa Inggris, bukan Indonesia", () => {
+    renderLocale("en");
+
+    expect(
+      screen.getByLabelText("Open the information assistant"),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Buka asisten informasi")).toBeNull();
   });
 });

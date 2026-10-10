@@ -34,3 +34,21 @@ describe('GET /health', () => {
     expect(res.body.commit).toBeNull();
   });
 });
+
+/**
+ * `environment` is the deployed copy (`config.appEnv`), not `NODE_ENV`. Both
+ * staging and production compile with `NODE_ENV=production`, so a debugger on
+ * staging used to read "production" from this field and draw the wrong
+ * conclusion. The distinction lives in `resolveAppEnv`; this pins that /health
+ * exposes it, and keeps `nodeEnv` for what it actually means.
+ */
+describe('GET /health environment', () => {
+  it('reports the deployed copy and the build mode as separate fields', async () => {
+    const res = await request(app).get('/health');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('environment');
+    expect(res.body).toHaveProperty('nodeEnv');
+    expect(['local', 'staging', 'production']).toContain(res.body.environment);
+    expect(typeof res.body.nodeEnv).toBe('string');
+  });
+});
