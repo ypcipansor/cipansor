@@ -3,7 +3,9 @@
 #
 #   green checks on a draft PR    -> post the all-green comment (informational)
 #   green checks on a ready PR    -> dispatch the review gate (`Gerbang tinjau PR`)
-#   red checks / changes requested -> do nothing
+#   red checks                      -> do nothing
+#   changes requested on the head   -> do nothing (waiting for fixes)
+#   changes requested on an older commit, green head -> dispatch the gate again
 #
 # This script never approves, never merges and never changes the draft/ready
 # state. A maintainer decides when a PR is ready; the review gate (`Gerbang tinjau PR`)
@@ -199,11 +201,20 @@ $AI_FOOTER"
 }
 
 if [ "$REVIEW" = "CHANGES_REQUESTED" ]; then
-  # The gate already posted the request-changes review. Leave the PR open so the
-  # author can push fixes and the gate can re-review; branch protection holds the
-  # merge until the review is resolved.
-  echo "PR #$PR has changes requested; leaving it open for fixes."
-  exit 0
+  # The commit the most recent changes-requested review was made on. On the
+  # current head, the PR waits for fixes and branch protection holds the merge.
+  # On an older commit, the author has pushed since: carry on, so a green head
+  # goes back to the gate, which reviews the new head (one review per head
+  # commit) and gives its own verdict. Exiting here unconditionally meant the
+  # gate's request was final: nothing else dispatches it, and #628 sat green
+  # and fixed with no re-review (#727).
+  REQUESTED_AT=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null \
+    | jq -rs '[.[][] | select(.state == "CHANGES_REQUESTED")] | last | .commit_id // empty' 2>/dev/null || true)
+  if [ -z "$REQUESTED_AT" ] || [ "$REQUESTED_AT" = "$HEAD" ]; then
+    echo "PR #$PR has changes requested; leaving it open for fixes."
+    exit 0
+  fi
+  echo "PR #$PR had changes requested on $REQUESTED_AT; the head $HEAD came after, so a green head goes back to the review gate."
 fi
 
 if [ -n "$RED" ]; then
@@ -239,15 +250,19 @@ fi
 # starts a fresh, bounded conversation and cannot pile up.
 GATE_ID="${SDLC_REVIEW_GATE_ID:-96eebf19-b64b-4035-9653-2d8b15b06ac4}"
 if [ -n "${OPENHANDS_API_KEY:-}" ]; then
-  if curl -sS -o /dev/null -w '%{http_code}' -X POST \
+  body=$(jq -n --arg pr "$PR" --arg sha "$CHECK_SHA" \
+    '{source: "gate-bridge", pr: $pr, head_sha: $sha}')
+  # curl exits 0 on any HTTP answer, a 401 included, so the status code is what
+  # says whether the gate was dispatched — not curl's exit code.
+  code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
       "https://app.all-hands.dev/api/automation/v1/$GATE_ID/dispatch" \
       -H "Authorization: Bearer $OPENHANDS_API_KEY" \
       -H "Content-Type: application/json" \
-      -d "{\"source\":\"gate-bridge\",\"pr\":\"$PR\",\"head_sha\":\"$CHECK_SHA\"}" >/tmp/dispatch.code 2>/dev/null; then
-    echo "Dispatched review gate for PR #$PR at $CHECK_SHA (HTTP $(cat /tmp/dispatch.code))."
-  else
-    echo "Review-gate dispatch failed; CI is still green and a re-request will retrigger it."
-  fi
+      -d "$body" 2>/dev/null || echo 000)
+  case "$code" in
+    2??) echo "Dispatched review gate for PR #$PR at $CHECK_SHA (HTTP $code)." ;;
+    *) echo "::warning::Review-gate dispatch for PR #$PR answered HTTP $code; CI is still green and a re-request will retrigger it." ;;
+  esac
 else
   echo "PR #$PR is green and ready, but OPENHANDS_API_KEY is not set; the gate will run on the next re-request."
 fi

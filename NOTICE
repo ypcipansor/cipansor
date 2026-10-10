@@ -1,0 +1,40 @@
+Cipansor IMS
+Copyright 2025-2026 Yayasan Pesantren Cipansor
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The licence covers the source code and its documentation. It does not cover:
+
+  1. The names "Cipansor", "Yayasan Pesantren Cipansor" and the names of its
+     units, and their logos and emblems. These are the Yayasan's marks and are
+     not licensed (Apache License 2.0, section 6). A fork must not present
+     itself as the Yayasan or one of its units.
+  2. Photographs, brochure content and other images of the Yayasan, its people
+     and its santri (among others apps/web/public/images/ and docs/images/).
+     They remain the Yayasan's, all rights reserved. A photograph of a person
+     is also subject to that person's portrait right (Undang-Undang Nomor 28
+     Tahun 2014 tentang Hak Cipta, Pasal 12).
+  3. Personal data that appears in demo or seed data. It is not licensed to
+     anyone, and its use is governed by Undang-Undang Nomor 27 Tahun 2022
+     tentang Pelindungan Data Pribadi.
+
+Third-party components remain under their own licences: the packages
+installed through pnpm, and the web fonts that next/font fetches at build
+time.
+
+-------------------------------------------------------------------------------
+
+Bahasa Indonesia
+
+Hak Cipta 2025-2026 Yayasan Pesantren Cipansor. Dilisensikan di bawah Apache
+License, Version 2.0 (lihat LICENSE).
+
+Lisensi ini berlaku untuk kode sumber dan dokumentasinya. Lisensi ini tidak
+mencakup: (1) nama "Cipansor", "Yayasan Pesantren Cipansor", nama unit-unitnya,
+serta logo dan lambangnya, yang merupakan tanda milik Yayasan dan tidak
+dilisensikan; (2) foto, isi brosur, dan gambar lain tentang Yayasan, orang-
+orangnya, dan santrinya, yang tetap milik Yayasan dengan seluruh hak
+dilindungi, dan foto seseorang tunduk pula pada hak potretnya (UU 28/2014
+Pasal 12); (3) data pribadi dalam data demo atau seed, yang tidak dilisensikan
+kepada siapa pun (UU 27/2022 tentang Pelindungan Data Pribadi). Komponen pihak
+ketiga tetap tunduk pada lisensinya masing-masing.

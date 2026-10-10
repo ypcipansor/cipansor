@@ -278,6 +278,9 @@ _menulis_ artefak tidak pernah menjadi akun yang _menyetujuinya_.
   tetap terbuka dan check yang gagal terlihat padanya; gerbang memposting review
   minta-perubahan dan branch protection menahan merge. Mengembalikan ke draft
   pernah dicoba dan dihapus — itu menyembunyikan pekerjaan yang sedang berjalan.
+  Begitu penulis mendorong head baru dan head itu hijau, `pr-lifecycle.sh`
+  men-dispatch gerbang lagi; permintaan perubahan hanya menahan PR selama ia
+  masih pada head saat ini (#727).
 - **Catatan rilis hidup di GitHub Release, bukan di berkas.** `Pembuat catatan
 rilis` berjalan mingguan, memotong pre-release `-rc` berikutnya, dan menulis
   catatan ke body Release dari conventional commit sejak rilis resmi terakhir;

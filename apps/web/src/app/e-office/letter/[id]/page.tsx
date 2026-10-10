@@ -315,20 +315,17 @@ export default function LetterDetailPage({
   /**
    * Berkas yang diunggah penyusun, yang bukan naskah yang ditandatangani.
    *
-   * Formulir pembuatan surat menawarkan "Upload File Naskah (PDF)" pada surat
-   * keluar juga, dan kartu ini dulu menampilkannya sebagai "Berkas naskah"
-   * lengkap dengan "Pratinjau Naskah". Tetapi jalur penandatanganan tidak
-   * pernah membacanya: `generateLetterPdfBuffer` menyusun naskahnya sendiri
-   * dari isian formulir, dan byte itulah yang di-hash, ditandatangani,
-   * diarsipkan, dan dicocokkan pada verifikasi publik. Dua dokumen berbeda
-   * ditampilkan dengan bobot yang sama, dan hanya satu yang berlaku.
+   * Keadaan yang dijaga keterangan ini hanya tersisa untuk surat lama: surat
+   * keluar yang berkas unggahannya ada tetapi jalur penyusunannya tercatat
+   * `GENERATED` — termasuk surat yang dibuat sebelum kolom jalur itu ada, dan
+   * sebelum jalur `UPLOADED` benar-benar menandatangani byte unggahan.
+   *
+   * Surat keluar baru yang membawa berkas naskah sekarang tercatat `UPLOADED`,
+   * dan bagi surat itu berkasnya **adalah** naskahnya — tidak ada dokumen kedua
+   * yang perlu dibedakan, jadi keterangan ini tidak lagi muncul.
    *
    * Pada surat masuk keadaannya terbalik dan labelnya tetap benar: berkas itu
    * memang naskah aslinya, dan tidak ada naskah lain yang disusun sistem.
-   *
-   * Ketika jalur UPLOADED nanti benar-benar menandatangani byte unggahan,
-   * keterangan ini hilang dengan sendirinya — bukan karena dihapus, melainkan
-   * karena `authoringTrack` naskah itu memang bukan GENERATED.
    */
   const uploadedFileIsNotTheNaskah =
     !!letter.fileUrl &&

@@ -11,6 +11,8 @@ import {
 import type { ChatMessage, PublicChatResponse } from "@/hooks/use-chatbot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { fillPlaceholders } from "@/locales";
+import { useI18n } from "@/providers/i18n-provider";
 import { AnswerText } from "./answer-text";
 import { EscalationFlow } from "./escalation-flow";
 
@@ -23,6 +25,12 @@ import { EscalationFlow } from "./escalation-flow";
  * widget cannot appear on a page behind `MainLayout` without a deliberate new
  * import, and it talks only to `/chatbot/public/*`, which serves anonymous
  * callers and reaches no user's data.
+ *
+ * Its text comes from `useI18n()` — the footer is a client component inside the
+ * provider, so the widget is too. Before this, every string here was hardcoded
+ * Indonesian on a site that offers id/en/ar on every page: an English or Arabic
+ * visitor got an Indonesian assistant. Domain terms are kept in each locale;
+ * `{name}` and `{phone}` are filled from `siteConfig`.
  */
 
 interface Turn extends ChatMessage {
@@ -30,21 +38,13 @@ interface Turn extends ChatMessage {
   failed?: boolean;
 }
 
-// Satu-satunya salam dalam percakapan ini, dan karena itu diucapkan lengkap.
-// Model sengaja TIDAK lagi mengawali jawabannya dengan salam (lihat
-// DEFAULT_PERSONA di apps/api): salam yang ditaruh oleh kode diucapkan tepat
-// sekali dan tidak bisa salah menebak apakah ia sedang menyapa atau menjawab
-// sapaan — yang mana model pernah salah, dan menjawab "Wa'alaikumussalam"
-// kepada pengunjung yang tidak mengucap apa pun.
-const GREETING =
-  "Assalamu'alaikum warahmatullahi wabarakatuh. Saya asisten informasi Pesantren Cipansor. Ada yang bisa saya bantu seputar profil, program, atau pendaftaran?";
-
-const SUGGESTIONS = [
-  "Bagaimana cara mendaftar?",
-  "Berapa biaya pendaftaran?",
-  "Ada unit pendidikan apa saja?",
-  "Di mana alamat pesantren?",
-];
+/** The four starter questions, as translation paths rather than prose. */
+const SUGGESTION_KEYS = [
+  "public.chatbot.suggestions.register",
+  "public.chatbot.suggestions.fee",
+  "public.chatbot.suggestions.units",
+  "public.chatbot.suggestions.address",
+] as const;
 
 /**
  * Apakah galat ini berarti "sedang ramai", bukan "sedang mati"?
@@ -63,7 +63,9 @@ function isBusyError(error: unknown): boolean {
 }
 
 export function ChatWidget() {
-  const { data: available } = useChatbotAvailability();
+  const { t } = useI18n();
+  const { data: status } = useChatbotAvailability();
+  const available = status?.available ?? false;
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -197,8 +199,10 @@ export function ChatWidget() {
           role: "assistant",
           failed: true,
           content: busy
-            ? "Maaf, asisten sedang ramai. Mohon coba lagi sebentar lagi 🙏"
-            : `Maaf, asisten sedang tidak dapat menjawab. Silakan hubungi kami di ${siteConfig.contact.phone} atau melalui WhatsApp.`,
+            ? t("public.chatbot.errors.busy")
+            : fillPlaceholders(t("public.chatbot.errors.unavailable"), {
+                phone: siteConfig.contact.phone,
+              }),
         },
       ]);
     } finally {
@@ -213,20 +217,24 @@ export function ChatWidget() {
       {open && (
         <div
           role="dialog"
-          aria-label="Asisten informasi Pesantren Cipansor"
-          className="fixed bottom-24 right-4 z-50 flex h-[min(32rem,calc(100vh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
+          aria-label={t("public.chatbot.dialogLabel")}
+          className="fixed bottom-24 end-4 z-50 flex h-[min(32rem,calc(100vh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
         >
           <div className="flex items-center justify-between border-b border-border bg-primary px-4 py-3 text-primary-foreground">
             <div>
-              <p className="text-sm font-semibold">Asisten {siteConfig.name}</p>
+              <p className="text-sm font-semibold">
+                {fillPlaceholders(t("public.chatbot.title"), {
+                  name: siteConfig.name,
+                })}
+              </p>
               <p className="text-xs opacity-90">
-                Informasi umum &amp; pendaftaran
+                {t("public.chatbot.subtitle")}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setOpen(false)}
-              aria-label="Tutup asisten"
+              aria-label={t("public.chatbot.launcherClose")}
               className="rounded-md p-1 transition-colors hover:bg-white/20"
             >
               <X className="h-4 w-4" />
@@ -234,18 +242,18 @@ export function ChatWidget() {
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-            <Bubble role="assistant">{GREETING}</Bubble>
+            <Bubble role="assistant">{t("public.chatbot.greeting")}</Bubble>
 
             {turns.length === 0 && (
               <div className="flex flex-wrap gap-2 pt-1">
-                {SUGGESTIONS.map((suggestion) => (
+                {SUGGESTION_KEYS.map((key) => (
                   <button
-                    key={suggestion}
+                    key={key}
                     type="button"
-                    onClick={() => void send(suggestion)}
+                    onClick={() => void send(t(key))}
                     className="rounded-full border border-border px-3 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
                   >
-                    {suggestion}
+                    {t(key)}
                   </button>
                 ))}
               </div>
@@ -266,7 +274,7 @@ export function ChatWidget() {
                   // where to send their child should be able to open the page
                   // an answer came from and check it.
                   <span className="mt-2 flex flex-wrap gap-x-2 gap-y-1 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
-                    <span>Sumber:</span>
+                    <span>{t("public.chatbot.sourcesLabel")}</span>
                     {turn.sources.map((source) =>
                       source.url ? (
                         <a
@@ -303,7 +311,7 @@ export function ChatWidget() {
               <Bubble role="assistant">
                 <Loader2
                   className="h-4 w-4 animate-spin"
-                  aria-label="Sedang mengetik"
+                  aria-label={t("public.chatbot.typing")}
                 />
               </Bubble>
             )}
@@ -339,8 +347,8 @@ export function ChatWidget() {
               value={input}
               onChange={(event) => setInput(event.target.value)}
               maxLength={1000}
-              placeholder="Tulis pertanyaan Anda…"
-              aria-label="Pertanyaan"
+              placeholder={t("public.chatbot.inputPlaceholder")}
+              aria-label={t("public.chatbot.inputLabel")}
               className="flex-1 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
             />
             <Button
@@ -351,13 +359,12 @@ export function ChatWidget() {
               }
             >
               <Send className="h-4 w-4" />
-              <span className="sr-only">Kirim</span>
+              <span className="sr-only">{t("public.chatbot.send")}</span>
             </Button>
           </form>
 
           <p className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
-            Asisten ini hanya menjawab informasi umum dan tidak memiliki akses
-            ke data pribadi.
+            {t("public.chatbot.disclaimer")}
           </p>
         </div>
       )}
@@ -376,9 +383,9 @@ export function ChatWidget() {
           onClick={() => setOpen(true)}
           tabIndex={-1}
           aria-hidden="true"
-          className="fixed bottom-[1.85rem] right-20 z-50 hidden rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-lg transition-transform hover:scale-105 sm:block"
+          className="fixed bottom-[1.85rem] end-20 z-50 hidden rounded-full border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-lg transition-transform hover:scale-105 sm:block"
         >
-          Ada pertanyaan? Tanya di sini
+          {t("public.chatbot.launcherInvite")}
         </button>
       )}
 
@@ -393,9 +400,16 @@ export function ChatWidget() {
         // benar melakukannya. Ajakan untuk bertanya adalah tugas pil di
         // atas; nama sebuah tombol dibacakan utuh setiap kali fokus
         // mendarat di sana, jadi ia tetap sependek mungkin.
-        aria-label={open ? "Tutup asisten informasi" : "Buka asisten informasi"}
+        aria-label={
+          open
+            ? t("public.chatbot.launcherClose")
+            : t("public.chatbot.launcherOpen")
+        }
+        // `end-*`, bukan `right-*` — juga pada panel dan pil ajakan: di
+        // halaman Arab (RTL) tombol dan panelnya pindah ke tepi kiri, seperti
+        // tombol mengambang menurut pedoman bidirectionality Material Design.
         className={cn(
-          "fixed bottom-6 right-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105",
+          "fixed bottom-6 end-4 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition-transform hover:scale-105",
         )}
       >
         {open ? (
