@@ -230,7 +230,9 @@ that *writes* an artifact is never the account that *approves* it.
   PR stays open and the failing checks are visible on it; the gate posts the
   request-changes review and branch protection holds the merge. Reverting to
   draft was tried and removed — it hides work in progress and a human can mark
-  it ready again without the lifecycle guard's help.
+  it ready again without the lifecycle guard's help. Once the author pushes a
+  new head and it goes green, `pr-lifecycle.sh` dispatches the gate again; a
+  request for changes holds the PR only while it is on the current head (#727).
 - **Release notes live in the GitHub Release, not in a file.** SDLC 14 runs weekly,
   cuts the next `-rc` prerelease and writes the notes into the Release body from
   the conventional commits since the last official release; it never writes

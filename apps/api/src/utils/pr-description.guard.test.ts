@@ -35,7 +35,19 @@ case "$1" in
         # The marker comment is on a later page, so it is only found when the
         # caller paginates.
         case "$*" in *--paginate*) [ -n "\${GH_STUB_CID:-}" ] && printf '%s\\n' "\$GH_STUB_CID" ;; esac ;;
-      *"-X PATCH"*) log "PATCH $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
+      *"-X PATCH"*)
+        # Resolve the body the way gh does: only a typed field (-F) reads
+        # \`@file\`; a raw field (-f) sends the text as written.
+        body=""; prev=""
+        for a in "$@"; do
+          case "$prev" in
+            -F) case "$a" in body=@*) body=$(cat "\${a#body=@}") ;; body=*) body="\${a#body=}" ;; esac ;;
+            -f) case "$a" in body=*) body="\${a#body=}" ;; esac ;;
+          esac
+          prev="$a"
+        done
+        log "PATCH $*"; log "PATCHBODY $body"
+        [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
       *"-X DELETE"*) log "DELETE $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
     esac ;;
 esac
@@ -142,6 +154,21 @@ describe('pr-template-guard.sh', () => {
     expect(calls).not.toContain('COMMENT');
   });
 
+  it('updates an earlier reminder in place with the reminder itself', () => {
+    // The update path: a reminder is already there and the body is still
+    // incomplete. The comment must keep its marker and text — a raw \`-f\` field
+    // turned it into the literal "@/tmp/…/out" on every update.
+    const { calls } = run(TEMPLATE, {
+      GH_STUB_BODY: '## Why\n\nSomething broke.',
+      GH_STUB_CID: '555',
+    });
+    expect(calls).toContain('PATCH');
+    expect(calls).not.toContain('COMMENT');
+    expect(calls).toContain('PATCHBODY <!-- pr-template-guard -->');
+    expect(calls).toContain("This pull request's description is missing");
+    expect(calls).not.toMatch(/PATCHBODY @/);
+  });
+
   it('accepts a body that says there is no linked issue', () => {
     const none = COMPLETE.replace('Fixes #12', 'No linked issue — a chore.');
     const { calls } = run(TEMPLATE, { GH_STUB_BODY: none });
@@ -208,6 +235,18 @@ describe('visual-evidence.sh', () => {
       GH_STUB_CID: '42',
     });
     expect(calls).toContain('DELETE');
+  });
+
+  it('updates an earlier reminder in place with the reminder itself', () => {
+    const { calls } = run(VISUAL, {
+      GH_STUB_PRJSON: pr(['apps/web/src/app/page.tsx'], 'Fixes #1'),
+      GH_STUB_CID: '42',
+    });
+    expect(calls).toContain('PATCH');
+    expect(calls).not.toContain('COMMENT');
+    expect(calls).toContain('PATCHBODY <!-- visual-evidence -->');
+    expect(calls).toContain('has no before/after');
+    expect(calls).not.toMatch(/PATCHBODY @/);
   });
 
   it('never asks when no apps/web file changed', () => {
