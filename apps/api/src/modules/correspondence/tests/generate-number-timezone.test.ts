@@ -58,6 +58,12 @@ describe('CorrespondenceService.generateNumber — kalender WIB', () => {
       wib: '1 Nov 2026 00:30 WIB',
       expected: '011/SKET/Y-CPS/XI/2026',
     },
+    // Sisi lain batas: 31 Okt 2026 23:59:59 WIB masih Oktober.
+    {
+      instant: '2026-10-31T16:59:59Z',
+      wib: '31 Okt 2026 23:59 WIB',
+      expected: '011/SKET/Y-CPS/X/2026',
+    },
     // 1 Jan 2027 00:30 WIB — server UTC masih 31 Des 2026 (tahun juga salah).
     {
       instant: '2026-12-31T17:30:00Z',
