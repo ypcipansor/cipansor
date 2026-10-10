@@ -139,3 +139,8 @@ apps/api/private/
 # Bytecode dari helper hook — dibuat saat hook mengimpornya, bukan sumber.
 __pycache__/
 *.pyc
+
+# OpenHands' daily memory logs are sandbox scratch. Its index MEMORY.md is a
+# committed pointer to .claude/memory/, the one project memory (2026-10-09).
+.openhands/memory/*
+!.openhands/memory/MEMORY.md
