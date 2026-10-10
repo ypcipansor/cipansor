@@ -90,7 +90,10 @@ from the backup, as the VM runbook describes, not on staging.
    reporting the earlier commit — the same code. Release that commit: it is
    the one whose images exist.
 3. **Production** — only when the user asks for a release. Claude:
-   1. confirms staging runs the SHA to be released and has been checked;
+   1. confirms staging runs the SHA to be released and has been checked, and
+      runs the k6 smoke against it (Actions → Load Tests → Run workflow;
+      `tests/load/README.md`) — a regression against the recorded baseline
+      stops the release until it is explained;
    2. takes a backup (`pg_dump` through the backup job, in addition to the
       server's own 7-day point-in-time restore);
    3. runs the pre-checks the VM runbook requires for any migration in the

@@ -1,24 +1,25 @@
 # Load Tests
-# Run the k6 smoke load test on a schedule against staging and compare it to
+# Run the k6 smoke load test against staging and compare it to
 # the recorded baseline in tests/load/baselines/. Thresholds are relative to
 # that baseline, never absolute (see tests/load/README.md).
 #
 # This workflow is NOT part of CI: it needs a reachable target and a recorded
-# baseline, and it does not gate a merge. It runs weekly and on demand.
+# baseline, and it does not gate a merge. It runs on demand, and before each
+# production release (docs/deploy-azure.md → "How a change is released") —
+# not on a schedule (decided 2026-10-10): with no real traffic yet, a weekly
+# run measures the same idle staging over and over, and a private repository
+# pays for every minute.
 #
 # Runner exit codes (tests/load/run-load-tests.mjs):
 #   0 = no regression   1 = regression found   2 = could not run
 #   3 = no baseline recorded   4 = baseline does not match this run
-# A regression (1) fails the job. So does anything else (2, 3, 4): a scheduled
-# load test that stays green while it never actually measured anything is worse
+# A regression (1) fails the job. So does anything else (2, 3, 4): a load
+# test that stays green while it never actually measured anything is worse
 # than a red one. Each is explained in the job summary.
 
 name: Load Tests
 
 on:
-  schedule:
-    # Mondays 02:00 UTC — a quiet hour for the shared staging VM.
-    - cron: '0 2 * * 1'
   workflow_dispatch: # Allow manual trigger
     inputs:
       url:
@@ -41,8 +42,8 @@ on:
         default: false
         type: boolean
 
-# One load test at a time; a scheduled run and a manual run must not overlap
-# and both measure the same shared target.
+# One load test at a time; two runs must not overlap, since both would measure
+# the same shared target.
 concurrency:
   group: load-tests
   cancel-in-progress: false
@@ -56,8 +57,7 @@ env:
   LOAD_TEST_SCENARIO: ${{ github.event.inputs.scenario || 'public-smoke' }}
   LOAD_TEST_PROFILE: ${{ github.event.inputs.profile || 'smoke' }}
   # The runner refuses the heavy `load` profile against a known shared host
-  # unless this is set. A manual dispatch has to opt in explicitly; the
-  # scheduled run never does.
+  # unless this is set; a dispatch has to opt in explicitly.
   LOAD_TEST_ALLOW_SHARED: ${{ github.event.inputs.allow_shared_target || 'false' }}
 
 jobs:
@@ -118,7 +118,7 @@ jobs:
       - name: Judge the run
         # 0 passes; 1 (regression) and every "proved nothing" code (2, 3, 4)
         # fail, with the reason from the summary. Exit 2/3/4 is not silently
-        # green: a scheduled test that never measured anything must be seen.
+        # green: a test that never measured anything must be seen.
         run: |
           code="${{ steps.load.outputs.exit_code }}"
           case "$code" in

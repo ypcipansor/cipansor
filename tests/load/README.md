@@ -6,8 +6,9 @@ millisecond budget. A fixed budget would fail the moment the load profile, the
 runner's machine or the target changed, and it would say nothing about whether
 *this* build got slower than the last one.
 
-The scheduled run lives in `.github/workflows/load-tests.yml` (weekly, and on
-demand). It is not part of CI and does not gate a merge.
+The workflow is `.github/workflows/load-tests.yml`, run by hand (Actions → Load
+Tests → Run workflow) and before each production release; it has no schedule.
+It is not part of CI and does not gate a merge.
 
 ## What is here
 
@@ -61,7 +62,7 @@ Flags: `--url`, `--scenario`, `--profile smoke|load`, `--baseline <path>`,
 `--update-baseline`, `--allow-shared-target`, `--json`, `--report <path>`.
 
 `--allow-shared-target` is only needed to run the heavy `load` profile against a
-known shared host (`staging.cipansor.or.id`): it consumes the staging VM's
+known shared host (`staging.cipansor.or.id`): it consumes the staging
 request budget and disrupts other people on it, so the runner refuses by default.
 The `smoke` profile never needs it.
 
@@ -75,7 +76,7 @@ The `smoke` profile never needs it.
 | `3` | No baseline recorded for this target, scenario and profile. Nothing was compared. |
 | `4` | The recorded baseline does not match this run (different target, scenario or profile) or is unreadable. Nothing was compared. |
 
-The scheduled workflow fails the job on `1` **and** on `2`/`3`/`4`. A green load
+The workflow fails the job on `1` **and** on `2`/`3`/`4`. A green load
 test that never actually measured anything is worse than a red one.
 
 A comparison run **requires a valid baseline**: it is checked before k6 starts,
@@ -93,7 +94,7 @@ artifact.
 ## The regression policy
 
 Tolerances live in `config.js` (`REGRESSION`). They are deliberately loose:
-staging is a shared VM and one run is noisy, so they flag a real step change,
+staging is shared and one run is noisy, so they flag a real step change,
 not run-to-run jitter.
 
 - **p95** may grow by `1.5x` before it is a regression; **p99** by `1.75x`.
@@ -152,13 +153,13 @@ login returns `requiresTwoFactor` / `requiresTwoFactorSetup` /
 summary and the runner exits `2`. Measuring anonymous `401`s and calling them
 authenticated reads is exactly the false green this policy exists to prevent;
 use `public-smoke.js` for the anonymous path. **It never fabricates a token.**
-The scheduled workflow skips the authenticated job — and says so — when the
+The workflow skips the authenticated job — and says so — when the
 secrets are unset; that skip is not a pass.
 
 ## The load profile and shared targets
 
 The `load` profile (ten VUs, staged) is only for a stack you own. Pointing it at
-shared staging consumes the staging VM's request budget and disrupts other users
+shared staging consumes the staging request budget and disrupts other users
 on it, so the runner refuses a non-`smoke` profile against a known shared host
 (`staging.cipansor.or.id`) unless you pass `--allow-shared-target`. A manual
 workflow dispatch exposes the same switch as the `allow_shared_target` input,

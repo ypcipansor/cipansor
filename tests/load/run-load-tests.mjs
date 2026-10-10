@@ -53,9 +53,9 @@ export const EXIT_CODES = Object.freeze({
 });
 
 // A known shared host. Pointing the heavy `load` profile at it consumes the
-// staging VM's request budget and disrupts everyone else on it, so the runner
-// refuses unless the caller passes --allow-shared-target. The scheduled run and
-// the normal smoke run are unaffected.
+// staging request budget and disrupts everyone else on it, so the runner
+// refuses unless the caller passes --allow-shared-target. The smoke run is
+// unaffected.
 const SHARED_TARGET_HOSTS = ['staging.cipansor.or.id'];
 
 function parseArgs(argv) {
