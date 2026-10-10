@@ -167,9 +167,26 @@ export function tokenize(text: string): string[] {
     text
       .toLowerCase()
       // Keep the apostrophe inside a word so "qur'an" survives as one token,
-      // then normalise it away so "quran" and "qur'an" agree.
+      // then normalise it away so "quran" and "qur'an" agree. This must run
+      // BEFORE the split: `\p{L}` does not match an apostrophe, so without it
+      // the split would break "qur'an" into "qur" and "an".
       .replace(/['’]/g, '')
-      .split(/[^a-z0-9]+/)
+      // Drop Arabic diacritics (harakat). They are combining marks, not
+      // letters, so the split below would break "أسجّل" at the shadda — and
+      // Arabic is routinely written with or without vocalisation, so the two
+      // spellings must agree on one token. Same idea as the apostrophe above.
+      .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, '')
+      // Split on anything that is not a Unicode letter or digit. This keeps
+      // Arabic (`كم رسوم التسجيل؟` → كم، رسوم، التسجيل) while leaving the
+      // Indonesian behaviour byte-for-byte the same, because Indonesian is
+      // written in the Latin range that `\p{L}` already covered.
+      //
+      // The old `[^a-z0-9]` discarded every Arabic character, so an Arabic
+      // question produced an empty token list — and `cacheKeyFor` returns null
+      // for that, meaning repeated Arabic FAQs (the widget's own suggestions,
+      // among them) never hit the answer cache and called the paid provider
+      // every time.
+      .split(/[^\p{L}\p{N}]+/u)
       .filter((t) => t.length > 1 && !STOPWORDS.has(t))
       .map(stem)
   );

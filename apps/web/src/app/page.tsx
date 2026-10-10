@@ -1,5 +1,6 @@
 import { LandingNavbar } from "@/components/landing/navbar";
 import { LandingFooter } from "@/components/landing/footer";
+import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import { HeroSection } from "@/components/landing/sections/hero";
 import { StatsSection } from "@/components/landing/sections/stats";
 import { AboutSection } from "@/components/landing/sections/about";
@@ -12,6 +13,9 @@ import { siteConfig } from "@/config/site";
 import { publicContentFor } from "@/config/content.i18n";
 import { siteTextFor } from "@/config/site.i18n";
 import { getServerLocale } from "@/lib/server-locale";
+import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
+import { headers } from "next/headers";
 import { Metadata } from "next";
 import type { Locale } from "@/locales";
 
@@ -48,6 +52,18 @@ export default async function Home() {
   // sections stay pure functions of the locale and the cookie is touched once.
   const locale = await getServerLocale();
   const content = publicContentFor(locale);
+  // The portal never shows the announcement: it is for prospective families,
+  // and a visitor already signed in to the system does not need to be told that
+  // registration is open. `isPortalHost` is false for localhost and previews,
+  // so `pnpm dev` and staging keep it (the same polarity as `pwaEnabledForHost`).
+  const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched on the server so the banner is in the first paint — otherwise the
+  // client query resolving after hydration pushed the hero down (CLS 0.035).
+  // The dismissal cookie travels with it so a returning visitor does not see
+  // the banner flash in.
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -56,6 +72,18 @@ export default async function Home() {
           this one. See config/organization-jsonld.ts. */}
       <LandingNavbar />
       <main id="main-content" className="flex-1">
+        {/* First child of `<main>`, as on every `PublicPage`. Its `sticky
+            top-16` pins it under the fixed navbar, and the hero's own top
+            padding (`pt-24`) is the space it needs below. The old `mt-16`
+            cleared the navbar while the banner sat outside `<main>`; inside,
+            that offset belongs to the hero, and the banner's flow box starts
+            at the top of the page. */}
+        <SpmbAnnouncement
+          locale={locale}
+          enabled={showAnnouncement}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
+        />
         <HeroSection locale={locale} />
         <StatsSection locale={locale} />
         <AboutSection locale={locale} />
