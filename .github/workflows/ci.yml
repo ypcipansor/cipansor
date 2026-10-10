@@ -207,6 +207,11 @@ jobs:
       - run: pnpm --filter @cipansor/shared build
       - name: Run Web tests
         run: pnpm --filter web test
+      # The load-test runner and its comparison policy are plain Node — no k6,
+      # no network — so their unit suite runs here. The load test itself only
+      # runs on demand (load-tests.yml), which needs a real target.
+      - name: Run load-test runner unit tests
+        run: node --test tests/load/run-load-tests.test.mjs
 
   # Supply-chain / dependency security, plus the records check.
   #
