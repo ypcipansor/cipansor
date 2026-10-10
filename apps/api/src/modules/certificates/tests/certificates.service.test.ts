@@ -66,6 +66,41 @@ const base = {
   isPublic: true,
 };
 
+/** A row as the scoped reads load it (`studentInclude`). */
+const scopedRow = {
+  id: 'cert-1',
+  ...base,
+  certificateNumber: 'TAH/09/2026/0001',
+  student: {
+    id: base.studentId,
+    nis: '2026001',
+    photoUrl: null,
+    user: { id: 'santri-user-1', name: 'Aisyah' },
+    unit: { id: 'unit-1', name: 'SD IT', type: 'SD' },
+    enrollments: [{ class: { id: 'class-1', name: '5A' } }],
+  },
+  createdBy: { id: 'teacher-1', name: 'Ust. Ahmad' },
+};
+
+/** A row as the public verification loads it (`publicCertificateSelect`). */
+const publicRow = {
+  certificateNumber: 'TAH/09/2026/0001',
+  certificateType: 'TAHFIDZ',
+  title: 'Sertifikat Tahfidz Juz 30',
+  description: null,
+  grade: null,
+  rank: null,
+  issueDate: new Date('2026-09-01'),
+  signatoryName: 'Ust. Ahmad',
+  signatoryTitle: 'Musyrif Tahfidz',
+  isPublic: true,
+  student: {
+    user: { name: 'Aisyah' },
+    unit: { name: 'SD IT' },
+    enrollments: [{ class: { name: '5A' } }],
+  },
+};
+
 describe('certificates service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,11 +109,11 @@ describe('certificates service', () => {
   });
 
   it('creates a certificate with a generated number and a real verification URL', async () => {
-    mocked.digitalCertificate.create.mockResolvedValue({ id: 'cert-1' });
+    mocked.digitalCertificate.create.mockResolvedValue(scopedRow);
 
     const result = await createCertificate(base, 'user-1', teacher);
 
-    expect(result).toEqual({ id: 'cert-1' });
+    expect(result).toMatchObject({ id: 'cert-1' });
     const arg = mocked.digitalCertificate.create.mock.calls[0][0];
     expect(arg.data.studentId).toBe(base.studentId);
     expect(arg.data.certificateNumber).toMatch(/^TAH\/\d{2}\/\d{4}\/[0-9A-F]{10}$/);
@@ -95,7 +130,7 @@ describe('certificates service', () => {
   });
 
   it('generates unguessable certificate numbers and QR blobs', async () => {
-    mocked.digitalCertificate.create.mockResolvedValue({ id: 'cert-1' });
+    mocked.digitalCertificate.create.mockResolvedValue(scopedRow);
     const seen = new Set<string>();
     for (let i = 0; i < 50; i++) {
       await createCertificate({ ...base, certificateType: 'IJAZAH' }, 'user-1', teacher);
@@ -110,8 +145,8 @@ describe('certificates service', () => {
   });
 
   it('scopes a certificate lookup to the santri the caller may see', async () => {
-    mocked.digitalCertificate.findFirst.mockResolvedValue({ id: 'cert-1' });
-    await expect(getCertificateById('cert-1', teacher)).resolves.toEqual({ id: 'cert-1' });
+    mocked.digitalCertificate.findFirst.mockResolvedValue(scopedRow);
+    await expect(getCertificateById('cert-1', teacher)).resolves.toMatchObject({ id: 'cert-1' });
 
     const where = mocked.digitalCertificate.findFirst.mock.calls[0][0].where;
     // The id is ANDed with the student scope, so another unit's certificate is
@@ -129,7 +164,7 @@ describe('certificates service', () => {
   });
 
   it('does not narrow a foundation role to a unit', async () => {
-    mocked.digitalCertificate.findFirst.mockResolvedValue({ id: 'cert-1' });
+    mocked.digitalCertificate.findFirst.mockResolvedValue(scopedRow);
     await getCertificateById('cert-1', superAdmin);
 
     const where = mocked.digitalCertificate.findFirst.mock.calls[0][0].where;
@@ -137,7 +172,10 @@ describe('certificates service', () => {
   });
 
   it('lists certificates with pagination metadata and the caller\u2019s scope', async () => {
-    mocked.digitalCertificate.findMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+    mocked.digitalCertificate.findMany.mockResolvedValue([
+      { ...scopedRow, id: 'a' },
+      { ...scopedRow, id: 'b' },
+    ]);
     mocked.digitalCertificate.count.mockResolvedValue(11);
 
     const result = await getCertificates({ page: 2, limit: 2 }, teacher);
@@ -170,17 +208,60 @@ describe('certificates service', () => {
   });
 
   it('verifies a certificate by its number, not its QR blob', async () => {
-    mocked.digitalCertificate.findFirst.mockResolvedValue({ id: 'cert-1' });
+    mocked.digitalCertificate.findFirst.mockResolvedValue(publicRow);
 
-    await expect(verifyCertificate('TAH/09/2026/0001')).resolves.toEqual({
-      valid: true,
-      certificate: { id: 'cert-1' },
-    });
+    const result = await verifyCertificate('TAH/09/2026/0001');
+    expect(result.valid).toBe(true);
+    expect(result.certificate?.title).toBe('Sertifikat Tahfidz Juz 30');
     expect(mocked.digitalCertificate.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { certificateNumber: 'TAH/09/2026/0001', isPublic: true },
       })
     );
+  });
+
+  // The route has no session: it may say what the certificate says, and name
+  // the holder as the certificate prints them — nothing more.
+  it('answers the public verification with the printed facts only', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(publicRow);
+
+    const { certificate } = await verifyCertificate('TAH/09/2026/0001');
+    expect(certificate?.student).toEqual({
+      name: 'Aisyah',
+      unit: { name: 'SD IT' },
+      class: { name: '5A' },
+    });
+
+    // The query itself selects, so no other column of the santri is loaded.
+    const args = mocked.digitalCertificate.findFirst.mock.calls[0][0];
+    expect(args.include).toBeUndefined();
+    const studentSelect = args.select.student.select;
+    for (const column of ['nik', 'nis', 'kk', 'id', 'photoUrl', 'address']) {
+      expect(studentSelect[column]).toBeUndefined();
+    }
+    for (const field of ['id', 'studentId', 'qrCode', 'createdById', 'downloadCount']) {
+      expect(args.select[field]).toBeUndefined();
+    }
+  });
+
+  it('reads the santri through a select, never the whole row', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(scopedRow);
+
+    await getCertificateById('cert-1', teacher);
+
+    const args = mocked.digitalCertificate.findFirst.mock.calls[0][0];
+    expect(args.include.student.include).toBeUndefined();
+    expect(args.include.student.select.nik).toBeUndefined();
+    expect(args.include.student.select.user).toEqual({ select: { id: true, name: true } });
+  });
+
+  it('answers in the shared contract: the name and class at the top of student', async () => {
+    mocked.digitalCertificate.findFirst.mockResolvedValue(scopedRow);
+
+    const certificate = await getCertificateById('cert-1', teacher);
+    expect(certificate?.student.name).toBe('Aisyah');
+    expect(certificate?.student.class).toEqual({ id: 'class-1', name: '5A' });
+    expect(certificate?.student).not.toHaveProperty('enrollments');
   });
 
   it('reports an unknown code as invalid without throwing', async () => {

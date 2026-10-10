@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api, { ApiResponse, PaginatedResponse } from "@/lib/api";
-import type { CertificateType, DigitalCertificate } from "@cipansor/shared";
+import type {
+  CertificateType,
+  CertificateVerification,
+  DigitalCertificate,
+  PublicCertificate,
+} from "@cipansor/shared";
 
 /** `decodeURIComponent` that leaves a malformed `%`-sequence untouched. */
 function safeDecode(value: string): string {
@@ -14,7 +19,12 @@ function safeDecode(value: string): string {
 
 // Types — the DTO and its type union live once, in `@cipansor/shared`, so the
 // web picker can no longer offer a certificate type the API rejects.
-export type { CertificateType, DigitalCertificate };
+export type {
+  CertificateType,
+  CertificateVerification,
+  DigitalCertificate,
+  PublicCertificate,
+};
 
 export interface CertificateTemplate {
   type: CertificateType;
@@ -260,13 +270,9 @@ export function useVerifyCertificate(code: string) {
       // encoding again is a no-op for an already-encoded value and still
       // correct for a raw one. The guard keeps a stray `%` from throwing.
       const segment = encodeURIComponent(safeDecode(code));
-      const response = await api.get<
-        ApiResponse<{
-          valid: boolean;
-          certificate?: DigitalCertificate;
-          message?: string;
-        }>
-      >(`/certificates/verify/${segment}`);
+      const response = await api.get<ApiResponse<CertificateVerification>>(
+        `/certificates/verify/${segment}`,
+      );
       return response.data.data;
     },
     enabled: !!code,

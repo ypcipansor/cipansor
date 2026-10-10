@@ -102,9 +102,32 @@ export interface DigitalCertificate {
   updatedAt: string;
 }
 
+/**
+ * What the session-free verification shows of a certificate: what it says and
+ * who signed it, and the holder only as far as the certificate prints them —
+ * no ids, no NIS, no photo.
+ */
+export interface PublicCertificate {
+  certificateNumber: string;
+  certificateType: CertificateType;
+  title: string;
+  description?: string | null;
+  grade?: string | null;
+  rank?: number | null;
+  issueDate: string;
+  signatoryName: string;
+  signatoryTitle: string;
+  isPublic: boolean;
+  student: {
+    name: string;
+    unit?: { name: string } | null;
+    class?: { name: string } | null;
+  };
+}
+
 /** The public verification answer for `GET /api/certificates/verify/:code`. */
 export interface CertificateVerification {
   valid: boolean;
-  certificate?: DigitalCertificate | null;
+  certificate?: PublicCertificate | null;
   message?: string;
 }

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { certificateVerificationUrl } from '../../utils/verification-url';
 import { assertStudentInScope, studentScope } from '../../utils/student-scope';
@@ -23,20 +24,77 @@ export interface CertificateActor {
   unitId?: string | null;
 }
 
+/**
+ * The santri a certificate names, as far as the certificate shows them. Never
+ * `include` on `student`: that sends every column of the row — NIK, KK, the
+ * parents' NIK and income — to whoever reads the certificate
+ * (`.claude/memory/lessons/prisma-include-leaks-pii.md`).
+ */
+const studentSelect = {
+  id: true,
+  nis: true,
+  photoUrl: true,
+  user: { select: { id: true, name: true } },
+  unit: { select: { id: true, name: true, type: true } },
+  enrollments: {
+    where: { status: 'active' },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+    select: { class: { select: { id: true, name: true } } },
+  },
+} as const;
+
 const studentInclude = {
+  student: { select: studentSelect },
+  createdBy: { select: { id: true, name: true } },
+} as const;
+
+type CertificateRow = Prisma.DigitalCertificateGetPayload<{ include: typeof studentInclude }>;
+
+/**
+ * The row in the shape `@cipansor/shared` promises (`DigitalCertificate`):
+ * `student.name` and `student.class` at the top, as the pages read them. The
+ * raw row nests both (`user.name`, `enrollments[0].class`), which left the
+ * name on the verification page blank.
+ */
+function toCertificateDto(row: CertificateRow) {
+  const { student, ...certificate } = row;
+  const { enrollments, ...rest } = student;
+  return {
+    ...certificate,
+    student: { ...rest, name: rest.user.name, class: enrollments[0]?.class },
+  };
+}
+
+/**
+ * What the session-free verification answers: that the certificate exists and
+ * what it says — who, what, when, signed by whom. Nothing that identifies the
+ * holder beyond the name, unit and class printed on it: no ids, no NIS, no
+ * photo, no QR blob or download count.
+ */
+const publicCertificateSelect = {
+  certificateNumber: true,
+  certificateType: true,
+  title: true,
+  description: true,
+  grade: true,
+  rank: true,
+  issueDate: true,
+  signatoryName: true,
+  signatoryTitle: true,
+  isPublic: true,
   student: {
-    include: {
-      user: { select: { id: true, name: true } },
-      unit: { select: { id: true, name: true, type: true } },
+    select: {
+      user: { select: { name: true } },
+      unit: { select: { name: true } },
       enrollments: {
         where: { status: 'active' },
         orderBy: { createdAt: 'desc' as const },
         take: 1,
-        include: { class: { select: { id: true, name: true } } },
+        select: { class: { select: { name: true } } },
       },
     },
   },
-  createdBy: { select: { id: true, name: true } },
 } as const;
 
 /**
@@ -68,7 +126,7 @@ export async function createCertificate(
   await assertStudentInScope(data.studentId, actor);
 
   const number = certificateNumber(data.certificateType);
-  return prisma.digitalCertificate.create({
+  const created = await prisma.digitalCertificate.create({
     data: {
       studentId: data.studentId,
       certificateType: data.certificateType,
@@ -88,6 +146,7 @@ export async function createCertificate(
     },
     include: studentInclude,
   });
+  return toCertificateDto(created);
 }
 
 export async function getCertificates(query: QueryCertificateDto, actor: CertificateActor) {
@@ -117,14 +176,23 @@ export async function getCertificates(query: QueryCertificateDto, actor: Certifi
     prisma.digitalCertificate.count({ where }),
   ]);
 
-  return { data, meta: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+  return {
+    data: data.map(toCertificateDto),
+    meta: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  };
 }
 
-export async function getCertificateById(id: string, actor: CertificateActor) {
+/** The row, only when the caller may reach the santri it names. */
+function findCertificateInScope(id: string, actor: CertificateActor) {
   return prisma.digitalCertificate.findFirst({
     where: { AND: [{ id }, { student: studentScope(actor) }] },
     include: studentInclude,
   });
+}
+
+export async function getCertificateById(id: string, actor: CertificateActor) {
+  const row = await findCertificateInScope(id, actor);
+  return row ? toCertificateDto(row) : null;
 }
 
 export async function updateCertificate(
@@ -134,10 +202,10 @@ export async function updateCertificate(
 ) {
   // 404 (not 403) for a certificate outside the caller's reach, so an id
   // guessed from another unit says nothing about that unit.
-  const existing = await getCertificateById(id, actor);
+  const existing = await findCertificateInScope(id, actor);
   if (!existing) throw Errors.notFound('Certificate');
 
-  return prisma.digitalCertificate.update({
+  const updated = await prisma.digitalCertificate.update({
     where: { id },
     data: {
       ...data,
@@ -145,10 +213,11 @@ export async function updateCertificate(
     },
     include: studentInclude,
   });
+  return toCertificateDto(updated);
 }
 
 export async function deleteCertificate(id: string, actor: CertificateActor) {
-  const existing = await getCertificateById(id, actor);
+  const existing = await findCertificateInScope(id, actor);
   if (!existing) throw Errors.notFound('Certificate');
   return prisma.digitalCertificate.delete({ where: { id } });
 }
@@ -165,7 +234,10 @@ export async function getStudentCertificates(studentId: string, actor: Certifica
     }),
     prisma.digitalCertificate.count({ where }),
   ]);
-  return { data, meta: { page: 1, limit: total, total, totalPages: 1 } };
+  return {
+    data: data.map(toCertificateDto),
+    meta: { page: 1, limit: total, total, totalPages: 1 },
+  };
 }
 
 /**
@@ -178,11 +250,23 @@ export async function getStudentCertificates(studentId: string, actor: Certifica
  * cannot be used to confirm that a private certificate exists.
  */
 export async function verifyCertificate(code: string) {
-  const certificate = await prisma.digitalCertificate.findFirst({
+  const row = await prisma.digitalCertificate.findFirst({
     where: { certificateNumber: code, isPublic: true },
-    include: studentInclude,
+    select: publicCertificateSelect,
   });
-  return { valid: !!certificate, certificate };
+  if (!row) return { valid: false, certificate: null };
+  const { student, ...certificate } = row;
+  return {
+    valid: true,
+    certificate: {
+      ...certificate,
+      student: {
+        name: student.user.name,
+        unit: student.unit,
+        class: student.enrollments[0]?.class,
+      },
+    },
+  };
 }
 
 export async function incrementDownloadCount(id: string) {
@@ -208,7 +292,7 @@ export async function incrementDownloadCount(id: string) {
  * directory, past the scope check. The download route is the only reader.
  */
 export async function renderCertificatePdf(id: string, actor: CertificateActor) {
-  const certificate = await getCertificateById(id, actor);
+  const certificate = await findCertificateInScope(id, actor);
   if (!certificate) throw Errors.notFound('Certificate');
 
   const buffer = await generateCertificatePdfBuffer(certificate);

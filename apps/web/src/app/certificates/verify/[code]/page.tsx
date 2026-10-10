@@ -212,12 +212,14 @@ export default function VerifyCertificatePage({
                     {certificate.student?.name || "-"}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">NIS</span>
-                  <span className="font-medium">
-                    {certificate.student?.nis || "-"}
-                  </span>
-                </div>
+                {certificate.student?.unit && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Unit</span>
+                    <span className="font-medium">
+                      {certificate.student.unit.name}
+                    </span>
+                  </div>
+                )}
                 {certificate.student?.class && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Kelas</span>
