@@ -27,7 +27,12 @@ import {
   writeUnitScopeFor,
   type UnitActor,
 } from '../../utils/resolve-unit-id';
-import { PARENT_ROLE_CODES, STUDENT_ROLE_CODES } from '@cipansor/shared';
+import {
+  ADMIN_ROLE_CODES,
+  PARENT_ROLE_CODES,
+  STUDENT_ROLE_CODES,
+  TATA_USAHA_ROLE_CODES,
+} from '@cipansor/shared';
 
 /** The verified token, reduced to what decides an employee's reach. */
 export interface HrActor extends UnitActor {
@@ -52,6 +57,48 @@ function employeeListUnit(actor: HrActor, asked?: string): string | undefined {
   if (isFoundationScopedRole(actor.roleCode)) return asked || undefined;
   if (!actor.unitId) throw Errors.forbidden('Akun ini tidak terikat pada unit mana pun');
   return actor.unitId;
+}
+
+/**
+ * The directory half of a teacher's or staff member's record: who they are and
+ * what they do, as a colleague may see it. A teacher's personal columns — NIK,
+ * KK, address, place and date of birth, bank account — are for whoever keeps
+ * the HR record: the employee, the unit's admin and Tata Usaha (who keep
+ * kepegawaian and the Dapodik/EMIS PTK data) and the foundation board.
+ * Decided by the owner on 2026-10-10 (UU 27/2022 Pasal 16 ayat 2: processing
+ * limited to its purpose).
+ */
+const TEACHER_DIRECTORY_SELECT = {
+  id: true,
+  userId: true,
+  unitId: true,
+  nip: true,
+  nuptk: true,
+  specialization: true,
+  departmentId: true,
+  employmentStatus: true,
+  joinDate: true,
+} as const;
+
+const STAFF_DIRECTORY_SELECT = {
+  id: true,
+  userId: true,
+  unitId: true,
+  nip: true,
+  position: true,
+  department: true,
+  departmentId: true,
+  joinDate: true,
+} as const;
+
+/** Whether `actor` keeps HR records — and so may read a colleague's in full. */
+function keepsHrRecords(actor: HrActor): boolean {
+  const code = actor.roleCode ?? '';
+  return (
+    isFoundationScopedRole(code) ||
+    ADMIN_ROLE_CODES.includes(code) ||
+    TATA_USAHA_ROLE_CODES.includes(code)
+  );
 }
 
 /** Roles whose own HR record is all they may read — never a colleague's. */
@@ -128,8 +175,8 @@ export async function getEmployees(
       select: {
         ...SAFE_USER_SELECT,
         unit: { select: { id: true, name: true } },
-        teacher: true,
-        staff: true,
+        teacher: { select: TEACHER_DIRECTORY_SELECT },
+        staff: { select: STAFF_DIRECTORY_SELECT },
       },
     }),
     prisma.user.count({ where }),
@@ -171,6 +218,7 @@ async function getSelfEmployee(
       staff: true,
     },
   });
+  // The caller's own record, so in full.
   return { data, meta: { page, limit, total: data.length, totalPages: 1 } };
 }
 
@@ -228,13 +276,16 @@ export async function getEmployeeById(id: string, actor: HrActor) {
   if (SELF_ONLY_EMPLOYEE_ROLES.includes(actor.roleCode ?? '') && id !== actor.sub) {
     throw Errors.notFound('Employee not found');
   }
+  // In full for the employee and for whoever keeps HR records; the directory
+  // columns for everyone else (the unit check below still applies to both).
+  const full = id === actor.sub || keepsHrRecords(actor);
   const employee = await prisma.user.findUnique({
     where: { id },
     select: {
       ...SAFE_USER_SELECT,
       unit: { select: { id: true, name: true } },
-      teacher: true,
-      staff: true,
+      teacher: full ? true : { select: TEACHER_DIRECTORY_SELECT },
+      staff: full ? true : { select: STAFF_DIRECTORY_SELECT },
     },
   });
   if (!employee) throw Errors.notFound('Employee not found');
@@ -385,6 +436,8 @@ export async function createEmployee(data: CreateEmployeeInput, actor: HrActor) 
         unitId,
         phone: data.phone,
       },
+      // Never the credential columns: this row is what the API answers with.
+      select: SAFE_USER_SELECT,
     });
 
     // 2. Create Profile based on Role
@@ -454,6 +507,8 @@ export async function updateEmployee(id: string, data: UpdateEmployeeInput, acto
         phone: data.phone,
         isActive: data.isActive,
       },
+      // Never the credential columns: this row is what the API answers with.
+      select: SAFE_USER_SELECT,
     });
 
     // 2. Update Profile

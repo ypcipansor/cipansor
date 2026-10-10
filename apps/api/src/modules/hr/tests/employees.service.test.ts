@@ -80,21 +80,21 @@ describe('hr getEmployees', () => {
     );
   });
 
-  it('includes unit, teacher and staff relations — the HR table reads all three', async () => {
+  it('reads unit, teacher and staff — the directory columns only, for every caller', async () => {
     mocked.user.findMany.mockResolvedValue([]);
     mocked.user.count.mockResolvedValue(0);
 
     await getEmployees({ page: 1, limit: 20 }, admin);
 
-    expect(mocked.user.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        select: expect.objectContaining({
-          unit: { select: { id: true, name: true } },
-          teacher: true,
-          staff: true,
-        }),
-      })
-    );
+    const select = mocked.user.findMany.mock.calls[0][0].select;
+    expect(select.unit).toEqual({ select: { id: true, name: true } });
+    // A roster is a directory: name, NIP/NUPTK, position, unit, status. A
+    // teacher's NIK, KK, address, birth and bank account never ride along.
+    for (const column of ['nik', 'noKK', 'address', 'birthPlace', 'birthDate', 'bankAccountNumber']) {
+      expect(select.teacher.select[column]).toBeUndefined();
+    }
+    expect(select.teacher.select.nip).toBe(true);
+    expect(select.staff.select.position).toBe(true);
   });
 
   it('never selects credential columns', async () => {
@@ -213,6 +213,37 @@ describe('hr getEmployeeById', () => {
     );
   });
 
+  // Decided by the owner on 2026-10-10: a teacher's personal columns are for
+  // the employee and whoever keeps the HR record (admin, Tata Usaha, the board).
+  it.each([
+    ['the unit admin', admin, 'u-1'],
+    ['the unit Tata Usaha', { sub: 'tu-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' }, 'u-1'],
+    ['the employee themselves', { sub: 'u-1', roleCode: 'SDIT_GURU', unitId: 'unit-1' }, 'u-1'],
+    ['the super admin', superAdmin, 'u-1'],
+  ] as const)('gives %s the full record', async (_who, actor, id) => {
+    mocked.user.findUnique.mockResolvedValue({ id, unitId: 'unit-1' });
+
+    await getEmployeeById(id, actor as HrActor);
+
+    const select = mocked.user.findUnique.mock.calls[0][0].select;
+    expect(select.teacher).toBe(true);
+  });
+
+  it.each([
+    ['a colleague teacher', { sub: 'guru-2', roleCode: 'SDIT_GURU', unitId: 'unit-1' }],
+    ['the principal', { sub: 'kepsek-1', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-1' }],
+    ['the nurse', { sub: 'perawat-1', roleCode: 'PERAWAT', unitId: 'unit-1' }],
+  ] as const)('gives %s the directory columns only', async (_who, actor) => {
+    mocked.user.findUnique.mockResolvedValue({ id: 'u-1', unitId: 'unit-1' });
+
+    await getEmployeeById('u-1', actor as HrActor);
+
+    const select = mocked.user.findUnique.mock.calls[0][0].select;
+    expect(select.teacher.select.nik).toBeUndefined();
+    expect(select.teacher.select.bankAccountNumber).toBeUndefined();
+    expect(select.teacher.select.nip).toBe(true);
+  });
+
   it('never selects credential columns for the detail view', async () => {
     mocked.user.findUnique.mockResolvedValue({ id: 'u-1', unitId: 'unit-1' });
 
@@ -297,6 +328,11 @@ describe('hr createEmployee', () => {
 
     expect(txUserCreate.mock.calls[0][0].data.unitId).toBe('unit-1');
     expect(txStaffCreate.mock.calls[0][0].data.unitId).toBe('unit-1');
+    // The created row is the API's answer, so it carries no credential column.
+    const select = txUserCreate.mock.calls[0][0].select;
+    expect(select).toBeDefined();
+    expect(select).not.toHaveProperty('passwordHash');
+    expect(select).not.toHaveProperty('twoFactorSecret');
   });
 
   it('lets a foundation role place an employee in the unit it names', async () => {
@@ -446,6 +482,11 @@ describe('hr updateEmployee / deleteEmployee', () => {
 
     expect(txUserUpdate.mock.calls[0][0].data.unitId).toBe('unit-1');
     expect(txTeacherUpdate.mock.calls[0][0].data.unitId).toBe('unit-1');
+    // The updated row is the API's answer, so it carries no credential column.
+    const select = txUserUpdate.mock.calls[0][0].select;
+    expect(select).toBeDefined();
+    expect(select).not.toHaveProperty('passwordHash');
+    expect(select).not.toHaveProperty('twoFactorSecret');
   });
 
   it("404s deleting another unit's employee", async () => {
