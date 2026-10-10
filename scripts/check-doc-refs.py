@@ -32,6 +32,8 @@ EXTERNAL = ("http://", "https://", "data:")
 # hand-curated `docs/images/` gallery and the captured `docs/screens/` flow
 # shots are scanned; adding a third means adding it here.
 IMAGE_DIRS = [os.path.join("docs", "images"), os.path.join("docs", "screens")]
+# Built locally by the gallery scripts and gitignored, so never an orphan here.
+GENERATED_DIRS = [os.path.join("docs", "images", "pages"), os.path.join("docs", "images", "roles")]
 IMAGE_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
 
 
@@ -77,6 +79,9 @@ def main() -> int:
     for image_dir in IMAGE_DIRS:
         base = os.path.join(ROOT, image_dir)
         for root, _dirs, files in os.walk(base):
+            rel_root = os.path.normpath(os.path.relpath(root, ROOT))
+            if any(rel_root == g or rel_root.startswith(g + os.sep) for g in GENERATED_DIRS):
+                continue
             for f in files:
                 if f.lower().endswith(IMAGE_EXT):
                     on_disk.add(os.path.normpath(os.path.relpath(os.path.join(root, f), ROOT)))

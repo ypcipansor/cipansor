@@ -169,3 +169,12 @@ docs/*.pdf
 
 # Agent working notes (session memory), never part of the repo
 .openhands/
+
+# Visual-QA galleries, built by scripts/build-page-gallery.py and
+# scripts/build-role-gallery.py from a local sweep. Thousands of images that
+# change with every UI change stay out of git history (decided 2026-10-10);
+# the committed screenshots are the ones the user manuals use (docs/screens/).
+docs/images/pages/
+docs/images/roles/
+docs/_gallery.md
+docs/_roles-gallery.md

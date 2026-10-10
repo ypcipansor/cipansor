@@ -12,6 +12,7 @@
 | 0.8 | 30 September 2026 | commit `9b0efdc5` + pohon kerja (perbaikan modul `certificates`, `rewards`, `violations`, `hr` belum dikomit) | Lampiran A diukur ulang baris demi baris terhadap kode: `certificates` 9→10, `rewards` 9→10, `violations` 7→8, `hr` 37→42, `organisasi` 11→12 handler. Pemeriksa `check_docs.py` kini memeriksa **tiap baris** Lampiran A (jumlah handler, alamat mount, penandaan Prisma di route/controller), bukan hanya jumlah barisnya — jumlah baris yang cocok pernah menyembunyikan lima baris yang basi | Agen OpenHands |
 | 0.9 | 30 September 2026 | commit `7e985a08` + pohon kerja (temuan Devin: akses sertifikat, lingkup unit HR, poin kategori penghargaan) | Angka diukur ulang: **1.412 hulu rute API** (dari 1.413) dan Lampiran A baris `certificates` 10→9 — rute PDF sertifikat tidak lagi terdaftar di router; berkas PDF diunduh lewat rute `download`. Riwayat revisi dikecualikan dari gerbang angka (ia mencatat keadaan lama). Perkakas dokumen diberi uji regresi `scripts/test_tooling.py` | Agen OpenHands |
 | 1.0 | 5 Oktober 2026 | commit `3ba5cb974` (`main` digabung ke cabang README/galeri; 33 commit sejak `aefc719`) | Seluruh angka diukur ulang terhadap pohon hasil gabung: **95 modul API**, **292 model**, **162 enum**, ~**1.407 hulu rute API**, **432 halaman web**, **16 entri jadwal** atas **14 berkas pekerjaan**, **81 kunci** `.env.example`; Lampiran A diganti baris demi baris; modul `environment` masuk tabel ranah 5.3; alamat SPMB publik di bab 6 diperbaiki menjadi `GET /api/admissions/public/intakes`; lima keputusan baru (`fasilitas-dan-kegiatan-situs-publik`, `notifikasi-push`, `siaran-pengumuman`, `spmb-2027-2028`, `surat-keterangan-lewat-eoffice`) ditambahkan ke bab 9. `check_docs.py` 0 ERROR/0 WARN | Agen OpenHands |
+| 1.1 | 10 Oktober 2026 | `main` digabung ke cabang README/galeri (`66609623d`) dan perbaikan tinjauan | Angka diukur ulang: **294 model**, **163 enum**, ~**1.411 hulu rute API**, **434 halaman web**, **82 kunci** `.env.example`; Lampiran A `correspondence` 15→18 dan `esign` 18→19 handler; empat keputusan ditambahkan ke bab 9; **Lampiran F — Peta Tampilan** baru (galeri gambar dikeluarkan dari git, lihat `decisions/dokumentasi-bergambar.md`). `check_docs.py --final` 0 ERROR | Claude Code |
 
 > **Catatan.** Angka dalam dokumen ini dihitung dari kode pada commit yang tertera dan akan bergeser
 > seiring pengembangan. Dokumen diperbarui dengan menjalankan ulang pengukuran, bukan dengan menyunting angka.
@@ -32,8 +33,8 @@ wali santri dan santri. Sistem mencatat **53 kode peran** yang dikelompokkan ke
 dalam **13 keluarga menu** (diukur pada commit `40780b26`, 30 September 2026);
 setiap peran melihat menu, dasbor, dan data yang berbeda.
 
-Pada commit ini, basis kode berisi **95 modul API**, **292 model data** dan
-**162 enum**, sekitar **1.407 hulu rute API**, **432 halaman web**, serta
+Pada commit ini, basis kode berisi **95 modul API**, **294 model data** dan
+**163 enum**, sekitar **1.411 hulu rute API**, **434 halaman web**, serta
 **16 entri jadwal** (dari 14 berkas pekerjaan). Data disimpan di satu basis data PostgreSQL dan
 diakses lewat Prisma 7. Aplikasi berjalan sebagai dua layanan: API (Express 5)
 dan web (Next.js 16), dengan paket tipe bersama `@cipansor/shared`.
@@ -490,7 +491,7 @@ kontainer yang menyala.
 
 ## 7.1 Variabel lingkungan
 
-Nama dan fungsi saja; nilai tidak pernah ditulis. Ada **81 kunci** di
+Nama dan fungsi saja; nilai tidak pernah ditulis. Ada **82 kunci** di
 `.env.example`, dikelompokkan menurut awalan (CHATBOT, SMTP, WA, RATE, DB, JWT,
 TURNSTILE, GOOGLE, NEXT, REDIS, COOKIE, MAIL, dan lain-lain). Daftar nama dan
 fungsinya ada di Lampiran C. Setiap variabel baru harus ditambahkan ke blok
@@ -562,6 +563,10 @@ satu kalimat; buka berkasnya untuk alasannya.
 | Siaran | Pengumuman satu-satunya jalan siaran: lonceng + push menurut relasi, tanpa persetujuan, dapat ditarik. | `siaran-pengumuman.md` |
 | SPMB 2027/2028 | Pendaftaran berjalan di portal dan situs publik; data brosur masuk modul SPMB, bukan kode. | `spmb-2027-2028.md` |
 | Surat keterangan lewat E-Office | Surat keterangan santri adalah naskah E-Office bernomor agenda dan bertanda tangan TTE, bukan cetakan bernomor sendiri di peramban. | `surat-keterangan-lewat-eoffice.md` |
+| Derajat kecepatan naskah | Tiga derajat — Sangat Segera (24 jam), Segera (2 × 24 jam), Biasa; tanpa derajat Kilat terpisah. | `derajat-kecepatan-naskah.md` |
+| Lisensi | Apache License 2.0 selama repositori publik, kembali proprietary begitu privat; nama, logo, foto, dan data pribadi di luar lisensi. | `lisensi.md` |
+| Pengumuman SPMB di situs publik | Banner selama ada unit yang membuka pendaftaran, ditambah dialog tertunda sekali per kunjungan; keduanya diturunkan dari `GET /admissions/public/intakes`. | `spmb-announcement-publik.md` |
+| Akses data pegawai | Data pribadi lengkap pegawai hanya untuk dirinya, admin unit, TU unit, organ, dan Super Admin; rekan melihat kolom direktori. | `akses-data-pegawai.md` |
 
 # 10. Persyaratan Kualitas
 
@@ -653,7 +658,7 @@ memanggil Prisma dari rute/controller.
 | chatbot | /api/chatbot | 9 | - | Prisma di route/controller |
 | classes | /api/classes | 9 | ya | ok |
 | complaints | /api/complaints | 6 | - | Prisma di route/controller |
-| correspondence | /api/correspondence | 15 | - | ok |
+| correspondence | /api/correspondence | 18 | - | ok |
 | counseling | /api/counseling | 14 | - | ok |
 | curriculum | /api/curriculum | 21 | ya | ok |
 | daily-report | /api/daily-report | 9 | ya | ok |
@@ -665,7 +670,7 @@ memanggil Prisma dari rute/controller.
 | duty-roster | /api/duty-roster | 18 | - | ok |
 | emis | /api/emis | 5 | - | ok |
 | environment | /api/environment | 1 | - | ok |
-| esign | /api/esign | 18 | - | ok |
+| esign | /api/esign | 19 | - | ok |
 | extracurricular | /api/extracurricular | 18 | - | ok |
 | facilities | /api/facilities | 21 | - | ok |
 | finance | /api/finance | 47 | ya | ok |
@@ -736,7 +741,7 @@ Modul tanpa routes (pustaka internal, bukan endpoint): `scholarship`.
 
 # Lampiran B — Model Data Tingkat Ranah
 
-Skema Prisma adalah rujukan tunggal (**292 model, 162 enum** pada commit ini).
+Skema Prisma adalah rujukan tunggal (**294 model, 163 enum** pada commit ini).
 Berikut kelompok entitas utama dan hubungannya, bukan ratusan model satu per satu.
 
 ```mermaid
@@ -768,7 +773,7 @@ pendaftaran ke unit adalah `StudentUnitEnrollment` (tidak digambar).
 
 # Lampiran C — Variabel Lingkungan
 
-Diukur dari `.env.example` (81 kunci). Nama dan fungsi saja, tanpa nilai.
+Diukur dari `.env.example` (82 kunci). Nama dan fungsi saja, tanpa nilai.
 
 | Kelompok | Nama | Fungsi |
 |---|---|---|
@@ -823,3 +828,122 @@ Ringkas; rincian di `docs/DEPLOYMENT.md` (VM) dan `docs/deploy-azure.md` (Azure)
 | Penempatan | `docker-compose.yml`, `.github/workflows/*`, `docs/deploy-azure.md`, `docs/DEPLOYMENT.md`, `deploy/azure/nginx/` |
 | Keputusan | `.claude/memory/decisions/*.md`, `.claude/memory/INDEX.md` |
 | Diagram & kerangka | arc42 v9 (arc42.org, Juli 2025 — 12 bab tetap), Model C4 (c4model.com) |
+
+# Lampiran F — Peta Tampilan
+
+Setiap halaman web (`page.tsx` di `apps/web/src/app`) dikelompokkan menurut
+segmen URL pertamanya. Kolom host mengikuti `PUBLIC_PATH_PREFIXES` di
+`lib/host-split.ts`; kolom bucket mengikuti `roleRouteAccess` di `lib/rbac.ts`,
+yaitu siapa yang boleh **membuka** halaman. Apa yang boleh dilakukan di sana tetap
+diputuskan API (bab 8). Menu tiap kode peran dicetak dengan
+`apps/web/scripts/role-menus.ts`.
+
+Gambar tampilan tidak disimpan di sini. Tangkapan per tugas ada di panduan
+pengguna tiap peran (`docs/PANDUAN-PENGGUNA-*.md`, gambar di `docs/screens/`).
+Galeri seluruh halaman dibangun ulang secara lokal dengan
+`scripts/build-page-gallery.py` dan `scripts/build-role-gallery.py`, lalu
+di-ignore (`decisions/dokumentasi-bergambar.md`).
+
+Diukur pada commit penggabungan 2026-10-10 (`66609623d`).
+
+| Segmen URL | Halaman | Host | Bucket yang boleh membuka |
+|---|---:|---|---|
+| `/finance` | 24 | portal | Super Admin, Admin/organ, Staf |
+| `/tahfidz` | 20 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/hr` | 17 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/assessment` | 16 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/parent` | 15 | portal | Super Admin, Wali |
+| `/tk` | 12 | portal | Super Admin, Admin/organ |
+| `/students` | 11 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/takhosus` | 11 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/curriculum` | 10 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/analytics` | 8 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/cbt` | 8 | portal | Super Admin, Admin/organ |
+| `/foundation` | 8 | portal | Super Admin, Admin/organ |
+| `/inventory` | 8 | portal | Super Admin, Admin/organ |
+| `/rapor-pesantren` | 8 | portal | Super Admin, Guru/kepala |
+| `/e-office` | 7 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/quality` | 7 | portal | Super Admin, Admin/organ, Guru/kepala, Staf, Santri, Wali |
+| `/settings` | 7 | portal | Super Admin, Admin/organ, Guru/kepala, Staf, Santri, Wali |
+| `/spmb` | 7 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/alumni` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/attendance` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/daily-report` | 6 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/kinerja` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/library` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/procurement` | 6 | portal | Super Admin, Admin/organ |
+| `/public` | 6 | kedua host | semua (tanpa login): SPMB publik, pelacak, verifikasi naskah/kunci/kartu/sanad |
+| `/rewards` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/violations` | 6 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/certificates` | 5 | portal | Super Admin, Guru/kepala, Santri |
+| `/dormitories` | 5 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/health` | 5 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/homeroom` | 5 | portal | Super Admin, Guru/kepala |
+| `/ibadah` | 5 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/meals` | 5 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/permits` | 5 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/talenta` | 5 | portal | Super Admin, Admin/organ |
+| `/units` | 5 | portal | Super Admin, Admin/organ |
+| `/users` | 5 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/academic-years` | 4 | portal | Super Admin, Admin/organ |
+| `/classes` | 4 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/counseling` | 4 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/donation` | 4 | portal | Super Admin, Admin/organ, Staf, Santri |
+| `/extracurricular` | 4 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/marketing` | 4 | portal | Super Admin, Admin/organ |
+| `/muhadatsah` | 4 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/muhadhoroh` | 4 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/reception` | 4 | portal | Super Admin, Admin/organ |
+| `/student` | 4 | portal | Super Admin, Santri |
+| `/assignments` | 3 | portal | Super Admin, Guru/kepala, Santri |
+| `/calendar` | 3 | portal | Super Admin, Admin/organ |
+| `/duty-roster` | 3 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/kitab-progress` | 3 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/muhasabah` | 3 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/notifications` | 3 | portal | Super Admin, Admin/organ, Guru/kepala, Staf, Santri, Wali |
+| `/organisasi` | 3 | portal | Super Admin, Admin/organ |
+| `/perencanaan` | 3 | portal | Super Admin, Admin/organ |
+| `/practicum` | 3 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/profil` | 3 | publik | semua (tanpa login) |
+| `/research` | 3 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/risk-management` | 3 | portal | Super Admin, Admin/organ |
+| `/admissions` | 2 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/berita` | 2 | publik | semua (tanpa login) |
+| `/musyrif` | 2 | portal | Super Admin, Guru/kepala |
+| `/pengawasan` | 2 | portal | Super Admin, Admin/organ |
+| `/project` | 2 | portal | Super Admin, Admin/organ |
+| `/reports` | 2 | portal | Super Admin, Admin/organ, Guru/kepala, Staf |
+| `/student-org` | 2 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/syariah` | 2 | portal | Super Admin, Admin/organ |
+| `/tata-laksana` | 2 | portal | Super Admin, Admin/organ |
+| `/unit` | 2 | publik | semua (tanpa login) |
+| `/unit-usaha` | 2 | portal | Super Admin, Admin/organ |
+| `/wallet` | 2 | portal | Super Admin, Santri |
+| `/` | 1 | publik | semua (tanpa login) |
+| `/activities` | 1 | publik | semua (tanpa login) |
+| `/admin` | 1 | portal | Super Admin |
+| `/announcements` | 1 | portal | Super Admin, Admin/organ, Guru/kepala, Staf, Santri, Wali |
+| `/campus` | 1 | publik | semua (tanpa login) |
+| `/canteen` | 1 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/dashboard` | 1 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/emis` | 1 | portal | Super Admin, Admin/organ |
+| `/facilities` | 1 | portal | Super Admin, Admin/organ |
+| `/galeri` | 1 | publik | semua (tanpa login) |
+| `/grc-dashboard` | 1 | portal | Super Admin, Admin/organ |
+| `/kontak` | 1 | publik | semua (tanpa login) |
+| `/laundry` | 1 | portal | Super Admin, Admin/organ, Guru/kepala |
+| `/lingkungan` | 1 | portal | Super Admin, Staf |
+| `/login` | 1 | portal | semua (tanpa login) |
+| `/payroll` | 1 | portal | Super Admin, Admin/organ |
+| `/portfolio` | 1 | portal | Super Admin, Admin/organ, Guru/kepala, Santri |
+| `/profile` | 1 | portal | Super Admin, Admin/organ, Guru/kepala, Staf, Santri, Wali |
+| `/program-unggulan` | 1 | publik | semua (tanpa login) |
+| `/reset-password` | 1 | portal | semua (tanpa login) |
+| `/schedule` | 1 | portal | Super Admin, Guru/kepala, Staf, Santri |
+| `/staff` | 1 | portal | Super Admin, Staf |
+| `/teacher` | 1 | portal | Super Admin, Guru/kepala |
+| `/unauthorized` | 1 | portal | semua |
+| `/wakaf-infaq` | 1 | publik | semua (tanpa login) |
+| `/wilayah` | 1 | portal | Super Admin, Admin/organ |
+
+Total: 434 halaman.

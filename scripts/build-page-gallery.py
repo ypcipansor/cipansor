@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Generate a complete page gallery for the README from a visual-QA sweep.
+"""Generate a complete page gallery from a visual-QA sweep.
 
 Every distinct App Router path captured by `apps/web/scripts/screenshot-all.ts`
 becomes a compact WebP thumbnail under `docs/images/pages/`, grouped by its
-top-level module. Output: `docs/_gallery.md`, a fragment the README includes.
+top-level module. Output: `docs/_gallery.md` and the thumbnails, both gitignored: the gallery is
+built locally when needed and never committed (decided 2026-10-10).
 
     python3 scripts/build-page-gallery.py
 """
@@ -213,18 +214,6 @@ def main() -> int:
     modules = len(buckets)
     print(f"wrote {written} thumbnails across {modules} modules -> {FRAGMENT}")
 
-    # Splice the fragment into README.md between its markers so the gallery is
-    # regenerated in place, never hand-edited.
-    readme = os.path.join(ROOT, "README.md")
-    begin, end = "<!-- BEGIN:GENERATED-GALLERY -->", "<!-- END:GENERATED-GALLERY -->"
-    with open(readme) as f:
-        text = f.read()
-    if begin in text and end in text:
-        body = "\n".join(lines)
-        text = text.split(begin)[0] + begin + "\n\n" + body + "\n" + end + text.split(end)[1]
-        with open(readme, "w") as f:
-            f.write(text)
-        print("updated README gallery section")
     return 0
 
 

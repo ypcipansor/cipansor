@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a per-role gallery for the README from the role visual-QA sweep.
+"""Generate a per-role gallery from the role visual-QA sweep.
 
 Each of the 66 demo accounts gets a section showing the pages its menu actually
 opens, as captured by `apps/web/scripts/screenshot-roles.ts`. Output:
@@ -89,16 +89,6 @@ def main() -> int:
         f.write("\n".join(lines))
     print(f"wrote {total} role thumbnails for {len(by_role)} roles -> {FRAGMENT}")
 
-    readme = os.path.join(ROOT, "README.md")
-    begin, end = "<!-- BEGIN:GENERATED-ROLES -->", "<!-- END:GENERATED-ROLES -->"
-    with open(readme) as f:
-        text = f.read()
-    if begin in text and end in text:
-        body = "\n".join(lines)
-        text = text.split(begin)[0] + begin + "\n\n" + body + "\n" + end + text.split(end)[1]
-        with open(readme, "w") as f:
-            f.write(text)
-        print("updated README role-gallery section")
     return 0
 
 
