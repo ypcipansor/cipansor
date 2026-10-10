@@ -325,7 +325,10 @@ psql -U postgres cipansor < backup_20240101.sql
 
 ### Health Check Endpoints
 
-- **API**: `GET /health`
+- **API**: `GET /health` — readiness check. It probes the database
+  (`SELECT 1` via Prisma) and answers **503** (`status: "unavailable"`) when
+  Postgres is unreachable, otherwise **200** (`status: "ok"`) with the
+  `GIT_COMMIT_SHA` the release workflow polls.
 - **Web**: Available at root `/`
 
 ### Recommended Monitoring Tools

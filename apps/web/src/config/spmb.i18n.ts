@@ -57,10 +57,6 @@ export interface SpmbContent {
   noIntakes: string;
   /** "Dibuka lagi 1 Januari 2027", while registration is shut until then. */
   opensOn: (date: string) => string;
-  /** The homepage badge: "SPMB 2027/2028 dibuka". */
-  badgeOpen: (year: string) => string;
-  /** "SPMB 2027/2028 dibuka 1 Januari 2027". */
-  badgeOpens: (year: string, date: string) => string;
 }
 
 const ID: SpmbContent = {
@@ -107,8 +103,6 @@ const ID: SpmbContent = {
   register: "Daftar ke unit ini",
   noIntakes: "Belum ada penerimaan yang diumumkan.",
   opensOn: (date) => `Dibuka ${date}`,
-  badgeOpen: (year) => `SPMB ${year} dibuka`,
-  badgeOpens: (year, date) => `SPMB ${year} dibuka ${date}`,
 };
 
 const EN: SpmbContent = {
@@ -155,8 +149,6 @@ const EN: SpmbContent = {
   register: "Apply to this school",
   noIntakes: "No admissions have been announced yet.",
   opensOn: (date) => `Opens ${date}`,
-  badgeOpen: (year) => `SPMB ${year} is open`,
-  badgeOpens: (year, date) => `SPMB ${year} opens ${date}`,
 };
 
 const AR: SpmbContent = {
@@ -201,8 +193,6 @@ const AR: SpmbContent = {
   register: "التسجيل في هذه الوحدة",
   noIntakes: "لم يُعلَن عن قبول بعد.",
   opensOn: (date) => `يُفتح في ${date}`,
-  badgeOpen: (year) => `التسجيل مفتوح للعام ${year}`,
-  badgeOpens: (year, date) => `يُفتح التسجيل للعام ${year} في ${date}`,
 };
 
 const CONTENT: Record<Locale, SpmbContent> = { id: ID, en: EN, ar: AR };

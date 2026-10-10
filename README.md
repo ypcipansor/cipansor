@@ -10,8 +10,8 @@
 [![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
 [![Prisma](https://img.shields.io/badge/Prisma-7-blueviolet.svg)](https://www.prisma.io/)
 [![Express](https://img.shields.io/badge/Express-5-green.svg)](https://expressjs.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791.svg)](https://www.postgresql.org/)
-[![Lisensi: Proprietary](https://img.shields.io/badge/Lisensi-Proprietary-red.svg)](LICENSE)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg)](https://www.postgresql.org/)
+[![Lisensi: Apache 2.0](https://img.shields.io/badge/Lisensi-Apache%202.0-blue.svg)](LICENSE)
 
 ---
 
@@ -3451,13 +3451,13 @@ ke `main`.
 
 ## Lisensi
 
-Hak Cipta © 2025–2026 Yayasan Pesantren Cipansor. Seluruh hak dilindungi.
+Hak Cipta © 2025–2026 Yayasan Pesantren Cipansor.
 
-Perangkat lunak ini **proprietary, bukan sumber terbuka**. Tidak ada lisensi yang
-diberikan untuk menyalin, mengubah, mendistribusikan, atau memakainya di luar
-operasional Yayasan — lihat [`LICENSE`](LICENSE). Repositori ini dapat terlihat
-publik untuk sementara, dan keterlihatan itu tidak memberikan hak apa pun.
-Komponen pihak ketiga tetap tunduk pada lisensinya masing-masing.
+Kode sumber dan dokumentasinya dilisensikan di bawah
+[Apache License 2.0](LICENSE). Lisensi itu **tidak** mencakup nama dan logo
+Cipansor serta unit-unitnya, foto dan isi brosur Yayasan, maupun data pribadi
+dalam data demo/seed — rinciannya di [`NOTICE`](NOTICE). Komponen pihak ketiga
+tetap tunduk pada lisensinya masing-masing.
 
 ---
 

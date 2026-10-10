@@ -170,6 +170,30 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # Everything the release needs is checked BEFORE the first image is
+      # pointed at the new SHA. Azure keeps container image settings even when
+      # a later step fails, so a check placed after the image loop can fail the
+      # release while leaving staging aimed at an unverified build — a restart
+      # would then activate it. Keeping the image config untouched on a bad
+      # release is the point of validating here.
+      - name: Validate the staging settings
+        run: |
+          # All THREE chatbot settings are required together: `resolveProvider()`
+          # needs key, base URL and model, and returns null (assistant off) if
+          # any one is missing. Testing only the key let
+          # `CHATBOT_PROVIDER=openai-compatible` be written with an empty base
+          # URL or model, which deployed successfully but left the assistant
+          # invisible. When the key is set the other two are REQUIRED; unset the
+          # key to keep the assistant deliberately off.
+          if [ -n "$CHATBOT_API_KEY" ] && { [ -z "$CHATBOT_API_BASE_URL" ] || [ -z "$CHATBOT_MODEL" ]; }; then
+            echo "::error::CHATBOT_API_KEY is set for staging, so CHATBOT_API_BASE_URL and CHATBOT_MODEL are required too — an assistant configured halfway comes up invisible. Set both variables, or unset the key to keep the assistant deliberately off."
+            exit 1
+          fi
+        env:
+          CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
+          CHATBOT_API_BASE_URL: ${{ vars.CHATBOT_API_BASE_URL }}
+          CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
+
       - name: Point the staging containers at ${{ env.SHA }}
         run: |
           # --target-port every time: `az webapp sitecontainers update` (CLI
@@ -184,8 +208,36 @@ jobs:
           # Every document staging renders is a test copy, stamped "SALINAN UJI —
           # BUKAN DOKUMEN SAH" (config.documents.testCopy). Set on every release
           # so a rebuilt app cannot come up without it; production never sets it.
+          #
+          # APP_ENV=staging is the deployed-copy identity, distinct from NODE_ENV
+          # (`production` on both copies because both run the same images). It is
+          # what /health reports as `environment`, and what lets a guard say "not
+          # in production" and mean it.
+          #
+          # The chatbot runs the REAL provider here, with staging's own key, so a
+          # walkthrough answers the way production answers. When the key is not
+          # configured the assistant stays off rather than falling back to a
+          # deterministic double: a stub that answers like a model is the one
+          # thing staging must never show a reviewer.
+          #
+          # The three chatbot settings are ASSEMBLED here; whether they are
+          # COMPLETE was decided before any image moved (see "Validate the
+          # staging settings"). A half-configured assistant comes up invisible,
+          # which is the exact failure this PR exists to fix.
+          settings=(DOCUMENT_TEST_COPY=true APP_ENV=staging)
+          if [ -n "$CHATBOT_API_KEY" ]; then
+            settings+=(
+              CHATBOT_PROVIDER=openai-compatible
+              CHATBOT_API_BASE_URL="$CHATBOT_API_BASE_URL"
+              CHATBOT_API_KEY="$CHATBOT_API_KEY"
+              CHATBOT_MODEL="$CHATBOT_MODEL"
+            )
+          else
+            echo "::warning::CHATBOT_API_KEY is not set for the staging environment; the assistant stays disabled there"
+            settings+=(CHATBOT_PROVIDER=disabled)
+          fi
           az webapp config appsettings set -g "$RESOURCE_GROUP" -n "$APP" \
-            --settings DOCUMENT_TEST_COPY=true -o none
+            --settings "${settings[@]}" -o none
           # Web Push: this environment's own VAPID pair (decisions/
           # notifikasi-push.md), from the environment's secret and variable.
           # Absent = push stays off, so nothing here forces a pair on anyone.
@@ -200,6 +252,9 @@ jobs:
         env:
           VAPID_PUBLIC_KEY: ${{ vars.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          CHATBOT_API_KEY: ${{ secrets.CHATBOT_API_KEY }}
+          CHATBOT_API_BASE_URL: ${{ vars.CHATBOT_API_BASE_URL }}
+          CHATBOT_MODEL: ${{ vars.CHATBOT_MODEL }}
 
       # The api container applies pending migrations before it starts
       # (MIGRATE_ON_START=true on staging), so a migration that fails shows up
