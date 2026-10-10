@@ -1,6 +1,6 @@
 # Progress — where the work stands
 
-Updated **2026-10-04**. What a new session needs to pick up the thread, newest
+Updated **2026-10-10**. What a new session needs to pick up the thread, newest
 first. Keep it short: finished work belongs to git history, and the ordered
 backlog to [`roadmap.md`](roadmap.md).
 
@@ -12,8 +12,9 @@ backlog to [`roadmap.md`](roadmap.md).
   Migrations run when the container starts (`MIGRATE_ON_START`).
 - **Staging** — `staging.cipansor.or.id`, demo data only, deploys every `main`
   on which CI and E2E (Chromium) pass, about 25 minutes after the merge (a
-  documentation-only merge is not rebuilt). At `6bfdfa340` (#651) on
-  2026-10-04. SMP IT's accreditation certificate was recorded there on
+  documentation-only merge is not rebuilt). At `a61ba9ce1` (#664) on
+  2026-10-10; its `/healthz` now reports `database` and `environment` (#675),
+  and `deploy-watch.yml` checks every deploy against it (#664). SMP IT's accreditation certificate was recorded there on
   2026-09-29 at the user's request, by the SMP admin demo account — which
   therefore now asks for a 2FA code — so the public section shows it.
 - **CodeQL is a required check** on `main` since 2026-09-25 (ruleset rule
@@ -23,8 +24,12 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Waiting on the user
 
-- Approval for the next production release — deferred by the user on
-  2026-09-27; ask again at the end of every report. Passwords parts A and B
+- **The next production release is approved once #630 (staff attendance)
+  and #714 (pesantren staff reach every school's santri) are merged**
+  (2026-10-09). Each step that writes production data is still confirmed
+  separately, right before it runs: the SPMB and extracurricular loaders,
+  `require-password-change-all`, and the production VAPID pair. Before that
+  approval it had been deferred since 2026-09-27. Passwords parts A and B
   must go out together, with `scripts/require-password-change-all.ts` run
   once after that deploy; SPMB 2027/2028 needs a release before
   1 January 2027 to take wave 2. (Which fixes production
@@ -82,6 +87,12 @@ variables by default; error monitoring is to be chosen before launch (the
 release plan points at Azure Application Insights). ESLint 10 merged (#604).
 
 ## In flight
+
+- **Open PRs, 2026-10-10:** #630 and #714 (the release waits on both; with
+  the review gate), #747, #660, #708 + #734 (tested together on `main`), #691,
+  #703, #707, #658, #760 (the human note only on risky PRs). After #630: #668
+  (its leave tests merge into #630's file) and #726 (merge `main` in). #512
+  gets a full audit; #706 waits for it.
 
 - **E-Office / naskah dinas audit, round 2.** The persuratan and TTE surfaces
   reviewed against ANRI and PAdES practice. Built: a daily/weekly **retention
@@ -315,6 +326,26 @@ release plan points at Azure Application Insights). ESLint 10 merged (#604).
   any code. `docs/DEPLOYMENT.md` goes
   after 2026-10-01 (the VM is the rollback target until then, and a guard test
   reads it).
+
+## Recently done (2026-10-09 → 10)
+
+- **Merged:** #655 (SPMB banner and delayed dialog on the public site), #657
+  (assistant on staging, widget in id/en/ar), #716, #720, #724 (Apache 2.0
+  while the repository is public), #628 (E-Office audit round 2), #728, #736
+  (migrations use no PostgreSQL extension), #698 (every bracketed placeholder
+  reported, with an oracle test), #675 (`/health` answers 503 when the database
+  is unreachable, with a bounded probe), #711 (fleet renumbered, target design
+  and implementation steps in `docs/SDLC-FLOW.md`, hard PR-description gate),
+  #744 (letter and agenda numbers use the WIB calendar), #677 (k6 smoke before
+  each release), #664 (deploy watchdog).
+- **Decided:** `decisions/otomasi-armada.md` (alerts, k6, release label, no
+  CHANGELOG, private advisories, duplicates, #680, the human note) and
+  `decisions/showcase-portofolio.md`.
+- **Closed without merging:** #748 (duplicate of #708), #681, #682 and #683
+  (#680 handled by the rule already in `docs/LABELS.md`).
+- **Found while reviewing:** #749 (14 routes answer 400 to every write), #754
+  (marketing trend 500, fixed by #691), #755 (campaign ROI never counts the
+  registration fee).
 
 ## Recently done (2026-09-24 → 28)
 
