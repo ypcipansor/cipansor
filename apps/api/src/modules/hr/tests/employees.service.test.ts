@@ -90,7 +90,14 @@ describe('hr getEmployees', () => {
     expect(select.unit).toEqual({ select: { id: true, name: true } });
     // A roster is a directory: name, NIP/NUPTK, position, unit, status. A
     // teacher's NIK, KK, address, birth and bank account never ride along.
-    for (const column of ['nik', 'noKK', 'address', 'birthPlace', 'birthDate', 'bankAccountNumber']) {
+    for (const column of [
+      'nik',
+      'noKK',
+      'address',
+      'birthPlace',
+      'birthDate',
+      'bankAccountNumber',
+    ]) {
       expect(select.teacher.select[column]).toBeUndefined();
     }
     expect(select.teacher.select.nip).toBe(true);
