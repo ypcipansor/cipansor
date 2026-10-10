@@ -6,7 +6,6 @@ import { siteConfig } from "@/config/site";
 import { homeContentFor } from "@/config/home.i18n";
 import { siteTextFor } from "@/config/site.i18n";
 import type { Locale } from "@/locales";
-import { SpmbStatusBadge } from "@/components/landing/spmb-status-badge";
 
 export function HeroSection({ locale }: { locale: Locale }) {
   const { hero } = homeContentFor(locale);
@@ -23,8 +22,6 @@ export function HeroSection({ locale }: { locale: Locale }) {
 
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex flex-col items-center text-center max-w-4xl mx-auto space-y-8">
-          <SpmbStatusBadge locale={locale} />
-
           <h1 className="text-4xl font-extrabold tracking-tight lg:text-6xl text-foreground text-balance">
             {siteConfig.legalName}
             <br className="hidden sm:inline" />{" "}

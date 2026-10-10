@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { LandingNavbar } from "@/components/landing/navbar";
 import { LandingFooter } from "@/components/landing/footer";
+import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import { siteConfig, donationConfig } from "@/config/site";
 import { getServerLocale } from "@/lib/server-locale";
+import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
 import { galleryPhoto } from "@/config/page-photo";
 import type { Locale } from "@/locales";
 import { DonationPortal } from "./donation-portal";
@@ -98,6 +102,18 @@ export default async function WakafInfaqPage() {
   // it: the alt text of the hero photograph, which is resolved server-side so
   // the description ships in the HTML rather than appearing after hydration.
   const locale = await getServerLocale();
+  // This page builds its own chrome instead of using `PublicPage`, so the SPMB
+  // announcement is mounted by hand — banner only (`withDialog={false}`), so a
+  // five-second dialog never interrupts the donation flow. Same public-host
+  // gate as every other public page.
+  const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched on the server so the banner is in the first paint, not inserted
+  // after hydration (which shifted the donation page's content — CLS 0.035).
+  // The dismissal cookie travels with it so a returning visitor does not get
+  // the banner back in the first paint.
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
   return (
     <div className="flex min-h-screen flex-col">
       <script
@@ -106,6 +122,15 @@ export default async function WakafInfaqPage() {
       />
       <LandingNavbar />
       <main id="main-content" className="flex-1 pt-16">
+        {/* First child of `<main>`, under the fixed navbar. `pt-16` on `<main>`
+            clears the navbar for both the banner and the donation body. */}
+        <SpmbAnnouncement
+          locale={locale}
+          enabled={showAnnouncement}
+          withDialog={false}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
+        />
         <DonationPortal photo={galleryPhoto("fasilitas", 2, locale)} />
       </main>
       <LandingFooter />
