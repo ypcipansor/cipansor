@@ -1,6 +1,6 @@
 ---
 name: google-ad-grants
-description: Google Ad Grants untuk Yayasan Pesantren Cipansor — kelayakan (yayasan, bukan sekolah), aturan kepatuhan bulanan (CTR 5%, kualitas kata kunci, sitelink, geo-targeting, konversi), perubahan program 2025–2026 (Performance Max, AI Max), cara memakai $10.000/bulan secara optimal, struktur kampanye, dan celah teknis situs (GA4/GTM host-aware, robots.txt, penandaan konversi) yang harus ditutup lebih dulu. Use when asked how to use, set up, optimize, or stay compliant with Google Ad Grants; when building the landing pages, conversion tracking, or analytics the grant needs; or before touching anything that affects the grant (landing page, robots, host-split, public prefixes).
+description: Google Ad Grants untuk Yayasan Pesantren Cipansor — kelayakan (yayasan, bukan sekolah), aturan kepatuhan bulanan (CTR 5%, kualitas kata kunci, sitelink, geo-targeting, konversi), perubahan program 2025–2026 (Performance Max, AI Max), cara memakai $10.000/bulan secara optimal, struktur kampanye, dan celah teknis situs yang harus ditutup lebih dulu (GA4/GTM host-aware, penandaan konversi; robots.txt bukan penghalang). Use when asked how to use, set up, optimize, or stay compliant with Google Ad Grants; when building the landing pages, conversion tracking, or analytics the grant needs; or before touching anything that affects the grant (landing page, robots, host-split, public prefixes).
 ---
 
 # Google Ad Grants — Cipansor
@@ -150,14 +150,26 @@ bukan portal — iklan hanya menunjuk domain yang disetujui, dan portal
 
 ## Celah teknis di repo ini — tutup sebelum iklan serius
 
-Dua hal ini **belum ada** dan menjadi prasyarat (diperiksa 2026-10-05):
+Satu hal **belum ada** dan menjadi prasyarat (diperiksa 2026-10-05):
 
 1. **Tidak ada GA4 / GTM / gtag sama sekali** di `apps/web`. Tanpa ini tidak
    ada conversion tracking → akun berisiko dideaktivasi, dan Smart Bidding
    buta.
-2. **Tidak ada `robots.txt` / `robots.ts`.** Landing page harus crawlable.
-   (Sitemap sudah benar — `apps/web/src/app/sitemap.ts` sudah selaras dengan
-   `publicPrefixes`.)
+
+Satu hal lagi **bukan** prasyarat, walaupun mudah disangka begitu:
+
+- **Tidak ada `robots.txt` / `robots.ts`, dan itu tidak menghalangi crawling.**
+  Google memperlakukan robots.txt yang menjawab 4xx "seolah tidak ada file
+  robots.txt yang sah", artinya tanpa batasan crawl
+  ([Google Search Central, robots.txt spec](https://developers.google.com/crawling/docs/robots-txt/robots-txt-spec)).
+  Landing page sudah crawlable. Host portal tetap tidak terindeks, karena
+  `layout.tsx` memasang meta `noindex, nofollow` di sana (`indexableHost`).
+  Yang hilang hanya baris `Sitemap:` yang mengumumkan
+  `apps/web/src/app/sitemap.ts` (sudah selaras dengan `publicPrefixes`).
+  Sitemap tetap bisa didaftarkan langsung di Search Console. `robots.ts` yang
+  host-aware boleh ditambahkan sebagai perapian: publik `allow` + `Sitemap:`,
+  portal `disallow: /`. Kalau ditambahkan, **jangan** pernah `disallow` di host
+  publik.
 
 **Jebakan host — mudah salah.** Satu build melayani **dua host**
 (`cipansor.or.id` publik dan `portal.cipansor.or.id`). Tag analitik **hanya
