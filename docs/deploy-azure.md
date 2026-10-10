@@ -113,7 +113,10 @@ built with `GIT_COMMIT_SHA`, and `GET /health` reports it as `commit`. The
 script polls `<host>/healthz` (nginx → api) until `commit` equals the released
 SHA — the old code answering during the restart does not count, and an api that
 never starts (a failed migration exits the container) times out after 15
-minutes. It then requires `<host>/manifest.json` (nginx → web) to return 200.
+minutes. `/health` is a readiness check, so it only answers 200 once the
+database is reachable too; a container whose Postgres is down reports 503 and
+the release keeps waiting rather than counting it as deployed (#665). It then
+requires `<host>/manifest.json` (nginx → web) to return 200.
 
 It goes through Cloudflare like a visitor, because the apps admit nothing else.
 It deliberately does not use `az webapp sitecontainers status`: that call goes
