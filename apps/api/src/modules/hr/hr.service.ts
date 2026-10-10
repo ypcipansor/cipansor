@@ -101,6 +101,24 @@ function keepsHrRecords(actor: HrActor): boolean {
   );
 }
 
+/**
+ * An employee's HR record beyond the directory — contracts, documents,
+ * employment history, leave balances — is read by the employee and by whoever
+ * keeps HR records for the employee's unit (decisions/akses-data-pegawai.md).
+ * Anyone else gets 404, so a colleague's id or another unit's says nothing.
+ */
+export async function assertMayReadEmployeeRecord(actor: HrActor, userId: string): Promise<void> {
+  if (userId === actor.sub) return;
+  if (keepsHrRecords(actor)) {
+    const employee = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { unitId: true },
+    });
+    if (employee && actorReachesUnit(actor, employee.unitId)) return;
+  }
+  throw Errors.notFound('Employee not found');
+}
+
 /** Roles whose own HR record is all they may read — never a colleague's. */
 const SELF_ONLY_EMPLOYEE_ROLES: readonly string[] = [...STUDENT_ROLE_CODES, ...PARENT_ROLE_CODES];
 

@@ -28,6 +28,7 @@ import {
   createEmployee,
   updateEmployee,
   deleteEmployee,
+  assertMayReadEmployeeRecord,
   type HrActor,
 } from '../hr.service';
 
@@ -550,5 +551,48 @@ describe('hr updateEmployee / deleteEmployee', () => {
 
     const email = txUserUpdate.mock.calls[0][0].data.email as string;
     expect(email).toMatch(/^deleted_u-1_\d+@example\.com$/);
+  });
+});
+
+describe('hr assertMayReadEmployeeRecord — who reads a record beyond the directory', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // The employee being asked about works at unit-1.
+    mocked.user.findUnique.mockResolvedValue({ unitId: 'unit-1' });
+  });
+
+  const colleague: HrActor = { sub: 'teacher-2', roleCode: 'SDIT_GURU', unitId: 'unit-1' };
+  const kepala: HrActor = { sub: 'head-1', roleCode: 'SDIT_KEPALA_SEKOLAH', unitId: 'unit-1' };
+  const tataUsaha: HrActor = { sub: 'tu-1', roleCode: 'SDIT_TATA_USAHA', unitId: 'unit-1' };
+  const otherAdmin: HrActor = { sub: 'admin-9', roleCode: 'SMPIT_ADMIN', unitId: 'unit-9' };
+  const pengurus: HrActor = { sub: 'org-1', roleCode: 'YAYASAN_KETUA', unitId: null };
+
+  it('lets the employee read their own record without a lookup', async () => {
+    await expect(assertMayReadEmployeeRecord(colleague, 'teacher-2')).resolves.toBeUndefined();
+    expect(mocked.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('lets the unit admin, the unit Tata Usaha and the foundation read it', async () => {
+    for (const keeper of [admin, tataUsaha, pengurus, superAdmin]) {
+      await expect(assertMayReadEmployeeRecord(keeper, 'teacher-7')).resolves.toBeUndefined();
+    }
+  });
+
+  it('answers 404 to a colleague and to the kepala sekolah', async () => {
+    for (const reader of [colleague, kepala]) {
+      await expect(assertMayReadEmployeeRecord(reader, 'teacher-7')).rejects.toMatchObject({
+        statusCode: 404,
+      });
+    }
+  });
+
+  it('answers 404 to another unit\u2019s admin and for an unknown employee', async () => {
+    await expect(assertMayReadEmployeeRecord(otherAdmin, 'teacher-7')).rejects.toMatchObject({
+      statusCode: 404,
+    });
+    mocked.user.findUnique.mockResolvedValue(null);
+    await expect(assertMayReadEmployeeRecord(admin, 'nobody')).rejects.toMatchObject({
+      statusCode: 404,
+    });
   });
 });

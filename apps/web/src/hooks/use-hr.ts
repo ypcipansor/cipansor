@@ -40,6 +40,9 @@ export interface Employee {
   id: string;
   nip?: string;
   userId?: string;
+  /** The Teacher or Staff profile id — what the leave list filters on. */
+  teacherId?: string;
+  staffId?: string;
   user?: {
     id: string;
     name: string;
@@ -152,6 +155,8 @@ export function normalizeEmployee(raw: any): Employee {
     ...profile,
     id: raw?.id ?? user.id,
     userId: user.id ?? raw?.userId,
+    teacherId: teacher?.id ?? undefined,
+    staffId: staff?.id ?? undefined,
     user,
     nip: profile.nip ?? undefined,
     unitId: raw?.unitId ?? user.unitId ?? "",
@@ -602,18 +607,24 @@ export function useDeleteEmployee() {
 }
 
 // Leave request queries
-export function useLeaveRequests(params?: {
-  employeeId?: string;
-  status?: LeaveStatus;
-  leaveType?: LeaveType;
-  startDate?: string;
-  endDate?: string;
-  page?: number;
-  limit?: number;
-  mine?: boolean;
-}) {
+export function useLeaveRequests(
+  params?: {
+    /** One employee's leave: the API filters on the Teacher or Staff profile. */
+    teacherId?: string;
+    staffId?: string;
+    status?: LeaveStatus;
+    leaveType?: LeaveType;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+    mine?: boolean;
+  },
+  options?: { enabled?: boolean },
+) {
   return useQuery({
     queryKey: ["leave-requests", params],
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const response = await api.get("/hr/leaves", { params });
       return response.data as {

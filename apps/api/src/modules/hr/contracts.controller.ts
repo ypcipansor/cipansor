@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { RoleCode } from '@prisma/client';
 import { contractService } from './contracts.service';
+import { requireUser } from '../../middleware/auth';
+import { assertMayReadEmployeeRecord } from './hr.service';
 import { sendResponse } from '@/utils/response';
 import { Errors } from '@/middleware/error';
 
@@ -56,6 +58,7 @@ export const contractController = {
   findByUser: async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { userId } = req.params;
+      await assertMayReadEmployeeRecord(requireUser(req), userId);
       const result = await contractService.findByUser(userId);
       sendResponse(res, result, 'User contracts retrieved successfully');
     } catch (error) {
