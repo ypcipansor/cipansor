@@ -131,6 +131,17 @@ const advisoryRed = page([
   ...REQUIRED.map((n, i) => cr(n, 'success', i + 1)),
   cr('PR template reminder', 'failure', 888),
 ]);
+// Every required check green, but a non-gate check is still running. This is
+// the normal steady state: the `lifecycle` check this workflow publishes is
+// itself in progress for as long as this step runs, and advisory workflows
+// (Issue label sync, PR template reminder) publish checks too. Counting them as
+// pending suppressed the review-gate dispatch on every PR — the gate only went
+// out when this script's API read won the race against its own check registering.
+const greenWithNonGatePending = page([
+  ...REQUIRED.map((n, i) => cr(n, 'success', i + 1)),
+  { name: 'lifecycle', status: 'in_progress', conclusion: null, started_at: '2024-01-01T00:00:50Z', id: 900 },
+  { name: 'Issue label sync', status: 'queued', conclusion: null, started_at: '2024-01-01T00:00:51Z', id: 901 },
+]);
 
 describe('pr-lifecycle.sh', () => {
   it('leaves a ready PR open when a failing check is on the second page', () => {
@@ -293,6 +304,42 @@ describe('pr-lifecycle.sh', () => {
     });
     expect(calls).toContain('curl');
     expect(calls).toContain('96eebf19-b64b-4035-9653-2d8b15b06ac4/dispatch');
+  });
+
+  it('dispatches the gate although a non-gate check is still running', () => {
+    // The gate's own `lifecycle` check and the advisory workflows behind it are
+    // running while this step executes; only the gate checks decide "green".
+    const { calls, out } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: greenWithNonGatePending,
+      GH_STUB_COMMENTS_LIST: '[]',
+      OPENHANDS_API_KEY: 'key',
+      GH_STUB_HTTP: '200',
+    });
+    expect(out).not.toContain('not all green');
+    expect(calls).toContain('curl');
+    expect(calls).toContain('96eebf19-b64b-4035-9653-2d8b15b06ac4/dispatch');
+  });
+
+  it('waits when a required check itself is still running', () => {
+    // A non-gate check must not block the dispatch, but a required check that is
+    // genuinely still running must: the gate reviews a completed result.
+    const { calls, out } = run({
+      GH_STUB_STATE: 'OPEN',
+      GH_STUB_DRAFT: 'false',
+      GH_STUB_HEAD: SHA,
+      GH_STUB_CHECKS: page([
+        ...REQUIRED.filter((n) => n !== 'E2E Tests (Chromium)').map((n, i) => cr(n, 'success', i + 1)),
+        { name: 'E2E Tests (Chromium)', status: 'in_progress', conclusion: null, started_at: '2024-01-01T00:00:40Z', id: 902 },
+      ]),
+      GH_STUB_COMMENTS_LIST: '[]',
+      OPENHANDS_API_KEY: 'key',
+      GH_STUB_HTTP: '200',
+    });
+    expect(out).toContain('not all green');
+    expect(calls).not.toContain('curl');
   });
 
   it('does not report a refused dispatch as dispatched', () => {

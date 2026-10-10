@@ -7,6 +7,14 @@
 #   changes requested on the head   -> do nothing (waiting for fixes)
 #   changes requested on an older commit, green head -> dispatch the gate again
 #
+# "green" here means the gate checks in REQUIRED_CHECKS, and only those. The
+# check-run API also returns advisory workflows and this workflow's own
+# `lifecycle` check — named after the job below, and in progress for as long as
+# this step runs, so it is "pending" every single time. Counting non-gate checks
+# suppressed the dispatch on every PR: the gate only went out when this script's
+# API read happened to beat its own check-run registering, a race. Both RED and
+# PENDING are therefore restricted to the gate checks.
+#
 # This script never approves, never merges and never changes the draft/ready
 # state. A maintainer decides when a PR is ready; the review gate (SDLC 22)
 # decides the verdict. A red or changes-requested PR is deliberately left open:
@@ -117,10 +125,16 @@ printf '%s\n' "$LATEST" \
   | awk -F'\t' -v req="$REQUIRED_CHECKS" '
       BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
       NF && $2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/ && !($1 in want) { print "Ignoring non-gate check \x27" $1 "\x27 when deciding to draft the PR." }' || true
-# PENDING: a latest run still running, or finished with a conclusion this gate
-# does not call green (a cancelled run whose replacement has not appeared yet).
+# PENDING: a *gate* check whose latest run is still running, or finished with a
+# conclusion this gate does not call green (a cancelled run whose replacement has
+# not appeared yet). Restricted to REQUIRED_CHECKS for the same reason RED is:
+# the check-run API also returns advisory workflows and this workflow's own
+# `lifecycle` check, which is "in progress" for the whole of this step, so a
+# blanket pending test can never pass (see the header).
 PENDING=$(printf '%s\n' "$LATEST" \
-  | awk -F'\t' 'NF && ($2 != "completed" || $3 !~ /^(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$/)' || true)
+  | awk -F'\t' -v req="$REQUIRED_CHECKS" '
+      BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      NF && ($1 in want) && ($2 != "completed" || $3 !~ /^(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$/)' || true)
 PRESENT=$(printf '%s\n' "$LATEST" | awk -F'\t' 'NF {print $1}' || true)
 
 # True when every required check is present on the tested commit. A skipped
