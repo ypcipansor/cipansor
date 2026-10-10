@@ -554,6 +554,136 @@ test.describe("Absen Saya — a punch is recorded", () => {
   });
 });
 
+/** A 1×1 PNG: a picture a person could pick from the gallery. */
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+test.describe("Absen Saya — a photo picked from a file", () => {
+  test.describe.configure({ mode: "serial" });
+
+  let kepala: AuthSession;
+  let admin: AuthSession;
+  let shiftId = "";
+  let assignmentId = "";
+
+  async function clearToday() {
+    const me = await apiRequest<{
+      data: { attendance: { id: string } | null };
+    }>(kepala, "GET", "/hr/attendance/me");
+    if (me.data.attendance) {
+      await apiRequest(
+        admin,
+        "DELETE",
+        `/hr/attendance/${me.data.attendance.id}`,
+        { reason: "Uji e2e foto dari berkas — dibersihkan" },
+      );
+    }
+  }
+
+  test.beforeAll(async () => {
+    kepala = await apiLogin(demo("smpit.kepala@cipansor.or.id"));
+    admin = await apiLogin(demo("smpit.admin@cipansor.or.id"));
+    const staff = await apiRequest<{ data: { id: string; userId: string }[] }>(
+      admin,
+      "GET",
+      `/hr/staff?limit=100&unitId=${String(kepala.user.unitId ?? "")}`,
+    );
+    const staffId = staff.data.find((s) => s.userId === kepala.user.id)?.id;
+    expect(staffId, "the head of school has a staff record").toBeTruthy();
+    const today = new Date().toLocaleDateString("en-CA", {
+      timeZone: "Asia/Jakarta",
+    });
+    const shift = await apiRequest<{ data: { id: string } }>(
+      admin,
+      "POST",
+      "/hr/attendance/shifts",
+      {
+        name: `Shift Foto Berkas ${RUN}`,
+        startTime: "00:00",
+        endTime: "23:59",
+        graceMinutes: 0,
+      },
+    );
+    shiftId = shift.data.id;
+    const assignment = await apiRequest<{ data: { id: string } }>(
+      admin,
+      "POST",
+      "/hr/attendance/shift-assignments",
+      { staffId, shiftId, effectiveFrom: today, effectiveTo: today },
+    );
+    assignmentId = assignment.data.id;
+    await clearToday();
+  });
+
+  test.afterAll(async () => {
+    await clearToday();
+    if (assignmentId)
+      await apiRequest(
+        admin,
+        "DELETE",
+        `/hr/attendance/shift-assignments/${assignmentId}`,
+      );
+    if (shiftId)
+      await apiRequest(admin, "DELETE", `/hr/attendance/shifts/${shiftId}`);
+  });
+
+  test("with the camera refused, a picked photo is re-encoded and flagged", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "a refused camera prompt is deterministic in chromium only",
+    );
+    // No camera permission is granted, so opening the camera fails and the
+    // file picker appears — the fallback a phone without a camera gets.
+    await injectSession(page, kepala);
+    await page.goto("/hr/attendance/me");
+    await page.getByRole("button", { name: "Buka Kamera" }).click();
+    await expect(
+      page.getByText("Kamera tidak dapat dibuka", { exact: false }),
+    ).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "galeri.png",
+      mimeType: "image/png",
+      buffer: PNG,
+    });
+    await expect(
+      page.getByText("Foto ini dari berkas, bukan dari kamera."),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Absen Masuk" }).click();
+    await waitForToast(page, /Absen masuk tercatat/);
+
+    const me = await apiRequest<{
+      data: {
+        attendance: {
+          records: {
+            id: string;
+            kind: string;
+            hasPhoto: boolean;
+            photoSource?: string | null;
+          }[];
+        };
+      };
+    }>(kepala, "GET", "/hr/attendance/me");
+    const punch = me.data.attendance.records.find((r) => r.kind === "CHECK_IN");
+    expect(punch).toMatchObject({ hasPhoto: true, photoSource: "FILE" });
+
+    // What was stored is the page's own JPEG, not the PNG that was picked:
+    // the file's bytes (and any metadata in them) never left the device.
+    const res = await fetch(`${API}/hr/attendance/records/${punch!.id}/photo`, {
+      headers: { authorization: `Bearer ${kepala.accessToken}` },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/jpeg");
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect([bytes[0], bytes[1], bytes[2]]).toEqual([0xff, 0xd8, 0xff]);
+  });
+});
+
 test("an employee with no staff record is told whom to ask", async ({
   page,
 }) => {
