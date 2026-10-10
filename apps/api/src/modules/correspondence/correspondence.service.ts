@@ -100,6 +100,24 @@ async function recordFlow(
  */
 const DEFAULT_AGENDA_FORMAT = '[NO]/[TYPE]/Y-CPS/[ROMAN]/[YEAR]';
 
+const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+
+/**
+ * Bulan (1–12) dan tahun pada kalender WIB, terlepas dari jam server.
+ *
+ * Nomor agenda/surat dicetak ke berkas resmi, jadi ia harus mengikuti hari
+ * kerja yayasan (Asia/Jakarta), bukan zona host. Kontainer API tidak
+ * menetapkan `TZ`, sehingga `getMonth()`/`getFullYear()` membaca UTC: nomor
+ * yang dibuat antara pukul 00:00–07:00 WIB memakai bulan — bahkan tahun —
+ * kemarin (mis. surat 1 Januari dini hari tercetak `…/XII/2026`). WIB itu
+ * UTC+7 tetap tanpa DST, jadi satu pergeseran sudah cukup; angkanya dibaca
+ * dari hasil bergeser dalam UTC supaya tidak bergantung pada zona proses.
+ */
+function wibMonthYear(now: Date): { month: number; year: number } {
+  const shifted = new Date(now.getTime() + 7 * 60 * 60 * 1000);
+  return { month: shifted.getUTCMonth() + 1, year: shifted.getUTCFullYear() };
+}
+
 /** Pengguna internal yang disebut dalam daftar tembusan, tanpa duplikat. */
 function ccUserIds(cc?: LetterCcInput[] | null): string[] {
   return Array.from(new Set((cc ?? []).map((c) => c.userId).filter((id): id is string => !!id)));
@@ -193,11 +211,10 @@ export const CorrespondenceService = {
 
     const newNumber = updatedAgenda.lastNumber;
 
-    // 4. Format String
-    const date = new Date();
-    const romanMonths = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
-    const romanMonth = romanMonths[date.getMonth()];
-    const year = date.getFullYear().toString();
+    // 4. Format String — bulan/tahun dalam kalender WIB, bukan zona jam server
+    const { month, year: wibYear } = wibMonthYear(new Date());
+    const romanMonth = ROMAN_MONTHS[month - 1];
+    const year = wibYear.toString();
 
     let formatted = agenda.format
       .replace('[NO]', newNumber.toString().padStart(3, '0'))

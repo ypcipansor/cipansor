@@ -83,9 +83,12 @@ describe('CorrespondenceService', () => {
 
       const result = await CorrespondenceService.generateNumber('unit-1', 'OUTGOING', 'year-1');
 
-      const date = new Date();
-      const year = date.getFullYear().toString();
-      // We accept any roman month in the test string to avoid flaky tests based on current month
+      // Bulan/tahun mengikuti kalender WIB (UTC+7 tetap), bukan zona jam server —
+      // instan batasnya dikunci di generate-number-timezone.test.ts. Di sini
+      // tahun saja yang dipatok agar tes tidak flaky di akhir Desember, tapi
+      // tetap gagal andai bulan memakai zona host (mis. UTC vs WIB).
+      const shifted = new Date(Date.now() + 7 * 60 * 60 * 1000);
+      const year = shifted.getUTCFullYear().toString();
       expect(result).toMatch(new RegExp(`011/OUTGOING/[IVX]+/${year}`));
     });
 
