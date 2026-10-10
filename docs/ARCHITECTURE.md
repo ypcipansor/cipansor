@@ -35,9 +35,11 @@ src/modules/<name>/
 ```
 
 Layering rule: **routes never call Prisma; controllers never embed business
-logic.** It is the rule, not yet the state: measured on 2026-09-25, 22 of the 93
+logic.** It is the rule, not yet the state: measured on 2026-10-08, 23 of the 94
 modules follow the layout fully, 12 call Prisma from a route or controller, and
-23 import another module directly (see `.claude/memory/known-issues.md`).
+14 import another module directly (see `.claude/memory/known-issues.md`). The
+current module list, route mounts and the measured counts are in
+[`MODULE-MAP.md`](MODULE-MAP.md).
 Modules are mounted in `src/app.ts` under `/api`; the move to `/api/v1`, with
 modules grouped by domain context, is phase 4 of the audit plan in
 `.claude/memory/roadmap.md`.
