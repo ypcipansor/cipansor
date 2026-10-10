@@ -5,6 +5,8 @@ import { Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
+import { fillPlaceholders, type TranslationPath } from "@/locales";
+import { useI18n } from "@/providers/i18n-provider";
 import {
   TurnstileWidget,
   useTurnstile,
@@ -49,29 +51,48 @@ interface Fields {
 }
 
 /**
- * Teks yang BENAR-BENAR akan dibaca tim, disusun di sini supaya yang
- * dikonfirmasi penanya adalah isi suratnya, bukan ringkasan lain yang mirip.
- * Suratnya sendiri dirakit ulang di peladen dari kolom yang sama.
+ * A SUMMARY of the details the visitor is about to submit — deliberately not a
+ * mirror of the outgoing e-mail.
+ *
+ * This once claimed to be "the text the team will actually read". It cannot be:
+ * the team's mail is internal and stays Indonesian, while this preview follows
+ * the visitor's language (they are the one reading it), and the reference
+ * number is only assigned when the row is recorded — so the two were never
+ * going to be identical. Saying otherwise asked a visitor to confirm a message
+ * that did not match what arrived, and hid the reference the mail carries.
+ *
+ * So the review step is labelled as a summary (see `reviewIntro`), and this
+ * shows the fields that will be passed on, in the visitor's language. The
+ * outgoing mail is rendered separately in `escalation.service.ts`.
  */
-export function summarise(fields: Fields): string {
+export function summarise(
+  fields: Fields,
+  t: (path: TranslationPath) => string,
+): string {
   const lines = [
-    `Nama: ${fields.name.trim()}`,
-    `Email: ${fields.email.trim()}`,
+    `${t("public.chatbot.escalation.summaryName")}: ${fields.name.trim()}`,
+    `${t("public.chatbot.escalation.email")}: ${fields.email.trim()}`,
   ];
-  if (fields.phone.trim()) lines.push(`Telepon: ${fields.phone.trim()}`);
-  if (fields.whatsapp.trim()) lines.push(`WhatsApp: ${fields.whatsapp.trim()}`);
-  lines.push(`Pertanyaan: ${fields.question.trim()}`);
-
-  return (
-    "Halo Cipansor, ada pertanyaan yang tidak mampu saya jawab sebagai asisten AI Cipansor. Berikut rinciannya:\n\n" +
-    lines.join("\n")
+  if (fields.phone.trim())
+    lines.push(
+      `${t("public.chatbot.escalation.phone")}: ${fields.phone.trim()}`,
+    );
+  if (fields.whatsapp.trim())
+    lines.push(
+      `${t("public.chatbot.escalation.whatsapp")}: ${fields.whatsapp.trim()}`,
+    );
+  lines.push(
+    `${t("public.chatbot.escalation.question")}: ${fields.question.trim()}`,
   );
+
+  return `${t("public.chatbot.escalation.summaryIntro")}\n\n${lines.join("\n")}`;
 }
 
 const inputClass =
   "w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
+  const { t } = useI18n();
   const [step, setStep] = useState<Step>("offer");
   const [fields, setFields] = useState<Fields>({
     name: "",
@@ -117,7 +138,9 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
       // Tidak menyebut galat teknisnya. Yang berguna bagi penanya adalah jalan
       // keluarnya, dan jalan keluarnya adalah nomor telepon yang memang ada.
       setError(
-        `Maaf, pertanyaannya belum bisa dikirim. Bapak/Ibu dapat menghubungi kami langsung di ${siteConfig.contact.phone}.`,
+        fillPlaceholders(t("public.chatbot.escalation.error"), {
+          phone: siteConfig.contact.phone,
+        }),
       );
     } finally {
       // Token sekali pakai — sudah ditukarkan, berhasil atau tidak.
@@ -128,18 +151,16 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
   if (step === "offer") {
     return (
       <div className="space-y-3 rounded-lg bg-muted/60 p-3 text-sm">
-        <p>
-          Pertanyaan ini di luar informasi yang saya miliki 🙏 Tapi saya bisa
-          menyampaikannya kepada tim Cipansor, dan mereka akan menjawab langsung
-          ke Bapak/Ibu.
+        <p>{t("public.chatbot.escalation.offerBody")}</p>
+        <p className="font-medium">
+          {t("public.chatbot.escalation.offerQuestion")}
         </p>
-        <p className="font-medium">Berkenan saya teruskan?</p>
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => setStep("form")}>
-            Ya, teruskan
+            {t("public.chatbot.escalation.offerYes")}
           </Button>
           <Button size="sm" variant="ghost" onClick={onDismiss}>
-            Tidak, terima kasih
+            {t("public.chatbot.escalation.offerNo")}
           </Button>
         </div>
       </div>
@@ -152,12 +173,12 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
         onSubmit={toReview}
         className="space-y-3 rounded-lg bg-muted/60 p-3 text-sm"
       >
-        <p>
-          Baik. Mohon lengkapi agar tim dapat menghubungi Bapak/Ibu kembali.
-        </p>
+        <p>{t("public.chatbot.escalation.formIntro")}</p>
 
         <label className="block space-y-1">
-          <span className="text-xs font-medium">Nama lengkap</span>
+          <span className="text-xs font-medium">
+            {t("public.chatbot.escalation.name")}
+          </span>
           <input
             required
             minLength={2}
@@ -170,7 +191,9 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
         </label>
 
         <label className="block space-y-1">
-          <span className="text-xs font-medium">Email</span>
+          <span className="text-xs font-medium">
+            {t("public.chatbot.escalation.email")}
+          </span>
           <input
             required
             type="email"
@@ -185,7 +208,10 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
         <div className="grid grid-cols-2 gap-2">
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              Telepon <span className="text-muted-foreground">(opsional)</span>
+              {t("public.chatbot.escalation.phone")}{" "}
+              <span className="text-muted-foreground">
+                {t("public.chatbot.escalation.optional")}
+              </span>
             </span>
             <input
               type="tel"
@@ -198,7 +224,10 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
           </label>
           <label className="block space-y-1">
             <span className="text-xs font-medium">
-              WhatsApp <span className="text-muted-foreground">(opsional)</span>
+              {t("public.chatbot.escalation.whatsapp")}{" "}
+              <span className="text-muted-foreground">
+                {t("public.chatbot.escalation.optional")}
+              </span>
             </span>
             <input
               type="tel"
@@ -211,7 +240,9 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
         </div>
 
         <label className="block space-y-1">
-          <span className="text-xs font-medium">Pertanyaan</span>
+          <span className="text-xs font-medium">
+            {t("public.chatbot.escalation.question")}
+          </span>
           <textarea
             required
             minLength={5}
@@ -248,17 +279,18 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
             className="mt-0.5"
           />
           <span>
-            Saya berkenan data di atas diteruskan kepada tim {siteConfig.name}{" "}
-            untuk menjawab pertanyaan ini. Data disimpan paling lama 90 hari.
+            {fillPlaceholders(t("public.chatbot.escalation.consent"), {
+              name: siteConfig.name,
+            })}
           </span>
         </label>
 
         <div className="flex flex-wrap gap-2">
           <Button type="submit" size="sm">
-            Lanjut
+            {t("public.chatbot.escalation.next")}
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
-            Batal
+            {t("public.chatbot.escalation.cancel")}
           </Button>
         </div>
       </form>
@@ -268,9 +300,9 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
   if (step === "review") {
     return (
       <div className="space-y-3 rounded-lg bg-muted/60 p-3 text-sm">
-        <p>Berikut yang akan saya kirimkan. Apakah sudah tepat?</p>
+        <p>{t("public.chatbot.escalation.reviewIntro")}</p>
         <pre className="whitespace-pre-wrap rounded-md border border-border bg-background p-3 font-sans text-xs leading-relaxed">
-          {summarise(fields)}
+          {summarise(fields, t)}
         </pre>
 
         <TurnstileWidget
@@ -293,7 +325,7 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
             ) : (
               <Send className="mr-1 size-4" />
             )}
-            Sudah tepat, kirim
+            {t("public.chatbot.escalation.reviewSend")}
           </Button>
           <Button
             size="sm"
@@ -301,7 +333,7 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
             onClick={() => setStep("form")}
             disabled={escalate.isPending}
           >
-            Ubah
+            {t("public.chatbot.escalation.reviewEdit")}
           </Button>
         </div>
       </div>
@@ -310,16 +342,14 @@ export function EscalationFlow({ question, conversationId, onDismiss }: Props) {
 
   return (
     <div className="space-y-2 rounded-lg bg-muted/60 p-3 text-sm">
-      <p>
-        Sudah saya sampaikan kepada tim Cipansor 🙏 Mereka akan menghubungi
-        Bapak/Ibu lewat email yang tadi dituliskan.
-      </p>
+      <p>{t("public.chatbot.escalation.sentBody")}</p>
       <p className="text-xs text-muted-foreground">
-        Nomor rujukan: <span className="font-mono">{reference}</span> — sebutkan
-        nomor ini bila Bapak/Ibu menghubungi kami lewat telepon.
+        {fillPlaceholders(t("public.chatbot.escalation.sentReference"), {
+          reference,
+        })}
       </p>
       <Button size="sm" variant="ghost" onClick={onDismiss}>
-        Tutup
+        {t("public.chatbot.escalation.sentClose")}
       </Button>
     </div>
   );

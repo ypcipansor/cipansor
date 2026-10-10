@@ -94,6 +94,14 @@ services:
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
       OUTBOUND_MESSAGES_ENABLED: ${OUTBOUND_MESSAGES_ENABLED:-true}
       DOCUMENT_TEST_COPY: ${DOCUMENT_TEST_COPY:-false}
+      # Which deployed copy this is (`local`/`staging`/`production`). Distinct
+      # from NODE_ENV, which is `production` for staging AND production because
+      # both run the same images. Default `production` because this compose file
+      # IS the production VM stack — a local run that wants to exercise the
+      # chatbot with the `stub` provider sets APP_ENV=local explicitly, since the
+      # stub is refused in production. A production build with it unset resolves
+      # to `production` anyway (resolveAppEnv in config).
+      APP_ENV: ${APP_ENV:-production}
       # Apply pending migrations at container start (docker-entrypoint.sh). Off
       # here: releases on this VM run `prisma migrate deploy` by hand after the
       # pre-checks in the deploy runbook. Azure App Service sets it to true.

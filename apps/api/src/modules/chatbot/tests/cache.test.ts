@@ -54,6 +54,24 @@ describe('cacheKeyFor', () => {
     );
   });
 
+  it('keys an Arabic question, which used to produce no key at all', () => {
+    // `tokenize` discarded every Arabic character, so `cacheKeyFor` returned
+    // null and two visitors clicking the same Arabic suggestion both reached
+    // the paid provider. A non-null key is what lets the second be served from
+    // cache.
+    expect(cacheKeyFor('كم رسوم التسجيل؟', [])).not.toBeNull();
+  });
+
+  it('collapses equivalent Arabic phrasings onto one key', () => {
+    // Same question, punctuation only differs — the Arabic half of the
+    // Indonesian guarantee above.
+    expect(cacheKeyFor('كم رسوم التسجيل؟', [])).toBe(cacheKeyFor('كم رسوم التسجيل', []));
+  });
+
+  it('does not merge different Arabic questions', () => {
+    expect(cacheKeyFor('كم رسوم التسجيل؟', [])).not.toBe(cacheKeyFor('أين يقع المعهد؟', []));
+  });
+
   it('CHANGES when the live admission facts change', () => {
     // The trap this whole design exists for: caching an answer that quotes the
     // fee is how a bot ends up telling a family last season's price. A changed
