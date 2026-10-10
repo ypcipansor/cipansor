@@ -63,6 +63,14 @@ workers refused on a closed day. Still open:
 
 ## Broken flows and wrong figures
 
+- **The head of school's dashboard shows a 403 toast on every load**
+  (found 2026-10-10, already on `main`). `/dashboard` calls
+  `useDonationStats` for every role, and `GET /donation/stats` refuses the
+  kepala sekolah, so the interceptor toasts "Insufficient permissions" each
+  time the page opens. Either ask only when the role may read donations, or
+  drop the card for roles that cannot; an e2e that opens `/dashboard` as each
+  family and expects no error toast would have caught it.
+
 - **The marketing dashboard's monthly attributed revenue always fails**
   (found 2026-10-03). `getMonthlyAttributedRevenue` in
   `marketing/roi.service.ts` filters `invoice.student.registrant`, a relation

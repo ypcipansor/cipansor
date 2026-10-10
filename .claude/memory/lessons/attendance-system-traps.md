@@ -87,6 +87,23 @@ call is the one place the database's refusal cannot appear, so the path that
 writes must have one e2e that writes against the real database (found
 2026-10-09, `staff-attendance.spec.ts` "a punch is recorded").
 
+## A browser feature the site's own header denies
+
+Absen Saya asks for the camera (`getUserMedia({ video })`) and the position
+(`navigator.geolocation`), and the web's `Permissions-Policy` said
+`camera=()` and `geolocation=()` — written when no page used either. The
+browser refuses both *without a prompt*, so every selfie fell back to the file
+picker and no punch ever carried a location. Unit tests mock the component's
+inputs and the e2e punched through the API, so nothing was red; the first
+person to open the camera in a real browser would have found it. Two checks
+now hold it: `security-headers.test.ts` reads the components for those calls
+and fails when the header denies one, and a Chromium e2e (fake camera in
+`playwright.config.ts`, granted permissions) takes the photo and reads the
+location on screen. The policy belongs to the *document*, so allowing it on one
+path is not enough: a client-side navigation keeps the policy of the page the
+session was loaded on. When a page starts using a powerful feature, change the
+header in the same change — and test the flow in a browser, not only its API.
+
 ## A retention sweep that loads the whole history
 
 The selfie retention job read *every* record that had a photo on each daily
