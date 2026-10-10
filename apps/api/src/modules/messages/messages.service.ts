@@ -154,7 +154,13 @@ export class MessagesService {
       where: { id: parentId },
     });
 
-    if (!parentMessage) {
+    // Only the two people in a conversation reply to it, as only they may
+    // read it (getMessageById). Anyone else is told it does not exist, so
+    // the answer does not confirm the id.
+    if (
+      !parentMessage ||
+      (parentMessage.senderId !== senderId && parentMessage.recipientId !== senderId)
+    ) {
       throw Errors.notFound('Parent message');
     }
 
