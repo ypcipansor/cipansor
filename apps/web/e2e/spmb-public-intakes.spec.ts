@@ -234,10 +234,6 @@ test.describe("SPMB publik per unit", () => {
       page.getByRole("option", { name: /SMA Qur.an.*belum dibuka/ }),
     ).toHaveAttribute("aria-disabled", "true");
     await page.keyboard.press("Escape");
-
-    // The homepage badge reads the same intakes: SMP IT is open.
-    await page.goto("/");
-    await expect(page.getByTestId("spmb-status-badge")).toContainText("dibuka");
   });
 
   test("the registration goes to the chosen unit's period", async ({

@@ -109,8 +109,51 @@ export function switchOn(raw: string | undefined): boolean {
   return ['true', '1', 'on', 'yes'].includes((raw ?? '').trim().toLowerCase());
 }
 
+/**
+ * Which deployed copy of the system this process is — NOT how it was compiled.
+ *
+ * `NODE_ENV` answers "is this a production build": it is `production` for
+ * staging AND production, because both run the same images. It cannot answer
+ * "is this the copy the public is using", and code that asks it that question
+ * gets the wrong answer on exactly the environment it was meant to protect.
+ *
+ * `APP_ENV` is the missing identity. Three values:
+ *
+ *   local       — a developer's machine; the default when unset on a
+ *                 non-production build.
+ *   staging     — the test copy at staging.cipansor.or.id. Public, noindex,
+ *                 demo data, no production secret.
+ *   production  — the live system the public uses. Also the default when unset
+ *                 on a production build, so a missing variable degrades to the
+ *                 strict behaviour rather than to a permissive one.
+ *
+ * It is what lets a guard say "not in production" and mean it. The chatbot's
+ * stub provider is the first caller: `NODE_ENV=production` on staging used to
+ * make "do not run a stub in production" fire on the one environment whose job
+ * is to test the feature, so the assistant could never be exercised before a
+ * release. Anything that must behave differently on staging reads this.
+ *
+ * Deliberately NOT `NODE_ENV`, and deliberately a separate name: overloading
+ * NODE_ENV would silently change cookie `secure` flags, the error middleware's
+ * verbosity and logger formatting, none of which staging should alter.
+ */
+export function resolveAppEnv(raw: string | undefined, nodeEnv: string): string {
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === 'local' || value === 'staging' || value === 'production') return value;
+  // Unset: infer the safe answer. A production build with no APP_ENV is
+  // production (never accidentally "local"), anything else is local.
+  return nodeEnv === 'production' ? 'production' : 'local';
+}
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
+  /**
+   * The deployed copy, distinct from `env` (see `resolveAppEnv`). Production
+   * parity is the default: an unset `APP_ENV` on a production build is
+   * `production`, so a missing variable degrades to the strict behaviour rather
+   * than to a permissive one.
+   */
+  appEnv: resolveAppEnv(process.env.APP_ENV, process.env.NODE_ENV || 'development'),
   port: parseInt(process.env.PORT || '3001', 10),
 
   /**
@@ -403,7 +446,13 @@ export const config = {
    *
    * `provider` accepts `openai-compatible` (Azure AI Foundry, Azure OpenAI, or
    * any gateway speaking POST {base}/chat/completions), `stub` (deterministic,
-   * development only), or `disabled`.
+   * echoes the whole context, development and unit tests only), or `disabled`.
+   *
+   * Staging runs `openai-compatible` with its own key — the real provider, so a
+   * walkthrough there answers the way production answers. The stub is refused
+   * when `config.appEnv` is `production`, not when `NODE_ENV` is: staging runs
+   * the same images and is also `NODE_ENV=production`, so keying off `NODE_ENV`
+   * would disable the test provider on the one environment built to use it.
    */
   chatbot: {
     provider: process.env.CHATBOT_PROVIDER || 'disabled',

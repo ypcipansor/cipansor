@@ -1,0 +1,58 @@
+# Checks for PR descriptions.
+#
+#   template job -> HARD gate: fails while the PR template is incomplete, the
+#                   linked issue is not `ready`/`bot-implement`, or the prose
+#                   reads as English (see docs/LABELS.md)
+#   visual job   -> advisory: asks for before/after visuals when apps/web changed
+#
+# Runs on `pull_request_target` so the token can comment even on a fork PR;
+# neither job checks out or runs any code from the PR, so that is safe here.
+#
+# The rules live in .github/scripts/ so they can be run by hand.
+name: PR description checks
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: pr-description-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  template:
+    name: PR template reminder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Check the description against the template
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: sh .github/scripts/pr-template-guard.sh "$PR"
+
+  visual:
+    name: Before/after visual reminder
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Check for before/after visuals on a UI change
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: sh .github/scripts/visual-evidence.sh "$PR"
