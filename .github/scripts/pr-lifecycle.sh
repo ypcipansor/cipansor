@@ -116,10 +116,16 @@ printf '%s\n' "$LATEST" \
   | awk -F'\t' -v req="$REQUIRED_CHECKS" '
       BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
       NF && $2 == "completed" && $3 ~ /^(failure|timed_out|action_required|startup_failure|stale)$/ && !($1 in want) { print "Ignoring non-gate check \x27" $1 "\x27 when deciding to draft the PR." }' || true
-# PENDING: a latest run still running, or finished with a conclusion this gate
-# does not call green (a cancelled run whose replacement has not appeared yet).
+# PENDING: a required check's latest run still running, or finished with a
+# conclusion this gate does not call green (a cancelled run whose replacement
+# has not appeared yet). Only the required checks count, as for RED: this
+# workflow's own `lifecycle` check is always in progress while it runs, and
+# advisory checks (template reminder, visual reminder, CodeQL) finish on their
+# own time — counting them held every dispatch until the next run.
 PENDING=$(printf '%s\n' "$LATEST" \
-  | awk -F'\t' 'NF && ($2 != "completed" || $3 !~ /^(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$/)' || true)
+  | awk -F'\t' -v req="$REQUIRED_CHECKS" '
+      BEGIN { n = split(req, a, "|"); for (i = 1; i <= n; i++) want[a[i]] = 1 }
+      NF && ($1 in want) && ($2 != "completed" || $3 !~ /^(success|failure|timed_out|action_required|startup_failure|stale|neutral|skipped)$/)' || true)
 PRESENT=$(printf '%s\n' "$LATEST" | awk -F'\t' 'NF {print $1}' || true)
 
 # True when every required check is present on the tested commit. A skipped
