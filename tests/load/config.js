@@ -94,3 +94,16 @@ export const PROFILES = {
     ],
   },
 };
+
+/**
+ * Where a target answers the API's health route. The API serves `/health`
+ * itself, so the local stack (the API on :3001, no nginx) is asked there. A
+ * deployed host puts nginx in front, which forwards only `/healthz` (and
+ * `/api/...`) to the API: `/health` on staging is answered by the web app with
+ * a 307 to `/login`, so measuring it there timed a page render, not the API.
+ * `override` (HEALTH_PATH) wins when given.
+ */
+export function healthPathFor(baseUrl, override) {
+  if (override) return override;
+  return /:3001$/.test(String(baseUrl).replace(/\/+$/, '')) ? '/health' : '/healthz';
+}

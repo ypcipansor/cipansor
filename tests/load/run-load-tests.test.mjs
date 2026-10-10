@@ -18,7 +18,7 @@ import {
   isSharedTarget,
   EXIT_CODES,
 } from './run-load-tests.mjs';
-import { REGRESSION, thresholdsFor, latencyLimit } from './config.js';
+import { REGRESSION, thresholdsFor, latencyLimit, healthPathFor } from './config.js';
 
 test('parseArgs: defaults', () => {
   const args = parseArgs([]);
@@ -563,3 +563,12 @@ test('main: a baseline recorded under a different host spelling still matches', 
   }
 });
 
+test('the health route is /healthz on a deployed host and /health on the local API', () => {
+  // On staging `/health` is the web app (307 to /login); only `/healthz`
+  // reaches the API through nginx.
+  assert.equal(healthPathFor('https://staging.cipansor.or.id'), '/healthz');
+  assert.equal(healthPathFor('https://staging.cipansor.or.id/'), '/healthz');
+  assert.equal(healthPathFor('http://localhost:3001'), '/health');
+  assert.equal(healthPathFor('http://127.0.0.1:3001/'), '/health');
+  assert.equal(healthPathFor('https://staging.cipansor.or.id', '/custom'), '/custom');
+});

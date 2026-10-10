@@ -38,7 +38,15 @@ sudo gpg -k && ... && sudo apt-get install k6
 # or drop the binary at /tmp/k6 — the runner checks there last
 ```
 
-Record a baseline the first time, then compare against it:
+Record a baseline the first time, then compare against it. A baseline for
+staging is recorded **from a GitHub runner** (Actions → Load Tests → Run
+workflow, tick *record_baseline*), because every later comparison runs there
+and latency depends on where it is measured; the run uploads the file as the
+`load-baseline` artifact, which is committed under `baselines/` through a PR.
+There is no staging baseline in the repository yet: the earlier one was
+recorded from another machine and timed `/health`, which on staging is the web
+app's redirect to `/login`, not the API (the smoke now asks `/healthz` there).
+By hand, for the local stack:
 
 ```bash
 # 1. Record the baseline (do this once per target + scenario)

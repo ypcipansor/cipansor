@@ -5,9 +5,9 @@
  * handful of iterations, and it never writes. It exercises the routes that
  * are reachable without a session:
  *
- *   /health     the API's health route. The deployed hosts reach it at `/healthz`
- *               through nginx; the API does not serve `/healthz` itself, so the
- *               local stack (no nginx) needs the direct path. See HEALTH_PATH.
+ *   /healthz    the API's health route through nginx on a deployed host;
+ *               `/health` on the local stack, where the API answers directly
+ *               (`healthPathFor` in config.js; HEALTH_PATH overrides it).
  *   /api/auth/me                  protected — 401 without a session is the correct answer
  *   /api/dashboard/quick-stats    protected — 401 without a session
  *   /api/students                 protected — 401 without a session
@@ -26,7 +26,7 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Counter, Trend } from 'k6/metrics';
-import { thresholdsFor, PROFILES } from '../config.js';
+import { thresholdsFor, PROFILES, healthPathFor } from '../config.js';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://localhost:3001').replace(/\/+$/, '');
 const profile = PROFILES[__ENV.PROFILE] || PROFILES.smoke;
@@ -49,7 +49,7 @@ export const options = {
 };
 
 const ENDPOINTS = [
-  { name: 'health', path: '/health', expect: [200] },
+  { name: 'health', path: healthPathFor(BASE_URL, __ENV.HEALTH_PATH), expect: [200] },
   { name: 'auth-me', path: '/api/auth/me', expect: [200, 401] },
   { name: 'dashboard-quick-stats', path: '/api/dashboard/quick-stats', expect: [200, 401] },
   { name: 'students', path: '/api/students?page=1&limit=10', expect: [200, 401] },
