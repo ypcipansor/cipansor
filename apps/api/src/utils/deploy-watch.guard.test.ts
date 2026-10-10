@@ -8,14 +8,15 @@ import { promisify } from 'util';
 const execFileAsync = promisify(execFile);
 
 /**
- * `.github/scripts/deploy-watch.sh` is the scheduled deploy watchdog: it reads
+ * `.github/scripts/deploy-watch.sh` is the deploy watchdog, run when a deploy
+ * finishes: it reads
  * the latest deploy runs through the GitHub API and opens an issue when a
  * deploy failed, hung, or left its site unhealthy. It must never act on the
  * deployment itself (no rollback, no rerun, no repoint) and it must not open a
  * second issue for a failure it already reported.
  *
  * The cases below drive the real script against a fake API and a fake site, so
- * they exercise the same `curl`/`jq` paths a scheduled run would.
+ * they exercise the same `curl`/`jq` paths a real run would.
  */
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const SCRIPT = join(REPO_ROOT, '.github', 'scripts', 'deploy-watch.sh');
@@ -262,10 +263,14 @@ describe('deploy-watch workflow', () => {
     }
   });
 
-  it('runs on a schedule with the permissions and timeout it needs', () => {
+  it('runs when either deploy finishes, never on a clock', () => {
     const text = readFileSync(WORKFLOW, 'utf8');
-    expect(text).toMatch(/^\s*schedule:/m);
-    expect(text).toMatch(/cron:/);
+    expect(text).toMatch(/^\s*workflow_run:/m);
+    expect(text).toMatch(/workflows:\s*\['Deploy staging', 'Deploy production'\]/);
+    expect(text).toMatch(/types:\s*\[completed\]/);
+    // A cron here was ~1,440 runs a month (decided 2026-10-10).
+    expect(text).not.toMatch(/^\s*schedule:/m);
+    expect(text).toMatch(/^\s*issues:\s*write/m);
     expect(text).toMatch(/^\s*issues:\s*write/m);
     expect(text).toMatch(/timeout-minutes:/);
   });

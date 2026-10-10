@@ -7,17 +7,25 @@ name: Deploy watchdog
 # reruns or repoints a container — a human decides (the release flow is
 # `docs/deploy-azure.md` → "How a change is released").
 #
-# Why a schedule on top of `workflow_run`: a deploy can finish green and the
-# site degrade afterwards — a container that restarts, a bad app setting, a
-# migration that only fails on the next start. A periodic probe of /healthz is
-# what catches that; it is the automated form of the manual "after any merge,
-# check that staging moved" step.
+# Why on completion and not on a schedule (decided 2026-10-10): the deploys are
+# what changes the sites, so the moment one finishes is the moment to look.
+# A 30-minute cron cost ~1,440 runs a month — free while the repository is
+# public, nearly half the private plan's 3,000 minutes afterwards — to watch
+# sites that mostly did not change. A site that degrades later, with no
+# deploy, is the platform's to report: App Service Health check and an
+# availability test (docs/deploy-azure.md → "Watching a release"). Staging's
+# deploy job times out at 25 minutes, so a hung deploy still ends as a failed
+# run this sees; the stuck check covers the other workflow, read at the same
+# time, and a manual dispatch.
+#
+# Chain depth: E2E Tests (push) → Deploy staging (workflow_run) → this
+# (workflow_run) is the third level, the most GitHub runs ("You can't use
+# workflow_run to chain together more than three levels of workflows").
+# Deploy staging must keep a push-triggered parent, or this stops firing.
 on:
-  schedule:
-    # Every 30 minutes. The job is a handful of API calls and two probes, so it
-    # costs well under a minute — the schedule is a cheap insurance policy
-    # against a deploy that failed while nobody was watching, not a billing risk.
-    - cron: '*/30 * * * *'
+  workflow_run:
+    workflows: ['Deploy staging', 'Deploy production']
+    types: [completed]
   workflow_dispatch: # Allow manual trigger
 
 # One watchdog at a time. A newer run supersedes an older one; nothing is lost
@@ -33,8 +41,8 @@ permissions:
 jobs:
   watch:
     name: Check the latest deploys
-    # A fork inherits this file but not the schedule; a manual dispatch there
-    # must not open issues against it either.
+    # A fork inherits this file; neither its deploys nor a manual dispatch
+    # there may open issues against it.
     if: github.repository == 'ypcipansor/cipansor'
     runs-on: ubuntu-latest
     timeout-minutes: 10

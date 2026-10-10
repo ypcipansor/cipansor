@@ -7,11 +7,11 @@
 #
 # DEPLOY_WATCH_DRY_RUN=1 prints what it would open without creating anything.
 #
-# Why a schedule and not only on workflow completion: a deploy can finish green
-# and the site degrade afterwards — a container that restarts, a bad app
-# setting, a migration that only fails on the next start. A periodic probe of
-# /healthz is what catches that. This is the automated form of the manual step
-# the WebKit lesson records ("after any merge, check that staging moved",
+# It runs when a deploy finishes (deploy-watch.yml), not on a clock: the
+# deploys are what change the sites. A site that degrades later with no deploy
+# is the platform's to report (App Service Health check, an availability
+# test). This is the automated form of the manual step the WebKit lesson
+# records ("after any merge, check that staging moved",
 # .claude/memory/lessons/webkit-seen-only-after-merge.md).
 #
 # The endpoint it probes and the commit it expects are the same ones

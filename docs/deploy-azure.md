@@ -121,13 +121,21 @@ to the SCM (Kudu) site, which is closed to everything but Cloudflare as well.
 
 ## Watching a release
 
-`deploy-watch.yml` runs every 30 minutes and asks the GitHub API for the latest
-run of `deploy-staging.yml` and `deploy-production.yml`. It opens an issue
+`deploy-watch.yml` runs each time `Deploy staging` or `Deploy production`
+finishes, and asks the GitHub API for the latest run of both. It opens an issue
 labelled `deploy-watch` when the latest run failed or was cancelled, has been
 stuck past 45 minutes, or finished green while the site it released is not
 answering with its commit — the same `/healthz` and `/manifest.json` probes
-[Verifying a release](#verifying-a-release) uses, re-run later in case the site
-degraded after the deploy job passed.
+[Verifying a release](#verifying-a-release) uses.
+
+It runs on completion, not on a clock (decided 2026-10-10): a cron every 30
+minutes was ~1,440 runs a month to watch sites that mostly had not changed. A
+site that degrades later with no deploy — a container that restarts, a bad app
+setting — is the platform's to report: turn on **Health check** for each web
+app (Monitoring → Health check, path `/healthz`), which pings it every minute
+and replaces an instance that stays unhealthy, and add an **availability test**
+with an alert in Application Insights. Neither is configured from this
+repository.
 
 It is read-only with respect to the deployment: **it never rolls back, reruns or
 repoints a container.** The issue carries the run id, the commit and the failing
