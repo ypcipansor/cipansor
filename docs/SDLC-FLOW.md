@@ -210,12 +210,35 @@ hanya berubah lewat PR yang disetujui maintainer.
    baseline, migrasi yang ikut, langkah data pasca-rilis (masing-masing
    ditandai "perlu persetujuan sendiri"), dan SHA-nya. Bila rc minggu lalu
    belum disetujui, issue lama ditutup sebagai digantikan, bukan ditumpuk.
+
+   Deskripsi issue itu **selalu** diakhiri petunjuk keputusan berikut, apa
+   adanya:
+
+   > **Keputusan maintainer**
+   >
+   > - **Setuju dirilis ke produksi:** pasang label `rilis-disetujui`. Rilis
+   >   berjalan otomatis (cadangan, deploy, verifikasi), dan hasilnya
+   >   dilaporkan di issue ini.
+   > - **Ditolak:** pasang label `rilis-ditolak`, lalu tulis alasannya di
+   >   komentar (mis. "fitur X belum siap", "angka k6 terlalu lambat"). Tidak
+   >   ada yang di-deploy. Bot membuka satu issue per alasan yang perlu
+   >   diperbaiki dan menautkannya di sini, lalu issue ini ditutup. rc minggu
+   >   berikutnya membawa perbaikannya.
+   > - **Belum memutuskan:** biarkan saja. Tidak ada yang di-deploy, dan issue
+   >   ini digantikan rc minggu berikutnya.
+   > - Langkah bertanda "perlu persetujuan sendiri" disetujui satu per satu
+   >   dengan membalas `setuju: <nama langkah>`.
+
 2. Maintainer membaca issue itu. Bila setuju, ia memasang label
-   `rilis-disetujui` dari UI GitHub (juga dari ponsel).
+   `rilis-disetujui` dari UI GitHub (juga dari ponsel). Bila menolak, ia
+   memasang `rilis-ditolak` dan menulis alasannya.
 3. Pemasangan label itu memicu `deploy-production.yml`. Workflow memeriksa
    lewat timeline API bahwa label dipasang oleh akun maintainer, pada issue
    rilis untuk SHA itu, dan bahwa staging masih menyajikan SHA itu. Bila
-   salah satu tidak terpenuhi, rilis ditolak dengan alasannya di issue.
+   salah satu tidak terpenuhi, rilis ditolak dengan alasannya di issue. Label
+   `rilis-ditolak` tidak memicu apa pun selain `Pembuat catatan rilis`, yang
+   membaca alasannya dan membuka issue perbaikannya (invarian 4: satu issue per
+   alasan).
 4. Workflow mengambil cadangan, menjalankan pra-cek migrasi, men-deploy, dan
    menunggu `/healthz` produksi menyajikan SHA itu. `deploy-watch.yml`
    membuka issue bila ada yang gagal. Tidak ada rollback otomatis.
