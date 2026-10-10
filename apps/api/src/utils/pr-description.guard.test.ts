@@ -8,9 +8,9 @@ import { join, resolve } from 'path';
  * The PR-description checks, driven against a stub `gh` and the real `jq`:
  *
  *  - `pr-template-guard.sh` is a HARD gate: it fails the check while the body
- *    is missing a required part (a `## HUMAN` note, Why/What changed/How to
- *    test/Acceptance criteria, a linked ready issue, and Indonesian prose), and
- *    passes once the body is complete.
+ *    is missing a required part (Why/What changed/How to test/Acceptance
+ *    criteria, a linked ready issue, Indonesian prose, and — on a risky PR
+ *    only — a `## HUMAN` note), and passes once the body is complete.
  *  - `visual-evidence.sh` asks for before/after visuals only when `apps/web`
  *    changed and no image or video is present in the body, and stays advisory.
  */
