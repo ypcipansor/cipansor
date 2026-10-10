@@ -23,6 +23,17 @@ backlog to [`roadmap.md`](roadmap.md).
 
 ## Waiting on the user
 
+- **Absensi pegawai (PR #630) — before a unit switches self-attendance on.**
+  The 2026-10-09 audit's defects are fixed on that PR (punches recorded,
+  settings only for the super admin and unit admins, private selfies, the 50%
+  ceiling, records kept ten years, the camera and location the web header had
+  denied). Selfie and location stay **off** until a unit's admin turns them
+  on, and that waits on the yayasan: the employee privacy notice (D1) and a
+  DPIA for the selfie (UU PDP Ps. 34), plus staff records for every
+  non-teaching employee and the unit's sites, work week and policy
+  (`roadmap.md` §0a, decisions in `decisions/absensi-pegawai.md`, open
+  defects in `known-issues.md`).
+
 - Approval for the next production release — deferred by the user on
   2026-09-27; ask again at the end of every report. Passwords parts A and B
   must go out together, with `scripts/require-password-change-all.ts` run

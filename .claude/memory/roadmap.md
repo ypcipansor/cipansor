@@ -118,6 +118,21 @@ items before 2026-09-25 is in the history of this file and of
         the student's record, which then takes its agenda number, TTE and
         verification like any naskah. Its menu place is Akademik → Students.
 
+0a. **Absensi pegawai** — audited 2026-09-29 and again 2026-10-09
+    (`decisions/absensi-pegawai.md`, open defects in `known-issues.md`).
+    **The user asked to be reminded when it is time to implement this.** PR
+    #630 is the implementation branch. Before self-attendance is switched on
+    in a unit: (1) staff records for every non-teaching employee, (2) the staff
+    privacy notice (D1) with its per-version acknowledgement, (3) a DPIA for the
+    selfie (UU PDP Ps. 34), (4) the unit's sites, work week and policy saved.
+    Then, in order: payroll stops blocking on `unresolvedDates` (or an evening
+    job writes `ABSENT` — pick one); the FLAG/FILE review queue; corrections UI
+    and a soft delete; `EARLY_LEAVE`/`OVERTIME` derived from check-out with an
+    overtime order and approval (PP 35/2021); `tiersJson` as an array; the 50%
+    ceiling counting the slip's other deductions; seed every attendance config
+    table; non-teaching staff leave access; drop the `teacherId` branches;
+    split `staff-attendance` out of `hr`.
+
 0. **Architecture audit plan** (report 2026-09-25, linked in `progress.md`;
    decisions in `decisions/istilah-dan-penamaan.md`; the user said "laksanakan"
    on 2026-09-25, so it runs first). Phases, each releasable alone:
