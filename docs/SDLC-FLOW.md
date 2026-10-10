@@ -277,6 +277,14 @@ butir mengikuti aturan emas di `AGENTS.md`):
 8. **Laporan pemakaian mingguan** pada `Pengawas armada`: menit Actions dan
    token per automation, dibanding anggarannya.
 
+**Setiap kali membuat atau mengubah automation yang dipicu komentar**
+(`issue_comment.created`), sebelum menyalakannya: pastikan filternya memuat
+`!icontains(comment.body, 'This comment was created by an AI agent')`, lalu
+uji dengan satu komentar contoh yang berfooter itu. Komentar itu **tidak boleh**
+memicunya. Ini satu-satunya titik yang mencegah loop #680. Pemeriksaan berkala
+datang sesudah anggarannya habis, jadi tidak dipasang
+(`.claude/memory/decisions/otomasi-armada.md` butir 8).
+
 ## Menyeluruh
 
 ```mermaid
