@@ -5,16 +5,14 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 
 /**
- * The advisory PR-description guards, driven against a stub `gh` and the real
- * `jq`:
+ * The PR-description checks, driven against a stub `gh` and the real `jq`:
  *
- *  - `pr-template-guard.sh` reminds when the body is missing a required part,
- *    and clears the reminder once the body is complete — never failing.
+ *  - `pr-template-guard.sh` is a HARD gate: it fails the check while the body
+ *    is missing a required part (a `## HUMAN` note, Why/What changed/How to
+ *    test/Acceptance criteria, a linked ready issue, and Indonesian prose), and
+ *    passes once the body is complete.
  *  - `visual-evidence.sh` asks for before/after visuals only when `apps/web`
- *    changed and no image or video is present in the body.
- *
- * Both must stay advisory: the assertions below check they post a comment (or
- * remove one) and never emit an error status.
+ *    changed and no image or video is present in the body, and stays advisory.
  */
 const REPO_ROOT = resolve(__dirname, '..', '..', '..', '..');
 const TEMPLATE = join(REPO_ROOT, '.github', 'scripts', 'pr-template-guard.sh');
@@ -49,6 +47,9 @@ case "$1" in
         log "PATCH $*"; log "PATCHBODY $body"
         [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
       *"-X DELETE"*) log "DELETE $*"; [ "\${GH_STUB_WRITE_FAIL:-}" = "1" ] && exit 1 ;;
+      *"/issues/"*)
+        # Label lookup for the linked issue; GH_STUB_LABELS holds the CSV.
+        printf '%s\\n' "\${GH_STUB_LABELS:-}" ;;
     esac ;;
 esac
 exit 0
@@ -74,6 +75,9 @@ function run(script: string, env: Record<string, string>) {
       REPO: 'o/r',
       GH_TOKEN: 'x',
       GH_STUB_LOG: log,
+      // The linked issue answers the label lookup; a body with `Fixes #12` is
+      // only complete when that issue is ready for development.
+      GH_STUB_LABELS: 'ready',
       ...env,
     },
   });
@@ -86,17 +90,17 @@ function run(script: string, env: Record<string, string>) {
 
 const COMPLETE = `## HUMAN
 
-I ran the API tests and walked the changed flow.
+Saya menjalankan tes API dan mencoba alur yang berubah.
 
 ## AGENT
 
 ## Why
 
-The health endpoint lied about the database.
+Endpoint health berbohong tentang keadaan basis data.
 
 ## What changed
 
-- probe the database before answering
+- memeriksa basis data sebelum menjawab
 
 ## Linked issue
 
@@ -104,7 +108,7 @@ Fixes #12
 
 ## Acceptance criteria
 
-- [x] answers 503 when the probe fails
+- [x] menjawab 503 ketika pemeriksaan gagal
 
 ## How to test
 
@@ -112,17 +116,77 @@ pnpm --filter api test
 `;
 
 describe('pr-template-guard.sh', () => {
-  it('asks for the missing parts of an incomplete description', () => {
+  it('fails the check when the description is incomplete', () => {
     const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: '## Why\n\nSomething broke.' });
-    expect(status).toBe(0);
+    expect(status).toBe(1);
     expect(calls).toContain('COMMENT');
   });
 
-  it('is silent when the description is complete', () => {
+  it('passes when the description is complete', () => {
     const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: COMPLETE });
     expect(status).toBe(0);
     expect(calls).not.toContain('COMMENT');
     expect(calls).not.toContain('PATCH');
+  });
+
+  it('fails when the description reads as English', () => {
+    const english = COMPLETE.replace(
+      'Saya menjalankan tes API dan mencoba alur yang berubah.',
+      'I ran the API tests and walked the changed flow.'
+    )
+      .replace(
+        'Endpoint health berbohong tentang keadaan basis data.',
+        'The health endpoint lied about the database.'
+      )
+      .replace('memeriksa basis data sebelum menjawab', 'probe the database before answering')
+      .replace('menjawab 503 ketika pemeriksaan gagal', 'answers 503 when the probe fails');
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: english });
+    expect(status).toBe(1);
+    expect(calls).toContain('COMMENT');
+  });
+
+  it('fails an English body even when a word merely contains an Indonesian word', () => {
+    // `ini` sits inside "initial". The Indonesian match must be word-anchored,
+    // or an English body that happens to contain such a substring would pass.
+    const english =
+      COMPLETE.replace(
+        'Saya menjalankan tes API dan mencoba alur yang berubah.',
+        'I ran the API tests and walked the changed flow.'
+      )
+        .replace(
+          'Endpoint health berbohong tentang keadaan basis data.',
+          'The health endpoint lied about the database.'
+        )
+        .replace('memeriksa basis data sebelum menjawab', 'probe the database before answering')
+        .replace('menjawab 503 ketika pemeriksaan gagal', 'answers 503 when the probe fails') +
+      '\nInitial rollout only.\n';
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: english });
+    expect(status).toBe(1);
+    expect(calls).toContain('COMMENT');
+  });
+
+  it('passes an English body that says English is intended', () => {
+    const english = COMPLETE.replace(
+      'Saya menjalankan tes API dan mencoba alur yang berubah.',
+      'I ran the API tests and walked the changed flow.\n\nEnglish is intended.'
+    )
+      .replace(
+        'Endpoint health berbohong tentang keadaan basis data.',
+        'The health endpoint lied about the database.'
+      )
+      .replace('memeriksa basis data sebelum menjawab', 'probe the database before answering')
+      .replace('menjawab 503 ketika pemeriksaan gagal', 'answers 503 when the probe fails');
+    const { status } = run(TEMPLATE, { GH_STUB_BODY: english });
+    expect(status).toBe(0);
+  });
+
+  it('fails when the linked issue is not ready for development', () => {
+    const { status, calls } = run(TEMPLATE, {
+      GH_STUB_BODY: COMPLETE,
+      GH_STUB_LABELS: 'needs-info',
+    });
+    expect(status).toBe(1);
+    expect(calls).toContain('COMMENT');
   });
 
   it('treats an untouched template placeholder as missing content', () => {
@@ -134,22 +198,25 @@ describe('pr-template-guard.sh', () => {
 
 <!-- The problem and its motivation. -->
 `;
-    const { calls } = run(TEMPLATE, { GH_STUB_BODY: placeholder });
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: placeholder });
+    expect(status).toBe(1);
     expect(calls).toContain('COMMENT');
   });
 
   it('treats a lone list marker as a missing change summary', () => {
     // The template's `## What changed` ships a bare "-"; leaving it there is not
-    // a change summary, so the reminder must still list it.
-    const bareDash = COMPLETE.replace('- probe the database before answering', '-');
-    const { calls } = run(TEMPLATE, { GH_STUB_BODY: bareDash });
+    // a change summary, so the check must still fail.
+    const bareDash = COMPLETE.replace('- memeriksa basis data sebelum menjawab', '-');
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: bareDash });
+    expect(status).toBe(1);
     expect(calls).toContain('COMMENT');
   });
 
   it('removes an earlier reminder once the description is complete', () => {
     // GH_STUB_CID is only returned when the lookup paginates, so this also
     // proves the marker is found past the first page of comments.
-    const { calls } = run(TEMPLATE, { GH_STUB_BODY: COMPLETE, GH_STUB_CID: '555' });
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: COMPLETE, GH_STUB_CID: '555' });
+    expect(status).toBe(0);
     expect(calls).toContain('DELETE');
     expect(calls).not.toContain('COMMENT');
   });
@@ -165,22 +232,23 @@ describe('pr-template-guard.sh', () => {
     expect(calls).toContain('PATCH');
     expect(calls).not.toContain('COMMENT');
     expect(calls).toContain('PATCHBODY <!-- pr-template-guard -->');
-    expect(calls).toContain("This pull request's description is missing");
+    expect(calls).toContain('Deskripsi pull request ini belum lengkap');
     expect(calls).not.toMatch(/PATCHBODY @/);
   });
 
   it('accepts a body that says there is no linked issue', () => {
-    const none = COMPLETE.replace('Fixes #12', 'No linked issue — a chore.');
-    const { calls } = run(TEMPLATE, { GH_STUB_BODY: none });
+    const none = COMPLETE.replace('Fixes #12', 'Tanpa issue tertaut — sebuah chore.');
+    const { status, calls } = run(TEMPLATE, { GH_STUB_BODY: none });
+    expect(status).toBe(0);
     expect(calls).not.toContain('COMMENT');
   });
 
-  it('stays advisory when the reminder cannot be posted', () => {
+  it('still fails the check when the reminder cannot be posted', () => {
     const { status, out } = run(TEMPLATE, {
       GH_STUB_BODY: '## Why\n\nSomething broke.',
       GH_STUB_WRITE_FAIL: '1',
     });
-    expect(status).toBe(0);
+    expect(status).toBe(1);
     expect(out).toContain('could not post');
   });
 });
