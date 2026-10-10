@@ -1,10 +1,14 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight } from "lucide-react";
+import { headers } from "next/headers";
 import { LandingNavbar } from "@/components/landing/navbar";
 import { LandingFooter } from "@/components/landing/footer";
+import { SpmbAnnouncement } from "@/components/landing/spmb-announcement";
 import type { ContentBlock } from "@/config/content";
 import { getServerLocale } from "@/lib/server-locale";
+import { isPortalHost } from "@/lib/host-split";
+import { loadPublicAnnouncement } from "@/lib/public-intakes.server";
 import { translations } from "@/locales";
 
 /**
@@ -43,12 +47,37 @@ export async function PublicPage({
   heroImage?: { src: string; alt: string };
   children: React.ReactNode;
 }) {
-  const dict = translations[await getServerLocale()];
+  const locale = await getServerLocale();
+  const dict = translations[locale];
+  // The portal does not show the announcement — it is for prospective families.
+  // `isPortalHost` is false for localhost and previews, so dev and staging keep
+  // it (the same polarity as `pwaEnabledForHost`).
+  const showAnnouncement = !isPortalHost((await headers()).get("host"));
+  // Fetched here, on the server, so the banner is in the first paint and does
+  // not push the page down once the client query resolves (measured CLS 0.035).
+  // `loadPublicAnnouncement` also reads the dismissal cookie, so a visitor who
+  // already closed the banner does not get it back (and does not see the page
+  // shift up at hydration).
+  const { intakes, bannerDismissed } = showAnnouncement
+    ? await loadPublicAnnouncement()
+    : { intakes: [], bannerDismissed: false };
 
   return (
     <div className="flex min-h-screen flex-col">
       <LandingNavbar />
       <main id="main-content" className="flex-1 pt-16">
+        {/* The SPMB announcement rides every public page here. It is the first
+            child of `<main>`, so its `sticky top-16` pins it directly under the
+            fixed navbar (64px) without ever being covered by it, and it takes
+            its own space in the flow so the page body below is not hidden. The
+            `pt-16` on `<main>` already clears the navbar for both the banner
+            and the body. */}
+        <SpmbAnnouncement
+          locale={locale}
+          enabled={showAnnouncement}
+          initialIntakes={intakes}
+          initialBannerDismissed={bannerDismissed}
+        />
         <header className="border-b border-border bg-muted/30">
           <div className="container mx-auto px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
             {breadcrumb && breadcrumb.length > 0 && (

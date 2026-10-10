@@ -15,7 +15,11 @@ import {
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { InstallPrompt } from "@/components/pwa/install-prompt";
 import { UpdatePrompt } from "@/components/pwa/update-prompt";
-import { pwaEnabledForHost, indexableHost } from "@/lib/host-split";
+import {
+  pwaEnabledForHost,
+  indexableHost,
+  isPortalHost,
+} from "@/lib/host-split";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -110,6 +114,10 @@ export default async function RootLayout({
   // metadata is built from, read again here because the two run separately.
   const requestHeaders = await headers();
   const pwa = pwaEnabledForHost(requestHeaders.get("host"));
+  // The SPMB announcement mounts on the public site (and localhost), not on the
+  // portal — the same gate the public pages pass to `SpmbAnnouncement`. The
+  // pre-paint script below only needs to be emitted where the banner can appear.
+  const publicSite = !isPortalHost(requestHeaders.get("host"));
 
   // The CSP nonce the middleware generated for this request. Next stamps it on
   // the inline bootstrap scripts it emits; this is what the app's own executable
@@ -149,6 +157,38 @@ export default async function RootLayout({
             nonce={nonce || undefined}
             dangerouslySetInnerHTML={{
               __html: `(function(){window.__installPromptEvent=null;window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__installPromptEvent=e;window.dispatchEvent(new Event('installpromptready'));});})();`,
+            }}
+          />
+        )}
+        {/*
+          Keep the SPMB banner out of the first paint under browser automation.
+
+          The banner is server-rendered so it is in the first paint and does not
+          push the page down (see `components/landing/spmb-announcement.tsx`).
+          But the guard that keeps it out of unrelated e2e specs —
+          `navigator.webdriver` — only exists in the browser, so the server
+          renders the banner anyway. Hydration then removes it a moment later,
+          shifting everything below it while Playwright is between its stability
+          check and its click: the landing spec's "Daftar SPMB" link missed
+          exactly so, intermittently, at ~52px of movement.
+
+          This runs before the body parses and adds the class the CSS rule in
+          `globals.css` uses to hide the banner, so it is `display: none` from
+          the first paint and never moves the page. The component still removes
+          it from the DOM afterwards, so a spec asserting it is absent sees
+          nothing. The announcement's own spec sets
+          `localStorage["spmb-announcement-force"]` to opt back in — checked
+          here too, or the class would hide the banner the spec came to see.
+
+          Emitted only where the banner can mount (the public site, not the
+          portal). The nonce is required for the same reason as the capture
+          above: the middleware's `script-src` has no `'unsafe-inline'`.
+        */}
+        {publicSite && (
+          <script
+            nonce={nonce || undefined}
+            dangerouslySetInnerHTML={{
+              __html: `(function(){try{if(navigator.webdriver&&localStorage.getItem('spmb-announcement-force')!=='1'){document.documentElement.classList.add('spmb-under-automation');}}catch(e){}})();`,
             }}
           />
         )}

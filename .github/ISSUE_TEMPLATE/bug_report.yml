@@ -1,0 +1,80 @@
+name: Bug report
+description: Ada yang rusak atau berperilaku berbeda dari yang dimaksudkan.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Bug adalah perubahan yang harus diperbaiki; pertanyaan masuk ke Discussions.
+        Automation `Pelabel issue` akan menambahkan prioritas dan menandai issue
+        `ready` begitu kolom di bawah terisi cukup untuk diimplementasikan tanpa
+        pertanyaan lanjutan. See [docs/LABELS.md](https://github.com/ypcipansor/cipansor/blob/main/docs/LABELS.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Apa yang terjadi
+      description: Satu atau dua kalimat. Perilaku yang diamati, bukan dugaan penyebabnya.
+      placeholder: GET /health answered 200 while the database was down.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Apa yang Anda harapkan
+      description: Perilaku yang seharusnya terjadi, dinyatakan seolah sudah berjalan.
+      placeholder: GET /health answers 503 when its database probe fails.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Langkah reproduksi, dan kriteria penerimaan
+      description: |
+        **Reproduksi** — langkah, perintah, atau permintaan persis yang bisa
+        diikuti peninjau, beserta lingkungannya (branch/commit, Node, keadaan basis
+        data) bila relevan. Bug tanpa reproduksi ditandai `needs-info`, bukan `ready`.
+
+        **Kriteria penerimaan** — hasil yang bisa diamati yang menunjukkan ini
+        diperbaiki, sebagai kotak centang. Inilah yang membuat issue ini `ready`.
+
+        **Sebelum** — keluaran atau tangkapan layar yang gagal, bila ada.
+        **Sesudah** — apa yang seharusnya menggantikannya.
+      value: |
+        ### Reproduksi
+        1.
+        2.
+
+        ### Kriteria penerimaan
+        - [ ]
+        - [ ]
+
+        ### Sebelum / sesudah
+        Sebelum:
+
+        Sesudah:
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Bukti
+      description: |
+        Log, stack trace, tes yang gagal, tangkapan layar, atau video. Isinya
+        otomatis dibungkus blok kode. Jika tidak bisa mereproduksinya, sebutkan —
+        itu berguna, dan menjaga issue ini keluar dari `ready`.
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Konteks tambahan
+      description: Issue terkait, dugaan penyebab, solusi sementara, atau apa pun yang perlu diketahui pelaksana.
+    validations:
+      required: false

@@ -1,0 +1,70 @@
+name: Permintaan fitur atau perubahan
+description: Usulkan kemampuan baru, atau perubahan pada yang sudah ada.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Automation `Pelabel issue` menetapkan tipe yang benar (`enhancement`,
+        `documentation`, `refactor`, `chore`, `security`) dan prioritas, lalu
+        menandai issue ini `ready` begitu kolom di bawah terisi cukup untuk
+        diimplementasikan tanpa pertanyaan lanjutan. See [docs/LABELS.md](https://github.com/ypcipansor/cipansor/blob/main/docs/LABELS.md).
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Jenis permintaan
+      description: Tipe yang paling mendekati. Pelabel akan mengoreksinya bila perlu.
+      options:
+        - enhancement — kemampuan baru
+        - documentation — hanya dokumen
+        - refactor — perilaku sama, kode lebih bersih
+        - chore — perkakas, dependensi, pemeliharaan
+        - security — pengerasan
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Masalah atau motivasi
+      description: Apa yang sulit dilakukan sekarang, atau apa yang salah dengan perilaku saat ini?
+      placeholder: Today it is hard to …
+    validations:
+      required: true
+
+  - type: textarea
+    id: desired
+    attributes:
+      label: Perilaku yang diinginkan dan kriteria penerimaan
+      description: |
+        **Perilaku yang diinginkan** — jelaskan seolah sudah berjalan, cukup
+        konkret sehingga peninjau tahu kapan selesai.
+
+        **Kriteria penerimaan** — hasil yang bisa diamati, sebagai kotak centang.
+        Inilah yang membuat issue ini `ready`.
+      value: |
+        ### Perilaku yang diinginkan
+
+        ### Kriteria penerimaan
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatif yang dipertimbangkan
+      description: Pendekatan lain, dan mengapa kurang cocok.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Konteks tambahan
+      description: Tangkapan layar, tautan, contoh sebelumnya, atau apa pun yang membantu.
+    validations:
+      required: false
