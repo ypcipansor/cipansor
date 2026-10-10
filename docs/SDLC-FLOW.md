@@ -28,6 +28,170 @@ menerapkan `bot-implement` dan `Tiket jadi PR` yang mengerjakannya. Ini menjaga
 satu jalur PR (satu tempat gate, satu bentuk diff) dan membuat penulis PR selalu
 `adminypc`.
 
+## Desain target — armada otomatis penuh
+
+Bagian ini adalah **sasaran**, bukan potret keadaan sekarang. Bagian-bagian
+sesudahnya menggambarkan armada apa adanya, dan "Selisih dari keadaan sekarang"
+di akhir bagian ini adalah daftar pekerjaannya. Setiap automation, baik cloud
+maupun Actions, menyesuaikan diri dengan invarian di bawah. Bila sebuah prompt
+atau workflow bertentangan dengan invarian ini, yang dipakai invariannya, dan
+pertentangan itu dilaporkan sebagai issue.
+
+### Invarian — berlaku untuk setiap automation
+
+1. **Event dulu, jadwal hanya bila tidak ada event.** Pekerjaan yang dipicu
+   sesuatu (issue dibuka, PR hijau, deploy selesai, CI gagal di `main`)
+   berjalan pada event itu. Cron hanya untuk pekerjaan yang memang berkala:
+   pemburu bug, pemindai standar, pemindai celah uji, catatan rilis, audit
+   kematangan, dan pengawas armada.
+2. **Penilaian oleh agen, konsekuensi pasti oleh Actions.** Apa pun yang harus
+   menyala tepat waktu, dapat diuji, dan tidak memakan token (jembatan,
+   penyapu, pengawas deploy, pemeriksa label, pembaruan cabang) adalah skrip di
+   `.github/scripts/` dengan uji di `apps/api/src/utils/*.guard.test.ts`.
+3. **Satu pemilik per langkah.** Hanya satu automation boleh berkomentar
+   sebagai pemilik sebuah langkah pada sebuah objek. Triase, estimasi, dan
+   label sebuah issue ditulis oleh **satu** automation dalam **satu**
+   komentar, yang diperbarui di tempat (bukan ditambah).
+4. **Idempoten per kunci.** Setiap tulisan bot membawa penanda
+   `<!-- sdlc:<automation>:<kunci> -->`; kuncinya adalah objek ditambah head
+   SHA atau id run. Sebelum menulis, automation mencari penandanya. Kalau
+   ketemu, ia memperbarui komentar yang ada; kalau tidak, baru menulis. Satu
+   masalah, satu issue; satu head, satu review.
+5. **Satu penulis PR, satu gerbang.** Hanya `Tiket jadi PR` yang membuka PR,
+   dan hanya `Gerbang tinjau PR` yang memberi approve atau minta perubahan.
+6. **Batas pekerjaan berjalan (WIP).** `Tiket jadi PR` paling banyak
+   memegang **3** PR terbuka sekaligus. Issue `ready` berikutnya menunggu
+   antrean, diurutkan menurut prioritas lalu umur.
+7. **Saran bot tidak final.** Penulis PR menimbang setiap permintaan gerbang.
+   Ia mengikutinya dengan alasan, atau menolaknya dengan alasan dan bukti.
+   Sengketa yang tersisa diserahkan ke maintainer sebagai pertanyaan pilihan
+   ganda (rekomendasi di urutan pertama). Paling banyak **3 putaran**
+   review per PR; sesudah itu PR otomatis menjadi keputusan maintainer.
+8. **Keputusan pemilik tidak diambil bot.** Hal yang menjadi wewenang
+   yayasan atau maintainer (aturan emas 12) diberi label `decision`. Agen
+   menulis riset bersumber, menguji premisnya (termasuk opsi "tidak perlu"),
+   lalu menyusun pilihan ganda. Bot tidak pernah memilih.
+9. **Rahasia tidak masuk teks publik.** Selama repositori publik, temuan
+   keamanan dibuka sebagai **GitHub security advisory privat**, bukan issue.
+   Teks publik tidak memuat rahasia, IP, nama sumber daya cloud, atau data
+   pribadi (`check-sensitive.py` menolak kasus yang mekanis).
+10. **Bukti, bukan klaim.** PR menyertakan perintah yang dijalankan beserta
+    keluarannya. Perubahan UI menyertakan tangkapan sebelum/sesudah. Uji
+    regresi gagal sebelum perbaikan dan lulus sesudahnya.
+11. **Bahasa.** Issue, PR, review, dan komentar ditulis dalam Bahasa Indonesia.
+    Judul bagian templat, `Fixes #n`, dan pesan commit tetap seperti
+    aturannya.
+12. **Pengawas pun diawasi.** Setiap automation meninggalkan jejak run.
+    Kegagalan yang **diam** — gerbang yang tidak menjawab, cron yang tidak
+    jalan — dideteksi oleh pemeriksa yang tidak bergantung pada automation
+    yang diawasinya (pola *dead man's switch*).
+13. **Biaya terukur.** Setiap automation punya anggaran token atau menit.
+    Pengawas armada melaporkan pemakaian per automation setiap minggu, dan
+    automation yang melampaui anggarannya berhenti sampai maintainer
+    memutuskan.
+
+### Alur ujung ke ujung
+
+```mermaid
+flowchart TD
+  classDef cloud fill:#e8f0fe,stroke:#4285f4,color:#111;
+  classDef gh fill:#fff4e5,stroke:#f59e0b,color:#111;
+  classDef human fill:#e9f7ef,stroke:#27ae60,color:#111;
+
+  IN(["laporan: manusia · Pemburu bug · Pemindai standar · Pemindai celah uji"]) --> TR["Pelabel issue: tipe · prioritas · duplikat · kesiapan + estimasi (satu komentar)"]:::cloud
+  TR -- keamanan --> ADV["advisory privat"]:::human
+  TR -- needs-info --> CL["Penjernih issue"]:::cloud --> TR
+  TR -- decision --> DEC["riset + pilihan ganda"]:::cloud --> MD{"maintainer memilih"}:::human --> TR
+  TR -- ready --> Q["antrean WIP ≤ 3"]:::gh --> IMP["Tiket jadi PR"]:::cloud
+  IMP --> CI["CI + E2E"]:::gh --> LC{"pr-lifecycle: hijau + ready?"}:::gh
+  LC -- ya --> GT["Gerbang tinjau PR"]:::cloud
+  GT -- "minta perubahan (≤ 3 putaran)" --> IMP
+  GT -- "sengketa / putaran habis" --> MD
+  GT -- approve --> UPD["perbarui cabang bila tertinggal main, CI ulang"]:::gh --> MG(["auto-merge squash"])
+  MG --> STG["deploy-staging"]:::gh --> DW["deploy-watch"]:::gh
+  MG -. "CI/E2E gagal di main" .-> BR["main-failure-bridge → Pemantau deployment"]:::cloud
+  REL["Pembuat catatan rilis: -rc + catatan + k6 smoke + daftar periksa rilis"]:::cloud --> APR{"maintainer menyetujui rilis"}:::human
+  APR --> PRD["deploy-production"]:::gh --> DW
+  DW -- "gagal / macet / commit salah" --> ISS(["satu issue per run"])
+  WD["pengawas gerbang & armada (dead man's switch)"]:::gh -.-> GT
+```
+
+| # | Tahap | Pemicu | Pemilik | Keluaran | Lanjut bila |
+|---|---|---|---|---|---|
+| 1 | Laporan | manusia, atau temuan automation berkala | pelapor | issue sesuai templat; temuan keamanan → advisory privat | issue terbuka |
+| 2 | Triase | `issues.opened` | `Pelabel issue` | **satu** komentar: tipe, prioritas, duplikat, kesiapan, estimasi | label `ready` / `needs-info` / `question` / `decision` / `duplicate` |
+| 3 | Klarifikasi | balasan pelapor pada `needs-info` | `Penjernih issue` | penilaian ulang dalam komentar triase yang sama | `ready` |
+| 4 | Keputusan | label `decision` | agen riset → maintainer | riset bersumber + pilihan ganda; maintainer memilih | keputusan tercatat di `.claude/memory/decisions/`, lalu `ready` |
+| 5 | Implementasi | `ready` dan antrean WIP < 3 | `Tiket jadi PR` | PR draf dengan templat, uji, bukti, `Fixes #n` | daftar periksa penulis lengkap → ready for review |
+| 6 | CI | push | Actions | Build, Lint, Tests, Security, E2E | semua hijau |
+| 7 | Tinjauan | `pr-lifecycle.sh` (hijau + ready) | `Gerbang tinjau PR` | satu review per head, dengan blok `suggestion` | approve |
+| 8 | Perbaikan | review minta perubahan | `Tiket jadi PR` | ikuti atau tolak dengan alasan; ≤ 3 putaran | head baru hijau → tahap 7 |
+| 9 | Merge | approve + check hijau + cabang mutakhir | Actions (auto-merge) | squash ke `main` | — |
+| 10 | Staging | E2E hijau di `main` | `deploy-staging` → `deploy-watch` | staging menyajikan SHA itu, atau satu issue | — |
+| 11 | Calon rilis | jadwal mingguan, atau atas permintaan | `Pembuat catatan rilis` | pre-release `-rc` dengan catatan, hasil k6 smoke, daftar periksa (migrasi, loader data, langkah pasca-rilis) | maintainer menyetujui |
+| 12 | Produksi | persetujuan maintainer | `deploy-production` → `deploy-watch` | produksi menyajikan SHA itu; langkah data pasca-rilis masing-masing dengan persetujuan | — |
+| 13 | Operasi | CI/E2E gagal di `main`; Health check / availability test | bridge → `Pemantau deployment`; platform | satu issue per masalah | — |
+| 14 | Pengawasan | harian | `Pengawas armada` + pemeriksa Actions | kesehatan, pemakaian, kegagalan diam | — |
+
+### Gerbang manusia — hanya empat
+
+1. **Keputusan pemilik** (tahap 4): bot tidak pernah memilih.
+2. **Rilis produksi** (tahap 12): setiap rilis meminta persetujuan baru.
+3. **Tindakan merusak atau menulis data produksi**: loader data, reset sandi
+   massal, migrasi yang menghapus. Masing-masing disetujui sendiri, termasuk
+   bila tercantum di daftar periksa rilis.
+4. **Sengketa saran bot** (invarian 7): bila penulis dan gerbang tidak
+   sepakat, atau putaran review habis.
+
+Di luar keempat titik itu, alur berjalan tanpa menunggu manusia.
+
+### Selama publik vs sesudah privat
+
+Dua fitur GitHub yang paling cocok di sini hanya tersedia untuk repositori
+publik pada paket Team. Desainnya memakai mekanisme yang tetap berjalan sesudah
+repositori privat:
+
+| Kebutuhan | Selama publik | Sesudah privat (Team) | Dipakai di sini |
+|---|---|---|---|
+| Persetujuan rilis produksi | *required reviewers* pada environment `production` | tidak tersedia | **label `rilis-disetujui` pada issue rilis**, diperiksa `deploy-production.yml` lewat timeline API: diterapkan oleh akun maintainer (dari UI GitHub, atau oleh agen hanya atas perintah maintainer dalam percakapan itu), untuk SHA itu. Bisa dipakai di kedua fase. |
+| Uji gabungan PR yang bertumpuk (aturan emas 9) | *merge queue* | tidak tersedia | **ruleset `strict` (cabang harus mutakhir)** + job Actions yang memperbarui cabang PR ber-auto-merge saat `main` bergerak. Bisa dipakai di kedua fase. |
+| Kuota menit Actions | gratis | 3.000 menit/bulan | event dulu (invarian 1); laporan pemakaian mingguan (invarian 13) |
+
+### Kegagalan dan penanganannya
+
+| Kegagalan | Deteksi | Tindakan |
+|---|---|---|
+| Gerbang tinjau tidak menjawab | pemeriksa Actions: PR ready dan hijau tanpa review gerbang pada head itu > 2 jam | satu issue `gerbang-macet` dan dispatch ulang sekali |
+| Automation cloud gagal atau diam | `Pengawas armada` membaca riwayat run; heartbeat yang hilang | satu issue per automation |
+| CI/E2E merah di `main` | `main-failure-bridge.yml` | `Pemantau deployment` menulis diagnosis |
+| Deploy gagal, macet, atau commit salah | `deploy-watch.yml` | satu issue per run; tanpa rollback otomatis |
+| Situs menurun tanpa deploy | Health check App Service + availability test | alert dari platform |
+| Anggaran terlampaui | laporan pemakaian | automation berhenti; maintainer memutuskan |
+| Bot memicu dirinya sendiri | guard footer pada setiap pemicu komentar | — (pencegahan) |
+
+### Selisih dari keadaan sekarang
+
+Daftar ini yang perlu disesuaikan. Setiap butir menjadi issue tersendiri;
+`Pengawas armada` menandai butir yang sudah selesai.
+
+1. **Triase ganda.** Issue baru saat ini mendapat dua sampai tiga komentar
+   triase atau estimasi dari automation berbeda. Gabungkan menjadi satu
+   pemilik dan satu komentar yang diperbarui (invarian 3–4).
+2. **Gerbang tinjau diam.** Gerbang pernah tidak menjawab sebelas jam tanpa
+   ada yang tahu. Tambahkan pemeriksa Actions (tabel kegagalan, baris 1).
+3. **Cron yang bertentangan dengan keputusan.** Matikan `Penjaga issue`
+   (penutupan berdasarkan umur) dan `Uji beban` bulanan; k6 berjalan lewat
+   `load-tests.yml` sebelum rilis.
+4. **Persetujuan rilis.** Kini lewat perintah di percakapan. Ganti dengan
+   label `rilis-disetujui` yang diperiksa workflow-nya.
+5. **Temuan keamanan.** Kini ditulis netral di issue publik. Pindahkan ke
+   advisory privat.
+6. **Aturan emas 9.** Kini manual. Nyalakan ruleset `strict` dan job
+   pembaruan cabang.
+7. **WIP dan batas putaran.** Belum ada. Tambahkan pada `Tiket jadi PR` dan
+   `Gerbang tinjau PR`.
+8. **Laporan pemakaian.** Belum ada. Tambahkan pada `Pengawas armada`.
+
 ## Menyeluruh
 
 ```mermaid
@@ -356,3 +520,18 @@ arsitektur`/`Gerbang tinjau PR` memposting blok `suggestion` GitHub sehingga
   <https://drewdevault.com/2021/10/26/stalebot.html>; Khatoonabadi dkk.,
   "Understanding the Helpfulness of Stale Bot for Pull-Based Development"
   (ACM TOSEM 2023): <https://doi.org/10.1145/3624739>
+- GitHub Docs, "Deployments and environments" — *required reviewers*, *prevent
+  self-review*, dan ketersediaannya: pada paket Free/Pro/Team hanya untuk
+  repositori publik:
+  <https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments>
+- GitHub Changelog, "Pull request merge queue is now generally available"
+  (2023) — tersedia di repositori publik milik organisasi, dan untuk repositori
+  privat hanya di Enterprise Cloud:
+  <https://github.blog/changelog/2023-07-12-pull-request-merge-queue-is-now-generally-available/>;
+  cara kerjanya: <https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue>
+- GitHub Docs, "Repository security advisories" — membahas, memperbaiki, dan
+  mengumumkan kerentanan secara privat:
+  <https://docs.github.com/en/code-security/concepts/vulnerability-reporting-and-management/repository-security-advisories>
+- Prometheus Operator runbook, "Watchdog" — peringatan yang selalu menyala
+  sebagai *dead man's switch* untuk jalur peringatan itu sendiri:
+  <https://runbooks.prometheus-operator.dev/runbooks/general/watchdog/>
