@@ -16,6 +16,24 @@ describe('tokenize', () => {
   it('is case-insensitive and splits on punctuation', () => {
     expect(tokenize('SMP IT, Cipansor!')).toEqual(tokenize('smp it cipansor'));
   });
+
+  it('keeps Arabic words instead of discarding every character', () => {
+    // The widget's own Arabic suggestion, «كم رسوم التسجيل؟». The old
+    // `[^a-z0-9]` split dropped all of it, so the token list was empty and the
+    // question could never be keyed into the answer cache.
+    expect(tokenize('كم رسوم التسجيل؟')).toEqual(['كم', 'رسوم', 'التسجيل']);
+  });
+
+  it('gives equivalent Arabic phrasings the same tokens', () => {
+    // Punctuation and case carry no meaning here, so the two spellings must
+    // collapse the way the Indonesian ones already do.
+    expect(tokenize('كيف أسجّل؟')).toEqual(tokenize('كيف أسجل'));
+  });
+
+  it('keeps Indonesian stopword removal working alongside Arabic', () => {
+    // The Unicode split must not have loosened the Indonesian filter.
+    expect(tokenize('Apa saja yang ada di sini')).toEqual([]);
+  });
 });
 
 describe('stem', () => {

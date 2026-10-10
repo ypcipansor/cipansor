@@ -293,14 +293,17 @@ Plan and findings: [`EOFFICE_ESIGN_PLAN.md`](../../docs/EOFFICE_ESIGN_PLAN.md).
 The signing crypto is good and should not be rebuilt (scrypt-sealed Ed25519
 keys, a passphrase never stored, a lifecycle guard). Next, in value order:
 
-1. **PR-5 — PAdES B-B plus RFC 3161 timestamps.** Without a timestamp there is
-   no answer to "was the key valid when it signed", which revocation needs.
-2. **The rest of the DOCX authoring track** — sign the uploaded bytes (with the
-   TTE visualisation stamped on) instead of ignoring them, and a pre-filled
-   DOCX template.
-3. **PR-6 — a.n. / u.b. / Plt. / Plh.** Blocked on a governance decision.
-4. **PR-7 — Arabic** (an embedded Unicode font and a shaping engine).
-5. KTP OCR, deliberately last.
+1. **The rest of the DOCX authoring track** — sign the uploaded bytes (with the
+   TTE visualisation stamped on; *shipped `1513317`*) and a pre-filled DOCX
+   template.
+2. **PR-7 — Arabic** (an embedded Unicode font and a shaping engine).
+3. KTP OCR, deliberately last.
+
+**Deferred:** **PR-5 — PAdES B-B plus RFC 3161 timestamps** (option b,
+2026-09-29). Without a TSA endpoint the timestamp adds dependencies but no
+evidential value; revisit when the yayasan picks a TSA provider or decides on
+PSrE — see `decisions/esign-standards-ceiling.md`. **PR-6 (a.n./u.b./Plt./Plh.)
+shipped `1513317`**, no longer a governance blocker.
 
 Signed naskah are served from their archived bytes (`LetterSignedDocument`),
 and `generate-letter-pdf.test.ts` pins the hash of a plain letter: a layout

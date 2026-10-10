@@ -1,4 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import { id } from "../src/locales/id";
+import { en } from "../src/locales/en";
+import { ar } from "../src/locales/ar";
+import { LOCALE_COOKIE } from "../src/locales";
 
 /**
  * Public chatbot widget.
@@ -18,10 +22,34 @@ import { test, expect } from "@playwright/test";
 
 const LAUNCHER = "button[aria-label='Buka asisten informasi']";
 
+/**
+ * Arm the status wait BEFORE navigating, so an absence assertion is real.
+ *
+ * `toHaveCount(0)` passes the instant the count is zero — including the moment
+ * before the status query resolves, when the widget has not rendered yet. On a
+ * stack that DOES have a provider configured that turns "stays hidden" into a
+ * false pass.
+ *
+ * The wait must be armed before `page.goto`, not after the footer appears: the
+ * status request is fired as soon as the widget mounts, which can be before the
+ * footer is visible, and a listener attached afterwards would miss it. Missing
+ * it used to be swallowed by a `.catch`, so the assertion could still pass
+ * before availability had settled — and cost the full 15s timeout each time.
+ * Returning the promise (no catch) means a status response that never arrives
+ * fails the test loudly instead of passing on a race.
+ */
+function whenStatusSettles(page: Page) {
+  return page.waitForResponse(
+    (r) => r.url().includes("/chatbot/public/status"),
+    { timeout: 15000 },
+  );
+}
+
 test.describe("public chatbot widget", () => {
   test("stays hidden on the homepage when no provider is configured", async ({
     page,
   }) => {
+    const settled = whenStatusSettles(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
     // The footer is the widget's mount point, so waiting for it proves the page
@@ -31,14 +59,17 @@ test.describe("public chatbot widget", () => {
     // `<footer>` inside `<main>`, and a footer inside a landmark has no
     // implicit contentinfo role. The role-based locator timed out here.
     await expect(page.locator("footer")).toBeVisible({ timeout: 30000 });
+    await settled;
     await expect(page.locator(LAUNCHER)).toHaveCount(0);
   });
 
   test("stays hidden on the public SPMB page", async ({ page }) => {
+    const settled = whenStatusSettles(page);
     await page.goto("/public/spmb", { waitUntil: "domcontentloaded" });
 
     await expect(page).not.toHaveURL(/.*login.*/, { timeout: 15000 });
     await expect(page.locator("footer")).toBeVisible({ timeout: 30000 });
+    await settled;
     await expect(page.locator(LAUNCHER)).toHaveCount(0);
   });
 
@@ -64,45 +95,83 @@ test.describe("public chatbot widget", () => {
  * exercise the widget as a visitor meets it, with the contract stubbed at the
  * network boundary — which is also the only honest way to e2e a feature whose
  * real backend costs money per request and answers non-deterministically.
+ *
+ * WHAT THESE DO NOT COVER, and where that lives instead. Because `stubChatRoutes`
+ * supplies both the answer and the `refused` flag, these tests prove the WIDGET
+ * reacts to the contract — it renders the answer, shows its sources, and offers
+ * escalation when told the answer was a refusal. They cannot prove the API
+ * produces that contract, because the API is not involved. The two behaviours a
+ * review pointed at specifically are covered where the real code runs:
+ *   - an Arabic question producing a cache KEY (not a null one) — `retrieval`
+ *     and `cache` unit tests, and the real-module round trip in
+ *     `apps/api/src/modules/chatbot/tests/answer-cache.test.ts`;
+ *   - an Arabic decline being DETECTED as a refusal — `refusal` unit tests and
+ *     `chatbot.service.test.ts`, both against the real `looksLikeRefusal`.
+ * A browser test cannot exercise either without calling the real provider.
  */
-test.describe("public chatbot widget, assistant available", () => {
-  const ANSWER =
-    "Pendaftaran dibuka sampai 7 September 2026 dengan biaya Rp 350.000.";
+const ANSWER =
+  "Pendaftaran dibuka sampai 7 September 2026 dengan biaya Rp 350.000.";
 
+async function stubChatRoutes(
+  page: Page,
+  { refused = false }: { refused?: boolean } = {},
+) {
+  await page.route("**/chatbot/public/status", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data: { available: true } }),
+    }),
+  );
+  await page.route("**/chatbot/public/ask", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        success: true,
+        data: {
+          answer: ANSWER,
+          sources: [
+            {
+              id: "spmb-gelombang-aktif",
+              title: "Info SPMB terkini",
+              kind: "live",
+            },
+            {
+              id: "spmb-cara-daftar",
+              title: "Cara mendaftar",
+              url: "/public/spmb",
+              kind: "kb",
+            },
+          ],
+          refused,
+        },
+      }),
+    }),
+  );
+}
+
+/** The public site is id/en/ar on every page; the widget must follow. */
+const DICTS = { id, en, ar } as const;
+
+/** Matches `playwright.config.ts`'s baseURL, so the cookie lands on the host. */
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+/**
+ * Pick a language the way a visitor's first page load does — through the
+ * `app-locale` cookie the root layout reads server-side. Setting it before the
+ * first navigation is what makes the widget itself render in that language,
+ * rather than flipping after a client-side refresh.
+ */
+async function setLocale(page: Page, locale: keyof typeof DICTS) {
+  await page
+    .context()
+    .addCookies([{ name: LOCALE_COOKIE, value: locale, url: BASE_URL }]);
+}
+
+test.describe("public chatbot widget, assistant available", () => {
   test.beforeEach(async ({ page }) => {
-    await page.route("**/chatbot/public/status", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ success: true, data: { available: true } }),
-      }),
-    );
-    await page.route("**/chatbot/public/ask", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          success: true,
-          data: {
-            answer: ANSWER,
-            sources: [
-              {
-                id: "spmb-gelombang-aktif",
-                title: "Info SPMB terkini",
-                kind: "live",
-              },
-              {
-                id: "spmb-cara-daftar",
-                title: "Cara mendaftar",
-                url: "/public/spmb",
-                kind: "kb",
-              },
-            ],
-            refused: false,
-          },
-        }),
-      }),
-    );
+    await stubChatRoutes(page);
   });
 
   test("answers a question and shows where the answer came from", async ({
@@ -137,3 +206,52 @@ test.describe("public chatbot widget, assistant available", () => {
     ).toBeVisible();
   });
 });
+
+/**
+ * The same flow, in the other two languages the public site serves.
+ *
+ * Before this, the en/ar tests stopped at opening the widget: they proved the
+ * greeting translated and nothing about submitting a question or escalating.
+ * A localized flow that breaks after the first click — a label the widget
+ * cannot find, a question that reaches the wrong endpoint — would have shipped
+ * unseen. The suggestion chip is the interesting one: it sends its own
+ * localized text as the question, which is exactly the path that used to lose
+ * every Arabic character in the answer cache.
+ */
+for (const locale of ["en", "ar"] as const) {
+  const dict = DICTS[locale].public.chatbot;
+
+  test.describe(`public chatbot widget in ${locale}`, () => {
+    test("submits a localized suggestion and shows the localized answer", async ({
+      page,
+    }) => {
+      await setLocale(page, locale);
+      await stubChatRoutes(page);
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+
+      await page.getByRole("button", { name: dict.launcherOpen }).click();
+      await page.getByRole("button", { name: dict.suggestions.fee }).click();
+
+      await expect(page.getByText(ANSWER)).toBeVisible({ timeout: 15000 });
+      await expect(page.getByText(dict.sourcesLabel)).toBeVisible();
+    });
+
+    test("offers escalation in the visitor's language on a refusal", async ({
+      page,
+    }) => {
+      await setLocale(page, locale);
+      await stubChatRoutes(page, { refused: true });
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+
+      await page.getByRole("button", { name: dict.launcherOpen }).click();
+      await page.getByRole("button", { name: dict.suggestions.fee }).click();
+
+      // The escalation offer only mounts when the API says `refused`. Asserting
+      // its localized wording is what proves a refusal in this language is
+      // recognized as one.
+      await expect(page.getByText(dict.escalation.offerQuestion)).toBeVisible({
+        timeout: 15000,
+      });
+    });
+  });
+}
